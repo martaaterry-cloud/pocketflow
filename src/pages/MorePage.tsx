@@ -2,10 +2,12 @@ import { useState } from 'react'
 import type { ReturnTypeFinance } from '../types'
 import { money } from '../utils/money'
 import { AccountsPage } from './AccountsPage'
+import { BudgetsPage } from './BudgetsPage'
 import { RecurringPaymentsPage } from './RecurringPaymentsPage'
 import { SettingsPage } from './SettingsPage'
+import { StatisticsPage } from './StatisticsPage'
 
-type MoreSubView = 'menu' | 'accounts' | 'settings' | 'recurring'
+type MoreSubView = 'menu' | 'accounts' | 'settings' | 'recurring' | 'budgets' | 'statistics'
 
 export function MorePage({
   finance,
@@ -26,6 +28,14 @@ export function MorePage({
 
   if (subView === 'recurring') {
     return <RecurringPaymentsPage finance={finance} onBack={() => setSubView('menu')} />
+  }
+
+  if (subView === 'budgets') {
+    return <BudgetsPage finance={finance} onBack={() => setSubView('menu')} />
+  }
+
+  if (subView === 'statistics') {
+    return <StatisticsPage finance={finance} onBack={() => setSubView('menu')} />
   }
 
   return (
@@ -99,6 +109,26 @@ export function MorePage({
           <b className="chevron">›</b>
         </button>
 
+        <button type="button" onClick={() => setSubView('budgets')}>
+          <span className="menu-icon">◔</span>
+          <div>
+            <strong>Presupuestos</strong>
+            <small>
+              {finance.budgets.length} límites por categoría · {finance.totals.budgetsSummary.overallUsagePercentage}% consumido
+            </small>
+          </div>
+          <b className="chevron">›</b>
+        </button>
+
+        <button type="button" onClick={() => setSubView('statistics')}>
+          <span className="menu-icon">◎</span>
+          <div>
+            <strong>Estadísticas</strong>
+            <small>Día, semana, mes y año con comparativas</small>
+          </div>
+          <b className="chevron">›</b>
+        </button>
+
         <button type="button" onClick={() => setSubView('settings')}>
           <span className="menu-icon">⚙</span>
           <div>
@@ -106,24 +136,6 @@ export function MorePage({
             <small>Saldos iniciales y privacidad local</small>
           </div>
           <b className="chevron">›</b>
-        </button>
-
-        <button type="button" className="menu-item-disabled" disabled>
-          <span className="menu-icon">◎</span>
-          <div>
-            <strong>Estadísticas</strong>
-            <small>Día, semana, mes y año</small>
-          </div>
-          <span className="badge-soon">Fase 4</span>
-        </button>
-
-        <button type="button" className="menu-item-disabled" disabled>
-          <span className="menu-icon">◔</span>
-          <div>
-            <strong>Presupuestos</strong>
-            <small>Límites opcionales por categoría</small>
-          </div>
-          <span className="badge-soon">Fase 4</span>
         </button>
       </section>
     </main>

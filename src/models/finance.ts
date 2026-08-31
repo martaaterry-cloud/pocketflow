@@ -62,8 +62,21 @@ export interface RecurringPayment {
 export type CreateRecurringPaymentInput = Omit<RecurringPayment, 'id'>
 export type UpdateRecurringPaymentInput = Partial<CreateRecurringPaymentInput>
 
+export type BudgetPeriod = 'monthly'
+
 export interface Budget {
   id: string
   categoryId: string
-  monthlyLimit: number
+  amountLimit: number
+  period: BudgetPeriod
+  monthlyLimit?: number
 }
+
+export type CreateBudgetInput = {
+  categoryId: string
+  amountLimit: number
+  period?: BudgetPeriod
+}
+
+export type UpdateBudgetInput = Partial<CreateBudgetInput>
+

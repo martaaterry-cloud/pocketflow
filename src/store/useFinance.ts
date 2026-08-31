@@ -8,18 +8,22 @@ import {
   transactions as seedTransactions,
 } from '../data/seed'
 import type {
+  Budget,
+  CreateBudgetInput,
   CreateRecurringPaymentInput,
   CreateSavingsGoalInput,
   CreateTransactionInput,
   RecurringPayment,
   SavingsGoal,
   Transaction,
+  UpdateBudgetInput,
   UpdateRecurringPaymentInput,
   UpdateSavingsGoalInput,
   UpdateTransactionInput,
 } from '../models/finance'
 import { defaultStorage } from '../services/storage/localStorageAdapter'
 import type { PersistedState, StorageAdapter } from '../services/storage/storageAdapter'
+import { selectBudgetsSummary } from '../utils/budgetSelectors'
 import { ensureAccountInitialBalance, reconcileAccounts } from '../utils/balance'
 import {
   selectAssignedSavings,
@@ -359,6 +363,57 @@ export function useFinance(storage: StorageAdapter = defaultStorage) {
   )
 
   /* ==========================================================================
+     Presupuestos por Categoría
+     ========================================================================== */
+
+  const addBudget = useCallback(
+    (input: CreateBudgetInput) => {
+      const newBudget: Budget = {
+        ...input,
+        id: crypto.randomUUID(),
+        amountLimit: Number(input.amountLimit),
+        period: input.period ?? 'monthly',
+        monthlyLimit: Number(input.amountLimit),
+      }
+      commit({
+        ...state,
+        budgets: [...state.budgets, newBudget],
+      })
+    },
+    [state, commit]
+  )
+
+  const updateBudget = useCallback(
+    (id: string, updates: UpdateBudgetInput) => {
+      const nextBudgets = state.budgets.map((b) => {
+        if (b.id !== id) return b
+        const amount = updates.amountLimit !== undefined ? Number(updates.amountLimit) : b.amountLimit
+        return {
+          ...b,
+          ...updates,
+          amountLimit: amount,
+          monthlyLimit: amount,
+        }
+      })
+      commit({
+        ...state,
+        budgets: nextBudgets,
+      })
+    },
+    [state, commit]
+  )
+
+  const deleteBudget = useCallback(
+    (id: string) => {
+      commit({
+        ...state,
+        budgets: state.budgets.filter((b) => b.id !== id),
+      })
+    },
+    [state, commit]
+  )
+
+  /* ==========================================================================
      Totales y Conceptos Financieros Centralizados
      ========================================================================== */
 
@@ -381,6 +436,13 @@ export function useFinance(storage: StorageAdapter = defaultStorage) {
     const realAvailable = selectRealAvailable(spendable, committed)
     const monthExpenses = selectMonthExpenses(state.transactions, now)
 
+    const budgetsSummary = selectBudgetsSummary(
+      state.budgets,
+      state.transactions,
+      state.categories,
+      now
+    )
+
     return {
       // Compatibilidad
       daily: spendable,
@@ -399,8 +461,9 @@ export function useFinance(storage: StorageAdapter = defaultStorage) {
       committedAmount: committed,
       realAvailable,
       pendingRecurring,
+      budgetsSummary,
     }
-  }, [reconciledAccounts, state.goals, state.recurring, state.transactions])
+  }, [reconciledAccounts, state.goals, state.recurring, state.transactions, state.budgets, state.categories])
 
   return {
     ...state,
@@ -423,5 +486,11 @@ export function useFinance(storage: StorageAdapter = defaultStorage) {
     updateRecurringPayment,
     deleteRecurringPayment,
     toggleRecurringPayment,
+
+    // Presupuestos
+    addBudget,
+    updateBudget,
+    deleteBudget,
   }
 }
+

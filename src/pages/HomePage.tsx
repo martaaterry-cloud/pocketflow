@@ -61,7 +61,11 @@ export function HomePage({
       <section className="section">
         <div className="section-title">
           <h2>Gastos por categoría</h2>
-          <span>{money(finance.totals.monthExpenses)} este mes</span>
+          <span>
+            {money(finance.totals.monthExpenses)} este mes
+            {finance.totals.budgetsSummary.totalBudgeted > 0 &&
+              ` · Presupuestos: ${finance.totals.budgetsSummary.overallUsagePercentage}%`}
+          </span>
         </div>
         <DonutChart transactions={finance.transactions} categories={finance.categories} />
       </section>

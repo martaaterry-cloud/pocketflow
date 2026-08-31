@@ -44,7 +44,7 @@ export const recurring: RecurringPayment[] = [
 ]
 
 export const budgets: Budget[] = [
-  { id: 'b1', categoryId: 'leisure', monthlyLimit: 150 },
-  { id: 'b2', categoryId: 'clothes', monthlyLimit: 100 },
-  { id: 'b3', categoryId: 'food', monthlyLimit: 220 },
+  { id: 'b1', categoryId: 'leisure', amountLimit: 150, period: 'monthly', monthlyLimit: 150 },
+  { id: 'b2', categoryId: 'clothes', amountLimit: 100, period: 'monthly', monthlyLimit: 100 },
+  { id: 'b3', categoryId: 'food', amountLimit: 220, period: 'monthly', monthlyLimit: 220 },
 ]

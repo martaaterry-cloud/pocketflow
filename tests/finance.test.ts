@@ -1,8 +1,20 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import type { Account, RecurringPayment, SavingsGoal, Transaction } from '../src/models/finance'
+import type { Account, Budget, Category, RecurringPayment, SavingsGoal, Transaction } from '../src/models/finance'
 import { calculateAccountBalance, reconcileAccounts } from '../src/utils/balance'
 import type { PersistedState, StorageAdapter } from '../src/services/storage/storageAdapter'
+import {
+  budgetRemaining,
+  budgetUsagePercentage,
+  overBudgetAmount,
+  selectBudgetsSummary,
+  spentByCategoryThisMonth,
+} from '../src/utils/budgetSelectors'
+import {
+  calculatePeriodStatistics,
+  compareWithPreviousPeriod,
+  getLocalDateRange,
+} from '../src/utils/statisticsSelectors'
 import {
   selectAssignedSavings,
   selectCommittedAmount,
@@ -692,5 +704,254 @@ describe('Fase 3 — Ahorro, Asignación de Objetivos y Gastos Recurrentes', () 
     assert.equal(selectCommittedAmount(recurring, transactions, now, 'daily'), 10.99)
   })
 })
+
+describe('Fase 4 — Presupuestos por Categoría y Estadísticas', () => {
+  const sampleCategories: Category[] = [
+    { id: 'food', name: 'Comida', color: '#16a34a', icon: '🍽️' },
+    { id: 'leisure', name: 'Ocio', color: '#f59e0b', icon: '🍿' },
+    { id: 'clothes', name: 'Ropa', color: '#ec4899', icon: '🛍️' },
+  ]
+
+  const now = new Date(2026, 7, 15) // Agosto 2026
+
+  // 1. gasto mensual de una categoría
+  it('41. Gasto mensual de una categoría: suma exclusivamente los gastos de esa categoría en el mes', () => {
+    const txs: Transaction[] = [
+      { id: 't1', type: 'expense', amount: 45, accountId: 'daily', categoryId: 'food', description: 'Super', date: '2026-08-02' },
+      { id: 't2', type: 'expense', amount: 37, accountId: 'daily', categoryId: 'food', description: 'Restaurante', date: '2026-08-10' },
+      { id: 't3', type: 'expense', amount: 50, accountId: 'daily', categoryId: 'food', description: 'Mes pasado', date: '2026-07-28' },
+    ]
+    const spentFood = spentByCategoryThisMonth(txs, 'food', now)
+    assert.equal(spentFood, 82) // 45 + 37 en agosto, julio queda excluido
+  })
+
+  // 2. gasto de otra categoría no afecta
+  it('42. Gasto de otra categoría: no computa en el presupuesto de la categoría consultada', () => {
+    const txs: Transaction[] = [
+      { id: 't1', type: 'expense', amount: 82, accountId: 'daily', categoryId: 'leisure', description: 'Cine y copas', date: '2026-08-05' },
+      { id: 't2', type: 'expense', amount: 60, accountId: 'daily', categoryId: 'clothes', description: 'Camisa', date: '2026-08-06' },
+    ]
+    assert.equal(spentByCategoryThisMonth(txs, 'leisure', now), 82)
+    assert.equal(spentByCategoryThisMonth(txs, 'clothes', now), 60)
+  })
+
+  // 3. transferencia no consume presupuesto
+  it('43. Transferencia: nunca consume presupuesto, incluso si especifica categoría o cuenta', () => {
+    const txs: Transaction[] = [
+      { id: 't1', type: 'transfer', amount: 300, accountId: 'daily', toAccountId: 'savings', categoryId: 'leisure', description: 'Ahorro para ocio', date: '2026-08-08' },
+    ]
+    assert.equal(spentByCategoryThisMonth(txs, 'leisure', now), 0)
+  })
+
+  // 4. ingreso no consume presupuesto
+  it('44. Ingreso: nunca consume ni altera el gasto del presupuesto de una categoría', () => {
+    const txs: Transaction[] = [
+      { id: 't1', type: 'income', amount: 200, accountId: 'daily', categoryId: 'food', description: 'Reembolso cena', date: '2026-08-11' },
+      { id: 't2', type: 'expense', amount: 50, accountId: 'daily', categoryId: 'food', description: 'Cena', date: '2026-08-11' },
+    ]
+    assert.equal(spentByCategoryThisMonth(txs, 'food', now), 50)
+  })
+
+  // 5. budgetRemaining
+  it('45. budgetRemaining: calcula el saldo restante exacto hasta el límite', () => {
+    const limit = 150
+    const spent = 82
+    assert.equal(budgetRemaining(limit, spent), 68)
+  })
+
+  // 6. porcentaje de consumo
+  it('46. Porcentaje de consumo: porcentaje entero redondeado del presupuesto consumido', () => {
+    const limit = 150
+    const spent = 82
+    assert.equal(budgetUsagePercentage(limit, spent), 55) // 82 / 150 = 54.67% -> 55%
+  })
+
+  // 7. presupuesto superado
+  it('47. Presupuesto superado: identifica exceso sin arrojar número negativo en restante', () => {
+    const limit = 100
+    const spent = 120
+    assert.equal(budgetRemaining(limit, spent), 0)
+    assert.equal(overBudgetAmount(limit, spent), 20)
+    assert.equal(budgetUsagePercentage(limit, spent), 120)
+
+    const summary = selectBudgetsSummary(
+      [{ id: 'b1', categoryId: 'clothes', amountLimit: 100, period: 'monthly' }],
+      [{ id: 't1', type: 'expense', amount: 120, accountId: 'daily', categoryId: 'clothes', description: 'Ropa', date: '2026-08-05' }],
+      sampleCategories,
+      now
+    )
+    assert.equal(summary.items[0].isOverBudget, true)
+    assert.equal(summary.items[0].overBudget, 20)
+  })
+
+  // 8. borrar presupuesto no afecta movimientos
+  it('48. Borrar presupuesto: no altera la integridad ni el número de transacciones registradas', () => {
+    let budgets: Budget[] = [
+      { id: 'b1', categoryId: 'leisure', amountLimit: 150, period: 'monthly' },
+    ]
+    const txs: Transaction[] = [
+      { id: 't1', type: 'expense', amount: 40, accountId: 'daily', categoryId: 'leisure', description: 'Concierto', date: '2026-08-05' },
+    ]
+    assert.equal(txs.length, 1)
+
+    // Eliminar presupuesto
+    budgets = budgets.filter((b) => b.id !== 'b1')
+    assert.equal(budgets.length, 0)
+    assert.equal(txs.length, 1)
+    assert.equal(txs[0].amount, 40)
+  })
+
+  // 9. editar límite recalcula correctamente
+  it('49. Editar límite de presupuesto: recalcula al instante el restante y porcentaje', () => {
+    let budget: Budget = { id: 'b1', categoryId: 'food', amountLimit: 100, period: 'monthly' }
+    const spent = 80
+    assert.equal(budgetRemaining(budget.amountLimit, spent), 20)
+    assert.equal(budgetUsagePercentage(budget.amountLimit, spent), 80)
+
+    // Aumentar límite a 200€
+    budget = { ...budget, amountLimit: 200 }
+    assert.equal(budgetRemaining(budget.amountLimit, spent), 120)
+    assert.equal(budgetUsagePercentage(budget.amountLimit, spent), 40)
+  })
+
+  // 10. gastos diarios
+  it('50. Estadísticas — Gastos diarios: filtra y suma exclusivamente los gastos del día local', () => {
+    const txs: Transaction[] = [
+      { id: 't1', type: 'expense', amount: 15, accountId: 'daily', description: 'Desayuno', date: '2026-08-15T08:30:00' },
+      { id: 't2', type: 'expense', amount: 30, accountId: 'daily', description: 'Almuerzo', date: '2026-08-15T14:15:00' },
+      { id: 't3', type: 'expense', amount: 20, accountId: 'daily', description: 'Ayer', date: '2026-08-14T20:00:00' },
+    ]
+    const stats = calculatePeriodStatistics(txs, sampleCategories, 'day', now)
+    assert.equal(stats.expenses, 45) // 15 + 30
+    assert.equal(stats.transactionCount, 2)
+  })
+
+  // 11. gastos semanales
+  it('51. Estadísticas — Gastos semanales: incluye todos los gastos de lunes a domingo de la semana de referencia', () => {
+    // 2026-08-15 es Sábado. La semana va del Lunes 2026-08-10 al Domingo 2026-08-16.
+    const txs: Transaction[] = [
+      { id: 't1', type: 'expense', amount: 50, accountId: 'daily', description: 'Lunes', date: '2026-08-10T10:00:00' },
+      { id: 't2', type: 'expense', amount: 70, accountId: 'daily', description: 'Sábado', date: '2026-08-15T19:00:00' },
+      { id: 't3', type: 'expense', amount: 90, accountId: 'daily', description: 'Semana previa', date: '2026-08-08T12:00:00' },
+    ]
+    const stats = calculatePeriodStatistics(txs, sampleCategories, 'week', now)
+    assert.equal(stats.expenses, 120) // 50 + 70
+    assert.equal(stats.transactionCount, 2)
+  })
+
+  // 12. gastos mensuales
+  it('52. Estadísticas — Gastos mensuales: suma todos los gastos del mes completo', () => {
+    const txs: Transaction[] = [
+      { id: 't1', type: 'expense', amount: 100, accountId: 'daily', description: 'Día 1', date: '2026-08-01T12:00:00' },
+      { id: 't2', type: 'expense', amount: 150, accountId: 'daily', description: 'Día 25', date: '2026-08-25T12:00:00' },
+      { id: 't3', type: 'expense', amount: 200, accountId: 'daily', description: 'Julio', date: '2026-07-31T23:59:00' },
+    ]
+    const stats = calculatePeriodStatistics(txs, sampleCategories, 'month', now)
+    assert.equal(stats.expenses, 250) // 100 + 150
+  })
+
+  // 13. gastos anuales
+  it('53. Estadísticas — Gastos anuales: incluye los gastos de todos los meses del año', () => {
+    const txs: Transaction[] = [
+      { id: 't1', type: 'expense', amount: 300, accountId: 'daily', description: 'Enero', date: '2026-01-15T10:00:00' },
+      { id: 't2', type: 'expense', amount: 400, accountId: 'daily', description: 'Agosto', date: '2026-08-15T10:00:00' },
+      { id: 't3', type: 'expense', amount: 500, accountId: 'daily', description: 'Año 2025', date: '2025-12-31T23:00:00' },
+    ]
+    const stats = calculatePeriodStatistics(txs, sampleCategories, 'year', now)
+    assert.equal(stats.expenses, 700) // 300 + 400
+  })
+
+  // 14. ingresos por periodo
+  it('54. Estadísticas — Ingresos por periodo: calcula la suma exacta de ingresos del periodo', () => {
+    const txs: Transaction[] = [
+      { id: 't1', type: 'income', amount: 1800, accountId: 'daily', description: 'Nómina', date: '2026-08-01T09:00:00' },
+      { id: 't2', type: 'income', amount: 150, accountId: 'daily', description: 'Bizum venta', date: '2026-08-14T11:00:00' },
+      { id: 't3', type: 'expense', amount: 80, accountId: 'daily', description: 'Gasto', date: '2026-08-10T12:00:00' },
+    ]
+    const stats = calculatePeriodStatistics(txs, sampleCategories, 'month', now)
+    assert.equal(stats.income, 1950)
+  })
+
+  // 15. ahorro transferido por periodo separado de gastos
+  it('55. Estadísticas — Ahorro transferido: se cuantifica de forma independiente y nunca suma como gasto', () => {
+    const txs: Transaction[] = [
+      { id: 't1', type: 'expense', amount: 60, accountId: 'daily', description: 'Supermercado', date: '2026-08-05T10:00:00' },
+      { id: 't2', type: 'transfer', amount: 350, accountId: 'daily', toAccountId: 'savings', description: 'A ahorro mensual', date: '2026-08-05T10:05:00' },
+    ]
+    const stats = calculatePeriodStatistics(txs, sampleCategories, 'month', now)
+    assert.equal(stats.expenses, 60)
+    assert.equal(stats.savingsTransferred, 350)
+  })
+
+  // 16. netFlow correcto
+  it('56. Estadísticas — NetFlow: ingresos menos gastos del periodo', () => {
+    const txs: Transaction[] = [
+      { id: 't1', type: 'income', amount: 2000, accountId: 'daily', description: 'Nómina', date: '2026-08-01T10:00:00' },
+      { id: 't2', type: 'expense', amount: 750, accountId: 'daily', description: 'Alquiler', date: '2026-08-02T10:00:00' },
+    ]
+    const stats = calculatePeriodStatistics(txs, sampleCategories, 'month', now)
+    assert.equal(stats.netFlow, 1250) // 2000 - 750
+  })
+
+  // 17. topCategory
+  it('57. Estadísticas — TopCategory: identifica la categoría con mayor gasto y su importe', () => {
+    const txs: Transaction[] = [
+      { id: 't1', type: 'expense', amount: 120, accountId: 'daily', categoryId: 'food', description: 'Comida', date: '2026-08-03' },
+      { id: 't2', type: 'expense', amount: 230, accountId: 'daily', categoryId: 'leisure', description: 'Escapada', date: '2026-08-06' },
+      { id: 't3', type: 'expense', amount: 80, accountId: 'daily', categoryId: 'clothes', description: 'Zapatillas', date: '2026-08-08' },
+    ]
+    const stats = calculatePeriodStatistics(txs, sampleCategories, 'month', now)
+    assert.ok(stats.topCategory)
+    assert.equal(stats.topCategory?.categoryId, 'leisure')
+    assert.equal(stats.topCategory?.amount, 230)
+  })
+
+  // 18. gasto medio diario
+  it('58. Estadísticas — Gasto medio diario: divide el gasto total entre el número de días del periodo', () => {
+    const txs: Transaction[] = [
+      { id: 't1', type: 'expense', amount: 310, accountId: 'daily', description: 'Varios', date: '2026-08-10' },
+    ]
+    // En Agosto hay 31 días. 310 / 31 = 10€/día
+    const stats = calculatePeriodStatistics(txs, sampleCategories, 'month', now)
+    assert.equal(stats.averageDailySpend, 10)
+  })
+
+  // 19. comparación con mes anterior
+  it('59. Comparación con mes anterior: calcula diferencia absoluta y porcentual correcta', () => {
+    const currentExpenses = 410
+    const previousExpenses = 365
+    const comp = compareWithPreviousPeriod(currentExpenses, previousExpenses)
+
+    assert.equal(comp.diffAmount, 45)
+    assert.equal(comp.percentageDiff, 12.3) // +12.3%
+    assert.equal(comp.isHigher, true)
+  })
+
+  // 20. mes anterior = 0 no genera NaN/Infinity
+  it('60. Comparación con periodo previo = 0: no genera NaN ni Infinity', () => {
+    const currentExpenses = 250
+    const previousExpenses = 0
+    const comp = compareWithPreviousPeriod(currentExpenses, previousExpenses)
+
+    assert.equal(comp.diffAmount, 250)
+    assert.equal(comp.percentageDiff, null) // Seguro y sin NaN / Infinity
+    assert.ok(!isNaN(comp.diffAmount))
+  })
+
+  // 21. límites de fechas locales correctos
+  it('61. Límites de fechas locales: inicio y fin a las 00:00:00 y 23:59:59 locales exactas', () => {
+    const range = getLocalDateRange('day', new Date(2026, 7, 20, 14, 30))
+    assert.equal(range.start.getHours(), 0)
+    assert.equal(range.start.getMinutes(), 0)
+    assert.equal(range.start.getSeconds(), 0)
+    assert.equal(range.start.getDate(), 20)
+
+    assert.equal(range.end.getHours(), 23)
+    assert.equal(range.end.getMinutes(), 59)
+    assert.equal(range.end.getSeconds(), 59)
+    assert.equal(range.end.getDate(), 20)
+  })
+})
+
 
 

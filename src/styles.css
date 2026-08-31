@@ -1609,4 +1609,259 @@ input:checked + .slider:before {
   border-radius: 50%;
 }
 
+/* ==========================================================================
+   Phase 4: Budgets UI
+   ========================================================================== */
+
+.budget-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.budget-card {
+  background: var(--bg-card);
+  border-radius: var(--radius-md);
+  padding: 16px 18px;
+  box-shadow: var(--shadow-sm);
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  border-left: 3px solid transparent;
+}
+
+.budget-card.over-budget {
+  border-left-color: var(--accent-red);
+}
+
+.budget-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.budget-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.budget-title strong {
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.budget-amounts-sub {
+  display: block;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.badge-status.over {
+  background: #fdf0f0;
+  color: var(--accent-red);
+}
+
+.badge-status.ok {
+  background: #f0f5ed;
+  color: var(--accent-green);
+}
+
+.budget-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+.static-field {
+  padding: 12px 14px;
+  background: #f3f3ee;
+  border-radius: var(--radius-sm);
+  font-size: 14px;
+  font-weight: 600;
+  margin-top: 4px;
+}
+
+/* ==========================================================================
+   Phase 4: Statistics UI
+   ========================================================================== */
+
+.comparison-banner {
+  background: var(--bg-card);
+  border-radius: var(--radius-md);
+  padding: 14px 18px;
+  margin-top: 14px;
+  box-shadow: var(--shadow-sm);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.comparison-label {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.comparison-values {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.comparison-pct {
+  font-size: 11px;
+  font-weight: 700;
+  padding: 2px 7px;
+  border-radius: var(--radius-pill);
+}
+
+.comparison-pct.higher {
+  background: #fdf0f0;
+  color: var(--accent-red);
+}
+
+.comparison-pct.lower {
+  background: #edf6ef;
+  color: var(--accent-green);
+}
+
+.comparison-pct.neutral {
+  background: #eeeeea;
+  color: var(--text-muted);
+}
+
+.stats-kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.stat-box {
+  background: var(--bg-card);
+  border-radius: var(--radius-sm);
+  padding: 12px 10px;
+  text-align: center;
+  box-shadow: var(--shadow-sm);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.stat-box span {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.stat-box b {
+  font-size: 13px;
+  color: var(--text-main);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.chart-card {
+  background: var(--bg-card);
+  border-radius: var(--radius-lg);
+  padding: 18px 14px;
+  box-shadow: var(--shadow-sm);
+}
+
+.bar-chart-container {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  height: 140px;
+  gap: 6px;
+  padding-top: 10px;
+}
+
+.bar-column {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  height: 100%;
+  justify-content: flex-end;
+  gap: 4px;
+}
+
+.bar-track {
+  width: 100%;
+  max-width: 24px;
+  flex: 1;
+  background: #f0f0eb;
+  border-radius: 4px;
+  display: flex;
+  align-items: flex-end;
+  overflow: hidden;
+}
+
+.bar-fill {
+  width: 100%;
+  background: var(--accent-dark);
+  border-radius: 4px;
+  transition: height 0.3s ease;
+}
+
+.bar-label {
+  font-size: 10px;
+  color: var(--text-dim);
+  font-weight: 600;
+}
+
+.bar-val {
+  font-size: 9px;
+  color: var(--text-muted);
+}
+
+.category-stats-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.category-stat-row {
+  background: var(--bg-card);
+  border-radius: var(--radius-sm);
+  padding: 10px 14px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.cat-stat-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.cat-stat-left strong {
+  font-size: 14px;
+}
+
+.cat-stat-right {
+  text-align: right;
+  display: flex;
+  flex-direction: column;
+}
+
+.cat-stat-right strong {
+  font-size: 14px;
+}
+
+.cat-stat-right small {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.savings-highlight {
+  color: var(--accent-green);
+}
+
+
 
