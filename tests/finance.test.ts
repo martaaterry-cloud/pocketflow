@@ -3,6 +3,14 @@ import assert from 'node:assert/strict'
 import type { Account, RecurringPayment, Transaction } from '../src/models/finance'
 import { calculateAccountBalance, reconcileAccounts } from '../src/utils/balance'
 import type { PersistedState, StorageAdapter } from '../src/services/storage/storageAdapter'
+import {
+  selectCommittedAmount,
+  selectMonthExpenses,
+  selectRealAvailable,
+  selectSavingsBalance,
+  selectSpendableBalance,
+  selectTotalMoney,
+} from '../src/utils/financeSelectors'
 
 describe('Pocketflow — Pruebas Exhaustivas de Dominio Financiero', () => {
   const baseAccounts: Account[] = [
@@ -320,3 +328,87 @@ describe('Pocketflow — Pruebas Exhaustivas de Dominio Financiero', () => {
     assert.equal(pendingAfter.reduce((s, r) => s + r.amount, 0), 0)
   })
 })
+
+describe('Fase 2 — Conceptos Financieros Principales y Selectores', () => {
+  const accounts: Account[] = [
+    { id: 'daily', name: 'Cuenta diaria', type: 'spending', initialBalance: 600 },
+    { id: 'savings', name: 'Ahorro', type: 'savings', initialBalance: 1200 },
+  ]
+
+  it('16. Dinero total: suma exacta del saldo de Cuenta diaria y saldo de Ahorro', () => {
+    const reconciled = reconcileAccounts(accounts, [])
+    const total = selectTotalMoney(reconciled)
+    assert.equal(total, 1800)
+  })
+
+  it('17. Saldo gastable: refleja únicamente el saldo actual de la Cuenta diaria', () => {
+    const txs: Transaction[] = [
+      { id: 't1', type: 'expense', amount: 50, accountId: 'daily', description: 'Café y comida', date: new Date().toISOString() },
+    ]
+    const reconciled = reconcileAccounts(accounts, txs)
+    const spendable = selectSpendableBalance(reconciled)
+    assert.equal(spendable, 550)
+  })
+
+  it('18. Ahorro: refleja únicamente el saldo actual de la Cuenta Ahorro', () => {
+    const txs: Transaction[] = [
+      { id: 't2', type: 'transfer', amount: 300, accountId: 'daily', toAccountId: 'savings', description: 'Ahorro', date: new Date().toISOString() },
+    ]
+    const reconciled = reconcileAccounts(accounts, txs)
+    const savings = selectSavingsBalance(reconciled)
+    assert.equal(savings, 1500)
+  })
+
+  it('19. Transferencia diaria -> ahorro: reduce dinero para gastar, aumenta ahorro y mantiene Dinero total intacto', () => {
+    const txs: Transaction[] = [
+      { id: 't3', type: 'transfer', amount: 200, accountId: 'daily', toAccountId: 'savings', description: 'Ahorro mensual', date: new Date().toISOString() },
+    ]
+    const reconciled = reconcileAccounts(accounts, txs)
+    assert.equal(selectSpendableBalance(reconciled), 400) // 600 - 200
+    assert.equal(selectSavingsBalance(reconciled), 1400)   // 1200 + 200
+    assert.equal(selectTotalMoney(reconciled), 1800)       // Dinero total no cambia
+  })
+
+  it('20. Transferencia ahorro -> diaria: reduce ahorro, aumenta dinero para gastar y mantiene Dinero total intacto', () => {
+    const txs: Transaction[] = [
+      { id: 't4', type: 'transfer', amount: 500, accountId: 'savings', toAccountId: 'daily', description: 'Uso de reserva', date: new Date().toISOString() },
+    ]
+    const reconciled = reconcileAccounts(accounts, txs)
+    assert.equal(selectSpendableBalance(reconciled), 1100) // 600 + 500
+    assert.equal(selectSavingsBalance(reconciled), 700)    // 1200 - 500
+    assert.equal(selectTotalMoney(reconciled), 1800)       // Dinero total no cambia
+  })
+
+  it('21. Cambio de initialBalance: reconstruye correctamente el saldo actual sobre todo el histórico', () => {
+    const txs: Transaction[] = [
+      { id: 'h1', type: 'expense', amount: 100, accountId: 'daily', description: 'Gasto', date: '2026-08-01' },
+      { id: 'h2', type: 'income', amount: 250, accountId: 'daily', description: 'Ingreso', date: '2026-08-05' },
+    ]
+    // Con saldo inicial de 600: 600 - 100 + 250 = 750
+    assert.equal(calculateAccountBalance({ id: 'daily', initialBalance: 600 }, txs), 750)
+
+    // Si el usuario modifica el saldo inicial a 800 desde Ajustes: 800 - 100 + 250 = 950
+    assert.equal(calculateAccountBalance({ id: 'daily', initialBalance: 800 }, txs), 950)
+  })
+
+  it('22. Disponible real: dinero para gastar menos dinero comprometido de recurrentes pendientes', () => {
+    const spendable = 600
+    const committed = 48.98 // Ej: Spotify 10.99 + Gimnasio 35 + iCloud 2.99
+    const realAvailable = selectRealAvailable(spendable, committed)
+    assert.equal(realAvailable, 551.02)
+
+    // Si el comprometido supera al gastable, disponible real nunca es negativo
+    assert.equal(selectRealAvailable(30, 100), 0)
+  })
+
+  it('23. Ahorro nunca cuenta como gasto mensual: transferir a ahorro no aumenta monthExpenses', () => {
+    const now = new Date()
+    const txs: Transaction[] = [
+      { id: 'g1', type: 'expense', amount: 60, accountId: 'daily', description: 'Restaurante', date: now.toISOString() },
+      { id: 'tr1', type: 'transfer', amount: 400, accountId: 'daily', toAccountId: 'savings', description: 'A ahorro', date: now.toISOString() },
+    ]
+    const expenses = selectMonthExpenses(txs, now)
+    assert.equal(expenses, 60) // Solo los 60€ de gasto, los 400€ transferidos a ahorro no son gasto
+  })
+})
+

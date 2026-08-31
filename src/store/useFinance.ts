@@ -8,7 +8,6 @@ import {
   transactions as seedTransactions,
 } from '../data/seed'
 import type {
-  Account,
   CreateTransactionInput,
   Transaction,
   UpdateTransactionInput,
@@ -16,6 +15,14 @@ import type {
 import { defaultStorage } from '../services/storage/localStorageAdapter'
 import type { PersistedState, StorageAdapter } from '../services/storage/storageAdapter'
 import { ensureAccountInitialBalance, reconcileAccounts } from '../utils/balance'
+import {
+  selectCommittedAmount,
+  selectMonthExpenses,
+  selectRealAvailable,
+  selectSavingsBalance,
+  selectSpendableBalance,
+  selectTotalMoney,
+} from '../utils/financeSelectors'
 
 export const initialFinanceState: PersistedState = {
   accounts: seedAccounts,
@@ -47,7 +54,7 @@ export function useFinance(storage: StorageAdapter = defaultStorage) {
         }
       }
     } catch {
-      // ignore JSON parse errors
+      // ignore parse errors
     }
     return initialFinanceState
   })
@@ -140,47 +147,44 @@ export function useFinance(storage: StorageAdapter = defaultStorage) {
     [state, commit]
   )
 
+  const updateAccountInitialBalance = useCallback(
+    (accountId: string, newInitialBalance: number) => {
+      const sanitized = isNaN(newInitialBalance) ? 0 : Math.round(newInitialBalance * 100) / 100
+      const nextAccounts = state.accounts.map((acc) =>
+        acc.id === accountId ? { ...acc, initialBalance: sanitized } : acc
+      )
+      commit({
+        ...state,
+        accounts: nextAccounts,
+      })
+    },
+    [state, commit]
+  )
+
   const totals = useMemo(() => {
-    const daily = reconciledAccounts.find((a) => a.type === 'spending')?.balance ?? 0
-    const savings = reconciledAccounts.find((a) => a.type === 'savings')?.balance ?? 0
-
     const now = new Date()
-    const currentMonth = now.getMonth()
-    const currentYear = now.getFullYear()
-
-    // Comprometido: recurrentes activos que todavía no han sido pagados este mes
-    const pendingRecurring = state.recurring.filter((r) => {
-      if (!r.active) return false
-      const alreadyPaidThisMonth = state.transactions.some((t) => {
-        if (t.type !== 'expense') return false
-        const d = new Date(t.date)
-        const isCurrentMonth = d.getMonth() === currentMonth && d.getFullYear() === currentYear
-        return (
-          isCurrentMonth &&
-          (t.description.toLowerCase().includes(r.name.toLowerCase()) ||
-            (r.categoryId && t.categoryId === r.categoryId && Math.abs(t.amount - r.amount) < 0.01))
-        )
-      })
-      return !alreadyPaidThisMonth
-    })
-
-    const committed = pendingRecurring.reduce((sum, r) => sum + r.amount, 0)
-
-    const monthExpenses = state.transactions
-      .filter((t) => t.type === 'expense')
-      .filter((t) => {
-        const d = new Date(t.date)
-        return d.getMonth() === currentMonth && d.getFullYear() === currentYear
-      })
-      .reduce((sum, t) => sum + t.amount, 0)
+    const spendable = selectSpendableBalance(reconciledAccounts)
+    const savings = selectSavingsBalance(reconciledAccounts)
+    const totalMoney = selectTotalMoney(reconciledAccounts)
+    const committed = selectCommittedAmount(state.recurring, state.transactions, now)
+    const realAvailable = selectRealAvailable(spendable, committed)
+    const monthExpenses = selectMonthExpenses(state.transactions, now)
 
     return {
-      daily,
+      // Nombres de compatibilidad
+      daily: spendable,
       savings,
-      total: Math.round((daily + savings) * 100) / 100,
+      total: totalMoney,
       committed,
-      available: Math.max(0, Math.round((daily - committed) * 100) / 100),
+      available: realAvailable,
       monthExpenses,
+
+      // Conceptos explícitos de dominio
+      totalMoney,
+      spendableBalance: spendable,
+      savingsBalance: savings,
+      committedAmount: committed,
+      realAvailable,
     }
   }, [reconciledAccounts, state.transactions, state.recurring])
 
@@ -191,5 +195,6 @@ export function useFinance(storage: StorageAdapter = defaultStorage) {
     addTransaction,
     updateTransaction,
     deleteTransaction,
+    updateAccountInitialBalance,
   }
 }

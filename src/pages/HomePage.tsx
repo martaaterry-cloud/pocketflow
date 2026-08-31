@@ -26,17 +26,28 @@ export function HomePage({
       </header>
 
       <section className="hero-card">
-        <span>Disponible real</span>
-        <strong>{money(finance.totals.available)}</strong>
-        <div className="hero-meta">
-          <span>Saldo diario {money(finance.totals.daily)}</span>
-          <span>Comprometido {money(finance.totals.committed)}</span>
+        <span className="hero-tag">Disponible real</span>
+        <strong className="hero-main-number">{money(finance.totals.realAvailable)}</strong>
+
+        <div className="hero-kpis">
+          <div className="hero-kpi-item">
+            <span>Dinero total</span>
+            <strong>{money(finance.totals.totalMoney)}</strong>
+          </div>
+          <div className="hero-kpi-item">
+            <span>Ahorrado</span>
+            <strong>{money(finance.totals.savingsBalance)}</strong>
+          </div>
+          <div className="hero-kpi-item">
+            <span>Gastado este mes</span>
+            <strong>{money(finance.totals.monthExpenses)}</strong>
+          </div>
         </div>
       </section>
 
       <section className="section">
         <div className="section-title">
-          <h2>Gastos</h2>
+          <h2>Gastos por categoría</h2>
           <span>{money(finance.totals.monthExpenses)} este mes</span>
         </div>
         <DonutChart transactions={finance.transactions} categories={finance.categories} />

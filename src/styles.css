@@ -988,3 +988,289 @@ button, input, select {
   font-size: 13px;
   margin: 0;
 }
+
+/* ==========================================================================
+   Phase 2: Home Hero KPIs
+   ========================================================================== */
+
+.hero-tag {
+  font-size: 13px;
+  opacity: 0.75;
+  font-weight: 500;
+  letter-spacing: 0.3px;
+  display: block;
+}
+
+.hero-main-number {
+  display: block;
+  font-size: 42px;
+  font-weight: 800;
+  letter-spacing: -2px;
+  margin: 6px 0 18px;
+}
+
+.hero-kpis {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  border-top: 1px solid rgba(255, 255, 255, 0.12);
+  padding-top: 14px;
+}
+
+.hero-kpi-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.hero-kpi-item span {
+  font-size: 11px;
+  opacity: 0.72;
+  font-weight: 500;
+}
+
+.hero-kpi-item strong {
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: -0.3px;
+}
+
+/* ==========================================================================
+   Phase 2: Accounts Page & Cards
+   ========================================================================== */
+
+.back-button {
+  font-size: 16px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 6px 0;
+}
+
+.account-card {
+  background: var(--bg-card);
+  border-radius: var(--radius-lg);
+  padding: 20px;
+  box-shadow: var(--shadow-sm);
+}
+
+.account-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.account-title {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.account-icon {
+  width: 44px;
+  height: 44px;
+  border-radius: 14px;
+  display: grid;
+  place-items: center;
+  font-size: 20px;
+}
+
+.account-icon.spending {
+  background: #eef2eb;
+}
+
+.account-icon.savings {
+  background: #e7eef6;
+}
+
+.account-subtitle {
+  display: block;
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-top: 2px;
+}
+
+.account-balance-box {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  text-align: right;
+}
+
+.balance-label {
+  font-size: 11px;
+  color: var(--text-dim);
+  font-weight: 500;
+}
+
+.balance-value {
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--text-main);
+  letter-spacing: -0.5px;
+}
+
+.account-footer {
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border-light);
+}
+
+.initial-balance-info {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+.initial-balance-info b {
+  color: var(--text-main);
+}
+
+.edit-initial-btn {
+  border: 0;
+  background: transparent;
+  color: var(--accent-green);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 6px;
+}
+
+.edit-initial-btn:hover {
+  background: rgba(72, 122, 91, 0.08);
+}
+
+.initial-balance-edit {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.initial-balance-edit label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.initial-balance-edit input {
+  flex: 1;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  padding: 8px 10px;
+  font-size: 14px;
+  outline: none;
+}
+
+.initial-balance-edit input:focus {
+  border-color: var(--accent-dark);
+}
+
+.save-btn {
+  border: 0;
+  background: var(--accent-dark);
+  color: #fff;
+  border-radius: var(--radius-sm);
+  padding: 8px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.cancel-btn {
+  border: 0;
+  background: #ebebe6;
+  color: var(--text-muted);
+  border-radius: var(--radius-sm);
+  padding: 8px 10px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.info-callout {
+  background: #f1f3ed;
+  border: 1px solid #dfe3d8;
+  border-radius: var(--radius-md);
+  padding: 14px 16px;
+}
+
+.info-callout p {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.45;
+  color: #4b5247;
+}
+
+/* ==========================================================================
+   Phase 2: Settings Page
+   ========================================================================== */
+
+.settings-section {
+  background: var(--bg-card);
+  border-radius: var(--radius-lg);
+  padding: 22px 20px;
+  box-shadow: var(--shadow-sm);
+}
+
+.settings-section h2 {
+  font-size: 18px;
+  font-weight: 700;
+  margin: 0 0 4px;
+}
+
+.settings-desc {
+  font-size: 13px;
+  color: var(--text-muted);
+  margin: 0 0 18px;
+}
+
+.privacy-card {
+  background: var(--bg-card-subtle);
+  border-radius: var(--radius-md);
+  padding: 14px 16px;
+  font-size: 13px;
+  color: var(--text-muted);
+  line-height: 1.45;
+}
+
+.privacy-card p {
+  margin: 0;
+}
+
+.success-toast {
+  background: #e8f3ec;
+  border: 1px solid #c2e2cc;
+  color: var(--accent-green);
+  font-size: 13px;
+  font-weight: 600;
+  border-radius: var(--radius-md);
+  padding: 12px 14px;
+  margin-top: 14px;
+  text-align: center;
+  animation: fadeIn 0.2s ease;
+}
+
+.menu-item-disabled {
+  opacity: 0.55;
+  cursor: not-allowed !important;
+}
+
+.menu-item-disabled:active {
+  background: var(--bg-card) !important;
+}
+
+.badge-soon {
+  font-size: 10px;
+  font-weight: 600;
+  background: #eeeeea;
+  color: var(--text-muted);
+  border-radius: var(--radius-pill);
+  padding: 3px 8px;
+  letter-spacing: 0.2px;
+}
+
