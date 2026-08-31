@@ -4,7 +4,6 @@ const config: CapacitorConfig = {
   appId: 'com.marta.pocketflow',
   appName: 'Pocketflow',
   webDir: 'dist',
-  bundledWebRuntime: false,
 }
 
 export default config
