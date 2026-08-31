@@ -9,16 +9,13 @@ import {
 } from '../data/seed'
 import type {
   Account,
-  Budget,
-  Category,
   CreateTransactionInput,
-  RecurringPayment,
-  SavingsGoal,
   Transaction,
   UpdateTransactionInput,
 } from '../models/finance'
 import { defaultStorage } from '../services/storage/localStorageAdapter'
 import type { PersistedState, StorageAdapter } from '../services/storage/storageAdapter'
+import { ensureAccountInitialBalance, reconcileAccounts } from '../utils/balance'
 
 export const initialFinanceState: PersistedState = {
   accounts: seedAccounts,
@@ -29,43 +26,20 @@ export const initialFinanceState: PersistedState = {
   budgets: seedBudgets,
 }
 
-function adjustAccountBalance(
-  accounts: Account[],
-  transaction: Pick<Transaction, 'type' | 'amount' | 'accountId' | 'toAccountId'>,
-  direction: 1 | -1
-): Account[] {
-  const { type, amount, accountId, toAccountId } = transaction
-  const signedAmount = amount * direction
-
-  return accounts.map((acc) => {
-    if (type === 'expense' && acc.id === accountId) {
-      return { ...acc, balance: acc.balance - signedAmount }
-    }
-    if (type === 'income' && acc.id === accountId) {
-      return { ...acc, balance: acc.balance + signedAmount }
-    }
-    if (type === 'transfer') {
-      if (acc.id === accountId) {
-        return { ...acc, balance: acc.balance - signedAmount }
-      }
-      if (acc.id === toAccountId) {
-        return { ...acc, balance: acc.balance + signedAmount }
-      }
-    }
-    return acc
-  })
-}
-
 export function useFinance(storage: StorageAdapter = defaultStorage) {
   const [state, setState] = useState<PersistedState>(() => {
-    // Initial synchronous read fallback
     try {
       const raw = localStorage.getItem('pocketflow:v1')
       if (raw) {
-        const parsed = JSON.parse(raw)
+        const parsed = JSON.parse(raw) as Partial<PersistedState>
+        const rawTxs = parsed.transactions ?? initialFinanceState.transactions
+        const rawAccounts = (parsed.accounts ?? initialFinanceState.accounts).map((acc) =>
+          ensureAccountInitialBalance(acc, rawTxs)
+        )
+
         return {
-          accounts: parsed.accounts ?? initialFinanceState.accounts,
-          transactions: parsed.transactions ?? initialFinanceState.transactions,
+          accounts: rawAccounts,
+          transactions: rawTxs,
           goals: parsed.goals ?? initialFinanceState.goals,
           recurring: parsed.recurring ?? initialFinanceState.recurring,
           categories: parsed.categories ?? initialFinanceState.categories,
@@ -73,19 +47,27 @@ export function useFinance(storage: StorageAdapter = defaultStorage) {
         }
       }
     } catch {
-      // ignore
+      // ignore JSON parse errors
     }
     return initialFinanceState
   })
 
-  // Load from storage adapter (asynchronous ready for SQLite transition)
+  // Carga asíncrona mediante el StorageAdapter (preparado para SQLite)
   useEffect(() => {
     let mounted = true
     storage.load().then((loaded) => {
       if (!mounted || !loaded) return
+
+      const txs = loaded.transactions ?? []
+      const accountsWithInitial = (loaded.accounts ?? initialFinanceState.accounts).map((acc) =>
+        ensureAccountInitialBalance(acc, txs)
+      )
+
       setState((prev) => ({
         ...prev,
         ...loaded,
+        accounts: accountsWithInitial,
+        transactions: txs,
         categories: loaded.categories?.length ? loaded.categories : prev.categories,
         budgets: loaded.budgets?.length ? loaded.budgets : prev.budgets,
       }))
@@ -99,11 +81,16 @@ export function useFinance(storage: StorageAdapter = defaultStorage) {
     (next: PersistedState) => {
       setState(next)
       storage.save(next).catch((err) => {
-        console.error('Failed to persist finance state:', err)
+        console.error('[Pocketflow] Error persistiendo estado financiero:', err)
       })
     },
     [storage]
   )
+
+  // Cuentas reconciliadas: los saldos son 100% derivados del histórico de transacciones
+  const reconciledAccounts = useMemo(() => {
+    return reconcileAccounts(state.accounts, state.transactions)
+  }, [state.accounts, state.transactions])
 
   const addTransaction = useCallback(
     (input: CreateTransactionInput) => {
@@ -112,10 +99,8 @@ export function useFinance(storage: StorageAdapter = defaultStorage) {
         id: crypto.randomUUID(),
         amount: Number(input.amount),
       }
-      const updatedAccounts = adjustAccountBalance(state.accounts, newTx, 1)
       commit({
         ...state,
-        accounts: updatedAccounts,
         transactions: [newTx, ...state.transactions],
       })
     },
@@ -124,26 +109,22 @@ export function useFinance(storage: StorageAdapter = defaultStorage) {
 
   const updateTransaction = useCallback(
     (id: string, updates: UpdateTransactionInput) => {
-      const existing = state.transactions.find((t) => t.id === id)
-      if (!existing) return
+      const existingIndex = state.transactions.findIndex((t) => t.id === id)
+      if (existingIndex === -1) return
 
+      const existing = state.transactions[existingIndex]
       const updatedTx: Transaction = {
         ...existing,
         ...updates,
         amount: updates.amount !== undefined ? Number(updates.amount) : existing.amount,
       }
 
-      // 1. Revert effect of previous transaction on accounts
-      const accountsAfterRevert = adjustAccountBalance(state.accounts, existing, -1)
-      // 2. Apply effect of updated transaction
-      const finalAccounts = adjustAccountBalance(accountsAfterRevert, updatedTx, 1)
-
-      const finalTransactions = state.transactions.map((t) => (t.id === id ? updatedTx : t))
+      const nextTransactions = [...state.transactions]
+      nextTransactions[existingIndex] = updatedTx
 
       commit({
         ...state,
-        accounts: finalAccounts,
-        transactions: finalTransactions,
+        transactions: nextTransactions,
       })
     },
     [state, commit]
@@ -151,31 +132,23 @@ export function useFinance(storage: StorageAdapter = defaultStorage) {
 
   const deleteTransaction = useCallback(
     (id: string) => {
-      const existing = state.transactions.find((t) => t.id === id)
-      if (!existing) return
-
-      // Revert effect on accounts
-      const updatedAccounts = adjustAccountBalance(state.accounts, existing, -1)
-      const finalTransactions = state.transactions.filter((t) => t.id !== id)
-
       commit({
         ...state,
-        accounts: updatedAccounts,
-        transactions: finalTransactions,
+        transactions: state.transactions.filter((t) => t.id !== id),
       })
     },
     [state, commit]
   )
 
   const totals = useMemo(() => {
-    const daily = state.accounts.find((a) => a.type === 'spending')?.balance ?? 0
-    const savings = state.accounts.find((a) => a.type === 'savings')?.balance ?? 0
+    const daily = reconciledAccounts.find((a) => a.type === 'spending')?.balance ?? 0
+    const savings = reconciledAccounts.find((a) => a.type === 'savings')?.balance ?? 0
 
     const now = new Date()
     const currentMonth = now.getMonth()
     const currentYear = now.getFullYear()
 
-    // Committed: active recurring payments that have NOT already been paid this month
+    // Comprometido: recurrentes activos que todavía no han sido pagados este mes
     const pendingRecurring = state.recurring.filter((r) => {
       if (!r.active) return false
       const alreadyPaidThisMonth = state.transactions.some((t) => {
@@ -204,15 +177,16 @@ export function useFinance(storage: StorageAdapter = defaultStorage) {
     return {
       daily,
       savings,
-      total: daily + savings,
+      total: Math.round((daily + savings) * 100) / 100,
       committed,
-      available: Math.max(0, daily - committed),
+      available: Math.max(0, Math.round((daily - committed) * 100) / 100),
       monthExpenses,
     }
-  }, [state])
+  }, [reconciledAccounts, state.transactions, state.recurring])
 
   return {
     ...state,
+    accounts: reconciledAccounts,
     totals,
     addTransaction,
     updateTransaction,

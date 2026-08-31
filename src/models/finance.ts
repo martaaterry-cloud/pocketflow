@@ -5,7 +5,8 @@ export interface Account {
   id: string
   name: string
   type: AccountType
-  balance: number
+  initialBalance: number
+  balance?: number
 }
 
 export interface Category {

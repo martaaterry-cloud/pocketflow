@@ -12,8 +12,8 @@ export const categories: Category[] = [
 ]
 
 export const accounts: Account[] = [
-  { id: 'daily', name: 'Cuenta diaria', type: 'spending', balance: 438.25 },
-  { id: 'savings', name: 'Ahorro', type: 'savings', balance: 1320 },
+  { id: 'daily', name: 'Cuenta diaria', type: 'spending', initialBalance: 791.16, balance: 438.25 },
+  { id: 'savings', name: 'Ahorro', type: 'savings', initialBalance: 1120, balance: 1320 },
 ]
 
 const iso = (daysAgo: number) => {
