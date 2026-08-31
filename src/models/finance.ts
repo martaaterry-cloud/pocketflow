@@ -27,6 +27,9 @@ export interface Transaction {
   note?: string
 }
 
+export type CreateTransactionInput = Omit<Transaction, 'id'>
+export type UpdateTransactionInput = Partial<CreateTransactionInput>
+
 export interface SavingsGoal {
   id: string
   name: string

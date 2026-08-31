@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { App as CapacitorApp } from '@capacitor/app'
 import { AddTransactionModal } from './components/AddTransactionModal'
+import type { Transaction } from './models/finance'
 import { CalendarPage } from './pages/CalendarPage'
 import { HomePage } from './pages/HomePage'
 import { MorePage } from './pages/MorePage'
@@ -19,31 +20,129 @@ function shortcutPayload(url: string) {
     const category = parsed.searchParams.get('category') ?? 'other'
     if (!amount) return null
     return { amount, description, category }
-  } catch { return null }
+  } catch {
+    return null
+  }
 }
 
 export default function App() {
   const finance = useFinance()
   const [tab, setTab] = useState<Tab>('home')
-  const [addOpen, setAddOpen] = useState(false)
+  const [isModalOpen, setIsModalOpen] = useState(false)
+  const [selectedTx, setSelectedTx] = useState<Transaction | null>(null)
 
   useEffect(() => {
     const listener = CapacitorApp.addListener('appUrlOpen', ({ url }) => {
       const payload = shortcutPayload(url)
       if (!payload) return
-      finance.addTransaction({ type: 'expense', amount: payload.amount, description: payload.description, categoryId: payload.category, accountId: 'daily', date: new Date().toISOString() })
+      finance.addTransaction({
+        type: 'expense',
+        amount: payload.amount,
+        description: payload.description,
+        categoryId: payload.category,
+        accountId: 'daily',
+        date: new Date().toISOString(),
+      })
       setTab('home')
     })
-    return () => { void listener.then(h => h.remove()) }
+    return () => {
+      void listener.then((h) => h.remove())
+    }
   }, [finance])
 
-  const pages = {
-    home: <HomePage finance={finance} onAdd={() => setAddOpen(true)} />,
-    movements: <MovementsPage finance={finance} onAdd={() => setAddOpen(true)} />,
-    calendar: <CalendarPage finance={finance} />,
-    savings: <SavingsPage finance={finance} />,
-    more: <MorePage finance={finance} />,
+  const handleOpenAdd = () => {
+    setSelectedTx(null)
+    setIsModalOpen(true)
   }
 
-  return <div className="app-shell">{pages[tab]}<nav className="bottom-nav"><button className={tab==='home'?'active':''} onClick={()=>setTab('home')}><span>⌂</span>Inicio</button><button className={tab==='movements'?'active':''} onClick={()=>setTab('movements')}><span>≡</span>Movimientos</button><button className={tab==='calendar'?'active':''} onClick={()=>setTab('calendar')}><span>□</span>Calendario</button><button className={tab==='savings'?'active':''} onClick={()=>setTab('savings')}><span>◇</span>Ahorro</button><button className={tab==='more'?'active':''} onClick={()=>setTab('more')}><span>•••</span>Más</button></nav><AddTransactionModal open={addOpen} onClose={()=>setAddOpen(false)} accounts={finance.accounts} categories={finance.categories} onAdd={finance.addTransaction} /></div>
+  const handleSelectTransaction = (tx: Transaction) => {
+    setSelectedTx(tx)
+    setIsModalOpen(true)
+  }
+
+  const handleCloseModal = () => {
+    setIsModalOpen(false)
+    setSelectedTx(null)
+  }
+
+  return (
+    <div className="app-shell">
+      {tab === 'home' && (
+        <HomePage
+          finance={finance}
+          onAdd={handleOpenAdd}
+          onSelectTransaction={handleSelectTransaction}
+        />
+      )}
+      {tab === 'movements' && (
+        <MovementsPage
+          finance={finance}
+          onAdd={handleOpenAdd}
+          onSelectTransaction={handleSelectTransaction}
+        />
+      )}
+      {tab === 'calendar' && (
+        <CalendarPage
+          finance={finance}
+          onSelectTransaction={handleSelectTransaction}
+        />
+      )}
+      {tab === 'savings' && <SavingsPage finance={finance} />}
+      {tab === 'more' && <MorePage finance={finance} />}
+
+      <nav className="bottom-nav">
+        <button
+          type="button"
+          className={tab === 'home' ? 'active' : ''}
+          onClick={() => setTab('home')}
+        >
+          <span className="nav-icon">⌂</span>
+          <span className="nav-label">Inicio</span>
+        </button>
+        <button
+          type="button"
+          className={tab === 'movements' ? 'active' : ''}
+          onClick={() => setTab('movements')}
+        >
+          <span className="nav-icon">≡</span>
+          <span className="nav-label">Movimientos</span>
+        </button>
+        <button
+          type="button"
+          className={tab === 'calendar' ? 'active' : ''}
+          onClick={() => setTab('calendar')}
+        >
+          <span className="nav-icon">□</span>
+          <span className="nav-label">Calendario</span>
+        </button>
+        <button
+          type="button"
+          className={tab === 'savings' ? 'active' : ''}
+          onClick={() => setTab('savings')}
+        >
+          <span className="nav-icon">◇</span>
+          <span className="nav-label">Ahorro</span>
+        </button>
+        <button
+          type="button"
+          className={tab === 'more' ? 'active' : ''}
+          onClick={() => setTab('more')}
+        >
+          <span className="nav-icon">•••</span>
+          <span className="nav-label">Más</span>
+        </button>
+      </nav>
+
+      <AddTransactionModal
+        open={isModalOpen}
+        onClose={handleCloseModal}
+        accounts={finance.accounts}
+        categories={finance.categories}
+        initialTransaction={selectedTx}
+        onAdd={finance.addTransaction}
+        onUpdate={finance.updateTransaction}
+        onDelete={finance.deleteTransaction}
+      />
+    </div>
+  )
 }
