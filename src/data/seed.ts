@@ -33,8 +33,8 @@ export const transactions: Transaction[] = [
 ]
 
 export const goals: SavingsGoal[] = [
-  { id: 'g1', name: 'Japón', target: 2500, current: 740 },
-  { id: 'g2', name: 'Fondo de emergencia', target: 3000, current: 400 },
+  { id: 'g1', name: 'Japón', target: 2500, current: 740, icon: '🗾' },
+  { id: 'g2', name: 'Fondo de emergencia', target: 3000, current: 400, icon: '🛡️' },
 ]
 
 export const recurring: RecurringPayment[] = [

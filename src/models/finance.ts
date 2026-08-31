@@ -1,5 +1,6 @@
 export type AccountType = 'spending' | 'savings'
 export type TransactionType = 'expense' | 'income' | 'transfer'
+export type RecurringFrequency = 'weekly' | 'monthly' | 'yearly'
 
 export interface Account {
   id: string
@@ -26,6 +27,7 @@ export interface Transaction {
   description: string
   date: string
   note?: string
+  recurringPaymentId?: string
 }
 
 export type CreateTransactionInput = Omit<Transaction, 'id'>
@@ -35,9 +37,16 @@ export interface SavingsGoal {
   id: string
   name: string
   target: number
-  current: number
+  current: number // cantidad asignada actual del ahorro libre
   targetDate?: string
+  icon?: string
+  completed?: boolean
 }
+
+export type CreateSavingsGoalInput = Omit<SavingsGoal, 'id' | 'current'> & {
+  current?: number
+}
+export type UpdateSavingsGoalInput = Partial<Omit<SavingsGoal, 'id'>>
 
 export interface RecurringPayment {
   id: string
@@ -45,10 +54,13 @@ export interface RecurringPayment {
   amount: number
   categoryId: string
   accountId: string
-  frequency: 'weekly' | 'monthly' | 'yearly'
+  frequency: RecurringFrequency
   nextDate: string
   active: boolean
 }
+
+export type CreateRecurringPaymentInput = Omit<RecurringPayment, 'id'>
+export type UpdateRecurringPaymentInput = Partial<CreateRecurringPaymentInput>
 
 export interface Budget {
   id: string

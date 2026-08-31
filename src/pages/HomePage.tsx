@@ -26,7 +26,15 @@ export function HomePage({
       </header>
 
       <section className="hero-card">
-        <span className="hero-tag">Disponible real</span>
+        <div className="hero-top-row">
+          <span className="hero-tag">Disponible real</span>
+          {finance.totals.committedAmount > 0 && (
+            <span className="hero-committed-pill">
+              {money(finance.totals.committedAmount)} comprometidos
+            </span>
+          )}
+        </div>
+
         <strong className="hero-main-number">{money(finance.totals.realAvailable)}</strong>
 
         <div className="hero-kpis">
@@ -35,8 +43,13 @@ export function HomePage({
             <strong>{money(finance.totals.totalMoney)}</strong>
           </div>
           <div className="hero-kpi-item">
-            <span>Ahorrado</span>
+            <span>Ahorro total</span>
             <strong>{money(finance.totals.savingsBalance)}</strong>
+            {finance.totals.assignedSavings > 0 && (
+              <small className="hero-kpi-sub">
+                {money(finance.totals.assignedSavings)} asignados
+              </small>
+            )}
           </div>
           <div className="hero-kpi-item">
             <span>Gastado este mes</span>

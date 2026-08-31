@@ -1274,3 +1274,339 @@ button, input, select {
   letter-spacing: 0.2px;
 }
 
+/* ==========================================================================
+   Phase 3: Hero Header Indicators
+   ========================================================================== */
+
+.hero-top-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.hero-committed-pill {
+  background: rgba(255, 255, 255, 0.16);
+  color: #ffffff;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 3px 10px;
+  border-radius: var(--radius-pill);
+  letter-spacing: 0.2px;
+}
+
+.hero-kpi-sub {
+  font-size: 10px;
+  opacity: 0.65;
+  margin-top: 1px;
+}
+
+/* ==========================================================================
+   Phase 3: Savings Goals UI
+   ========================================================================== */
+
+.goals-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.goal-card {
+  background: var(--bg-card);
+  border-radius: var(--radius-lg);
+  padding: 18px 20px;
+  box-shadow: var(--shadow-sm);
+  display: flex;
+  flex-direction: column;
+}
+
+.goal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.goal-title-area {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.goal-emoji {
+  font-size: 24px;
+}
+
+.goal-title-area strong {
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.goal-deadline {
+  display: block;
+  font-size: 11px;
+  color: var(--text-dim);
+  margin-top: 2px;
+}
+
+.goal-badge {
+  font-size: 12px;
+  font-weight: 700;
+  background: #f0f2eb;
+  color: var(--accent-green);
+  padding: 4px 10px;
+  border-radius: var(--radius-pill);
+}
+
+.goal-badge.completed {
+  background: #e1efe5;
+  color: #2b7042;
+}
+
+.goal-amounts {
+  display: flex;
+  justify-content: space-between;
+  font-size: 13px;
+  color: var(--text-muted);
+  margin-top: 14px;
+}
+
+.goal-amounts b {
+  color: var(--text-main);
+}
+
+.goal-actions-row {
+  display: flex;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.goal-action-btn {
+  flex: 1;
+  border: 0;
+  border-radius: var(--radius-sm);
+  padding: 9px 12px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.goal-action-btn.primary {
+  background: var(--accent-dark);
+  color: #ffffff;
+}
+
+.goal-action-btn.primary:active {
+  background: var(--accent-dark-hover);
+}
+
+.goal-action-btn.secondary {
+  background: #ebebe6;
+  color: var(--text-main);
+}
+
+.emoji-picker-row {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding: 4px 0;
+}
+
+.emoji-btn {
+  border: 1px solid var(--border-strong);
+  background: var(--bg-card);
+  border-radius: var(--radius-sm);
+  width: 38px;
+  height: 38px;
+  font-size: 18px;
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+}
+
+.emoji-btn.selected {
+  border-color: var(--accent-dark);
+  background: #ebebe5;
+}
+
+.info-badge-row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  background: #f3f3ee;
+  border-radius: var(--radius-sm);
+  padding: 10px 14px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.info-badge-row b {
+  color: var(--text-main);
+}
+
+.form-error-callout {
+  background: #fdf2f2;
+  border: 1px solid #f9caca;
+  color: var(--accent-red);
+  font-size: 12px;
+  font-weight: 600;
+  border-radius: var(--radius-sm);
+  padding: 10px 12px;
+  margin-top: 10px;
+}
+
+/* ==========================================================================
+   Phase 3: Recurring Payments UI
+   ========================================================================== */
+
+.recurring-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.recurring-card {
+  background: var(--bg-card);
+  border-radius: var(--radius-md);
+  padding: 14px 16px;
+  box-shadow: var(--shadow-sm);
+  transition: opacity 0.15s ease;
+}
+
+.recurring-card.inactive {
+  opacity: 0.55;
+}
+
+.recurring-main-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.recurring-info {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  cursor: pointer;
+}
+
+.recurring-info strong {
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.recurring-info span {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.recurring-next-date {
+  font-size: 11px;
+  color: var(--text-dim);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 2px;
+}
+
+.badge-status {
+  font-size: 9px;
+  font-weight: 700;
+  padding: 1px 6px;
+  border-radius: 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+
+.badge-status.pending {
+  background: #feeceb;
+  color: var(--accent-red);
+}
+
+.badge-status.paid {
+  background: #eef6f0;
+  color: var(--accent-green);
+}
+
+.recurring-end-box {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 8px;
+}
+
+/* Switch toggle */
+.toggle-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 6px 0;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.switch {
+  position: relative;
+  display: inline-block;
+  width: 44px;
+  height: 24px;
+}
+
+.switch.mini {
+  width: 36px;
+  height: 20px;
+}
+
+.switch input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.slider {
+  position: absolute;
+  cursor: pointer;
+  inset: 0;
+  background-color: #ccc;
+  transition: 0.2s;
+}
+
+.slider:before {
+  position: absolute;
+  content: "";
+  height: 18px;
+  width: 18px;
+  left: 3px;
+  bottom: 3px;
+  background-color: white;
+  transition: 0.2s;
+}
+
+.switch.mini .slider:before {
+  height: 14px;
+  width: 14px;
+  left: 3px;
+  bottom: 3px;
+}
+
+input:checked + .slider {
+  background-color: var(--accent-dark);
+}
+
+input:checked + .slider:before {
+  transform: translateX(20px);
+}
+
+.switch.mini input:checked + .slider:before {
+  transform: translateX(16px);
+}
+
+.slider.round {
+  border-radius: 24px;
+}
+
+.slider.round:before {
+  border-radius: 50%;
+}
+
+

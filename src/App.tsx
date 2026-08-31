@@ -88,7 +88,9 @@ export default function App() {
         />
       )}
       {tab === 'savings' && <SavingsPage finance={finance} />}
-      {tab === 'more' && <MorePage finance={finance} />}
+      {tab === 'more' && (
+        <MorePage finance={finance} onNavigateToSavings={() => setTab('savings')} />
+      )}
 
       <nav className="bottom-nav">
         <button
