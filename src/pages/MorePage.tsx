@@ -2,7 +2,9 @@ import { useState } from 'react'
 import type { ReturnTypeFinance } from '../types'
 import { money } from '../utils/money'
 import { AppIcon } from '../ui/icons'
+import type { User } from '@supabase/supabase-js'
 import { BackupPage } from './BackupPage'
+import { CloudSettingsPage } from './CloudSettingsPage'
 import { AccountsPage } from './AccountsPage'
 import { BudgetsPage } from './BudgetsPage'
 import { PlanFinancialPage } from './PlanFinancialPage'
@@ -10,18 +12,34 @@ import { RecurringPaymentsPage } from './RecurringPaymentsPage'
 import { SettingsPage } from './SettingsPage'
 import { StatisticsPage } from './StatisticsPage'
 
-type MoreSubView = 'menu' | 'accounts' | 'settings' | 'recurring' | 'budgets' | 'statistics' | 'plan' | 'backup'
+type MoreSubView = 'menu' | 'accounts' | 'settings' | 'recurring' | 'budgets' | 'statistics' | 'plan' | 'backup' | 'cloud'
 
 export function MorePage({
   finance,
+  user,
   onNavigateToSavings,
   onToast,
+  onSignOut,
 }: {
   finance: ReturnTypeFinance
+  user?: User | null
   onNavigateToSavings?: () => void
   onToast?: (message: string, type?: 'success' | 'error') => void
+  onSignOut?: () => void
 }) {
   const [subView, setSubView] = useState<MoreSubView>('menu')
+
+  if (subView === 'cloud') {
+    return (
+      <CloudSettingsPage
+        finance={finance}
+        user={user ?? null}
+        onBack={() => setSubView('menu')}
+        onToast={onToast ?? (() => {})}
+        onSignOut={onSignOut ?? (() => {})}
+      />
+    )
+  }
 
   if (subView === 'backup') {
     return (
@@ -189,6 +207,19 @@ export function MorePage({
           <div>
             <strong>Copias de seguridad</strong>
             <small>Exportar, importar y restaurar en JSON seguro</small>
+          </div>
+          <b className="chevron">
+            <AppIcon name="chevron-right" size={16} />
+          </b>
+        </button>
+
+        <button type="button" onClick={() => setSubView('cloud')}>
+          <span className="menu-icon">
+            <AppIcon name="cloud" size={18} />
+          </span>
+          <div>
+            <strong>Nube y Atajo iPhone</strong>
+            <small>Sincronización Supabase y tokens de Atajos</small>
           </div>
           <b className="chevron">
             <AppIcon name="chevron-right" size={16} />

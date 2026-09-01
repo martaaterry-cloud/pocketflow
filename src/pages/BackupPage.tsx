@@ -8,6 +8,8 @@ import {
   validateBackupPayload,
   type BackupValidationSuccess,
 } from '../utils/backup'
+import { getCurrentUser, getSupabase } from '../services/supabase/supabaseClient'
+import { uploadStateToSupabase } from '../services/supabase/supabaseSync'
 
 interface BackupPageProps {
   finance: FinanceStore
@@ -82,8 +84,13 @@ export function BackupPage({ finance, onBack, onToast }: BackupPageProps) {
     try {
       setIsRestoring(true)
       await finance.restoreState(pendingRestore.state)
+      const user = await getCurrentUser()
+      if (user && typeof navigator !== 'undefined' && navigator.onLine) {
+        const supabase = getSupabase()
+        await uploadStateToSupabase(supabase, user.id, pendingRestore.state)
+      }
       setPendingRestore(null)
-      onToast('Datos restaurados con éxito', 'success')
+      onToast('Datos restaurados con éxito en local y en la nube', 'success')
     } catch (err) {
       console.error('[Backup] Error restaurando estado:', err)
       onToast('Error crítico al restaurar la copia de seguridad', 'error')

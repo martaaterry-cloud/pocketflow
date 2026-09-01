@@ -2427,3 +2427,268 @@ input:checked + .slider:before {
   opacity: 0.9;
 }
 
+/* ==========================================================================
+   Login Page
+   ========================================================================== */
+
+.login-container {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  background: var(--bg-main);
+}
+
+.login-card {
+  width: min(400px, 100%);
+  background: #ffffff;
+  border-radius: 24px;
+  padding: 32px 24px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.05);
+  border: 1px solid var(--border-light);
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.login-header {
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+
+.login-logo {
+  border-radius: 16px;
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.12);
+  margin-bottom: 4px;
+}
+
+.login-header h2 {
+  font-size: 22px;
+  font-weight: 700;
+  margin: 0;
+  color: var(--text-dark);
+}
+
+.login-header .subtitle {
+  font-size: 13px;
+  color: var(--text-muted);
+  margin: 0;
+  line-height: 1.4;
+}
+
+.login-form {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.login-error-banner {
+  background: #fff5f5;
+  border: 1px solid #fed7d7;
+  color: #c53030;
+  padding: 10px 14px;
+  border-radius: 10px;
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.login-btn {
+  margin-top: 6px;
+  padding: 13px 18px;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.login-footer {
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+/* ==========================================================================
+   Cloud Settings Page
+   ========================================================================== */
+
+.cloud-settings-page {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.cloud-status-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  background: #ffffff;
+  padding: 16px 18px;
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--border-light);
+}
+
+.status-indicator-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #cbd5e0;
+  flex-shrink: 0;
+}
+
+.status-indicator-dot.online {
+  background: #38a169;
+  box-shadow: 0 0 0 3px rgba(56, 161, 105, 0.2);
+}
+
+.status-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+}
+
+.status-info .label {
+  font-size: 11px;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.status-info .value {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-dark);
+}
+
+.cloud-action-card {
+  background: #ffffff;
+  padding: 18px;
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--border-light);
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.card-title-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+}
+
+.action-icon.shortcut-icon {
+  background: #fef5e7;
+  color: #dd6b20;
+}
+
+.action-icon.sync-icon {
+  background: #edf6f0;
+  color: #2e7d48;
+}
+
+.code-box {
+  background: var(--bg-soft);
+  border-radius: 10px;
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  border: 1px solid var(--border-light);
+}
+
+.code-label {
+  font-size: 11px;
+  color: var(--text-muted);
+  font-weight: 500;
+}
+
+.code-value-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.code-value-row code {
+  font-family: monospace;
+  font-size: 12px;
+  word-break: break-all;
+  color: var(--text-dark);
+}
+
+.new-token-banner {
+  background: #f0fdf4;
+  border: 1px solid #bbf7d0;
+  border-radius: 12px;
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.new-token-banner .banner-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: #166534;
+  font-size: 13px;
+}
+
+.new-token-banner p {
+  font-size: 12px;
+  color: #166534;
+  margin: 0;
+  line-height: 1.4;
+}
+
+.token-list-section h4 {
+  font-size: 13px;
+  font-weight: 600;
+  margin: 0 0 8px;
+  color: var(--text-dark);
+}
+
+.tokens-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.token-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 12px;
+  background: var(--bg-soft);
+  border-radius: 8px;
+}
+
+.token-row strong {
+  font-size: 13px;
+  display: block;
+}
+
+.token-row small {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.btn-outline-danger {
+  background: transparent;
+  color: #c53030;
+  border: 1px solid #fed7d7;
+  border-radius: 6px;
+  padding: 4px 8px;
+  font-size: 12px;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.btn-outline-danger:hover {
+  background: #fff5f5;
+}
+
+

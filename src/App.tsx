@@ -1,15 +1,20 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { App as CapacitorApp } from '@capacitor/app'
+import type { User } from '@supabase/supabase-js'
 import { AddTransactionModal } from './components/AddTransactionModal'
 import type { Transaction } from './models/finance'
 import { CalendarPage } from './pages/CalendarPage'
 import { HomePage } from './pages/HomePage'
+import { LoginPage } from './pages/LoginPage'
 import { MorePage } from './pages/MorePage'
 import { MovementsPage } from './pages/MovementsPage'
 import { SavingsPage } from './pages/SavingsPage'
 import { AppIcon } from './ui/icons'
 import { useFinance } from './store/useFinance'
 import { cleanUrlQueryParams, createDeepLinkDeduplicator, parseShortcutUrl } from './utils/deepLink'
+import { getSupabase } from './services/supabase/supabaseClient'
+import { fetchRemoteState, uploadStateToSupabase } from './services/supabase/supabaseSync'
+import { flushOfflineQueue } from './services/supabase/offlineQueue'
 
 type Tab = 'home' | 'movements' | 'calendar' | 'savings' | 'more'
 
@@ -20,12 +25,112 @@ export default function App() {
   const [selectedTx, setSelectedTx] = useState<Transaction | null>(null)
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null)
 
+  // Autenticación Supabase
+  const [user, setUser] = useState<User | null>(null)
+  const [authChecked, setAuthChecked] = useState(false)
+  const isInitialSyncDoneRef = useRef(false)
+  const prevFullStateRef = useRef<string>('')
+
   const deduplicatorRef = useRef(createDeepLinkDeduplicator(2500))
 
   const showToast = (message: string, type: 'success' | 'error' = 'success') => {
     setToast({ message, type })
     setTimeout(() => setToast(null), 2500)
   }
+
+  // 1. Verificar sesión persistente de Supabase al arrancar
+  useEffect(() => {
+    const supabase = getSupabase()
+
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setUser(session?.user ?? null)
+      setAuthChecked(true)
+    })
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setUser(session?.user ?? null)
+      setAuthChecked(true)
+    })
+
+    return () => {
+      subscription.unsubscribe()
+    }
+  }, [])
+
+  // 2. Sincronización inicial cuando el usuario está logueado
+  useEffect(() => {
+    if (!user || isInitialSyncDoneRef.current) return
+    const supabase = getSupabase()
+
+    const initialSync = async () => {
+      try {
+        await flushOfflineQueue(supabase, user.id)
+        const remoteState = await fetchRemoteState(supabase, user.id)
+        if (remoteState) {
+          await finance.restoreState(remoteState)
+        } else {
+          // Primera subida: migrar datos locales existentes a Supabase
+          const localState = finance.getFullState()
+          await uploadStateToSupabase(supabase, user.id, localState)
+        }
+        isInitialSyncDoneRef.current = true
+      } catch (err) {
+        console.warn('[Supabase] Error en sincronización inicial:', err)
+      }
+    }
+
+    void initialSync()
+  }, [user, finance])
+
+  // 3. Subir cambios locales a Supabase (debounced)
+  useEffect(() => {
+    if (!user || !isInitialSyncDoneRef.current) return
+    const currentState = finance.getFullState()
+    const currentStateJson = JSON.stringify(currentState)
+
+    if (prevFullStateRef.current === '') {
+      prevFullStateRef.current = currentStateJson
+      return
+    }
+    if (prevFullStateRef.current === currentStateJson) return
+    prevFullStateRef.current = currentStateJson
+
+    const timer = setTimeout(async () => {
+      if (typeof navigator !== 'undefined' && navigator.onLine) {
+        const supabase = getSupabase()
+        await uploadStateToSupabase(supabase, user.id, currentState)
+      }
+    }, 800)
+
+    return () => clearTimeout(timer)
+  }, [finance, user])
+
+  // 4. Sincronizar desde la nube al volver a primer plano (recupera gastos creados por el Atajo)
+  useEffect(() => {
+    if (!user) return
+
+    const pullRemoteChanges = async () => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'visible' && navigator.onLine) {
+        try {
+          const supabase = getSupabase()
+          const remote = await fetchRemoteState(supabase, user.id)
+          if (remote && remote.transactions.length !== finance.transactions.length) {
+            await finance.restoreState(remote)
+            showToast('Sincronizado con la nube')
+          }
+        } catch (err) {
+          console.warn('[Supabase] Error al comprobar cambios en primer plano:', err)
+        }
+      }
+    }
+
+    document.addEventListener('visibilitychange', pullRemoteChanges)
+    window.addEventListener('focus', pullRemoteChanges)
+    return () => {
+      document.removeEventListener('visibilitychange', pullRemoteChanges)
+      window.removeEventListener('focus', pullRemoteChanges)
+    }
+  }, [user, finance])
 
   const processIncomingUrl = useCallback(
     (rawUrl: string, isWebQuery = false) => {
@@ -97,6 +202,16 @@ export default function App() {
     setSelectedTx(null)
   }
 
+  // Si aún no se ha verificado la sesión, mostramos shell ligero sin parpadeo
+  if (!authChecked) {
+    return <div className="app-shell" />
+  }
+
+  // Si no hay sesión activa, mostramos la pantalla de login privado
+  if (!user) {
+    return <LoginPage onSuccess={() => setAuthChecked(false)} />
+  }
+
   return (
     <div className="app-shell">
       {tab === 'home' && (
@@ -123,8 +238,10 @@ export default function App() {
       {tab === 'more' && (
         <MorePage
           finance={finance}
+          user={user}
           onNavigateToSavings={() => setTab('savings')}
           onToast={showToast}
+          onSignOut={() => setUser(null)}
         />
       )}
 

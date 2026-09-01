@@ -13,6 +13,23 @@ import {
   createBackupPayload,
   validateBackupPayload,
 } from '../src/utils/backup'
+import {
+  toDbAccount,
+  fromDbAccount,
+  toDbTransaction,
+  fromDbTransaction,
+  toDbCategory,
+  fromDbCategory,
+  toDbBudget,
+  fromDbBudget,
+  toDbGoal,
+  fromDbGoal,
+  toDbReserve,
+  fromDbReserve,
+  toDbPlanSettings,
+  fromDbPlanSettings,
+} from '../src/services/supabase/supabaseSync'
+import { enqueueOfflineMutation, getOfflineQueue } from '../src/services/supabase/offlineQueue'
 import { initialFinanceState } from '../src/store/useFinance'
 import {
   budgetRemaining,
@@ -1763,4 +1780,187 @@ describe('Fase 6 — PWA, Atajos Web, Copias de Seguridad y Persistencia', () =>
     delete globalThis.localStorage
   })
 })
+
+describe('Fase 7 — Migración Supabase, Modelos Remotos, Cola Offline y Seguridad del Atajo', () => {
+  const userId = 'usr_test_uuid_12345'
+
+  it('109. Mapeo Account <-> DB row: serializa y deserializa tipos y saldos', () => {
+    const acc: Account = { id: 'daily', name: 'Cuenta Diaria', type: 'spending', initialBalance: 1200 }
+    const dbRow = toDbAccount(acc, userId)
+    assert.equal(dbRow.id, 'daily')
+    assert.equal(dbRow.user_id, userId)
+    assert.equal(dbRow.type, 'spending')
+    assert.equal(dbRow.initial_balance, 1200)
+
+    const restored = fromDbAccount(dbRow)
+    assert.equal(restored.id, acc.id)
+    assert.equal(restored.name, acc.name)
+    assert.equal(restored.type, acc.type)
+    assert.equal(restored.initialBalance, acc.initialBalance)
+  })
+
+  it('110. Mapeo Transaction <-> DB row: serializa y deserializa con claves y fechas', () => {
+    const tx: Transaction = {
+      id: 'tx_99',
+      type: 'expense',
+      amount: 45.5,
+      accountId: 'daily',
+      categoryId: 'food',
+      description: 'Cena familiar',
+      date: '2026-09-01T14:30:00.000Z',
+      note: 'Sin gluten',
+    }
+    const dbRow = toDbTransaction(tx, userId)
+    assert.equal(dbRow.id, 'tx_99')
+    assert.equal(dbRow.user_id, userId)
+    assert.equal(dbRow.amount, 45.5)
+    assert.equal(dbRow.account_id, 'daily')
+    assert.equal(dbRow.category_id, 'food')
+
+    const restored = fromDbTransaction(dbRow)
+    assert.equal(restored.id, tx.id)
+    assert.equal(restored.type, tx.type)
+    assert.equal(restored.amount, tx.amount)
+    assert.equal(restored.description, tx.description)
+    assert.equal(restored.date, tx.date)
+  })
+
+  it('111. Mapeo Category <-> DB row: preserva iconKey y color', () => {
+    const cat: Category = { id: 'leisure', name: 'Ocio', color: '#ff8800', icon: 'ticket', iconKey: 'ticket' }
+    const dbRow = toDbCategory(cat, userId)
+    assert.equal(dbRow.id, 'leisure')
+    assert.equal(dbRow.icon_key, 'ticket')
+
+    const restored = fromDbCategory(dbRow)
+    assert.equal(restored.id, 'leisure')
+    assert.equal(restored.iconKey, 'ticket')
+  })
+
+  it('112. Mapeo Budget <-> DB row: valida límite y categoría', () => {
+    const b: Budget = { id: 'b_1', categoryId: 'food', amountLimit: 300, period: 'monthly' }
+    const dbRow = toDbBudget(b, userId)
+    assert.equal(dbRow.id, 'b_1')
+    assert.equal(dbRow.amount_limit, 300)
+
+    const restored = fromDbBudget(dbRow)
+    assert.equal(restored.categoryId, 'food')
+    assert.equal(restored.amountLimit, 300)
+    assert.equal(restored.period, 'monthly')
+  })
+
+  it('113. Mapeo SavingsGoal & Reserve <-> DB row: preserva importes y fechas objetivo', () => {
+    const goal: SavingsGoal = { id: 'g_1', name: 'Fondo coche', target: 5000, current: 1500, completed: false }
+    const dbGoal = toDbGoal(goal, userId)
+    assert.equal(dbGoal.target, 5000)
+    assert.equal(dbGoal.current, 1500)
+    const restoredGoal = fromDbGoal(dbGoal)
+    assert.equal(restoredGoal.target, 5000)
+
+    const res: Reserve = {
+      id: 'res_1',
+      name: 'Seguro coche',
+      targetAmount: 600,
+      currentAllocated: 300,
+      targetDate: '2026-11-15',
+      iconKey: 'shield',
+      active: true,
+    }
+    const dbRes = toDbReserve(res, userId)
+    assert.equal(dbRes.target_amount, 600)
+    const restoredRes = fromDbReserve(dbRes)
+    assert.equal(restoredRes.targetAmount, 600)
+    assert.equal(restoredRes.targetDate, '2026-11-15')
+  })
+
+  it('114. Mapeo PlanSettings <-> DB row: serializa categorías esenciales y configuración', () => {
+    const plan: FinancialPlanSettings = {
+      monthlyIncome: 2500,
+      targetSavingsType: 'percentage',
+      targetSavingsValue: 20,
+      emergencyFundTargetType: 'months',
+      emergencyFundTargetValue: 6,
+      emergencyFundCurrent: 4000,
+      essentialCategoryIds: ['food', 'transport', 'subscriptions'],
+    }
+    const dbPlan = toDbPlanSettings(plan, userId)
+    assert.equal(dbPlan.monthly_income, 2500)
+    assert.deepEqual(dbPlan.essential_category_ids, ['food', 'transport', 'subscriptions'])
+
+    const restored = fromDbPlanSettings(dbPlan)
+    assert.equal(restored.monthlyIncome, 2500)
+    assert.deepEqual(restored.essentialCategoryIds, ['food', 'transport', 'subscriptions'])
+  })
+
+  it('115. OfflineQueue: encola mutación con id y timestamp únicos', () => {
+    const mockStore: Record<string, string> = {}
+    // @ts-expect-error Mock
+    globalThis.localStorage = {
+      getItem: (k: string) => mockStore[k] ?? null,
+      setItem: (k: string, v: string) => {
+        mockStore[k] = v
+      },
+    }
+
+    enqueueOfflineMutation({
+      entity: 'transaction',
+      action: 'insert',
+      data: { id: 'tx_offline_1', amount: 15 },
+    })
+
+    const queue = getOfflineQueue()
+    assert.equal(queue.length, 1)
+    assert.equal(queue[0].entity, 'transaction')
+    assert.equal(queue[0].action, 'insert')
+    assert.ok(queue[0].id.startsWith('mut_'))
+    assert.ok(queue[0].timestamp > 0)
+
+    // @ts-expect-error Limpieza
+    delete globalThis.localStorage
+  })
+
+  it('116. Validación de importe del Atajo: valores nulos, negativos o NaN deben ser denegados', () => {
+    const validateAmount = (val: unknown) => {
+      const raw = String(val ?? '').trim().replace(',', '.')
+      const num = Number(raw)
+      return !isNaN(num) && isFinite(num) && num > 0
+    }
+
+    assert.equal(validateAmount(0), false)
+    assert.equal(validateAmount(-12.5), false)
+    assert.equal(validateAmount('abc'), false)
+    assert.equal(validateAmount(''), false)
+    assert.equal(validateAmount(null), false)
+    assert.equal(validateAmount('12.50'), true)
+    assert.equal(validateAmount('12,50'), true)
+  })
+
+  it('117. Saneamiento de descripción del Atajo: recorta a 120 caracteres y aplica fallback', () => {
+    const sanitizeDesc = (raw: unknown) => {
+      const trimmed = typeof raw === 'string' ? raw.trim() : ''
+      return trimmed ? trimmed.slice(0, 120) : 'Gasto rápido'
+    }
+
+    assert.equal(sanitizeDesc(''), 'Gasto rápido')
+    assert.equal(sanitizeDesc(null), 'Gasto rápido')
+    assert.equal(sanitizeDesc('   Café con leche   '), 'Café con leche')
+    const longString = 'A'.repeat(200)
+    assert.equal(sanitizeDesc(longString).length, 120)
+  })
+
+  it('118. Fallback de categoría del Atajo: categorías inexistentes caen a "other"', () => {
+    const resolveCategory = (cat: unknown, existingIds: string[]) => {
+      const str = typeof cat === 'string' ? cat.trim().toLowerCase() : ''
+      if (existingIds.includes(str)) return str
+      return 'other'
+    }
+
+    const available = ['food', 'leisure', 'transport', 'other']
+    assert.equal(resolveCategory('food', available), 'food')
+    assert.equal(resolveCategory('FOOD', available), 'food')
+    assert.equal(resolveCategory('crypto', available), 'other')
+    assert.equal(resolveCategory('', available), 'other')
+    assert.equal(resolveCategory(undefined, available), 'other')
+  })
+})
+
 

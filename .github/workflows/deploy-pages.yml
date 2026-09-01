@@ -38,6 +38,9 @@ jobs:
         run: npm test
 
       - name: Build project
+        env:
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL || vars.VITE_SUPABASE_URL || 'https://xcarqzopfaozxugfhslo.supabase.co' }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY || vars.VITE_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InhjYXJxem9wZmFvenh1Z2Zoc2xvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODgyNTUyMjUsImV4cCI6MjEwMzgzMTIyNX0.-P30LrQ_-sE0rFtomrRGxdHXX9QJ2JPsoqc6oklTOUU' }}
         run: npm run build
 
       - name: Setup Pages

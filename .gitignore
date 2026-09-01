@@ -11,11 +11,14 @@ node_modules
 dist
 dist-ssr
 *.local
+.env
+.env.*
 *.tsbuildinfo
 capacitor.config.js
 capacitor.config.d.ts
 vite.config.js
 vite.config.d.ts
+supabase/.temp
 
 # Editor directories and files
 .vscode/*
