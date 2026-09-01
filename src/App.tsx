@@ -18,7 +18,7 @@ import { flushOfflineQueue, getPendingMutationsCount } from './services/supabase
 import { initRealtimeSubscription, unsubscribeRealtime } from './services/supabase/supabaseRealtime'
 
 type Tab = 'home' | 'movements' | 'calendar' | 'savings' | 'more'
-type SyncStatus = 'synced' | 'syncing' | 'offline' | 'error'
+type SyncStatus = 'connecting' | 'syncing' | 'synced' | 'offline' | 'error'
 
 export default function App() {
   const finance = useFinance()
@@ -30,8 +30,9 @@ export default function App() {
   // Autenticación Supabase
   const [user, setUser] = useState<User | null>(null)
   const [authChecked, setAuthChecked] = useState(false)
-  const [syncStatus, setSyncStatus] = useState<SyncStatus>('synced')
+  const [syncStatus, setSyncStatus] = useState<SyncStatus>('connecting')
   const [pendingCount, setPendingCount] = useState<number>(0)
+  const [isRealtimeConnected, setIsRealtimeConnected] = useState(false)
   const financeRef = useRef(finance)
   financeRef.current = finance
 
@@ -110,7 +111,8 @@ export default function App() {
         }
 
         isInitialSyncDoneRef.current = true
-        setSyncStatus('synced')
+        // Solo marcar Sincronizado si Realtime ya está SUBSCRIBED
+        setSyncStatus(isRealtimeConnected ? 'synced' : 'connecting')
       } catch (err) {
         console.warn('[Supabase] Error en sincronización inicial:', err)
         setSyncStatus(typeof navigator !== 'undefined' && !navigator.onLine ? 'offline' : 'error')
@@ -120,7 +122,7 @@ export default function App() {
     }
 
     void runInitialSync()
-  }, [user?.id, authChecked, finance.storageHydrated])
+  }, [user?.id, authChecked, finance.storageHydrated, isRealtimeConnected])
 
   // 4. Suscripción Realtime PERMANENTE durante toda la sesión del usuario
   // DEPENDENCIAS ESTABLES: [user?.id]. Jamás se destruye por cambios de estado de finance!
@@ -130,6 +132,19 @@ export default function App() {
     const userId = user.id
 
     initRealtimeSubscription(supabase, userId, {
+      onStatusChange: (status) => {
+        if (status === 'SUBSCRIBED') {
+          setIsRealtimeConnected(true)
+          if (isInitialSyncDoneRef.current && (typeof navigator === 'undefined' || navigator.onLine)) {
+            setSyncStatus('synced')
+          }
+        } else if (status === 'CLOSED' || status === 'CHANNEL_ERROR') {
+          setIsRealtimeConnected(false)
+          if (typeof navigator !== 'undefined' && navigator.onLine) {
+            setSyncStatus('connecting')
+          }
+        }
+      },
       onTransactionInsert: (tx) => {
         financeRef.current.applyRemoteInsertTransaction(tx)
         showToast(`+${tx.amount.toFixed(2)} € (${tx.description})`)
@@ -181,6 +196,7 @@ export default function App() {
     return () => {
       // Este cleanup SOLO se ejecuta cuando el usuario cierra sesión, cambia de usuario o se desmonta la App
       unsubscribeRealtime()
+      setIsRealtimeConnected(false)
     }
   }, [user?.id])
 
@@ -338,6 +354,8 @@ export default function App() {
             ? 'Sincronizado con Supabase'
             : syncStatus === 'syncing'
             ? 'Sincronizando...'
+            : syncStatus === 'connecting'
+            ? 'Conectando con Supabase Realtime...'
             : syncStatus === 'offline'
             ? `Sin conexión (${pendingCount} operaciones pendientes)`
             : 'Error de sincronización'
@@ -347,6 +365,7 @@ export default function App() {
         <span>
           {syncStatus === 'synced' && 'Sincronizado'}
           {syncStatus === 'syncing' && 'Sincronizando…'}
+          {syncStatus === 'connecting' && 'Conectando…'}
           {syncStatus === 'offline' && (pendingCount > 0 ? `${pendingCount} offline` : 'Sin conexión')}
           {syncStatus === 'error' && 'Error sinc'}
         </span>

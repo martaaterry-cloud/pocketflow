@@ -2729,6 +2729,11 @@ input:checked + .slider:before {
   animation: syncPulse 1s infinite alternate;
 }
 
+.sync-badge.connecting .sync-dot {
+  background-color: #a855f7;
+  animation: syncPulse 0.8s infinite alternate;
+}
+
 .sync-badge.offline .sync-dot {
   background-color: #eab308;
 }

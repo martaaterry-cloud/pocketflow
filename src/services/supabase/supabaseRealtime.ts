@@ -43,6 +43,7 @@ export interface RealtimeHandlers {
   onSpecialPeriodDelete: (periodId: string) => void
 
   onPlanSettingsUpdate: (ps: FinancialPlanSettings) => void
+  onStatusChange?: (status: string) => void
 }
 
 // Registro anti-echo: evita reprocesar mutaciones generadas en este mismo cliente
@@ -236,6 +237,7 @@ export function initRealtimeSubscription(
 
   channel.subscribe((status) => {
     currentStatus = status
+    handlers.onStatusChange?.(status)
     if (status === 'SUBSCRIBED') {
       console.log(`[Supabase Realtime] Canal suscrito para usuario ${userId}`)
     }

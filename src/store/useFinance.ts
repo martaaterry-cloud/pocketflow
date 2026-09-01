@@ -62,6 +62,13 @@ import {
   syncUpsertSpecialPeriod,
 } from '../services/supabase/supabaseSync'
 import {
+  logPerfMutationStart,
+  logPerfUiUpdated,
+  logPerfCloudConfirmed,
+  logPerfRealtimeReceived,
+  logPerfCacheApplied,
+} from '../utils/syncPerfTracker'
+import {
   selectAssignedSavings,
   selectCommittedAmount,
   selectFreeSavings,
@@ -177,15 +184,20 @@ export function useFinance(storage: StorageAdapter = defaultAppStorage) {
       data: unknown,
       remoteFn: (supabase: any, userId: string) => Promise<void>
     ) => {
+      logPerfMutationStart(entity, action, id)
       markLocalMutation(entity === 'transaction' ? 'transactions' : entity, id)
       if (!syncUserId) return
 
       if (typeof navigator !== 'undefined' && navigator.onLine) {
         const supabase = getSupabase()
-        remoteFn(supabase, syncUserId).catch((err) => {
-          console.warn(`[Sync] Fallo en ${action} ${entity}, encolando offline:`, err)
-          enqueueOfflineMutation({ entity, action, data })
-        })
+        remoteFn(supabase, syncUserId)
+          .then(() => {
+            logPerfCloudConfirmed(id)
+          })
+          .catch((err) => {
+            console.warn(`[Sync] Fallo en ${action} ${entity}, encolando offline:`, err)
+            enqueueOfflineMutation({ entity, action, data })
+          })
       } else {
         enqueueOfflineMutation({ entity, action, data })
       }
@@ -193,14 +205,31 @@ export function useFinance(storage: StorageAdapter = defaultAppStorage) {
     [syncUserId]
   )
 
-  const commit = useCallback(
-    (next: PersistedState) => {
-      setState(next)
-      storage.save(next).catch((err) => {
-        console.error('[Pocketflow] Error persistiendo estado financiero:', err)
+  const persistStateAsync = useCallback(
+    (next: PersistedState, correlationId?: string) => {
+      queueMicrotask(() => {
+        storage
+          .save(next)
+          .then(() => {
+            if (correlationId) logPerfCacheApplied(correlationId)
+          })
+          .catch((err) => {
+            console.error('[Pocketflow] Error persistiendo estado financiero:', err)
+          })
       })
     },
     [storage]
+  )
+
+  const commit = useCallback(
+    (next: PersistedState, correlationId?: string) => {
+      setState(next)
+      if (correlationId) {
+        logPerfUiUpdated(correlationId)
+      }
+      persistStateAsync(next, correlationId)
+    },
+    [persistStateAsync]
   )
 
   // Cuentas reconciliadas: los saldos son 100% derivados del histórico de transacciones
@@ -219,10 +248,13 @@ export function useFinance(storage: StorageAdapter = defaultAppStorage) {
         id: crypto.randomUUID(),
         amount: Number(input.amount),
       }
-      commit({
-        ...state,
-        transactions: [newTx, ...state.transactions],
-      })
+      commit(
+        {
+          ...state,
+          transactions: [newTx, ...state.transactions],
+        },
+        newTx.id
+      )
       dispatchSync('transaction', 'insert', newTx.id, newTx, (sb, uid) =>
         syncInsertTransaction(sb, uid, newTx)
       )
@@ -244,10 +276,13 @@ export function useFinance(storage: StorageAdapter = defaultAppStorage) {
       const nextTransactions = [...state.transactions]
       nextTransactions[existingIndex] = updatedTx
 
-      commit({
-        ...state,
-        transactions: nextTransactions,
-      })
+      commit(
+        {
+          ...state,
+          transactions: nextTransactions,
+        },
+        updatedTx.id
+      )
       dispatchSync('transaction', 'update', updatedTx.id, updatedTx, (sb, uid) =>
         syncUpdateTransaction(sb, uid, updatedTx)
       )
@@ -257,10 +292,13 @@ export function useFinance(storage: StorageAdapter = defaultAppStorage) {
 
   const deleteTransaction = useCallback(
     (id: string) => {
-      commit({
-        ...state,
-        transactions: state.transactions.filter((t) => t.id !== id),
-      })
+      commit(
+        {
+          ...state,
+          transactions: state.transactions.filter((t) => t.id !== id),
+        },
+        id
+      )
       dispatchSync('transaction', 'delete', id, { id }, (sb, uid) =>
         syncDeleteTransaction(sb, uid, id)
       )
@@ -994,43 +1032,49 @@ export function useFinance(storage: StorageAdapter = defaultAppStorage) {
 
   const applyRemoteInsertTransaction = useCallback(
     (tx: Transaction) => {
+      logPerfRealtimeReceived(tx.id)
       setState((prev) => {
         if (prev.transactions.some((t) => t.id === tx.id)) return prev
         const next = { ...prev, transactions: [tx, ...prev.transactions] }
-        storage.save(next).catch(console.error)
+        persistStateAsync(next, tx.id)
         return next
       })
+      logPerfUiUpdated(tx.id)
     },
-    [storage]
+    [persistStateAsync]
   )
 
   const applyRemoteUpdateTransaction = useCallback(
     (tx: Transaction) => {
+      logPerfRealtimeReceived(tx.id)
       setState((prev) => {
         const next = {
           ...prev,
           transactions: prev.transactions.map((t) => (t.id === tx.id ? tx : t)),
         }
-        storage.save(next).catch(console.error)
+        persistStateAsync(next, tx.id)
         return next
       })
+      logPerfUiUpdated(tx.id)
     },
-    [storage]
+    [persistStateAsync]
   )
 
   const applyRemoteDeleteTransaction = useCallback(
     (txId: string) => {
+      logPerfRealtimeReceived(txId)
       setState((prev) => {
         if (!prev.transactions.some((t) => t.id === txId)) return prev
         const next = {
           ...prev,
           transactions: prev.transactions.filter((t) => t.id !== txId),
         }
-        storage.save(next).catch(console.error)
+        persistStateAsync(next, txId)
         return next
       })
+      logPerfUiUpdated(txId)
     },
-    [storage]
+    [persistStateAsync]
   )
 
   const applyRemoteUpdateAccount = useCallback(
@@ -1040,11 +1084,11 @@ export function useFinance(storage: StorageAdapter = defaultAppStorage) {
           ...prev,
           accounts: prev.accounts.map((a) => (a.id === acc.id ? acc : a)),
         }
-        storage.save(next).catch(console.error)
+        persistStateAsync(next)
         return next
       })
     },
-    [storage]
+    [persistStateAsync]
   )
 
   const applyRemoteUpsertBudget = useCallback(
@@ -1055,11 +1099,11 @@ export function useFinance(storage: StorageAdapter = defaultAppStorage) {
           ...prev,
           budgets: exists ? prev.budgets.map((x) => (x.id === b.id ? b : x)) : [...prev.budgets, b],
         }
-        storage.save(next).catch(console.error)
+        persistStateAsync(next)
         return next
       })
     },
-    [storage]
+    [persistStateAsync]
   )
 
   const applyRemoteDeleteBudget = useCallback(
@@ -1069,11 +1113,11 @@ export function useFinance(storage: StorageAdapter = defaultAppStorage) {
           ...prev,
           budgets: prev.budgets.filter((b) => b.id !== budgetId),
         }
-        storage.save(next).catch(console.error)
+        persistStateAsync(next)
         return next
       })
     },
-    [storage]
+    [persistStateAsync]
   )
 
   const applyRemoteUpsertGoal = useCallback(
@@ -1084,11 +1128,11 @@ export function useFinance(storage: StorageAdapter = defaultAppStorage) {
           ...prev,
           goals: exists ? prev.goals.map((x) => (x.id === g.id ? g : x)) : [...prev.goals, g],
         }
-        storage.save(next).catch(console.error)
+        persistStateAsync(next)
         return next
       })
     },
-    [storage]
+    [persistStateAsync]
   )
 
   const applyRemoteDeleteGoal = useCallback(
@@ -1098,11 +1142,11 @@ export function useFinance(storage: StorageAdapter = defaultAppStorage) {
           ...prev,
           goals: prev.goals.filter((g) => g.id !== goalId),
         }
-        storage.save(next).catch(console.error)
+        persistStateAsync(next)
         return next
       })
     },
-    [storage]
+    [persistStateAsync]
   )
 
   const applyRemoteUpsertReserve = useCallback(
@@ -1113,11 +1157,11 @@ export function useFinance(storage: StorageAdapter = defaultAppStorage) {
           ...prev,
           reserves: exists ? prev.reserves.map((x) => (x.id === r.id ? r : x)) : [...prev.reserves, r],
         }
-        storage.save(next).catch(console.error)
+        persistStateAsync(next)
         return next
       })
     },
-    [storage]
+    [persistStateAsync]
   )
 
   const applyRemoteDeleteReserve = useCallback(
@@ -1127,11 +1171,11 @@ export function useFinance(storage: StorageAdapter = defaultAppStorage) {
           ...prev,
           reserves: prev.reserves.filter((r) => r.id !== reserveId),
         }
-        storage.save(next).catch(console.error)
+        persistStateAsync(next)
         return next
       })
     },
-    [storage]
+    [persistStateAsync]
   )
 
   const applyRemoteUpsertRecurring = useCallback(
@@ -1142,11 +1186,11 @@ export function useFinance(storage: StorageAdapter = defaultAppStorage) {
           ...prev,
           recurring: exists ? prev.recurring.map((x) => (x.id === rec.id ? rec : x)) : [...prev.recurring, rec],
         }
-        storage.save(next).catch(console.error)
+        persistStateAsync(next)
         return next
       })
     },
-    [storage]
+    [persistStateAsync]
   )
 
   const applyRemoteDeleteRecurring = useCallback(
@@ -1156,11 +1200,11 @@ export function useFinance(storage: StorageAdapter = defaultAppStorage) {
           ...prev,
           recurring: prev.recurring.filter((r) => r.id !== recId),
         }
-        storage.save(next).catch(console.error)
+        persistStateAsync(next)
         return next
       })
     },
-    [storage]
+    [persistStateAsync]
   )
 
   const applyRemoteUpsertSpecialPeriod = useCallback(
@@ -1173,11 +1217,11 @@ export function useFinance(storage: StorageAdapter = defaultAppStorage) {
             ? prev.specialPeriods.map((x) => (x.id === sp.id ? sp : x))
             : [...prev.specialPeriods, sp],
         }
-        storage.save(next).catch(console.error)
+        persistStateAsync(next)
         return next
       })
     },
-    [storage]
+    [persistStateAsync]
   )
 
   const applyRemoteDeleteSpecialPeriod = useCallback(
@@ -1187,22 +1231,22 @@ export function useFinance(storage: StorageAdapter = defaultAppStorage) {
           ...prev,
           specialPeriods: prev.specialPeriods.filter((p) => p.id !== periodId),
         }
-        storage.save(next).catch(console.error)
+        persistStateAsync(next)
         return next
       })
     },
-    [storage]
+    [persistStateAsync]
   )
 
   const applyRemoteUpdatePlanSettings = useCallback(
     (ps: FinancialPlanSettings) => {
       setState((prev) => {
         const next = { ...prev, planSettings: ps }
-        storage.save(next).catch(console.error)
+        persistStateAsync(next)
         return next
       })
     },
-    [storage]
+    [persistStateAsync]
   )
 
   const restoreState = useCallback(
