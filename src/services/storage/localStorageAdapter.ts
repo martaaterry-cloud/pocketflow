@@ -1,8 +1,6 @@
 import { resolveIconKey } from '../../ui/icons'
 import {
-  planSettings as defaultPlanSettings,
-  reserves as defaultReserves,
-  specialPeriods as defaultSpecialPeriods,
+  cleanPlanSettings,
 } from '../../data/seed'
 import type { PersistedState, StorageAdapter } from './storageAdapter'
 
@@ -22,7 +20,7 @@ export function migratePersistedState(parsed: Partial<PersistedState>): Persiste
     icon: resolveIconKey(g.icon, 'target'),
   }))
 
-  const reserves = (parsed.reserves ?? defaultReserves).map((r) => ({
+  const reserves = (parsed.reserves ?? []).map((r) => ({
     ...r,
     iconKey: resolveIconKey(r.iconKey, 'target'),
   }))
@@ -35,8 +33,8 @@ export function migratePersistedState(parsed: Partial<PersistedState>): Persiste
     categories,
     budgets: parsed.budgets ?? [],
     reserves,
-    specialPeriods: parsed.specialPeriods ?? defaultSpecialPeriods,
-    planSettings: parsed.planSettings ?? defaultPlanSettings,
+    specialPeriods: parsed.specialPeriods ?? [],
+    planSettings: parsed.planSettings ?? cleanPlanSettings,
     profile: parsed.profile ? { displayName: String(parsed.profile.displayName ?? '') } : { displayName: '' },
   }
 }

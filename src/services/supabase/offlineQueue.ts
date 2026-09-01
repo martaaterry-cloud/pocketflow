@@ -73,6 +73,44 @@ export function enqueueOfflineMutation(mutation: Omit<OfflineMutation, 'id' | 't
   saveOfflineQueue(queue)
 }
 
+export function isDemoMutation(item: OfflineMutation): boolean {
+  if (item.entity === 'transaction') {
+    const t = item.data as Partial<Transaction>
+    if (t?.id && /^t[1-7]$/.test(t.id)) return true
+    if (
+      t?.description === 'Mercadona' ||
+      t?.description === 'Gasolina' ||
+      t?.description === 'Cena' ||
+      t?.description === 'Spotify' ||
+      t?.description === 'Gimnasio' ||
+      t?.description === 'A ahorro' ||
+      t?.description === 'Ropa'
+    )
+      return true
+  }
+  if (item.entity === 'budget') {
+    const b = item.data as Partial<Budget>
+    if (b?.id && /^b[1-3]$/.test(b.id)) return true
+  }
+  if (item.entity === 'goal') {
+    const g = item.data as Partial<SavingsGoal>
+    if (g?.id && /^g[1-2]$/.test(g.id)) return true
+  }
+  if (item.entity === 'reserve') {
+    const r = item.data as Partial<Reserve>
+    if (r?.id && /^res[1-2]$/.test(r.id)) return true
+  }
+  if (item.entity === 'recurring') {
+    const rec = item.data as Partial<RecurringPayment>
+    if (rec?.id && /^r[1-3]$/.test(rec.id)) return true
+  }
+  if (item.entity === 'specialPeriod') {
+    const sp = item.data as Partial<SpecialPeriod>
+    if (sp?.id && /^sp[1-2]$/.test(sp.id)) return true
+  }
+  return false
+}
+
 export async function flushOfflineQueue(
   supabase: SupabaseClient,
   userId: string
@@ -80,11 +118,17 @@ export async function flushOfflineQueue(
   const queue = getOfflineQueue()
   if (queue.length === 0) return { successCount: 0, failCount: 0 }
 
-  const remaining: OfflineMutation[] = []
   let successCount = 0
   let failCount = 0
+  const remaining: OfflineMutation[] = []
 
   for (const item of queue) {
+    if (isDemoMutation(item)) {
+      // Descartar silenciosamente cualquier mutación de datos demo/antiguos
+      successCount++
+      continue
+    }
+
     try {
       if (item.entity === 'transaction') {
         if (item.action === 'delete') {

@@ -115,3 +115,36 @@ export const budgets: Budget[] = [
   { id: 'b2', categoryId: 'clothes', amountLimit: 100, period: 'monthly', monthlyLimit: 100 },
   { id: 'b3', categoryId: 'food', amountLimit: 220, period: 'monthly', monthlyLimit: 220 },
 ]
+
+// ==========================================================================
+// Estado limpio oficial para cuentas reales (sin datos de prueba/demo)
+// ==========================================================================
+
+export const cleanAccounts: Account[] = [
+  { id: 'daily', name: 'Cuenta diaria', type: 'spending', initialBalance: 0, balance: 0 },
+  { id: 'savings', name: 'Ahorro', type: 'savings', initialBalance: 0, balance: 0 },
+]
+
+export const cleanPlanSettings: FinancialPlanSettings = {
+  monthlyIncome: 0,
+  targetSavingsType: 'percentage',
+  targetSavingsValue: 0,
+  emergencyFundTargetType: 'months',
+  emergencyFundTargetValue: 0,
+  emergencyFundCurrent: 0,
+  essentialCategoryIds: [],
+}
+
+export const cleanInitialFinanceState = {
+  accounts: cleanAccounts,
+  transactions: [] as Transaction[],
+  goals: [] as SavingsGoal[],
+  recurring: [] as RecurringPayment[],
+  categories,
+  budgets: [] as Budget[],
+  reserves: [] as Reserve[],
+  specialPeriods: [] as SpecialPeriod[],
+  planSettings: cleanPlanSettings,
+  profile: initialProfile,
+}
+

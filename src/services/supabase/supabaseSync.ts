@@ -35,11 +35,11 @@ export function createCleanInitialState(): PersistedState {
     planSettings: {
       monthlyIncome: 0,
       targetSavingsType: 'percentage',
-      targetSavingsValue: 15,
+      targetSavingsValue: 0,
       emergencyFundTargetType: 'months',
-      emergencyFundTargetValue: 3,
+      emergencyFundTargetValue: 0,
       emergencyFundCurrent: 0,
-      essentialCategoryIds: ['food', 'transport', 'subscriptions'],
+      essentialCategoryIds: [],
     },
     profile: {
       displayName: '',
@@ -273,9 +273,9 @@ export function fromDbPlanSettings(row: Record<string, unknown>): FinancialPlanS
   return {
     monthlyIncome: Number(row.monthly_income ?? 0),
     targetSavingsType: (row.target_savings_type as 'percentage' | 'fixed') || 'percentage',
-    targetSavingsValue: Number(row.target_savings_value ?? 15),
+    targetSavingsValue: Number(row.target_savings_value ?? 0),
     emergencyFundTargetType: (row.emergency_fund_target_type as 'months' | 'fixed') || 'months',
-    emergencyFundTargetValue: Number(row.emergency_fund_target_value ?? 3),
+    emergencyFundTargetValue: Number(row.emergency_fund_target_value ?? 0),
     emergencyFundCurrent: Number(row.emergency_fund_current ?? 0),
     essentialCategoryIds: essentialIds,
   }

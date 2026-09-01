@@ -3,6 +3,9 @@ import {
   accounts as seedAccounts,
   budgets as seedBudgets,
   categories as seedCategories,
+  cleanAccounts,
+  cleanInitialFinanceState,
+  cleanPlanSettings,
   goals as seedGoals,
   initialProfile,
   planSettings as seedPlanSettings,
@@ -96,7 +99,7 @@ import {
   selectVariableMonthlyExpenses,
 } from '../utils/planSelectors'
 
-export const initialFinanceState: PersistedState = {
+export const demoFinanceState: PersistedState = {
   accounts: seedAccounts,
   transactions: seedTransactions,
   goals: seedGoals,
@@ -109,34 +112,47 @@ export const initialFinanceState: PersistedState = {
   profile: initialProfile,
 }
 
+export const initialFinanceState: PersistedState = demoFinanceState
+
 export function useFinance(storage: StorageAdapter = defaultAppStorage) {
   const [state, setState] = useState<PersistedState>(() => {
     try {
       const raw = localStorage.getItem('pocketflow:v1')
       if (raw) {
         const parsed = JSON.parse(raw) as Partial<PersistedState>
-        const rawTxs = parsed.transactions ?? initialFinanceState.transactions
-        const rawAccounts = (parsed.accounts ?? initialFinanceState.accounts).map((acc) =>
-          ensureAccountInitialBalance(acc, rawTxs)
-        )
+        // Detección estricta de datos demo/antiguos en localStorage para prevenir resurrecciones
+        const hasLegacyDemo =
+          (parsed.transactions ?? []).some(
+            (t) => t.id === 't1' || t.description === 'Mercadona' || (t.id && /^t[1-7]$/.test(t.id))
+          ) ||
+          (parsed.accounts ?? []).some(
+            (a) => a.initialBalance === 791.16 || a.initialBalance === 1120
+          )
 
-        return {
-          accounts: rawAccounts,
-          transactions: rawTxs,
-          goals: parsed.goals ?? initialFinanceState.goals,
-          recurring: parsed.recurring ?? initialFinanceState.recurring,
-          categories: parsed.categories ?? initialFinanceState.categories,
-          budgets: parsed.budgets ?? initialFinanceState.budgets,
-          reserves: parsed.reserves ?? initialFinanceState.reserves,
-          specialPeriods: parsed.specialPeriods ?? initialFinanceState.specialPeriods,
-          planSettings: parsed.planSettings ?? initialFinanceState.planSettings,
-          profile: parsed.profile ?? initialFinanceState.profile ?? initialProfile,
+        if (!hasLegacyDemo) {
+          const rawTxs = parsed.transactions ?? []
+          const rawAccounts = (parsed.accounts ?? cleanAccounts).map((acc) =>
+            ensureAccountInitialBalance(acc, rawTxs)
+          )
+
+          return {
+            accounts: rawAccounts,
+            transactions: rawTxs,
+            goals: parsed.goals ?? [],
+            recurring: parsed.recurring ?? [],
+            categories: parsed.categories ?? seedCategories,
+            budgets: parsed.budgets ?? [],
+            reserves: parsed.reserves ?? [],
+            specialPeriods: parsed.specialPeriods ?? [],
+            planSettings: parsed.planSettings ?? cleanPlanSettings,
+            profile: parsed.profile ?? initialProfile,
+          }
         }
       }
     } catch {
       // ignore parse errors
     }
-    return initialFinanceState
+    return cleanInitialFinanceState
   })
 
   const [storageHydrated, setStorageHydrated] = useState(false)

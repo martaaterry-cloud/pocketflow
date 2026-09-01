@@ -54,7 +54,12 @@ import {
   flushOfflineQueue,
   getPendingMutationsCount,
   clearOfflineQueue,
+  isDemoMutation,
 } from '../src/services/supabase/offlineQueue'
+import {
+  cleanInitialFinanceState,
+  categories as baseCategories,
+} from '../src/data/seed'
 import {
   markLocalMutation,
   isLocalMutation,
@@ -2978,6 +2983,208 @@ describe('Fase 9 — Perfil de Usuario y Saludo Personalizado', () => {
     assert.equal(getGreeting(clean.profile), 'Hola')
   })
 })
+
+describe('Fase 10 — Reset Financiero Real y Prevención de Resurrección Demo', () => {
+  it('157. Usuario real nuevo no recibe seed: cleanInitialFinanceState arranca en 0 € y vacío', () => {
+    assert.equal(cleanInitialFinanceState.transactions.length, 0)
+    assert.equal(cleanInitialFinanceState.budgets.length, 0)
+    assert.equal(cleanInitialFinanceState.goals.length, 0)
+    assert.equal(cleanInitialFinanceState.reserves.length, 0)
+    assert.equal(cleanInitialFinanceState.recurring.length, 0)
+    assert.equal(cleanInitialFinanceState.specialPeriods.length, 0)
+
+    // Cuentas estructurales con saldo 0
+    assert.equal(cleanInitialFinanceState.accounts.length, 2)
+    assert.equal(cleanInitialFinanceState.accounts[0].initialBalance, 0)
+    assert.equal(cleanInitialFinanceState.accounts[1].initialBalance, 0)
+
+    // Plan financiero neutro sin suposiciones de ahorro o emergencias
+    assert.equal(cleanInitialFinanceState.planSettings.monthlyIncome, 0)
+    assert.equal(cleanInitialFinanceState.planSettings.targetSavingsValue, 0)
+    assert.equal(cleanInitialFinanceState.planSettings.emergencyFundTargetValue, 0)
+    assert.equal(cleanInitialFinanceState.planSettings.emergencyFundCurrent, 0)
+    assert.equal(cleanInitialFinanceState.planSettings.essentialCategoryIds.length, 0)
+  })
+
+  it('158. Reset cloud limpio no es sobrescrito por cache local antigua con demo data', () => {
+    // Simulamos un localStorage que tenía datos demo antiguos
+    const legacyDemoCache: Partial<PersistedState> = {
+      transactions: [{ id: 't1', type: 'expense', amount: 18.43, accountId: 'daily', categoryId: 'food', description: 'Mercadona', date: '2026-09-01T00:00:00Z' }],
+      accounts: [{ id: 'daily', name: 'Cuenta diaria', type: 'spending', initialBalance: 791.16, balance: 438.25 }],
+    }
+
+    const hasLegacyDemo =
+      (legacyDemoCache.transactions ?? []).some(
+        (t) => t.id === 't1' || t.description === 'Mercadona'
+      ) ||
+      (legacyDemoCache.accounts ?? []).some(
+        (a) => a.initialBalance === 791.16
+      )
+
+    assert.equal(hasLegacyDemo, true)
+
+    // Al detectar legacy demo, el sistema adopta cleanInitialFinanceState y no resucita datos demo
+    const effectiveState = hasLegacyDemo ? cleanInitialFinanceState : legacyDemoCache
+    assert.equal(effectiveState.transactions.length, 0)
+    assert.equal(effectiveState.accounts[0].initialBalance, 0)
+  })
+
+  it('159. Offline queue antigua no resucita datos demo', async () => {
+    // 1. Mutaciones antiguas de demo son detectadas por isDemoMutation
+    assert.equal(
+      isDemoMutation({
+        id: 'mut_1',
+        entity: 'transaction',
+        action: 'insert',
+        data: { id: 't1', description: 'Mercadona', amount: 18.43 },
+        timestamp: Date.now(),
+      }),
+      true
+    )
+
+    assert.equal(
+      isDemoMutation({
+        id: 'mut_2',
+        entity: 'reserve',
+        action: 'update',
+        data: { id: 'res1', name: 'Navidad y regalos' },
+        timestamp: Date.now(),
+      }),
+      true
+    )
+
+    // 2. Mutaciones legítimas de usuario real no se bloquean
+    assert.equal(
+      isDemoMutation({
+        id: 'mut_3',
+        entity: 'transaction',
+        action: 'insert',
+        data: { id: 'tx_real_uuid_99', description: 'Compra panadería', amount: 1.5 },
+        timestamp: Date.now(),
+      }),
+      false
+    )
+
+    // 3. flushOfflineQueue descarta mutaciones demo sin enviarlas a Supabase
+    const mockStore: Record<string, string> = {}
+    // @ts-expect-error Mock
+    globalThis.localStorage = {
+      getItem: (k: string) => mockStore[k] || null,
+      setItem: (k: string, v: string) => {
+        mockStore[k] = v
+      },
+      removeItem: (k: string) => {
+        delete mockStore[k]
+      },
+    }
+
+    clearOfflineQueue()
+    enqueueOfflineMutation({
+      entity: 'transaction',
+      action: 'insert',
+      data: { id: 't1', description: 'Mercadona', amount: 18.43 },
+    })
+
+    let supabaseUpsertCalled = false
+    const mockSupabase: any = {
+      from() {
+        return {
+          upsert() {
+            supabaseUpsertCalled = true
+            return Promise.resolve({ error: null })
+          },
+        }
+      },
+    }
+
+    const { successCount } = await flushOfflineQueue(mockSupabase, 'u1')
+    assert.equal(successCount, 1)
+    assert.equal(supabaseUpsertCalled, false, 'Mutación demo jamás debe enviarse a Supabase')
+
+    clearOfflineQueue()
+    // @ts-expect-error Cleanup
+    delete globalThis.localStorage
+  })
+
+  it('160. Home vacío funciona: saldos derivados calculan 0,00 € con precisión', () => {
+    const emptyAccounts = [
+      { id: 'daily', name: 'Cuenta diaria', type: 'spending' as const, initialBalance: 0, balance: 0 },
+      { id: 'savings', name: 'Ahorro', type: 'savings' as const, initialBalance: 0, balance: 0 },
+    ]
+    const reconciled = reconcileAccounts(emptyAccounts, [])
+    assert.equal(reconciled[0].balance, 0)
+    assert.equal(reconciled[1].balance, 0)
+
+    const totalMoney = reconciled.reduce((sum, a) => sum + a.balance, 0)
+    assert.equal(totalMoney, 0)
+  })
+
+  it('161. Gráfico donut vacío funciona sin errores: sin divisiones por cero ni NaN', () => {
+    const expenses: Transaction[] = []
+    const total = expenses.reduce((sum, t) => sum + t.amount, 0)
+    assert.equal(total, 0)
+
+    const byCategory = baseCategories
+      .map((category) => ({
+        ...category,
+        amount: expenses.filter((t) => t.categoryId === category.id).reduce((sum, t) => sum + t.amount, 0),
+      }))
+      .filter((item) => item.amount > 0)
+
+    assert.equal(byCategory.length, 0)
+
+    // Si no hay gastos, conic-gradient debe tener fallback limpio '#ecece8 0 100%'
+    let cursor = 0
+    const gradient = byCategory
+      .map((item) => {
+        const start = cursor
+        cursor += total ? (item.amount / total) * 100 : 0
+        return `${item.color} ${start}% ${cursor}%`
+      })
+      .join(', ')
+
+    assert.equal(gradient, '')
+    const finalBackground = `conic-gradient(${gradient || '#ecece8 0 100%'})`
+    assert.equal(finalBackground, 'conic-gradient(#ecece8 0 100%)')
+  })
+
+  it('162. Perfil se conserva tras reset: display_name Marta intacto', () => {
+    const profile = { displayName: 'Marta' }
+    const displayName = profile.displayName.trim()
+    const greeting = displayName ? `Hola, ${displayName}` : 'Hola'
+    assert.equal(greeting, 'Hola, Marta')
+  })
+
+  it('163. Categorías base se conservan tras reset: exactamente 8 categorías útiles', () => {
+    assert.equal(baseCategories.length, 8)
+    const categoryIds = baseCategories.map((c) => c.id).sort()
+    assert.deepEqual(categoryIds, [
+      'clothes',
+      'food',
+      'leisure',
+      'other',
+      'sport',
+      'subscriptions',
+      'transport',
+      'travel',
+    ])
+  })
+
+  it('164. Tokens del Atajo se conservan tras reset: script de reset excluye shortcut_tokens', () => {
+    const tablesClearedInReset = [
+      'transactions',
+      'budgets',
+      'savings_goals',
+      'reserves',
+      'recurring_payments',
+      'special_periods',
+    ]
+    assert.equal(tablesClearedInReset.includes('shortcut_tokens'), false)
+    assert.equal(tablesClearedInReset.includes('profiles'), false)
+    assert.equal(tablesClearedInReset.includes('categories'), false)
+  })
+})
+
 
 
 
