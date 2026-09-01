@@ -32,6 +32,7 @@ import type {
   UpdateSpecialPeriodInput,
   UpdateTransactionInput,
 } from '../models/finance'
+import { defaultAppStorage } from '../services/storage/indexedDbAdapter'
 import { defaultStorage } from '../services/storage/localStorageAdapter'
 import type { PersistedState, StorageAdapter } from '../services/storage/storageAdapter'
 import { selectBudgetsSummary } from '../utils/budgetSelectors'
@@ -72,7 +73,7 @@ export const initialFinanceState: PersistedState = {
   planSettings: seedPlanSettings,
 }
 
-export function useFinance(storage: StorageAdapter = defaultStorage) {
+export function useFinance(storage: StorageAdapter = defaultAppStorage) {
   const [state, setState] = useState<PersistedState>(() => {
     try {
       const raw = localStorage.getItem('pocketflow:v1')
@@ -806,6 +807,43 @@ export function useFinance(storage: StorageAdapter = defaultStorage) {
     state.planSettings,
   ])
 
+  const restoreState = useCallback(
+    async (newState: PersistedState) => {
+      const txs = newState.transactions ?? []
+      const accountsWithInitial = (newState.accounts ?? initialFinanceState.accounts).map((acc) =>
+        ensureAccountInitialBalance(acc, txs)
+      )
+      const completeState: PersistedState = {
+        accounts: accountsWithInitial,
+        transactions: txs,
+        goals: newState.goals ?? [],
+        recurring: newState.recurring ?? [],
+        categories: newState.categories ?? [],
+        budgets: newState.budgets ?? [],
+        reserves: newState.reserves ?? [],
+        specialPeriods: newState.specialPeriods ?? [],
+        planSettings: newState.planSettings ?? initialFinanceState.planSettings,
+      }
+      setState(completeState)
+      await storage.save(completeState)
+    },
+    [storage]
+  )
+
+  const getFullState = useCallback((): PersistedState => {
+    return {
+      accounts: reconciledAccounts,
+      transactions: state.transactions,
+      goals: state.goals,
+      recurring: state.recurring,
+      categories: state.categories,
+      budgets: state.budgets,
+      reserves: state.reserves,
+      specialPeriods: state.specialPeriods,
+      planSettings: state.planSettings,
+    }
+  }, [reconciledAccounts, state])
+
   return {
     ...state,
     accounts: reconciledAccounts,
@@ -849,5 +887,11 @@ export function useFinance(storage: StorageAdapter = defaultStorage) {
     addSpecialPeriod,
     updateSpecialPeriod,
     deleteSpecialPeriod,
+
+    // Copias de seguridad
+    restoreState,
+    getFullState,
   }
 }
+
+export type FinanceStore = ReturnType<typeof useFinance>

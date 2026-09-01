@@ -39,8 +39,9 @@ export function safeDecodeQueryParam(val: string | null | undefined): string {
 }
 
 /**
- * Parsea y valida estrictamente una URL de deep link.
- * Solo se permite la acción "expense" (gastos rápidos de V1).
+ * Parsea y valida estrictamente una URL de deep link o URL web con parámetros.
+ * Soporta esquemas nativos (pocketflow://expense?...) y URLs web públicas (https://.../?action=expense&...).
+ * Solo se permite la acción "expense" (gastos rápidos).
  * Nunca permite transferencias, ingresos, borrado o modificación de saldos.
  */
 export function parseShortcutUrl(
@@ -53,27 +54,37 @@ export function parseShortcutUrl(
 
   let parsed: URL
   try {
-    parsed = new URL(rawUrl)
+    if (rawUrl.startsWith('?') || rawUrl.startsWith('/')) {
+      parsed = new URL(rawUrl, 'https://pocketflow.local')
+    } else {
+      parsed = new URL(rawUrl)
+    }
   } catch {
     return { valid: false, error: 'URL malformada' }
   }
 
-  // 1. Validar esquema
-  if (parsed.protocol !== 'pocketflow:') {
+  // 1. Validar protocolo permitido: pocketflow: o http: / https:
+  const isNative = parsed.protocol === 'pocketflow:'
+  const isWeb = parsed.protocol === 'https:' || parsed.protocol === 'http:'
+  if (!isNative && !isWeb) {
     return { valid: false, error: `Protocolo no admitido: ${parsed.protocol}` }
   }
 
   // 2. Validar acción (solo "expense")
-  // En URLs personalizadas como pocketflow://expense?...
-  // parsed.hostname suele ser "expense" o parsed.pathname es "/expense"
-  const host = parsed.hostname.toLowerCase()
-  const path = parsed.pathname.toLowerCase().replace(/^\/+/, '')
-  const action = host || path
+  let action = ''
+  if (isNative) {
+    const host = parsed.hostname.toLowerCase()
+    const path = parsed.pathname.toLowerCase().replace(/^\/+/, '')
+    action = host || path
+  } else {
+    // Para URLs web públicas: se requiere obligatoriamente el parámetro ?action=expense
+    action = parsed.searchParams.get('action')?.toLowerCase() ?? ''
+  }
 
   if (action !== 'expense') {
     return {
       valid: false,
-      error: `Acción '${action}' no permitida. Solo se admiten gastos rápidos ('expense').`,
+      error: `Acción '${action || 'desconocida'}' no permitida. Solo se admiten gastos rápidos ('expense').`,
     }
   }
 
@@ -165,3 +176,16 @@ export function createDeepLinkDeduplicator(windowMs = 2500) {
     },
   }
 }
+
+/**
+ * Limpia los query params de la URL actual del navegador mediante history.replaceState
+ * para evitar que al recargar la PWA se repita el registro de un gasto.
+ */
+export function cleanUrlQueryParams(): void {
+  if (typeof window !== 'undefined' && window.location && window.history) {
+    const title = typeof document !== 'undefined' ? document.title : ''
+    const cleanUrl = window.location.pathname + window.location.hash
+    window.history.replaceState({}, title, cleanUrl)
+  }
+}
+

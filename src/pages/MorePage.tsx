@@ -2,6 +2,7 @@ import { useState } from 'react'
 import type { ReturnTypeFinance } from '../types'
 import { money } from '../utils/money'
 import { AppIcon } from '../ui/icons'
+import { BackupPage } from './BackupPage'
 import { AccountsPage } from './AccountsPage'
 import { BudgetsPage } from './BudgetsPage'
 import { PlanFinancialPage } from './PlanFinancialPage'
@@ -9,16 +10,28 @@ import { RecurringPaymentsPage } from './RecurringPaymentsPage'
 import { SettingsPage } from './SettingsPage'
 import { StatisticsPage } from './StatisticsPage'
 
-type MoreSubView = 'menu' | 'accounts' | 'settings' | 'recurring' | 'budgets' | 'statistics' | 'plan'
+type MoreSubView = 'menu' | 'accounts' | 'settings' | 'recurring' | 'budgets' | 'statistics' | 'plan' | 'backup'
 
 export function MorePage({
   finance,
   onNavigateToSavings,
+  onToast,
 }: {
   finance: ReturnTypeFinance
   onNavigateToSavings?: () => void
+  onToast?: (message: string, type?: 'success' | 'error') => void
 }) {
   const [subView, setSubView] = useState<MoreSubView>('menu')
+
+  if (subView === 'backup') {
+    return (
+      <BackupPage
+        finance={finance}
+        onBack={() => setSubView('menu')}
+        onToast={onToast ?? (() => {})}
+      />
+    )
+  }
 
   if (subView === 'accounts') {
     return <AccountsPage finance={finance} onBack={() => setSubView('menu')} />
@@ -163,6 +176,19 @@ export function MorePage({
           <div>
             <strong>Estadísticas</strong>
             <small>Día, semana, mes y año con comparativas</small>
+          </div>
+          <b className="chevron">
+            <AppIcon name="chevron-right" size={16} />
+          </b>
+        </button>
+
+        <button type="button" onClick={() => setSubView('backup')}>
+          <span className="menu-icon">
+            <AppIcon name="shield" size={18} />
+          </span>
+          <div>
+            <strong>Copias de seguridad</strong>
+            <small>Exportar, importar y restaurar en JSON seguro</small>
           </div>
           <b className="chevron">
             <AppIcon name="chevron-right" size={16} />

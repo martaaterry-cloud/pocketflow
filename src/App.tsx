@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { App as CapacitorApp } from '@capacitor/app'
 import { AddTransactionModal } from './components/AddTransactionModal'
 import type { Transaction } from './models/finance'
@@ -9,7 +9,7 @@ import { MovementsPage } from './pages/MovementsPage'
 import { SavingsPage } from './pages/SavingsPage'
 import { AppIcon } from './ui/icons'
 import { useFinance } from './store/useFinance'
-import { createDeepLinkDeduplicator, parseShortcutUrl } from './utils/deepLink'
+import { cleanUrlQueryParams, createDeepLinkDeduplicator, parseShortcutUrl } from './utils/deepLink'
 
 type Tab = 'home' | 'movements' | 'calendar' | 'savings' | 'more'
 
@@ -27,17 +27,24 @@ export default function App() {
     setTimeout(() => setToast(null), 2500)
   }
 
-  useEffect(() => {
-    const listener = CapacitorApp.addListener('appUrlOpen', ({ url }) => {
-      if (!deduplicatorRef.current.shouldProcess(url)) {
+  const processIncomingUrl = useCallback(
+    (rawUrl: string, isWebQuery = false) => {
+      if (!deduplicatorRef.current.shouldProcess(rawUrl)) {
+        if (isWebQuery) cleanUrlQueryParams()
         return
       }
 
       const validCategoryIds = finance.categories.map((c) => c.id)
-      const parsed = parseShortcutUrl(url, validCategoryIds)
+      const parsed = parseShortcutUrl(rawUrl, validCategoryIds)
+
+      if (isWebQuery) {
+        cleanUrlQueryParams()
+      }
 
       if (!parsed.valid) {
-        showToast('Enlace no válido', 'error')
+        if (!isWebQuery || rawUrl.includes('action=expense')) {
+          showToast('Enlace no válido', 'error')
+        }
         return
       }
 
@@ -52,12 +59,28 @@ export default function App() {
 
       setTab('home')
       showToast('Gasto añadido', 'success')
+    },
+    [finance]
+  )
+
+  useEffect(() => {
+    // 1. Procesa URL web si se abrió desde navegador / PWA con query params
+    if (typeof window !== 'undefined' && window.location.search) {
+      const search = window.location.search
+      if (search.includes('action=expense') || search.includes('amount=')) {
+        processIncomingUrl(window.location.href, true)
+      }
+    }
+
+    // 2. Capacitor native appUrlOpen listener
+    const listener = CapacitorApp.addListener('appUrlOpen', ({ url }) => {
+      processIncomingUrl(url, false)
     })
 
     return () => {
       void listener.then((h) => h.remove())
     }
-  }, [finance])
+  }, [processIncomingUrl])
 
   const handleOpenAdd = () => {
     setSelectedTx(null)
@@ -98,7 +121,11 @@ export default function App() {
       )}
       {tab === 'savings' && <SavingsPage finance={finance} />}
       {tab === 'more' && (
-        <MorePage finance={finance} onNavigateToSavings={() => setTab('savings')} />
+        <MorePage
+          finance={finance}
+          onNavigateToSavings={() => setTab('savings')}
+          onToast={showToast}
+        />
       )}
 
       <nav className="bottom-nav">

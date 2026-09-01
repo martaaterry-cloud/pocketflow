@@ -3,9 +3,17 @@ import assert from 'node:assert/strict'
 import type { Account, Budget, Category, FinancialPlanSettings, RecurringPayment, Reserve, SavingsGoal, SpecialPeriod, Transaction } from '../src/models/finance'
 import { calculateAccountBalance, reconcileAccounts } from '../src/utils/balance'
 import type { PersistedState, StorageAdapter } from '../src/services/storage/storageAdapter'
-import { migratePersistedState } from '../src/services/storage/localStorageAdapter'
+import { LocalStorageAdapter, migratePersistedState } from '../src/services/storage/localStorageAdapter'
+import { IndexedDbAdapter } from '../src/services/storage/indexedDbAdapter'
 import { resolveIconKey } from '../src/ui/icons'
-import { createDeepLinkDeduplicator, parseShortcutUrl } from '../src/utils/deepLink'
+import { cleanUrlQueryParams, createDeepLinkDeduplicator, parseShortcutUrl } from '../src/utils/deepLink'
+import {
+  BACKUP_APP_IDENTIFIER,
+  CURRENT_BACKUP_VERSION,
+  createBackupPayload,
+  validateBackupPayload,
+} from '../src/utils/backup'
+import { initialFinanceState } from '../src/store/useFinance'
 import {
   budgetRemaining,
   budgetUsagePercentage,
@@ -1520,3 +1528,239 @@ describe('Fase 5 — Integración iOS Deep Link (Atajos / Shortcuts)', () => {
     assert.equal(deduplicator.shouldProcess(url, t0 + 4500), true)
   })
 })
+
+describe('Fase 6 — PWA, Atajos Web, Copias de Seguridad y Persistencia', () => {
+  const validCategoryIds = ['food', 'leisure', 'transport', 'clothes', 'subscriptions', 'sport', 'travel', 'other']
+
+  // 1. URL web válida
+  it('97. URL web válida: parsea https://.../?action=expense&amount=18.75&description=Mercadona&category=food', () => {
+    const webUrl = 'https://martaaterry-cloud.github.io/pocketflow/?action=expense&amount=18.75&description=Mercadona&category=food'
+    const result = parseShortcutUrl(webUrl, validCategoryIds)
+
+    assert.equal(result.valid, true)
+    if (result.valid) {
+      assert.equal(result.amount, 18.75)
+      assert.equal(result.description, 'Mercadona')
+      assert.equal(result.categoryId, 'food')
+    }
+
+    // También soporta ruta directa con query params '?action=expense&...'
+    const queryOnly = '?action=expense&amount=6.20&description=Panaderia&category=food'
+    const resQuery = parseShortcutUrl(queryOnly, validCategoryIds)
+    assert.equal(resQuery.valid, true)
+    if (resQuery.valid) {
+      assert.equal(resQuery.amount, 6.20)
+      assert.equal(resQuery.description, 'Panaderia')
+    }
+  })
+
+  // 2. Codificación de descripción web
+  it('98. Codificación de descripción web: decodifica espacios, tildes y caracteres como ñ o + en web query', () => {
+    const webUrl1 = 'https://martaaterry-cloud.github.io/pocketflow/?action=expense&amount=32&description=Cena%20en%20San%20Juan&category=leisure'
+    const res1 = parseShortcutUrl(webUrl1, validCategoryIds)
+    assert.equal(res1.valid, true)
+    if (res1.valid) {
+      assert.equal(res1.description, 'Cena en San Juan')
+    }
+
+    const webUrl2 = 'https://martaaterry-cloud.github.io/pocketflow/?action=expense&amount=2.50&description=Caf%C3%A9%20%2B%20tostada&category=food'
+    const res2 = parseShortcutUrl(webUrl2, validCategoryIds)
+    assert.equal(res2.valid, true)
+    if (res2.valid) {
+      assert.equal(res2.description, 'Café + tostada')
+    }
+
+    const webUrl3 = 'https://martaaterry-cloud.github.io/pocketflow/?action=expense&amount=15&description=Ma%C3%B1ana%20soleada&category=other'
+    const res3 = parseShortcutUrl(webUrl3, validCategoryIds)
+    assert.equal(res3.valid, true)
+    if (res3.valid) {
+      assert.equal(res3.description, 'Mañana soleada')
+    }
+  })
+
+  // 3. Importe inválido en web
+  it('99. Importe inválido en web: deniega importes cero, negativos o no numéricos', () => {
+    const zeroUrl = 'https://pocketflow.local/?action=expense&amount=0&description=Test'
+    assert.equal(parseShortcutUrl(zeroUrl, validCategoryIds).valid, false)
+
+    const negUrl = 'https://pocketflow.local/?action=expense&amount=-5&description=Test'
+    assert.equal(parseShortcutUrl(negUrl, validCategoryIds).valid, false)
+
+    const nanUrl = 'https://pocketflow.local/?action=expense&amount=invalido&description=Test'
+    assert.equal(parseShortcutUrl(nanUrl, validCategoryIds).valid, false)
+  })
+
+  // 4. Categoría desconocida en web
+  it('100. Categoría desconocida en web: aplica fallback seguro a "other"', () => {
+    const unknownCatUrl = 'https://pocketflow.local/?action=expense&amount=10&description=Algo&category=inexistente'
+    const result = parseShortcutUrl(unknownCatUrl, validCategoryIds)
+    assert.equal(result.valid, true)
+    if (result.valid) {
+      assert.equal(result.categoryId, 'other')
+    }
+  })
+
+  // 5. Deduplicación web
+  it('101. Deduplicación web: deduplicador temporal ignora dobles invocaciones de la misma URL web en Safari/PWA', () => {
+    const deduplicator = createDeepLinkDeduplicator(2500)
+    const webUrl = 'https://martaaterry-cloud.github.io/pocketflow/?action=expense&amount=14.50&description=Taxi'
+
+    const t0 = 20000
+    assert.equal(deduplicator.shouldProcess(webUrl, t0), true)
+    // 300ms después: repetida por evento doble o recarga inmediata
+    assert.equal(deduplicator.shouldProcess(webUrl, t0 + 300), false)
+    // Pasados 3000ms: admitida
+    assert.equal(deduplicator.shouldProcess(webUrl, t0 + 3000), true)
+  })
+
+  // 6. Limpieza de URL
+  it('102. Limpieza de URL: cleanUrlQueryParams ejecuta replaceState de forma segura sin lanzar excepción', () => {
+    // Simulamos un entorno con window / history
+    const originalWindow = globalThis.window
+    let replacedStateUrl = ''
+
+    // @ts-expect-error Mock window global para test
+    globalThis.window = {
+      location: { pathname: '/pocketflow/', search: '?action=expense&amount=10', hash: '' },
+      history: {
+        replaceState: (_data: unknown, _title: string, url: string) => {
+          replacedStateUrl = url
+        },
+      },
+    }
+
+    cleanUrlQueryParams()
+    assert.equal(replacedStateUrl, '/pocketflow/')
+
+    // Restaurar global
+    // @ts-expect-error Restaurar
+    globalThis.window = originalWindow
+  })
+
+  // 7. Export backup
+  it('103. Export backup: genera estructura JSON versionada con app "Pocketflow" y colecciones íntegras', () => {
+    const backup = createBackupPayload(initialFinanceState)
+
+    assert.equal(backup.app, BACKUP_APP_IDENTIFIER)
+    assert.equal(backup.version, CURRENT_BACKUP_VERSION)
+    assert.ok(typeof backup.exportedAt === 'string')
+    assert.ok(new Date(backup.exportedAt).getTime() > 0)
+
+    assert.ok(Array.isArray(backup.data.accounts))
+    assert.ok(Array.isArray(backup.data.transactions))
+    assert.ok(Array.isArray(backup.data.goals))
+    assert.ok(Array.isArray(backup.data.recurring))
+    assert.ok(Array.isArray(backup.data.categories))
+    assert.ok(Array.isArray(backup.data.budgets))
+    assert.ok(Array.isArray(backup.data.reserves))
+  })
+
+  // 8. Import backup válido
+  it('104. Import backup válido: valida correctamente el esquema y calcula el resumen de entidades', () => {
+    const backup = createBackupPayload(initialFinanceState)
+    const result = validateBackupPayload(backup)
+
+    assert.equal(result.valid, true)
+    if (result.valid) {
+      assert.equal(result.version, CURRENT_BACKUP_VERSION)
+      assert.equal(result.summary.accountCount, initialFinanceState.accounts.length)
+      assert.equal(result.summary.transactionCount, initialFinanceState.transactions.length)
+      assert.equal(result.summary.goalCount, initialFinanceState.goals.length)
+      assert.equal(result.summary.budgetCount, initialFinanceState.budgets.length)
+      assert.equal(result.summary.reserveCount, initialFinanceState.reserves.length)
+      assert.equal(result.summary.recurringCount, initialFinanceState.recurring.length)
+    }
+  })
+
+  // 9. Backup inválido rechazado
+  it('105. Backup inválido rechazado: deniega archivos con JSON arbitrario, string, array o esquema no compatible', () => {
+    assert.equal(validateBackupPayload(null).valid, false)
+    assert.equal(validateBackupPayload('string aleatorio').valid, false)
+    assert.equal(validateBackupPayload([]).valid, false)
+    assert.equal(validateBackupPayload({ foo: 'bar' }).valid, false)
+    assert.equal(validateBackupPayload({ app: 'OtraApp', version: 1, data: {} }).valid, false)
+    assert.equal(validateBackupPayload({ app: 'Pocketflow', version: 1, data: { accounts: 'no array' } }).valid, false)
+  })
+
+  // 10. Versión incompatible rechazada
+  it('106. Versión incompatible rechazada: bloquea copias con versión futura no soportada (v999) o inválida', () => {
+    const futureBackup = {
+      app: 'Pocketflow',
+      version: 999,
+      exportedAt: new Date().toISOString(),
+      data: initialFinanceState,
+    }
+    const result = validateBackupPayload(futureBackup)
+    assert.equal(result.valid, false)
+    if (!result.valid) {
+      assert.ok(result.error.includes('no soportada'))
+    }
+  })
+
+  // 11. Restauración exacta
+  it('107. Restauración exacta: el estado se reconstituye con las transacciones y cuentas del archivo importado', () => {
+    const customState: PersistedState = {
+      ...initialFinanceState,
+      transactions: [
+        {
+          id: 'tx_backup_custom_1',
+          type: 'expense',
+          amount: 88.50,
+          description: 'Compra restaurada',
+          categoryId: 'food',
+          accountId: 'daily',
+          date: '2026-09-01T10:00:00.000Z',
+          createdAt: '2026-09-01T10:00:00.000Z',
+          updatedAt: '2026-09-01T10:00:00.000Z',
+        },
+      ],
+    }
+
+    const payload = createBackupPayload(customState)
+    const valResult = validateBackupPayload(payload)
+    assert.equal(valResult.valid, true)
+
+    if (valResult.valid) {
+      assert.equal(valResult.state.transactions.length, 1)
+      assert.equal(valResult.state.transactions[0].id, 'tx_backup_custom_1')
+      assert.equal(valResult.state.transactions[0].amount, 88.50)
+      assert.equal(valResult.state.transactions[0].description, 'Compra restaurada')
+    }
+  })
+
+  // 12. Migración localStorage -> IndexedDB / StorageAdapter fallback
+  it('108. Migración localStorage -> IndexedDB / fallback: preserva compatibilidad y recupera datos legados', async () => {
+    // Simula mock de localStorage
+    const store = new Map<string, string>()
+    const mockStorage = {
+      getItem: (k: string) => store.get(k) ?? null,
+      setItem: (k: string, v: string) => store.set(k, v),
+      removeItem: (k: string) => store.delete(k),
+    }
+
+    const legacyKey = 'pocketflow:v1'
+    mockStorage.setItem(legacyKey, JSON.stringify(initialFinanceState))
+
+    // LocalStorageAdapter lee los datos correctamente
+    // @ts-expect-error Mock global localStorage
+    globalThis.localStorage = mockStorage
+
+    const adapter = new LocalStorageAdapter(legacyKey)
+    const loaded = await adapter.load()
+
+    assert.ok(loaded !== null)
+    assert.equal(loaded?.transactions.length, initialFinanceState.transactions.length)
+    assert.equal(loaded?.accounts.length, initialFinanceState.accounts.length)
+
+    // Un adaptador IndexedDbAdapter en entorno sin window.indexedDB recurre limpiamente al fallback
+    const idbAdapter = new IndexedDbAdapter()
+    const idbLoaded = await idbAdapter.load()
+
+    assert.ok(idbLoaded !== null)
+    assert.equal(idbLoaded?.accounts.length, initialFinanceState.accounts.length)
+
+    // @ts-expect-error Limpieza
+    delete globalThis.localStorage
+  })
+})
+
