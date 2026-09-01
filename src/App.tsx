@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { App as CapacitorApp } from '@capacitor/app'
 import { AddTransactionModal } from './components/AddTransactionModal'
 import type { Transaction } from './models/finance'
@@ -9,43 +9,51 @@ import { MovementsPage } from './pages/MovementsPage'
 import { SavingsPage } from './pages/SavingsPage'
 import { AppIcon } from './ui/icons'
 import { useFinance } from './store/useFinance'
+import { createDeepLinkDeduplicator, parseShortcutUrl } from './utils/deepLink'
 
 type Tab = 'home' | 'movements' | 'calendar' | 'savings' | 'more'
-
-function shortcutPayload(url: string) {
-  try {
-    const parsed = new URL(url)
-    if (parsed.hostname !== 'expense' && parsed.pathname !== '/expense') return null
-    const amount = Number((parsed.searchParams.get('amount') ?? '').replace(',', '.'))
-    const description = parsed.searchParams.get('description') ?? 'Gasto rápido'
-    const category = parsed.searchParams.get('category') ?? 'other'
-    if (!amount) return null
-    return { amount, description, category }
-  } catch {
-    return null
-  }
-}
 
 export default function App() {
   const finance = useFinance()
   const [tab, setTab] = useState<Tab>('home')
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [selectedTx, setSelectedTx] = useState<Transaction | null>(null)
+  const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null)
+
+  const deduplicatorRef = useRef(createDeepLinkDeduplicator(2500))
+
+  const showToast = (message: string, type: 'success' | 'error' = 'success') => {
+    setToast({ message, type })
+    setTimeout(() => setToast(null), 2500)
+  }
 
   useEffect(() => {
     const listener = CapacitorApp.addListener('appUrlOpen', ({ url }) => {
-      const payload = shortcutPayload(url)
-      if (!payload) return
+      if (!deduplicatorRef.current.shouldProcess(url)) {
+        return
+      }
+
+      const validCategoryIds = finance.categories.map((c) => c.id)
+      const parsed = parseShortcutUrl(url, validCategoryIds)
+
+      if (!parsed.valid) {
+        showToast('Enlace no válido', 'error')
+        return
+      }
+
       finance.addTransaction({
         type: 'expense',
-        amount: payload.amount,
-        description: payload.description,
-        categoryId: payload.category,
+        amount: parsed.amount,
+        description: parsed.description,
+        categoryId: parsed.categoryId,
         accountId: 'daily',
         date: new Date().toISOString(),
       })
+
       setTab('home')
+      showToast('Gasto añadido', 'success')
     })
+
     return () => {
       void listener.then((h) => h.remove())
     }
@@ -135,6 +143,13 @@ export default function App() {
           <span className="nav-label">Más</span>
         </button>
       </nav>
+
+      {toast && (
+        <div className={`toast-notification ${toast.type}`}>
+          <AppIcon name={toast.type === 'success' ? 'check' : 'circle-alert'} size={16} />
+          <span>{toast.message}</span>
+        </div>
+      )}
 
       <AddTransactionModal
         open={isModalOpen}

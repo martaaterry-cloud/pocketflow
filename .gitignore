@@ -29,5 +29,16 @@ vite.config.d.ts
 *.sw?
 
 # Capacitor
-ios/
 android/
+ios/App/build/
+ios/App/Pods/
+ios/App/output/
+ios/DerivedData/
+ios/**/DerivedData/
+ios/**/xcuserdata/
+ios/**/capacitor-cordova-ios-plugins/
+*.mobileprovision
+*.cer
+*.p12
+*.key
+*.cert

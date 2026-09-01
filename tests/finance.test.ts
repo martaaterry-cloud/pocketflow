@@ -5,6 +5,7 @@ import { calculateAccountBalance, reconcileAccounts } from '../src/utils/balance
 import type { PersistedState, StorageAdapter } from '../src/services/storage/storageAdapter'
 import { migratePersistedState } from '../src/services/storage/localStorageAdapter'
 import { resolveIconKey } from '../src/ui/icons'
+import { createDeepLinkDeduplicator, parseShortcutUrl } from '../src/utils/deepLink'
 import {
   budgetRemaining,
   budgetUsagePercentage,
@@ -1307,5 +1308,215 @@ describe('Fase 5 — Iconografía Profesional y Planificación Financiera', () =
     assert.equal(adjusted, 1450)
     assert.ok(!isNaN(adjusted))
     assert.ok(isFinite(adjusted))
+  })
+})
+
+describe('Fase 5 — Integración iOS Deep Link (Atajos / Shortcuts)', () => {
+  const validCategoryIds = ['food', 'leisure', 'transport', 'clothes', 'subscriptions', 'sport', 'travel', 'other']
+
+  // 1. Parsear deep link válido
+  it('84. Parsear deep link válido: extrae amount, description y categoryId con protocolo pocketflow://', () => {
+    const url = 'pocketflow://expense?amount=24.50&description=Mercadona&category=food'
+    const result = parseShortcutUrl(url, validCategoryIds)
+
+    assert.equal(result.valid, true)
+    if (result.valid) {
+      assert.equal(result.amount, 24.50)
+      assert.equal(result.description, 'Mercadona')
+      assert.equal(result.categoryId, 'food')
+    }
+  })
+
+  // 2. Coma decimal
+  it('85. Coma decimal: interpreta correctamente cantidades con coma europea (15,90 -> 15.90)', () => {
+    const url = 'pocketflow://expense?amount=15,90&description=Farmacia&category=other'
+    const result = parseShortcutUrl(url, validCategoryIds)
+
+    assert.equal(result.valid, true)
+    if (result.valid) {
+      assert.equal(result.amount, 15.90)
+    }
+  })
+
+  // 3. URL encoded description
+  it('86. URL encoded description: decodifica espacios, tildes, signos y caracteres como ñ correctamente', () => {
+    const url1 = 'pocketflow://expense?amount=35&description=Cena%20en%20San%20Juan&category=leisure'
+    const res1 = parseShortcutUrl(url1, validCategoryIds)
+    assert.equal(res1.valid, true)
+    if (res1.valid) {
+      assert.equal(res1.description, 'Cena en San Juan')
+    }
+
+    const url2 = 'pocketflow://expense?amount=2.40&description=Caf%C3%A9%20%2B%20tostada&category=food'
+    const res2 = parseShortcutUrl(url2, validCategoryIds)
+    assert.equal(res2.valid, true)
+    if (res2.valid) {
+      assert.equal(res2.description, 'Café + tostada')
+    }
+
+    const url3 = 'pocketflow://expense?amount=50&description=Cumplea%C3%B1os&category=leisure'
+    const res3 = parseShortcutUrl(url3, validCategoryIds)
+    assert.equal(res3.valid, true)
+    if (res3.valid) {
+      assert.equal(res3.description, 'Cumpleaños')
+    }
+  })
+
+  // 4. Categoría válida
+  it('87. Categoría válida: conserva la categoría enviada si existe en el catálogo', () => {
+    const url = 'pocketflow://expense?amount=8.50&description=Metro&category=transport'
+    const result = parseShortcutUrl(url, validCategoryIds)
+
+    assert.equal(result.valid, true)
+    if (result.valid) {
+      assert.equal(result.categoryId, 'transport')
+    }
+  })
+
+  // 5. Categoría desconocida -> fallback seguro
+  it('88. Categoría desconocida: fallback seguro y documentado a "other" para no romper la app', () => {
+    const url = 'pocketflow://expense?amount=10&description=Algo&category=categoria_inexistente_xyz'
+    const result = parseShortcutUrl(url, validCategoryIds)
+
+    assert.equal(result.valid, true)
+    if (result.valid) {
+      assert.equal(result.categoryId, 'other')
+    }
+
+    // Si viene vacía
+    const urlNoCat = 'pocketflow://expense?amount=10&description=Algo'
+    const resNoCat = parseShortcutUrl(urlNoCat, validCategoryIds)
+    assert.equal(resNoCat.valid, true)
+    if (resNoCat.valid) {
+      assert.equal(resNoCat.categoryId, 'other')
+    }
+  })
+
+  // 6. Amount 0 rechazado
+  it('89. Amount 0 rechazado: deniega la creación si el importe es cero', () => {
+    const url = 'pocketflow://expense?amount=0&description=Prueba'
+    const result = parseShortcutUrl(url, validCategoryIds)
+
+    assert.equal(result.valid, false)
+    if (!result.valid) {
+      assert.ok(result.error.includes('mayor que 0'))
+    }
+  })
+
+  // 7. Amount negativo rechazado
+  it('90. Amount negativo rechazado: deniega importes negativos para proteger la integridad contable', () => {
+    const url = 'pocketflow://expense?amount=-14.50&description=Negativo'
+    const result = parseShortcutUrl(url, validCategoryIds)
+
+    assert.equal(result.valid, false)
+    if (!result.valid) {
+      assert.ok(result.error.includes('mayor que 0'))
+    }
+  })
+
+  // 8. NaN rechazado
+  it('91. NaN rechazado: deniega texto no numérico o vacío en el parámetro amount', () => {
+    const urlNaN = 'pocketflow://expense?amount=abc&description=Prueba'
+    assert.equal(parseShortcutUrl(urlNaN, validCategoryIds).valid, false)
+
+    const urlEmpty = 'pocketflow://expense?amount=&description=Prueba'
+    assert.equal(parseShortcutUrl(urlEmpty, validCategoryIds).valid, false)
+
+    const urlNoAmount = 'pocketflow://expense?description=Prueba'
+    assert.equal(parseShortcutUrl(urlNoAmount, validCategoryIds).valid, false)
+  })
+
+  // 9. URL no expense rechazada
+  it('92. URL no expense rechazada: deniega cualquier acción diferente de "expense" o protocolo no autorizado', () => {
+    // Protocolo ajeno
+    assert.equal(parseShortcutUrl('https://example.com/expense?amount=10', validCategoryIds).valid, false)
+
+    // Acciones no autorizadas
+    assert.equal(parseShortcutUrl('pocketflow://income?amount=50', validCategoryIds).valid, false)
+    assert.equal(parseShortcutUrl('pocketflow://transfer?amount=50', validCategoryIds).valid, false)
+    assert.equal(parseShortcutUrl('pocketflow://delete?id=123', validCategoryIds).valid, false)
+    assert.equal(parseShortcutUrl('pocketflow://settings', validCategoryIds).valid, false)
+    assert.equal(parseShortcutUrl('pocketflow://accounts', validCategoryIds).valid, false)
+  })
+
+  // 10. Parámetros extra ignorados
+  it('93. Parámetros extra ignorados: ignora query params maliciosos o desconocidos', () => {
+    const url = 'pocketflow://expense?amount=12.50&description=Cena&category=leisure&overrideBalance=99999&danger=true&delete=all'
+    const result = parseShortcutUrl(url, validCategoryIds)
+
+    assert.equal(result.valid, true)
+    if (result.valid) {
+      assert.equal(result.amount, 12.50)
+      assert.equal(result.description, 'Cena')
+      assert.equal(result.categoryId, 'leisure')
+      // No se inyecta ningún parámetro espurio en el objeto
+      assert.equal(Object.keys(result).sort().join(','), 'amount,categoryId,description,valid')
+    }
+  })
+
+  // 11. Deep link crea exactamente una transacción
+  it('94. Deep link crea exactamente una transacción: se genera una transacción expense con accountId daily y fecha válida', () => {
+    const url = 'pocketflow://expense?amount=4.80&description=Desayuno&category=food'
+    const result = parseShortcutUrl(url, validCategoryIds)
+    assert.equal(result.valid, true)
+
+    const transactions: Transaction[] = []
+    if (result.valid) {
+      const nowIso = new Date().toISOString()
+      const newTx: Transaction = {
+        id: 'tx_deep_1',
+        type: 'expense',
+        amount: result.amount,
+        description: result.description,
+        categoryId: result.categoryId,
+        accountId: 'daily',
+        date: nowIso,
+        createdAt: nowIso,
+        updatedAt: nowIso,
+      }
+      transactions.push(newTx)
+    }
+
+    assert.equal(transactions.length, 1)
+    assert.equal(transactions[0].amount, 4.80)
+    assert.equal(transactions[0].type, 'expense')
+    assert.equal(transactions[0].accountId, 'daily')
+    assert.equal(transactions[0].categoryId, 'food')
+    assert.ok(new Date(transactions[0].date).getTime() > 0)
+  })
+
+  // 12. Transferencia / ingreso no se pueden crear por deep link
+  it('95. Transferencia / ingreso no se pueden crear por deep link: el parseador bloquea cualquier intento', () => {
+    const transferUrl = 'pocketflow://transfer?amount=100&from=daily&to=savings'
+    const incomeUrl = 'pocketflow://income?amount=1500&description=Nomina'
+
+    const transferRes = parseShortcutUrl(transferUrl, validCategoryIds)
+    const incomeRes = parseShortcutUrl(incomeUrl, validCategoryIds)
+
+    assert.equal(transferRes.valid, false)
+    assert.equal(incomeRes.valid, false)
+  })
+
+  // 13. Protección anti-duplicado
+  it('96. Protección anti-duplicado: ignora llamadas idénticas repetidas dentro de la ventana de tiempo', () => {
+    const deduplicator = createDeepLinkDeduplicator(2500)
+    const url = 'pocketflow://expense?amount=12.50&description=Taxi&category=transport'
+
+    const t0 = 10000
+    // Primera llegada: debe procesarse
+    assert.equal(deduplicator.shouldProcess(url, t0), true)
+
+    // Llegada duplicada 200ms después: debe ser ignorada
+    assert.equal(deduplicator.shouldProcess(url, t0 + 200), false)
+
+    // Llegada duplicada 1500ms después: debe ser ignorada
+    assert.equal(deduplicator.shouldProcess(url, t0 + 1500), false)
+
+    // Otra URL distinta a los 1600ms: debe procesarse
+    const urlDifferent = 'pocketflow://expense?amount=3.00&description=Cafe&category=food'
+    assert.equal(deduplicator.shouldProcess(urlDifferent, t0 + 1600), true)
+
+    // Misma URL original después de 2600ms (ventana expirada): vuelve a procesarse
+    assert.equal(deduplicator.shouldProcess(url, t0 + 4500), true)
   })
 })
