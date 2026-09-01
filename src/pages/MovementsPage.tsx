@@ -3,6 +3,7 @@ import { TransactionList } from '../components/TransactionList'
 import type { Transaction, TransactionType } from '../models/finance'
 import type { ReturnTypeFinance } from '../types'
 import { money } from '../utils/money'
+import { AppIcon } from '../ui/icons'
 
 type FilterType = 'all' | TransactionType
 
@@ -40,12 +41,14 @@ export function MovementsPage({
       <header className="simple-header">
         <h1>Movimientos</h1>
         <button className="round-button" onClick={onAdd} aria-label="Añadir movimiento">
-          ＋
+          <AppIcon name="plus" size={18} />
         </button>
       </header>
 
       <div className="search-bar">
-        <span className="search-icon">🔍</span>
+        <span className="search-icon">
+          <AppIcon name="search" size={16} />
+        </span>
         <input
           type="search"
           placeholder="Buscar concepto o categoría..."
@@ -54,7 +57,7 @@ export function MovementsPage({
         />
         {search && (
           <button className="search-clear" onClick={() => setSearch('')} aria-label="Limpiar búsqueda">
-            ×
+            <AppIcon name="x" size={14} />
           </button>
         )}
       </div>

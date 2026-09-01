@@ -171,7 +171,7 @@ export function calculatePeriodStatistics(
       categoryId,
       name: category?.name ?? 'Otras',
       color: category?.color ?? '#8b8d86',
-      icon: category?.icon ?? '◌',
+      icon: category?.iconKey || category?.icon || 'shopping-basket',
       amount: Math.round(amount * 100) / 100,
       percentage,
     })

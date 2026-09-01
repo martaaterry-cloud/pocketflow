@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react'
 import type { Transaction } from '../models/finance'
 import type { ReturnTypeFinance } from '../types'
 import { money } from '../utils/money'
+import { AppIcon } from '../ui/icons'
 
 const weekdays = ['L', 'M', 'X', 'J', 'V', 'S', 'D']
 
@@ -84,11 +85,11 @@ export function CalendarPage({
       <section className="calendar-card">
         <div className="calendar-nav">
           <button type="button" className="cal-nav-btn" onClick={handlePrevMonth} aria-label="Mes anterior">
-            ‹
+            <AppIcon name="chevron-left" size={16} />
           </button>
           <h2>{monthLabel}</h2>
           <button type="button" className="cal-nav-btn" onClick={handleNextMonth} aria-label="Mes siguiente">
-            ›
+            <AppIcon name="chevron-right" size={16} />
           </button>
         </div>
 

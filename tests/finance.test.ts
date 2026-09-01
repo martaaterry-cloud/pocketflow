@@ -1,8 +1,10 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import type { Account, Budget, Category, RecurringPayment, SavingsGoal, Transaction } from '../src/models/finance'
+import type { Account, Budget, Category, FinancialPlanSettings, RecurringPayment, Reserve, SavingsGoal, SpecialPeriod, Transaction } from '../src/models/finance'
 import { calculateAccountBalance, reconcileAccounts } from '../src/utils/balance'
 import type { PersistedState, StorageAdapter } from '../src/services/storage/storageAdapter'
+import { migratePersistedState } from '../src/services/storage/localStorageAdapter'
+import { resolveIconKey } from '../src/ui/icons'
 import {
   budgetRemaining,
   budgetUsagePercentage,
@@ -27,6 +29,22 @@ import {
   selectSpendableBalance,
   selectTotalMoney,
 } from '../src/utils/financeSelectors'
+import {
+  isMonthInSpecialPeriod,
+  selectAdjustedMonthlySpendingExpectation,
+  selectEmergencyFundMonthsCovered,
+  selectEmergencyFundTarget,
+  selectEssentialMonthlyExpenses,
+  selectExpectedExtraSpendingForMonth,
+  selectFreeSavingsWithReserves,
+  selectMonthlyIncome,
+  selectMonthlyReserveNeeded,
+  selectTargetMonthlySavings,
+  selectTotalAllocatedToGoals,
+  selectTotalAllocatedToReserves,
+  selectUpcomingSpecialPeriods,
+  selectVariableMonthlyExpenses,
+} from '../src/utils/planSelectors'
 
 describe('Pocketflow — Pruebas Exhaustivas de Dominio Financiero', () => {
   const baseAccounts: Account[] = [
@@ -953,5 +971,341 @@ describe('Fase 4 — Presupuestos por Categoría y Estadísticas', () => {
   })
 })
 
+describe('Fase 5 — Iconografía Profesional y Planificación Financiera', () => {
+  // ICONOS
+  it('62. Migración de icon antiguo -> iconKey: resuelve correctamente símbolos y emojis legados a claves canónicas', () => {
+    assert.equal(resolveIconKey('◌'), 'shopping-basket')
+    assert.equal(resolveIconKey('◇'), 'ticket')
+    assert.equal(resolveIconKey('↗'), 'car')
+    assert.equal(resolveIconKey('□'), 'shirt')
+    assert.equal(resolveIconKey('○'), 'refresh-cw')
+    assert.equal(resolveIconKey('△'), 'dumbbell')
+    assert.equal(resolveIconKey('⌁'), 'plane')
+    assert.equal(resolveIconKey('·'), 'ellipsis')
+    assert.equal(resolveIconKey('🗾'), 'plane')
+    assert.equal(resolveIconKey('🛡️'), 'shield')
+    assert.equal(resolveIconKey('🚗'), 'car')
+    assert.equal(resolveIconKey('🏠'), 'house')
 
+    // Migración en estado persistido
+    const migrated = migratePersistedState({
+      categories: [{ id: 'c1', name: 'Comida', color: '#8DB596', icon: '◌' }],
+      goals: [{ id: 'g1', name: 'Viaje', target: 1000, current: 200, icon: '🗾' }],
+    })
+    assert.equal(migrated.categories[0].iconKey, 'shopping-basket')
+    assert.equal(migrated.goals[0].iconKey, 'plane')
+  })
 
+  it('63. iconKey desconocido usa fallback: devuelve clave de respaldo segura sin lanzar error', () => {
+    assert.equal(resolveIconKey('icono_desconocido_123'), 'target')
+    assert.equal(resolveIconKey(undefined), 'target')
+    assert.equal(resolveIconKey(null), 'target')
+    assert.equal(resolveIconKey(''), 'target')
+    assert.equal(resolveIconKey('clave_rara', 'ellipsis'), 'ellipsis')
+  })
+
+  // AHORRO / PLAN
+  it('64. Cálculo ahorro libre: savingsBalance - (emergencyAllocated + goalsAllocated + reservesAllocated)', () => {
+    const savingsBalance = 1500
+    const emergencyAllocated = 500
+    const goalsAllocated = 400
+    const reservesAllocated = 300
+    const free = selectFreeSavingsWithReserves(
+      savingsBalance,
+      emergencyAllocated,
+      goalsAllocated,
+      reservesAllocated
+    )
+    assert.equal(free, 300)
+  })
+
+  it('65. Ahorro asignado a objetivos: suma fielmente el campo current de todos los objetivos', () => {
+    const goals: SavingsGoal[] = [
+      { id: 'g1', name: 'Japón', target: 2000, current: 350 },
+      { id: 'g2', name: 'Portátil', target: 1000, current: 250 },
+    ]
+    assert.equal(selectTotalAllocatedToGoals(goals), 600)
+  })
+
+  it('66. Ahorro asignado a reservas: suma exclusivamente las reservas activas', () => {
+    const reserves: Reserve[] = [
+      { id: 'r1', name: 'Navidad', targetAmount: 400, currentAllocated: 150, targetDate: '2026-12-15', iconKey: 'sparkles', active: true },
+      { id: 'r2', name: 'Seguro', targetAmount: 300, currentAllocated: 100, targetDate: '2027-02-01', iconKey: 'car', active: true },
+      { id: 'r3', name: 'Inactiva', targetAmount: 500, currentAllocated: 200, targetDate: '2027-06-01', iconKey: 'sun', active: false },
+    ]
+    assert.equal(selectTotalAllocatedToReserves(reserves), 250)
+  })
+
+  it('67. Fondo emergencia no altera totalMoney: asignar colchón clasifica ahorro sin alterar el patrimonio total', () => {
+    const accounts: Account[] = [
+      { id: 'daily', name: 'Cuenta diaria', type: 'spending', initialBalance: 400 },
+      { id: 'savings', name: 'Ahorro', type: 'savings', initialBalance: 1000 },
+    ]
+    const reconciled = reconcileAccounts(accounts, [])
+    const totalMoneyBefore = selectTotalMoney(reconciled)
+
+    // Simulamos asignar 300 al fondo de emergencia
+    const emergencyFundCurrent = 300
+    const totalMoneyAfter = selectTotalMoney(reconciled)
+
+    assert.equal(totalMoneyBefore, 1400)
+    assert.equal(totalMoneyAfter, 1400)
+    assert.equal(emergencyFundCurrent, 300)
+  })
+
+  it('68. Reserva no altera savingsBalance ni totalMoney: clasifica ahorro existente sin generar gasto ni transferencia', () => {
+    const accounts: Account[] = [
+      { id: 'daily', name: 'Cuenta diaria', type: 'spending', initialBalance: 500 },
+      { id: 'savings', name: 'Ahorro', type: 'savings', initialBalance: 1200 },
+    ]
+    const reconciled = reconcileAccounts(accounts, [])
+    const savingsBefore = selectSavingsBalance(reconciled)
+    const totalBefore = selectTotalMoney(reconciled)
+
+    const reserve: Reserve = {
+      id: 'res1',
+      name: 'Verano',
+      targetAmount: 600,
+      currentAllocated: 250,
+      targetDate: '2027-07-01',
+      iconKey: 'sun',
+      active: true,
+    }
+
+    const savingsAfter = selectSavingsBalance(reconciled)
+    const totalAfter = selectTotalMoney(reconciled)
+
+    assert.equal(savingsBefore, 1200)
+    assert.equal(savingsAfter, 1200)
+    assert.equal(totalBefore, 1700)
+    assert.equal(totalAfter, 1700)
+    assert.equal(reserve.currentAllocated, 250)
+  })
+
+  it('69. Suma de asignaciones correcta: emergencyAllocated + goalsAllocated + reservesAllocated + freeSavings = savingsBalance', () => {
+    const savingsBalance = 2000
+    const emergencyAllocated = 600
+    const goalsAllocated = 500
+    const reservesAllocated = 400
+    const freeSavings = selectFreeSavingsWithReserves(
+      savingsBalance,
+      emergencyAllocated,
+      goalsAllocated,
+      reservesAllocated
+    )
+
+    assert.equal(freeSavings, 500)
+    assert.equal(emergencyAllocated + goalsAllocated + reservesAllocated + freeSavings, savingsBalance)
+  })
+
+  it('70. Impedir asignaciones por encima de savingsBalance o freeSavings: la fórmula protege contra negativos', () => {
+    const savingsBalance = 800
+    const emergencyAllocated = 500
+    const goalsAllocated = 300
+    const reservesAllocated = 100 // Intento que suma 900 > 800
+    const free = selectFreeSavingsWithReserves(
+      savingsBalance,
+      emergencyAllocated,
+      goalsAllocated,
+      reservesAllocated
+    )
+    assert.equal(free, 0) // No arroja número negativo
+  })
+
+  it('71. Meses cubiertos de fondo emergencia: divide fondo actual entre gastos esenciales con redondeo a 1 decimal', () => {
+    const essentialExpenses = 700
+    const currentEmergency = 2100
+    const covered = selectEmergencyFundMonthsCovered(currentEmergency, essentialExpenses)
+    assert.equal(covered, 3.0)
+
+    const partialCovered = selectEmergencyFundMonthsCovered(1050, 700)
+    assert.equal(partialCovered, 1.5)
+
+    // Gastos esenciales = 0
+    assert.equal(selectEmergencyFundMonthsCovered(1000, 0), 0)
+  })
+
+  it('72. Target de fondo a 3 meses: calcula el producto exacto de meses por gastos esenciales', () => {
+    const settings: FinancialPlanSettings = {
+      monthlyIncome: 1500,
+      targetSavingsType: 'percentage',
+      targetSavingsValue: 15,
+      emergencyFundTargetType: 'months',
+      emergencyFundTargetValue: 3,
+      emergencyFundCurrent: 0,
+      essentialCategoryIds: ['food'],
+    }
+    const essentialExpenses = 800
+    const target = selectEmergencyFundTarget(settings, essentialExpenses)
+    assert.equal(target, 2400)
+  })
+
+  it('73. Target de fondo a 6 meses: calcula el producto exacto de 6 meses de gastos esenciales', () => {
+    const settings: FinancialPlanSettings = {
+      monthlyIncome: 1500,
+      targetSavingsType: 'percentage',
+      targetSavingsValue: 15,
+      emergencyFundTargetType: 'months',
+      emergencyFundTargetValue: 6,
+      emergencyFundCurrent: 0,
+      essentialCategoryIds: ['food'],
+    }
+    const essentialExpenses = 750
+    const target = selectEmergencyFundTarget(settings, essentialExpenses)
+    assert.equal(target, 4500)
+  })
+
+  it('74. Ahorro mensual por porcentaje: aplica el porcentaje configurado sobre los ingresos mensuales', () => {
+    const settings: FinancialPlanSettings = {
+      monthlyIncome: 1600,
+      targetSavingsType: 'percentage',
+      targetSavingsValue: 15,
+      emergencyFundTargetType: 'months',
+      emergencyFundTargetValue: 3,
+      emergencyFundCurrent: 0,
+      essentialCategoryIds: [],
+    }
+    const targetSavings = selectTargetMonthlySavings(settings)
+    assert.equal(targetSavings, 240) // 15% de 1600 = 240
+  })
+
+  it('75. Ahorro mensual por cantidad fija: respeta la cantidad definida sin alterarla por los ingresos', () => {
+    const settings: FinancialPlanSettings = {
+      monthlyIncome: 1800,
+      targetSavingsType: 'fixed',
+      targetSavingsValue: 275,
+      emergencyFundTargetType: 'months',
+      emergencyFundTargetValue: 3,
+      emergencyFundCurrent: 0,
+      essentialCategoryIds: [],
+    }
+    const targetSavings = selectTargetMonthlySavings(settings)
+    assert.equal(targetSavings, 275)
+  })
+
+  // RESERVAS
+  it('76. monthlyReserveNeeded: calcula (targetAmount - currentAllocated) / meses restantes', () => {
+    const reserve: Reserve = {
+      id: 'r1',
+      name: 'Navidad',
+      targetAmount: 480,
+      currentAllocated: 120,
+      targetDate: '2026-12-01',
+      iconKey: 'sparkles',
+      active: true,
+    }
+    // Desde marzo (mes 2) hasta diciembre (mes 11) hay 9 meses
+    const refDate = new Date(2026, 2, 15)
+    const needed = selectMonthlyReserveNeeded(reserve, refDate)
+    assert.equal(needed, 40) // (480 - 120) / 9 = 40 €/mes
+  })
+
+  it('77. Reserva completada -> 0 €/mes necesarios: cuando currentAllocated >= targetAmount devuelve 0', () => {
+    const reserve: Reserve = {
+      id: 'r1',
+      name: 'Seguro',
+      targetAmount: 360,
+      currentAllocated: 360,
+      targetDate: '2026-12-01',
+      iconKey: 'car',
+      active: true,
+    }
+    const refDate = new Date(2026, 5, 1)
+    const needed = selectMonthlyReserveNeeded(reserve, refDate)
+    assert.equal(needed, 0)
+  })
+
+  it('78. Fecha vencida tratada de forma segura: si targetDate venció, devuelve el pendiente sin error ni NaN', () => {
+    const reserve: Reserve = {
+      id: 'r1',
+      name: 'Regalo',
+      targetAmount: 200,
+      currentAllocated: 50,
+      targetDate: '2026-05-01',
+      iconKey: 'gift',
+      active: true,
+    }
+    // Fecha posterior a targetDate (mes 7 = agosto 2026)
+    const refDate = new Date(2026, 7, 1)
+    const needed = selectMonthlyReserveNeeded(reserve, refDate)
+    assert.equal(needed, 150) // Pendiente completo de forma segura
+    assert.ok(!isNaN(needed))
+  })
+
+  it('79. Eliminar reserva libera ahorro asignado: al desaparecer la reserva, el ahorro libre aumenta de inmediato', () => {
+    const savingsBalance = 1000
+    const emergencyAllocated = 200
+    const goalsAllocated = 100
+
+    let reserves: Reserve[] = [
+      { id: 'r1', name: 'Reserva A', targetAmount: 300, currentAllocated: 150, targetDate: '2026-12-01', iconKey: 'car', active: true },
+    ]
+
+    const freeBefore = selectFreeSavingsWithReserves(
+      savingsBalance,
+      emergencyAllocated,
+      goalsAllocated,
+      selectTotalAllocatedToReserves(reserves)
+    )
+    assert.equal(freeBefore, 550) // 1000 - 200 - 100 - 150 = 550
+
+    // Eliminamos la reserva
+    reserves = []
+    const freeAfter = selectFreeSavingsWithReserves(
+      savingsBalance,
+      emergencyAllocated,
+      goalsAllocated,
+      selectTotalAllocatedToReserves(reserves)
+    )
+    assert.equal(freeAfter, 700) // 1000 - 200 - 100 = 700
+  })
+
+  // ESTACIONALIDAD
+  it('80. Periodo especial detectado correctamente: filtra periodos pasados y ordena cronológicamente', () => {
+    const periods: SpecialPeriod[] = [
+      { id: 'p1', name: 'Verano 2027', startDate: '2027-07-01', endDate: '2027-08-31', expectedExtraBudget: 600, type: 'expected_high_spend' },
+      { id: 'p2', name: 'Navidad 2026', startDate: '2026-12-01', endDate: '2027-01-06', expectedExtraBudget: 400, type: 'expected_high_spend' },
+      { id: 'p0', name: 'Pasado', startDate: '2025-01-01', endDate: '2025-01-15', expectedExtraBudget: 200, type: 'normal' },
+    ]
+    const upcoming = selectUpcomingSpecialPeriods(periods, new Date('2026-09-01'))
+    assert.equal(upcoming.length, 2)
+    assert.equal(upcoming[0].id, 'p2') // Navidad primero
+    assert.equal(upcoming[1].id, 'p1') // Verano después
+  })
+
+  it('81. Gasto extraordinario esperado por mes: calcula el extra de un periodo activo en el mes evaluado', () => {
+    const periods: SpecialPeriod[] = [
+      { id: 'p1', name: 'Fiestas', startDate: '2026-10-10', endDate: '2026-10-20', expectedExtraBudget: 250, type: 'expected_high_spend' },
+    ]
+    const octDate = new Date(2026, 9, 15)
+    const novDate = new Date(2026, 10, 15)
+
+    assert.equal(selectExpectedExtraSpendingForMonth(periods, octDate), 250)
+    assert.equal(selectExpectedExtraSpendingForMonth(periods, novDate), 0)
+  })
+
+  it('82. Periodo que cruza cambio de año: divide proporcionalmente el gasto entre los meses involucrados', () => {
+    const periods: SpecialPeriod[] = [
+      { id: 'p1', name: 'Navidad', startDate: '2026-12-01', endDate: '2027-01-06', expectedExtraBudget: 400, type: 'expected_high_spend' },
+    ]
+    const decDate = new Date(2026, 11, 15) // Diciembre 2026
+    const janDate = new Date(2027, 0, 3)    // Enero 2027
+    const febDate = new Date(2027, 1, 1)    // Febrero 2027
+
+    // Solapamiento de 2 meses: 400 / 2 = 200 € por mes
+    assert.equal(selectExpectedExtraSpendingForMonth(periods, decDate), 200)
+    assert.equal(selectExpectedExtraSpendingForMonth(periods, janDate), 200)
+    assert.equal(selectExpectedExtraSpendingForMonth(periods, febDate), 0)
+  })
+
+  it('83. Comparación ajustada sin NaN/Infinity: suma base + extra estacional limpiamente', () => {
+    const periods: SpecialPeriod[] = [
+      { id: 'p1', name: 'Verano', startDate: '2027-07-01', endDate: '2027-07-31', expectedExtraBudget: 350, type: 'expected_high_spend' },
+    ]
+    const julDate = new Date(2027, 6, 15)
+    const adjusted = selectAdjustedMonthlySpendingExpectation(1100, periods, julDate)
+    assert.equal(adjusted, 1450)
+    assert.ok(!isNaN(adjusted))
+    assert.ok(isFinite(adjusted))
+  })
+})

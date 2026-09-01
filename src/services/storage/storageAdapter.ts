@@ -1,4 +1,14 @@
-import type { Account, Budget, Category, RecurringPayment, SavingsGoal, Transaction } from '../../models/finance'
+import type {
+  Account,
+  Budget,
+  Category,
+  FinancialPlanSettings,
+  RecurringPayment,
+  Reserve,
+  SavingsGoal,
+  SpecialPeriod,
+  Transaction,
+} from '../../models/finance'
 
 export interface PersistedState {
   accounts: Account[]
@@ -7,6 +17,9 @@ export interface PersistedState {
   recurring: RecurringPayment[]
   categories: Category[]
   budgets: Budget[]
+  reserves: Reserve[]
+  specialPeriods: SpecialPeriod[]
+  planSettings: FinancialPlanSettings
 }
 
 export interface StorageAdapter {

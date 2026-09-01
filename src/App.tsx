@@ -7,6 +7,7 @@ import { HomePage } from './pages/HomePage'
 import { MorePage } from './pages/MorePage'
 import { MovementsPage } from './pages/MovementsPage'
 import { SavingsPage } from './pages/SavingsPage'
+import { AppIcon } from './ui/icons'
 import { useFinance } from './store/useFinance'
 
 type Tab = 'home' | 'movements' | 'calendar' | 'savings' | 'more'
@@ -98,7 +99,7 @@ export default function App() {
           className={tab === 'home' ? 'active' : ''}
           onClick={() => setTab('home')}
         >
-          <span className="nav-icon">⌂</span>
+          <span className="nav-icon"><AppIcon name="home" size={20} /></span>
           <span className="nav-label">Inicio</span>
         </button>
         <button
@@ -106,7 +107,7 @@ export default function App() {
           className={tab === 'movements' ? 'active' : ''}
           onClick={() => setTab('movements')}
         >
-          <span className="nav-icon">≡</span>
+          <span className="nav-icon"><AppIcon name="receipt" size={20} /></span>
           <span className="nav-label">Movimientos</span>
         </button>
         <button
@@ -114,7 +115,7 @@ export default function App() {
           className={tab === 'calendar' ? 'active' : ''}
           onClick={() => setTab('calendar')}
         >
-          <span className="nav-icon">□</span>
+          <span className="nav-icon"><AppIcon name="calendar" size={20} /></span>
           <span className="nav-label">Calendario</span>
         </button>
         <button
@@ -122,7 +123,7 @@ export default function App() {
           className={tab === 'savings' ? 'active' : ''}
           onClick={() => setTab('savings')}
         >
-          <span className="nav-icon">◇</span>
+          <span className="nav-icon"><AppIcon name="piggy-bank" size={20} /></span>
           <span className="nav-label">Ahorro</span>
         </button>
         <button
@@ -130,7 +131,7 @@ export default function App() {
           className={tab === 'more' ? 'active' : ''}
           onClick={() => setTab('more')}
         >
-          <span className="nav-icon">•••</span>
+          <span className="nav-icon"><AppIcon name="more-horizontal" size={20} /></span>
           <span className="nav-label">Más</span>
         </button>
       </nav>

@@ -7,6 +7,7 @@ import type {
   RecurringPayment,
   UpdateRecurringPaymentInput,
 } from '../models/finance'
+import { AppIcon } from '../ui/icons'
 
 interface RecurringPaymentModalProps {
   open: boolean
@@ -29,8 +30,8 @@ export function RecurringPaymentModal({
 }: RecurringPaymentModalProps) {
   const [name, setName] = useState('')
   const [amount, setAmount] = useState('')
-  const [categoryId, setCategoryId] = useState(categories[0]?.id ?? 'subscriptions')
-  const [accountId, setAccountId] = useState(accounts[0]?.id ?? 'daily')
+  const [categoryId, setCategoryId] = useState('')
+  const [accountId, setAccountId] = useState('')
   const [frequency, setFrequency] = useState<RecurringFrequency>('monthly')
   const [nextDate, setNextDate] = useState(() => new Date().toISOString().slice(0, 10))
   const [active, setActive] = useState(true)
@@ -51,8 +52,8 @@ export function RecurringPaymentModal({
     } else {
       setName('')
       setAmount('')
-      setCategoryId(categories.find((c) => c.id === 'subscriptions')?.id ?? categories[0]?.id ?? 'food')
-      setAccountId(accounts.find((a) => a.type === 'spending')?.id ?? accounts[0]?.id ?? 'daily')
+      setCategoryId(categories[0]?.id ?? '')
+      setAccountId(accounts.find((a) => a.type === 'spending')?.id ?? accounts[0]?.id ?? '')
       setFrequency('monthly')
       setNextDate(new Date().toISOString().slice(0, 10))
       setActive(true)
@@ -98,7 +99,7 @@ export function RecurringPaymentModal({
         <div className="modal-header">
           <h3>{isEditing ? 'Editar pago recurrente' : 'Nuevo pago recurrente'}</h3>
           <button type="button" className="close-btn" onClick={onClose} aria-label="Cerrar">
-            ×
+            <AppIcon name="x" size={18} />
           </button>
         </div>
 
@@ -160,7 +161,7 @@ export function RecurringPaymentModal({
               <select value={categoryId} onChange={(e) => setCategoryId(e.target.value)}>
                 {categories.map((c) => (
                   <option key={c.id} value={c.id}>
-                    {c.icon} {c.name}
+                    {c.name}
                   </option>
                 ))}
               </select>

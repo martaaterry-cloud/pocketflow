@@ -1,5 +1,6 @@
 import type { Category, Transaction } from '../models/finance'
 import { money, shortDate } from '../utils/money'
+import { AppIcon } from '../ui/icons'
 
 export function TransactionList({
   transactions,
@@ -43,7 +44,13 @@ export function TransactionList({
                 background: isTransfer ? '#768ca5' : isIncome ? '#5d9c74' : category?.color ?? '#bbb',
               }}
             >
-              {isTransfer ? '⇄' : isIncome ? '↓' : category?.icon ?? '◌'}
+              {isTransfer ? (
+                <AppIcon name="arrow-left-right" size={15} color="#fff" />
+              ) : isIncome ? (
+                <AppIcon name="arrow-down-left" size={15} color="#fff" />
+              ) : (
+                <AppIcon name={category?.iconKey || category?.icon || 'shopping-basket'} size={15} color="#fff" />
+              )}
             </div>
             <div className="transaction-main">
               <strong>{t.description}</strong>

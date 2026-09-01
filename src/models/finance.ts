@@ -14,7 +14,8 @@ export interface Category {
   id: string
   name: string
   color: string
-  icon: string
+  icon: string // legacy o iconKey
+  iconKey?: string
 }
 
 export interface Transaction {
@@ -39,7 +40,8 @@ export interface SavingsGoal {
   target: number
   current: number // cantidad asignada actual del ahorro libre
   targetDate?: string
-  icon?: string
+  icon?: string // legacy
+  iconKey?: string
   completed?: boolean
 }
 
@@ -80,3 +82,61 @@ export type CreateBudgetInput = {
 
 export type UpdateBudgetInput = Partial<CreateBudgetInput>
 
+/* ==========================================================================
+   Planificación Financiera de Medio Plazo (Reservas, Estacionalidad, Plan)
+   ========================================================================== */
+
+/**
+ * Reserva: Dinero del ahorro existente reservado para gastos previsibles futuros
+ * (Navidad, vacaciones de verano, seguros, matrículas, etc.).
+ * No altera totalMoney, no es gasto ni transferencia.
+ */
+export interface Reserve {
+  id: string
+  name: string
+  targetAmount: number
+  currentAllocated: number
+  targetDate: string // YYYY-MM-DD
+  iconKey: string
+  active: boolean
+  note?: string
+}
+
+export type CreateReserveInput = Omit<Reserve, 'id' | 'currentAllocated'> & {
+  currentAllocated?: number
+}
+export type UpdateReserveInput = Partial<Omit<Reserve, 'id'>>
+
+export type SpecialPeriodType = 'normal' | 'expected_high_spend' | 'expected_low_spend'
+
+/**
+ * Periodo Especial / Estacionalidad: Meses o intervalos temporales con gastos extraordinarios previstos
+ * (Navidad, vacaciones, etc.), para evitar falsos positivos de gasto excesivo.
+ */
+export interface SpecialPeriod {
+  id: string
+  name: string
+  startDate: string // YYYY-MM-DD
+  endDate: string // YYYY-MM-DD
+  expectedExtraBudget: number
+  type: SpecialPeriodType
+  note?: string
+}
+
+export type CreateSpecialPeriodInput = Omit<SpecialPeriod, 'id'>
+export type UpdateSpecialPeriodInput = Partial<CreateSpecialPeriodInput>
+
+export type SavingsTargetType = 'percentage' | 'fixed'
+export type EmergencyFundTargetType = 'months' | 'fixed'
+
+export interface FinancialPlanSettings {
+  monthlyIncome: number
+  targetSavingsType: SavingsTargetType
+  targetSavingsValue: number // porcentaje (ej. 15) o importe en € (ej. 250)
+  emergencyFundTargetType: EmergencyFundTargetType
+  emergencyFundTargetValue: number // número de meses (ej. 3 o 6) o importe en € (ej. 3000)
+  emergencyFundCurrent: number // cantidad asignada del ahorro existente al fondo de emergencia
+  essentialCategoryIds: string[]
+}
+
+export type UpdatePlanSettingsInput = Partial<FinancialPlanSettings>

@@ -1,77 +1,76 @@
 import { useEffect, useState } from 'react'
-import type { CreateSavingsGoalInput, SavingsGoal, UpdateSavingsGoalInput } from '../models/finance'
+import type { CreateReserveInput, Reserve, UpdateReserveInput } from '../models/finance'
 import { AppIcon, resolveIconKey } from '../ui/icons'
 import { IconPicker } from './IconPicker'
 
-interface GoalModalProps {
+interface ReserveModalProps {
   open: boolean
   onClose: () => void
-  goal?: SavingsGoal | null
-  onSave: (goalData: CreateSavingsGoalInput | UpdateSavingsGoalInput, id?: string) => void
+  reserve?: Reserve | null
+  onSave: (data: CreateReserveInput | UpdateReserveInput, id?: string) => void
   onDelete?: (id: string) => void
 }
 
-export function GoalModal({ open, onClose, goal, onSave, onDelete }: GoalModalProps) {
+export function ReserveModal({ open, onClose, reserve, onSave, onDelete }: ReserveModalProps) {
   const [name, setName] = useState('')
-  const [target, setTarget] = useState('')
-  const [iconKey, setIconKey] = useState('target')
+  const [targetAmount, setTargetAmount] = useState('')
   const [targetDate, setTargetDate] = useState('')
+  const [iconKey, setIconKey] = useState('sparkles')
   const [confirmDelete, setConfirmDelete] = useState(false)
 
-  const isEditing = Boolean(goal)
+  const isEditing = Boolean(reserve)
 
   useEffect(() => {
-    if (goal) {
-      setName(goal.name)
-      setTarget(String(goal.target).replace('.', ','))
-      setIconKey(resolveIconKey(goal.iconKey || goal.icon, 'target'))
-      setTargetDate(goal.targetDate ?? '')
+    if (reserve) {
+      setName(reserve.name)
+      setTargetAmount(String(reserve.targetAmount).replace('.', ','))
+      setTargetDate(reserve.targetDate)
+      setIconKey(resolveIconKey(reserve.iconKey, 'sparkles'))
       setConfirmDelete(false)
     } else {
       setName('')
-      setTarget('')
-      setIconKey('target')
+      setTargetAmount('')
       setTargetDate('')
+      setIconKey('sparkles')
       setConfirmDelete(false)
     }
-  }, [goal, open])
+  }, [reserve, open])
 
   if (!open) return null
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
-    const numericTarget = Number(target.replace(',', '.'))
-    if (!name.trim() || isNaN(numericTarget) || numericTarget <= 0) return
+    const numericTarget = Number(targetAmount.replace(',', '.'))
+    if (!name.trim() || isNaN(numericTarget) || numericTarget <= 0 || !targetDate) return
 
-    const sanitizedKey = resolveIconKey(iconKey, 'target')
+    const sanitizedKey = resolveIconKey(iconKey, 'sparkles')
 
-    if (isEditing && goal) {
+    if (isEditing && reserve) {
       onSave(
         {
           name: name.trim(),
-          target: numericTarget,
+          targetAmount: numericTarget,
+          targetDate,
           iconKey: sanitizedKey,
-          icon: sanitizedKey,
-          targetDate: targetDate || undefined,
         },
-        goal.id
+        reserve.id
       )
     } else {
       onSave({
         name: name.trim(),
-        target: numericTarget,
-        current: 0,
+        targetAmount: numericTarget,
+        currentAllocated: 0,
+        targetDate,
         iconKey: sanitizedKey,
-        icon: sanitizedKey,
-        targetDate: targetDate || undefined,
+        active: true,
       })
     }
     onClose()
   }
 
   const handleDelete = () => {
-    if (goal && onDelete) {
-      onDelete(goal.id)
+    if (reserve && onDelete) {
+      onDelete(reserve.id)
       onClose()
     }
   }
@@ -80,7 +79,7 @@ export function GoalModal({ open, onClose, goal, onSave, onDelete }: GoalModalPr
     <div className="modal-backdrop" onClick={onClose} role="dialog" aria-modal="true">
       <div className="modal" onClick={(e) => e.stopPropagation()}>
         <div className="modal-header">
-          <h3>{isEditing ? 'Editar objetivo' : 'Nuevo objetivo de ahorro'}</h3>
+          <h3>{isEditing ? 'Editar reserva' : 'Nueva reserva de gasto previsto'}</h3>
           <button type="button" className="close-btn" onClick={onClose} aria-label="Cerrar">
             <AppIcon name="x" size={18} />
           </button>
@@ -89,10 +88,10 @@ export function GoalModal({ open, onClose, goal, onSave, onDelete }: GoalModalPr
         <form onSubmit={handleSubmit}>
           <div className="form-group">
             <label>
-              Nombre del objetivo
+              Nombre de la reserva
               <input
                 type="text"
-                placeholder="Japón, Portátil, Coche..."
+                placeholder="Navidad, Seguro del coche, Matrícula..."
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 autoFocus
@@ -102,27 +101,20 @@ export function GoalModal({ open, onClose, goal, onSave, onDelete }: GoalModalPr
 
           <div className="form-group">
             <label>
-              Cantidad objetivo (€)
+              Importe previsto (€)
               <input
                 type="text"
                 inputMode="decimal"
-                placeholder="2.500,00"
-                value={target}
-                onChange={(e) => setTarget(e.target.value)}
+                placeholder="400,00"
+                value={targetAmount}
+                onChange={(e) => setTargetAmount(e.target.value)}
               />
             </label>
           </div>
 
           <div className="form-group">
             <label>
-              Icono del objetivo
-              <IconPicker selectedKey={iconKey} onSelect={setIconKey} />
-            </label>
-          </div>
-
-          <div className="form-group">
-            <label>
-              Fecha límite (opcional)
+              Fecha prevista de gasto
               <input
                 type="date"
                 value={targetDate}
@@ -131,9 +123,16 @@ export function GoalModal({ open, onClose, goal, onSave, onDelete }: GoalModalPr
             </label>
           </div>
 
+          <div className="form-group">
+            <label>
+              Icono representativo
+              <IconPicker selectedKey={iconKey} onSelect={setIconKey} />
+            </label>
+          </div>
+
           <div className="modal-actions">
             <button type="submit" className="primary-button">
-              {isEditing ? 'Guardar cambios' : 'Crear objetivo'}
+              {isEditing ? 'Guardar cambios' : 'Crear reserva'}
             </button>
 
             {isEditing && onDelete && (
@@ -144,13 +143,13 @@ export function GoalModal({ open, onClose, goal, onSave, onDelete }: GoalModalPr
                     className="danger-outline-button"
                     onClick={() => setConfirmDelete(true)}
                   >
-                    Eliminar objetivo
+                    Eliminar reserva
                   </button>
                 ) : (
                   <div className="confirm-delete-box">
                     <p>
-                      ¿Seguro que deseas eliminar este objetivo? El dinero que tenga asignado se liberará
-                      automáticamente a tu ahorro libre.
+                      ¿Seguro que deseas eliminar esta reserva? El dinero que tenga asignado volverá a estar disponible
+                      en tu ahorro libre.
                     </p>
                     <div className="confirm-delete-actions">
                       <button

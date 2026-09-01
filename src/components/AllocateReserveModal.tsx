@@ -1,30 +1,30 @@
 import { useState } from 'react'
-import type { SavingsGoal } from '../models/finance'
+import type { Reserve } from '../models/finance'
 import { money } from '../utils/money'
 import { AppIcon } from '../ui/icons'
 
-interface AllocateSavingsModalProps {
+interface AllocateReserveModalProps {
   open: boolean
   onClose: () => void
-  goal: SavingsGoal | null
+  reserve: Reserve | null
   freeSavings: number
-  onAllocate: (goalId: string, amount: number) => boolean
-  onDeallocate: (goalId: string, amount: number) => boolean
+  onAllocate: (reserveId: string, amount: number) => boolean
+  onDeallocate: (reserveId: string, amount: number) => boolean
 }
 
-export function AllocateSavingsModal({
+export function AllocateReserveModal({
   open,
   onClose,
-  goal,
+  reserve,
   freeSavings,
   onAllocate,
   onDeallocate,
-}: AllocateSavingsModalProps) {
+}: AllocateReserveModalProps) {
   const [mode, setMode] = useState<'allocate' | 'deallocate'>('allocate')
   const [amount, setAmount] = useState('')
   const [error, setError] = useState<string | null>(null)
 
-  if (!open || !goal) return null
+  if (!open || !reserve) return null
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
@@ -41,19 +41,19 @@ export function AllocateSavingsModal({
         setError(`No puedes asignar más de ${money(freeSavings)} (tu ahorro libre disponible).`)
         return
       }
-      const success = onAllocate(goal.id, numeric)
+      const success = onAllocate(reserve.id, numeric)
       if (!success) {
-        setError('Error al asignar ahorro.')
+        setError('Error al asignar fondos a la reserva.')
         return
       }
     } else {
-      if (numeric > goal.current) {
-        setError(`No puedes retirar más de ${money(goal.current)} (lo asignado a este objetivo).`)
+      if (numeric > reserve.currentAllocated) {
+        setError(`No puedes retirar más de ${money(reserve.currentAllocated)} (lo asignado actualmente a esta reserva).`)
         return
       }
-      const success = onDeallocate(goal.id, numeric)
+      const success = onDeallocate(reserve.id, numeric)
       if (!success) {
-        setError('Error al retirar ahorro.')
+        setError('Error al retirar fondos de la reserva.')
         return
       }
     }
@@ -67,8 +67,8 @@ export function AllocateSavingsModal({
       <div className="modal" onClick={(e) => e.stopPropagation()}>
         <div className="modal-header">
           <h3 style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <AppIcon name={goal.iconKey || goal.icon || 'target'} size={20} />
-            {goal.name}
+            <AppIcon name={reserve.iconKey} size={20} />
+            {reserve.name}
           </h3>
           <button type="button" className="close-btn" onClick={onClose} aria-label="Cerrar">
             <AppIcon name="x" size={18} />
@@ -100,42 +100,29 @@ export function AllocateSavingsModal({
 
         <div className="info-badge-row">
           <span>Ahorro libre disponible: <b>{money(freeSavings)}</b></span>
-          <span>Asignado a este objetivo: <b>{money(goal.current)}</b></span>
+          <span>Asignado a la reserva: <b>{money(reserve.currentAllocated)}</b></span>
         </div>
 
-        <form onSubmit={handleSubmit}>
-          <div className="form-group" style={{ marginTop: 14 }}>
+        <form onSubmit={handleSubmit} style={{ marginTop: 14 }}>
+          <div className="form-group">
             <label>
-              {mode === 'allocate' ? 'Cantidad a asignar (€)' : 'Cantidad a retirar (€)'}
+              Importe a {mode === 'allocate' ? 'asignar' : 'retirar'} (€)
               <input
                 type="text"
                 inputMode="decimal"
-                placeholder="0,00"
+                placeholder="50,00"
                 value={amount}
-                onChange={(e) => {
-                  setAmount(e.target.value)
-                  setError(null)
-                }}
+                onChange={(e) => setAmount(e.target.value)}
                 autoFocus
               />
             </label>
           </div>
 
-          {error && <div className="form-error-callout">{error}</div>}
+          {error && <p className="form-error">{error}</p>}
 
-          <div className="info-callout" style={{ marginTop: 12 }}>
-            <p style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-              <AppIcon name="info" size={16} />
-              <span>
-                <strong>Importante:</strong> Esta acción no mueve dinero del banco ni es un gasto.
-                Solo distribuye lógicamente tu saldo de Ahorro existente.
-              </span>
-            </p>
-          </div>
-
-          <div className="modal-actions" style={{ marginTop: 18 }}>
+          <div className="modal-actions">
             <button type="submit" className="primary-button">
-              {mode === 'allocate' ? 'Asignar a objetivo' : 'Devolver a ahorro libre'}
+              {mode === 'allocate' ? 'Confirmar asignación' : 'Confirmar retirada'}
             </button>
           </div>
         </form>

@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import type { Budget, Category, CreateBudgetInput, UpdateBudgetInput } from '../models/finance'
+import { AppIcon } from '../ui/icons'
 
 interface BudgetModalProps {
   open: boolean
@@ -26,19 +27,21 @@ export function BudgetModal({
 
   const isEditing = Boolean(budget)
 
-  // Categorías elegibles para nuevo presupuesto (no duplicadas)
-  const availableCategories = isEditing
-    ? categories
-    : categories.filter((c) => !existingBudgets.some((b) => b.categoryId === c.id))
+  const activeCategoryIds = new Set(
+    existingBudgets
+      .filter((b) => !budget || b.id !== budget.id)
+      .map((b) => b.categoryId)
+  )
+
+  const availableCategories = categories.filter((c) => !activeCategoryIds.has(c.id))
 
   useEffect(() => {
     if (budget) {
       setCategoryId(budget.categoryId)
-      setAmountLimit(String(budget.amountLimit ?? budget.monthlyLimit ?? 0).replace('.', ','))
+      setAmountLimit(String(budget.amountLimit).replace('.', ','))
       setConfirmDelete(false)
     } else {
-      const defaultCat = availableCategories[0]?.id ?? categories[0]?.id ?? 'food'
-      setCategoryId(defaultCat)
+      setCategoryId(availableCategories[0]?.id ?? '')
       setAmountLimit('')
       setConfirmDelete(false)
     }
@@ -52,12 +55,17 @@ export function BudgetModal({
     if (!categoryId || isNaN(numericLimit) || numericLimit <= 0) return
 
     if (isEditing && budget) {
-      onSave({ amountLimit: numericLimit }, budget.id)
+      onSave(
+        {
+          categoryId,
+          amountLimit: numericLimit,
+        },
+        budget.id
+      )
     } else {
       onSave({
         categoryId,
         amountLimit: numericLimit,
-        period: 'monthly',
       })
     }
     onClose()
@@ -70,13 +78,15 @@ export function BudgetModal({
     }
   }
 
+  const selectedCategory = categories.find((c) => c.id === categoryId)
+
   return (
     <div className="modal-backdrop" onClick={onClose} role="dialog" aria-modal="true">
       <div className="modal" onClick={(e) => e.stopPropagation()}>
         <div className="modal-header">
           <h3>{isEditing ? 'Editar presupuesto' : 'Nuevo presupuesto mensual'}</h3>
           <button type="button" className="close-btn" onClick={onClose} aria-label="Cerrar">
-            ×
+            <AppIcon name="x" size={18} />
           </button>
         </div>
 
@@ -85,15 +95,15 @@ export function BudgetModal({
             <label>
               Categoría
               {isEditing ? (
-                <div className="static-field">
-                  {categories.find((c) => c.id === categoryId)?.icon}{' '}
-                  {categories.find((c) => c.id === categoryId)?.name}
+                <div className="static-field" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <AppIcon name={selectedCategory?.iconKey || selectedCategory?.icon || 'shopping-basket'} size={16} />
+                  <span>{selectedCategory?.name}</span>
                 </div>
               ) : (
                 <select value={categoryId} onChange={(e) => setCategoryId(e.target.value)}>
                   {availableCategories.map((c) => (
                     <option key={c.id} value={c.id}>
-                      {c.icon} {c.name}
+                      {c.name}
                     </option>
                   ))}
                 </select>

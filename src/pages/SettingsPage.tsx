@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import type { ReturnTypeFinance } from '../types'
+import { AppIcon } from '../ui/icons'
 
 export function SettingsPage({
   finance,
@@ -39,7 +40,7 @@ export function SettingsPage({
     <main className="page">
       <header className="simple-header">
         <button type="button" className="text-button back-button" onClick={onBack}>
-          ‹ Más
+          <AppIcon name="chevron-left" size={16} /> Más
         </button>
         <h1>Ajustes</h1>
         <div style={{ width: 44 }} />
@@ -79,9 +80,12 @@ export function SettingsPage({
           </div>
 
           <div className="info-callout">
-            <p>
-              ℹ️ <strong>Importante:</strong> Modificar los saldos iniciales recalcula
-              automáticamente todo el histórico de movimientos sin borrar ninguna transacción.
+            <p style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <AppIcon name="info" size={16} />
+              <span>
+                <strong>Importante:</strong> Modificar los saldos iniciales recalcula
+                automáticamente todo el histórico de movimientos sin borrar ninguna transacción.
+              </span>
             </p>
           </div>
 
@@ -90,8 +94,9 @@ export function SettingsPage({
           </button>
 
           {savedSuccess && (
-            <div className="success-toast">
-              ✓ Saldos iniciales guardados y balances recalculados correctamente.
+            <div className="success-toast" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <AppIcon name="check" size={16} />
+              <span>Saldos iniciales guardados y balances recalculados correctamente.</span>
             </div>
           )}
         </section>
@@ -99,9 +104,12 @@ export function SettingsPage({
         <section className="settings-section" style={{ marginTop: 28 }}>
           <h2>Almacenamiento y Privacidad</h2>
           <div className="privacy-card">
-            <p>
-              🔒 <strong>Local-first:</strong> Todos tus datos financieros se almacenan
-              únicamente en este dispositivo. No hay servidores externos, rastreadores ni cuentas en la nube.
+            <p style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <AppIcon name="lock" size={16} />
+              <span>
+                <strong>Local-first:</strong> Todos tus datos financieros se almacenan
+                únicamente en este dispositivo. No hay servidores externos, rastreadores ni cuentas en la nube.
+              </span>
             </p>
           </div>
         </section>

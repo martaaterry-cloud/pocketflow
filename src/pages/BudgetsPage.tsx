@@ -2,7 +2,9 @@ import { useState } from 'react'
 import { BudgetModal } from '../components/BudgetModal'
 import type { Budget, CreateBudgetInput, UpdateBudgetInput } from '../models/finance'
 import type { ReturnTypeFinance } from '../types'
+import { selectBudgetsSummary } from '../utils/budgetSelectors'
 import { money } from '../utils/money'
+import { AppIcon } from '../ui/icons'
 
 export function BudgetsPage({
   finance,
@@ -14,19 +16,28 @@ export function BudgetsPage({
   const [modalOpen, setModalOpen] = useState(false)
   const [editingBudget, setEditingBudget] = useState<Budget | null>(null)
 
-  const summary = finance.totals.budgetsSummary
+  const now = new Date()
+  const summary = selectBudgetsSummary(
+    finance.budgets,
+    finance.transactions,
+    finance.categories,
+    now
+  )
 
   const handleOpenCreate = () => {
     setEditingBudget(null)
     setModalOpen(true)
   }
 
-  const handleOpenEdit = (b: Budget) => {
-    setEditingBudget(b)
+  const handleOpenEdit = (budget: Budget) => {
+    setEditingBudget(budget)
     setModalOpen(true)
   }
 
-  const handleSave = (data: CreateBudgetInput | UpdateBudgetInput, id?: string) => {
+  const handleSaveBudget = (
+    data: CreateBudgetInput | UpdateBudgetInput,
+    id?: string
+  ) => {
     if (id) {
       finance.updateBudget(id, data)
     } else {
@@ -38,7 +49,7 @@ export function BudgetsPage({
     <main className="page">
       <header className="simple-header">
         <button type="button" className="text-button back-button" onClick={onBack}>
-          ‹ Más
+          <AppIcon name="chevron-left" size={16} /> Más
         </button>
         <h1>Presupuestos</h1>
         <button
@@ -47,7 +58,7 @@ export function BudgetsPage({
           onClick={handleOpenCreate}
           aria-label="Añadir presupuesto"
         >
-          ＋
+          <AppIcon name="plus" size={18} />
         </button>
       </header>
 
@@ -108,7 +119,7 @@ export function BudgetsPage({
                         className="category-dot mini"
                         style={{ background: item.categoryColor }}
                       >
-                        {item.categoryIcon}
+                        <AppIcon name={item.categoryIcon} size={14} color="#fff" />
                       </span>
                       <div>
                         <strong>{item.categoryName}</strong>
@@ -158,9 +169,12 @@ export function BudgetsPage({
         )}
 
         <div className="info-callout" style={{ marginTop: 24 }}>
-          <p>
-            ℹ️ <strong>Criterio de cálculo:</strong> Los presupuestos solo computan los gastos reales
-            del mes. Las transferencias entre cuentas y el ahorro no consumen presupuesto.
+          <p style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <AppIcon name="info" size={16} />
+            <span>
+              <strong>Criterio de cálculo:</strong> Los presupuestos solo computan los gastos reales
+              del mes. Las transferencias entre cuentas y el ahorro no consumen presupuesto.
+            </span>
           </p>
         </div>
       </section>
@@ -174,7 +188,7 @@ export function BudgetsPage({
         categories={finance.categories}
         existingBudgets={finance.budgets}
         budget={editingBudget}
-        onSave={handleSave}
+        onSave={handleSaveBudget}
         onDelete={finance.deleteBudget}
       />
     </main>

@@ -4,6 +4,8 @@ import type { Transaction } from '../models/finance'
 import type { ReturnTypeFinance } from '../types'
 import { money } from '../utils/money'
 
+import { AppIcon } from '../ui/icons'
+
 export function HomePage({
   finance,
   onAdd,
@@ -21,7 +23,7 @@ export function HomePage({
           <h1>Hola</h1>
         </div>
         <button className="round-button" onClick={onAdd} aria-label="Añadir movimiento">
-          ＋
+          <AppIcon name="plus" size={18} />
         </button>
       </header>
 

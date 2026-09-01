@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import type { ReturnTypeFinance } from '../types'
 import { money } from '../utils/money'
+import { AppIcon } from '../ui/icons'
 
 export function AccountsPage({
   finance,
@@ -21,9 +22,9 @@ export function AccountsPage({
   }
 
   const handleSaveInitial = (accountId: string) => {
-    const numeric = Number(tempInitialBalance.replace(',', '.'))
-    if (!isNaN(numeric)) {
-      finance.updateAccountInitialBalance(accountId, numeric)
+    const num = Number(tempInitialBalance.replace(',', '.'))
+    if (!isNaN(num)) {
+      finance.updateAccountInitialBalance(accountId, num)
     }
     setEditingAccountId(null)
   }
@@ -32,7 +33,7 @@ export function AccountsPage({
     <main className="page">
       <header className="simple-header">
         <button type="button" className="text-button back-button" onClick={onBack}>
-          ‹ Más
+          <AppIcon name="chevron-left" size={16} /> Más
         </button>
         <h1>Cuentas</h1>
         <div style={{ width: 44 }} />
@@ -52,7 +53,9 @@ export function AccountsPage({
         <section className="account-card">
           <div className="account-header">
             <div className="account-title">
-              <span className="account-icon spending">💳</span>
+              <span className="account-icon spending">
+                <AppIcon name="credit-card" size={18} />
+              </span>
               <div>
                 <strong>{dailyAccount.name}</strong>
                 <span className="account-subtitle">Uso cotidiano y gastos del día a día</span>
@@ -87,7 +90,7 @@ export function AccountsPage({
                   className="cancel-btn"
                   onClick={() => setEditingAccountId(null)}
                 >
-                  ✕
+                  <AppIcon name="x" size={14} />
                 </button>
               </div>
             ) : (
@@ -113,7 +116,9 @@ export function AccountsPage({
         <section className="account-card" style={{ marginTop: 16 }}>
           <div className="account-header">
             <div className="account-title">
-              <span className="account-icon savings">🏦</span>
+              <span className="account-icon savings">
+                <AppIcon name="landmark" size={18} />
+              </span>
               <div>
                 <strong>{savingsAccount.name}</strong>
                 <span className="account-subtitle">Fondo de reserva y metas de ahorro</span>
@@ -148,7 +153,7 @@ export function AccountsPage({
                   className="cancel-btn"
                   onClick={() => setEditingAccountId(null)}
                 >
-                  ✕
+                  <AppIcon name="x" size={14} />
                 </button>
               </div>
             ) : (
@@ -171,7 +176,7 @@ export function AccountsPage({
 
       <div className="info-callout" style={{ marginTop: 24 }}>
         <p>
-          💡 <strong>Regla de integridad:</strong> El saldo actual nunca es editable directamente.
+          <AppIcon name="info" size={16} /> <strong>Regla de integridad:</strong> El saldo actual nunca es editable directamente.
           Se deriva siempre de sumar o restar todas las transacciones históricas a tu saldo inicial.
         </p>
       </div>

@@ -5,6 +5,7 @@ import type { CreateSavingsGoalInput, SavingsGoal, UpdateSavingsGoalInput } from
 import type { ReturnTypeFinance } from '../types'
 import { selectGoalProgress } from '../utils/financeSelectors'
 import { money } from '../utils/money'
+import { AppIcon } from '../ui/icons'
 
 export function SavingsPage({ finance }: { finance: ReturnTypeFinance }) {
   const [goalModalOpen, setGoalModalOpen] = useState(false)
@@ -50,18 +51,22 @@ export function SavingsPage({ finance }: { finance: ReturnTypeFinance }) {
         <span className="hero-tag">Ahorro total</span>
         <strong className="hero-main-number">{money(finance.totals.savingsBalance)}</strong>
 
-        <div className="hero-kpis">
-          <div className="hero-kpi-item">
-            <span>Ahorro asignado</span>
-            <strong>{money(finance.totals.assignedSavings)}</strong>
-          </div>
+        <div className="hero-kpis" style={{ gridTemplateColumns: 'repeat(2, 1fr)', gap: 12 }}>
           <div className="hero-kpi-item">
             <span>Ahorro libre</span>
             <strong>{money(finance.totals.freeSavings)}</strong>
           </div>
           <div className="hero-kpi-item">
-            <span>Objetivos activos</span>
-            <strong>{finance.goals.length}</strong>
+            <span>En objetivos</span>
+            <strong>{money(finance.totals.assignedSavings)}</strong>
+          </div>
+          <div className="hero-kpi-item">
+            <span>En reservas</span>
+            <strong>{money(finance.totals.reservesAllocated ?? 0)}</strong>
+          </div>
+          <div className="hero-kpi-item">
+            <span>Fondo emergencia</span>
+            <strong>{money(finance.totals.emergencyAllocated ?? 0)}</strong>
           </div>
         </div>
       </section>
@@ -71,7 +76,7 @@ export function SavingsPage({ finance }: { finance: ReturnTypeFinance }) {
         <div className="section-title">
           <h2>Objetivos de ahorro</h2>
           <button type="button" className="text-button" onClick={handleOpenCreateGoal}>
-            ＋ Nuevo
+            <AppIcon name="plus" size={15} /> Nuevo objetivo
           </button>
         </div>
 
@@ -96,7 +101,9 @@ export function SavingsPage({ finance }: { finance: ReturnTypeFinance }) {
                 <div className="goal-card" key={goal.id}>
                   <div className="goal-header">
                     <div className="goal-title-area">
-                      <span className="goal-emoji">{goal.icon ?? '🎯'}</span>
+                      <span className="goal-icon-badge">
+                        <AppIcon name={goal.iconKey || goal.icon || 'target'} size={20} />
+                      </span>
                       <div>
                         <strong>{goal.name}</strong>
                         {goal.targetDate && (
@@ -105,7 +112,7 @@ export function SavingsPage({ finance }: { finance: ReturnTypeFinance }) {
                       </div>
                     </div>
                     <span className={`goal-badge ${isCompleted ? 'completed' : ''}`}>
-                      {isCompleted ? '¡Conseguido! 🎉' : `${percentage}%`}
+                      {isCompleted ? 'Completado' : `${percentage}%`}
                     </span>
                   </div>
 

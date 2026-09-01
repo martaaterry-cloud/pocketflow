@@ -4,21 +4,32 @@ import {
   budgets as seedBudgets,
   categories as seedCategories,
   goals as seedGoals,
+  planSettings as seedPlanSettings,
   recurring as seedRecurring,
+  reserves as seedReserves,
+  specialPeriods as seedSpecialPeriods,
   transactions as seedTransactions,
 } from '../data/seed'
 import type {
   Budget,
   CreateBudgetInput,
   CreateRecurringPaymentInput,
+  CreateReserveInput,
   CreateSavingsGoalInput,
+  CreateSpecialPeriodInput,
   CreateTransactionInput,
+  FinancialPlanSettings,
   RecurringPayment,
+  Reserve,
   SavingsGoal,
+  SpecialPeriod,
   Transaction,
   UpdateBudgetInput,
+  UpdatePlanSettingsInput,
   UpdateRecurringPaymentInput,
+  UpdateReserveInput,
   UpdateSavingsGoalInput,
+  UpdateSpecialPeriodInput,
   UpdateTransactionInput,
 } from '../models/finance'
 import { defaultStorage } from '../services/storage/localStorageAdapter'
@@ -36,6 +47,18 @@ import {
   selectSpendableBalance,
   selectTotalMoney,
 } from '../utils/financeSelectors'
+import {
+  selectActualMonthlySavings,
+  selectAdjustedMonthlySpendingExpectation,
+  selectEmergencyFundMonthsCovered,
+  selectEmergencyFundTarget,
+  selectEssentialMonthlyExpenses,
+  selectFreeSavingsWithReserves,
+  selectMonthlyIncome,
+  selectTargetMonthlySavings,
+  selectTotalAllocatedToReserves,
+  selectVariableMonthlyExpenses,
+} from '../utils/planSelectors'
 
 export const initialFinanceState: PersistedState = {
   accounts: seedAccounts,
@@ -44,6 +67,9 @@ export const initialFinanceState: PersistedState = {
   recurring: seedRecurring,
   categories: seedCategories,
   budgets: seedBudgets,
+  reserves: seedReserves,
+  specialPeriods: seedSpecialPeriods,
+  planSettings: seedPlanSettings,
 }
 
 export function useFinance(storage: StorageAdapter = defaultStorage) {
@@ -64,6 +90,9 @@ export function useFinance(storage: StorageAdapter = defaultStorage) {
           recurring: parsed.recurring ?? initialFinanceState.recurring,
           categories: parsed.categories ?? initialFinanceState.categories,
           budgets: parsed.budgets ?? initialFinanceState.budgets,
+          reserves: parsed.reserves ?? initialFinanceState.reserves,
+          specialPeriods: parsed.specialPeriods ?? initialFinanceState.specialPeriods,
+          planSettings: parsed.planSettings ?? initialFinanceState.planSettings,
         }
       }
     } catch {
@@ -92,6 +121,9 @@ export function useFinance(storage: StorageAdapter = defaultStorage) {
         recurring: loaded.recurring ?? prev.recurring,
         categories: loaded.categories?.length ? loaded.categories : prev.categories,
         budgets: loaded.budgets?.length ? loaded.budgets : prev.budgets,
+        reserves: loaded.reserves ?? prev.reserves,
+        specialPeriods: loaded.specialPeriods ?? prev.specialPeriods,
+        planSettings: loaded.planSettings ?? prev.planSettings,
       }))
     })
     return () => {
@@ -236,7 +268,6 @@ export function useFinance(storage: StorageAdapter = defaultStorage) {
 
   /**
    * Asignar ahorro libre a un objetivo existente.
-   * Regla de producto: El dinero sale del ahorro libre. No crea dinero ni altera el saldo de Ahorro.
    */
   const allocateSavingsToGoal = useCallback(
     (goalId: string, amount: number): boolean => {
@@ -245,7 +276,14 @@ export function useFinance(storage: StorageAdapter = defaultStorage) {
 
       const savingsBalance = selectSavingsBalance(reconciledAccounts)
       const currentAssigned = selectAssignedSavings(state.goals)
-      const freeSavings = selectFreeSavings(savingsBalance, currentAssigned)
+      const reservesAllocated = selectTotalAllocatedToReserves(state.reserves)
+      const emergencyAllocated = state.planSettings.emergencyFundCurrent || 0
+      const freeSavings = selectFreeSavingsWithReserves(
+        savingsBalance,
+        emergencyAllocated,
+        currentAssigned,
+        reservesAllocated
+      )
 
       if (numericAmount > freeSavings) {
         return false // No se puede asignar más de lo que hay libre
@@ -414,6 +452,249 @@ export function useFinance(storage: StorageAdapter = defaultStorage) {
   )
 
   /* ==========================================================================
+     Plan Financiero y Fondo de Emergencia
+     ========================================================================== */
+
+  const updatePlanSettings = useCallback(
+    (updates: UpdatePlanSettingsInput) => {
+      commit({
+        ...state,
+        planSettings: {
+          ...state.planSettings,
+          ...updates,
+        },
+      })
+    },
+    [state, commit]
+  )
+
+  /**
+   * Asignar ahorro libre al fondo de emergencia.
+   */
+  const allocateEmergencyFund = useCallback(
+    (amount: number): boolean => {
+      const num = Math.round(amount * 100) / 100
+      if (num <= 0) return false
+
+      const savingsBalance = selectSavingsBalance(reconciledAccounts)
+      const currentAssigned = selectAssignedSavings(state.goals)
+      const reservesAllocated = selectTotalAllocatedToReserves(state.reserves)
+      const emergencyAllocated = state.planSettings.emergencyFundCurrent || 0
+      const freeSavings = selectFreeSavingsWithReserves(
+        savingsBalance,
+        emergencyAllocated,
+        currentAssigned,
+        reservesAllocated
+      )
+
+      if (num > freeSavings) return false
+
+      const nextCurrent = Math.round((emergencyAllocated + num) * 100) / 100
+      commit({
+        ...state,
+        planSettings: {
+          ...state.planSettings,
+          emergencyFundCurrent: nextCurrent,
+        },
+      })
+      return true
+    },
+    [state, reconciledAccounts, commit]
+  )
+
+  /**
+   * Retirar ahorro del fondo de emergencia al ahorro libre.
+   */
+  const deallocateEmergencyFund = useCallback(
+    (amount: number): boolean => {
+      const num = Math.round(amount * 100) / 100
+      if (num <= 0) return false
+
+      const current = state.planSettings.emergencyFundCurrent || 0
+      if (current <= 0) return false
+
+      const effectiveDealloc = Math.min(current, num)
+      const nextCurrent = Math.round((current - effectiveDealloc) * 100) / 100
+      commit({
+        ...state,
+        planSettings: {
+          ...state.planSettings,
+          emergencyFundCurrent: nextCurrent,
+        },
+      })
+      return true
+    },
+    [state, commit]
+  )
+
+  /* ==========================================================================
+     Reservas (Gastos Previstos de Medio Plazo)
+     ========================================================================== */
+
+  const addReserve = useCallback(
+    (input: CreateReserveInput) => {
+      const newReserve: Reserve = {
+        ...input,
+        id: crypto.randomUUID(),
+        targetAmount: Number(input.targetAmount),
+        currentAllocated: Number(input.currentAllocated ?? 0),
+        active: input.active !== undefined ? input.active : true,
+      }
+      commit({
+        ...state,
+        reserves: [...state.reserves, newReserve],
+      })
+    },
+    [state, commit]
+  )
+
+  const updateReserve = useCallback(
+    (id: string, updates: UpdateReserveInput) => {
+      const nextReserves = state.reserves.map((r) => {
+        if (r.id !== id) return r
+        return {
+          ...r,
+          ...updates,
+          targetAmount: updates.targetAmount !== undefined ? Number(updates.targetAmount) : r.targetAmount,
+          currentAllocated:
+            updates.currentAllocated !== undefined ? Number(updates.currentAllocated) : r.currentAllocated,
+        }
+      })
+      commit({
+        ...state,
+        reserves: nextReserves,
+      })
+    },
+    [state, commit]
+  )
+
+  /**
+   * Eliminar reserva: Al eliminarla, su dinero asignado queda liberado automáticamente a ahorro libre.
+   */
+  const deleteReserve = useCallback(
+    (id: string) => {
+      commit({
+        ...state,
+        reserves: state.reserves.filter((r) => r.id !== id),
+      })
+    },
+    [state, commit]
+  )
+
+  /**
+   * Asignar ahorro libre a una reserva.
+   */
+  const allocateToReserve = useCallback(
+    (reserveId: string, amount: number): boolean => {
+      const num = Math.round(amount * 100) / 100
+      if (num <= 0) return false
+
+      const savingsBalance = selectSavingsBalance(reconciledAccounts)
+      const currentAssigned = selectAssignedSavings(state.goals)
+      const reservesAllocated = selectTotalAllocatedToReserves(state.reserves)
+      const emergencyAllocated = state.planSettings.emergencyFundCurrent || 0
+      const freeSavings = selectFreeSavingsWithReserves(
+        savingsBalance,
+        emergencyAllocated,
+        currentAssigned,
+        reservesAllocated
+      )
+
+      if (num > freeSavings) return false
+
+      const nextReserves = state.reserves.map((r) => {
+        if (r.id !== reserveId) return r
+        const updated = Math.round((r.currentAllocated + num) * 100) / 100
+        return { ...r, currentAllocated: updated }
+      })
+
+      commit({
+        ...state,
+        reserves: nextReserves,
+      })
+      return true
+    },
+    [state, reconciledAccounts, commit]
+  )
+
+  /**
+   * Desasignar ahorro de una reserva para devolverlo al ahorro libre.
+   */
+  const deallocateFromReserve = useCallback(
+    (reserveId: string, amount: number): boolean => {
+      const num = Math.round(amount * 100) / 100
+      if (num <= 0) return false
+
+      const reserve = state.reserves.find((r) => r.id === reserveId)
+      if (!reserve || reserve.currentAllocated <= 0) return false
+
+      const effectiveDealloc = Math.min(reserve.currentAllocated, num)
+      const nextReserves = state.reserves.map((r) => {
+        if (r.id !== reserveId) return r
+        const updated = Math.round((r.currentAllocated - effectiveDealloc) * 100) / 100
+        return { ...r, currentAllocated: updated }
+      })
+
+      commit({
+        ...state,
+        reserves: nextReserves,
+      })
+      return true
+    },
+    [state, commit]
+  )
+
+  /* ==========================================================================
+     Periodos Especiales / Estacionalidad
+     ========================================================================== */
+
+  const addSpecialPeriod = useCallback(
+    (input: CreateSpecialPeriodInput) => {
+      const newPeriod: SpecialPeriod = {
+        ...input,
+        id: crypto.randomUUID(),
+        expectedExtraBudget: Number(input.expectedExtraBudget),
+      }
+      commit({
+        ...state,
+        specialPeriods: [...state.specialPeriods, newPeriod],
+      })
+    },
+    [state, commit]
+  )
+
+  const updateSpecialPeriod = useCallback(
+    (id: string, updates: UpdateSpecialPeriodInput) => {
+      const nextPeriods = state.specialPeriods.map((p) => {
+        if (p.id !== id) return p
+        return {
+          ...p,
+          ...updates,
+          expectedExtraBudget:
+            updates.expectedExtraBudget !== undefined
+              ? Number(updates.expectedExtraBudget)
+              : p.expectedExtraBudget,
+        }
+      })
+      commit({
+        ...state,
+        specialPeriods: nextPeriods,
+      })
+    },
+    [state, commit]
+  )
+
+  const deleteSpecialPeriod = useCallback(
+    (id: string) => {
+      commit({
+        ...state,
+        specialPeriods: state.specialPeriods.filter((p) => p.id !== id),
+      })
+    },
+    [state, commit]
+  )
+
+  /* ==========================================================================
      Totales y Conceptos Financieros Centralizados
      ========================================================================== */
 
@@ -423,8 +704,16 @@ export function useFinance(storage: StorageAdapter = defaultStorage) {
     const savings = selectSavingsBalance(reconciledAccounts)
     const totalMoney = selectTotalMoney(reconciledAccounts)
 
-    const assignedSavings = selectAssignedSavings(state.goals)
-    const freeSavings = selectFreeSavings(savings, assignedSavings)
+    // Clasificación del ahorro
+    const goalsAllocated = selectAssignedSavings(state.goals)
+    const reservesAllocated = selectTotalAllocatedToReserves(state.reserves)
+    const emergencyAllocated = state.planSettings?.emergencyFundCurrent || 0
+    const freeSavings = selectFreeSavingsWithReserves(
+      savings,
+      emergencyAllocated,
+      goalsAllocated,
+      reservesAllocated
+    )
 
     const pendingRecurring = selectPendingRecurringPayments(
       state.recurring,
@@ -443,6 +732,32 @@ export function useFinance(storage: StorageAdapter = defaultStorage) {
       now
     )
 
+    // Métricas del plan financiero
+    const monthlyIncome = selectMonthlyIncome(state.planSettings)
+    const essentialExpenses = selectEssentialMonthlyExpenses(
+      state.categories,
+      state.transactions,
+      state.planSettings,
+      now
+    )
+    const variableExpenses = selectVariableMonthlyExpenses(
+      state.categories,
+      state.transactions,
+      state.planSettings,
+      now
+    )
+    const targetMonthlySavings = selectTargetMonthlySavings(state.planSettings)
+    const actualMonthlySavings = selectActualMonthlySavings(state.transactions, reconciledAccounts, now)
+    const emergencyFundTarget = selectEmergencyFundTarget(state.planSettings, essentialExpenses)
+    const emergencyFundMonthsCovered = selectEmergencyFundMonthsCovered(emergencyAllocated, essentialExpenses)
+    const adjustedSpending = selectAdjustedMonthlySpendingExpectation(
+      essentialExpenses + variableExpenses,
+      state.specialPeriods,
+      now
+    )
+    const monthlyOutflow = essentialExpenses + variableExpenses + targetMonthlySavings
+    const estimatedMonthlyMargin = Math.round((monthlyIncome - monthlyOutflow) * 100) / 100
+
     return {
       // Compatibilidad
       daily: spendable,
@@ -456,14 +771,40 @@ export function useFinance(storage: StorageAdapter = defaultStorage) {
       totalMoney,
       spendableBalance: spendable,
       savingsBalance: savings,
-      assignedSavings,
+      assignedSavings: goalsAllocated,
+      goalsAllocated,
+      reservesAllocated,
+      emergencyAllocated,
       freeSavings,
       committedAmount: committed,
       realAvailable,
       pendingRecurring,
       budgetsSummary,
+
+      // Plan financiero
+      planMetrics: {
+        monthlyIncome,
+        essentialMonthlyExpenses: essentialExpenses,
+        variableMonthlyExpenses: variableExpenses,
+        targetMonthlySavings,
+        actualMonthlySavings,
+        emergencyFundTarget,
+        emergencyFundMonthsCovered,
+        estimatedMonthlyMargin,
+        adjustedSpending,
+      },
     }
-  }, [reconciledAccounts, state.goals, state.recurring, state.transactions, state.budgets, state.categories])
+  }, [
+    reconciledAccounts,
+    state.goals,
+    state.recurring,
+    state.transactions,
+    state.budgets,
+    state.categories,
+    state.reserves,
+    state.specialPeriods,
+    state.planSettings,
+  ])
 
   return {
     ...state,
@@ -491,6 +832,22 @@ export function useFinance(storage: StorageAdapter = defaultStorage) {
     addBudget,
     updateBudget,
     deleteBudget,
+
+    // Plan financiero
+    updatePlanSettings,
+    allocateEmergencyFund,
+    deallocateEmergencyFund,
+
+    // Reservas
+    addReserve,
+    updateReserve,
+    deleteReserve,
+    allocateToReserve,
+    deallocateFromReserve,
+
+    // Periodos especiales
+    addSpecialPeriod,
+    updateSpecialPeriod,
+    deleteSpecialPeriod,
   }
 }
-

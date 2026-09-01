@@ -7,6 +7,7 @@ import type {
 } from '../models/finance'
 import type { ReturnTypeFinance } from '../types'
 import { money } from '../utils/money'
+import { AppIcon } from '../ui/icons'
 
 export function RecurringPaymentsPage({
   finance,
@@ -49,11 +50,11 @@ export function RecurringPaymentsPage({
     <main className="page">
       <header className="simple-header">
         <button type="button" className="text-button back-button" onClick={onBack}>
-          ‹ Más
+          <AppIcon name="chevron-left" size={16} /> Más
         </button>
         <h1>Recurrentes</h1>
         <button type="button" className="round-button" onClick={handleOpenCreate} aria-label="Añadir recurrente">
-          ＋
+          <AppIcon name="plus" size={18} />
         </button>
       </header>
 
@@ -101,7 +102,7 @@ export function RecurringPaymentsPage({
                       className="category-dot"
                       style={{ background: category?.color ?? '#bbb' }}
                     >
-                      {category?.icon ?? '○'}
+                      <AppIcon name={category?.iconKey || category?.icon || 'refresh-cw'} size={15} color="#fff" />
                     </div>
 
                     <div className="recurring-info" onClick={() => handleOpenEdit(r)}>
@@ -145,10 +146,13 @@ export function RecurringPaymentsPage({
         )}
 
         <div className="info-callout" style={{ marginTop: 24 }}>
-          <p>
-            ℹ️ <strong>Cálculo sin duplicados:</strong> Solo los pagos recurrentes activos de tu
-            Cuenta diaria que aún <strong>no</strong> hayan sido registrados como gasto en el mes en
-            curso se descuentan de tu <em>Disponible real</em>.
+          <p style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <AppIcon name="info" size={16} />
+            <span>
+              <strong>Cálculo sin duplicados:</strong> Solo los pagos recurrentes activos de tu
+              Cuenta diaria que aún <strong>no</strong> hayan sido registrados como gasto en el mes en
+              curso se descuentan de tu <em>Disponible real</em>.
+            </span>
           </p>
         </div>
       </section>

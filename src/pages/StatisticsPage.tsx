@@ -8,6 +8,7 @@ import {
   type StatsPeriod,
 } from '../utils/statisticsSelectors'
 import { money } from '../utils/money'
+import { AppIcon } from '../ui/icons'
 
 export function StatisticsPage({
   finance,
@@ -56,7 +57,7 @@ export function StatisticsPage({
     <main className="page">
       <header className="simple-header">
         <button type="button" className="text-button back-button" onClick={onBack}>
-          ‹ Más
+          <AppIcon name="chevron-left" size={16} /> Más
         </button>
         <h1>Estadísticas</h1>
         <div style={{ width: 44 }} />
@@ -192,7 +193,7 @@ export function StatisticsPage({
                 <div className="category-stat-row" key={cat.categoryId}>
                   <div className="cat-stat-left">
                     <span className="category-dot mini" style={{ background: cat.color }}>
-                      {cat.icon}
+                      <AppIcon name={cat.icon} size={14} color="#fff" />
                     </span>
                     <strong>{cat.name}</strong>
                   </div>

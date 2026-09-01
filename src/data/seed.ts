@@ -1,14 +1,24 @@
-import type { Account, Budget, Category, RecurringPayment, SavingsGoal, Transaction } from '../models/finance'
+import type {
+  Account,
+  Budget,
+  Category,
+  FinancialPlanSettings,
+  RecurringPayment,
+  Reserve,
+  SavingsGoal,
+  SpecialPeriod,
+  Transaction,
+} from '../models/finance'
 
 export const categories: Category[] = [
-  { id: 'food', name: 'Alimentación', color: '#8DB596', icon: '◌' },
-  { id: 'leisure', name: 'Ocio', color: '#D7A9A9', icon: '◇' },
-  { id: 'transport', name: 'Transporte', color: '#9DB7D5', icon: '↗' },
-  { id: 'clothes', name: 'Ropa', color: '#C7AFD7', icon: '□' },
-  { id: 'subscriptions', name: 'Suscripciones', color: '#D5C38E', icon: '○' },
-  { id: 'sport', name: 'Deporte', color: '#9FC9C4', icon: '△' },
-  { id: 'travel', name: 'Viajes', color: '#E0B18A', icon: '⌁' },
-  { id: 'other', name: 'Otros', color: '#B9B9B9', icon: '·' },
+  { id: 'food', name: 'Alimentación', color: '#8DB596', icon: 'shopping-basket', iconKey: 'shopping-basket' },
+  { id: 'leisure', name: 'Ocio', color: '#D7A9A9', icon: 'ticket', iconKey: 'ticket' },
+  { id: 'transport', name: 'Transporte', color: '#9DB7D5', icon: 'car', iconKey: 'car' },
+  { id: 'clothes', name: 'Ropa', color: '#C7AFD7', icon: 'shirt', iconKey: 'shirt' },
+  { id: 'subscriptions', name: 'Suscripciones', color: '#D5C38E', icon: 'refresh-cw', iconKey: 'refresh-cw' },
+  { id: 'sport', name: 'Deporte', color: '#9FC9C4', icon: 'dumbbell', iconKey: 'dumbbell' },
+  { id: 'travel', name: 'Viajes', color: '#E0B18A', icon: 'plane', iconKey: 'plane' },
+  { id: 'other', name: 'Otros', color: '#B9B9B9', icon: 'ellipsis', iconKey: 'ellipsis' },
 ]
 
 export const accounts: Account[] = [
@@ -33,9 +43,61 @@ export const transactions: Transaction[] = [
 ]
 
 export const goals: SavingsGoal[] = [
-  { id: 'g1', name: 'Japón', target: 2500, current: 740, icon: '🗾' },
-  { id: 'g2', name: 'Fondo de emergencia', target: 3000, current: 400, icon: '🛡️' },
+  { id: 'g1', name: 'Japón', target: 2500, current: 500, icon: 'plane', iconKey: 'plane' },
+  { id: 'g2', name: 'Portátil nuevo', target: 1200, current: 240, icon: 'laptop', iconKey: 'laptop' },
 ]
+
+export const reserves: Reserve[] = [
+  {
+    id: 'res1',
+    name: 'Navidad y regalos',
+    targetAmount: 400,
+    currentAllocated: 100,
+    targetDate: '2026-12-15',
+    iconKey: 'sparkles',
+    active: true,
+  },
+  {
+    id: 'res2',
+    name: 'Seguro del coche',
+    targetAmount: 360,
+    currentAllocated: 120,
+    targetDate: '2027-03-01',
+    iconKey: 'car',
+    active: true,
+  },
+]
+
+export const specialPeriods: SpecialPeriod[] = [
+  {
+    id: 'sp1',
+    name: 'Navidad',
+    startDate: '2026-12-01',
+    endDate: '2027-01-06',
+    expectedExtraBudget: 400,
+    type: 'expected_high_spend',
+    note: 'Cenas, compras y detalles festivos',
+  },
+  {
+    id: 'sp2',
+    name: 'Vacaciones de verano',
+    startDate: '2027-07-01',
+    endDate: '2027-08-31',
+    expectedExtraBudget: 700,
+    type: 'expected_high_spend',
+    note: 'Viaje y planes de verano',
+  },
+]
+
+export const planSettings: FinancialPlanSettings = {
+  monthlyIncome: 1650,
+  targetSavingsType: 'percentage',
+  targetSavingsValue: 15,
+  emergencyFundTargetType: 'months',
+  emergencyFundTargetValue: 3,
+  emergencyFundCurrent: 300,
+  essentialCategoryIds: ['food', 'transport', 'subscriptions'],
+}
 
 export const recurring: RecurringPayment[] = [
   { id: 'r1', name: 'Spotify', amount: 10.99, categoryId: 'subscriptions', accountId: 'daily', frequency: 'monthly', nextDate: '2026-09-04', active: true },

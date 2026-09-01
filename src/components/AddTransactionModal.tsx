@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import type { Account, Category, CreateTransactionInput, Transaction, TransactionType } from '../models/finance'
+import { AppIcon } from '../ui/icons'
 
 interface AddTransactionModalProps {
   open: boolean
@@ -22,35 +23,38 @@ export function AddTransactionModal({
   onUpdate,
   onDelete,
 }: AddTransactionModalProps) {
-  const [type, setType] = useState<TransactionType>('expense')
+  const isEditing = Boolean(initialTransaction)
+
+  const [type, setType] = useState<CreateTransactionInput['type']>('expense')
   const [amount, setAmount] = useState('')
   const [description, setDescription] = useState('')
-  const [categoryId, setCategoryId] = useState(categories[0]?.id ?? 'food')
-  const [accountId, setAccountId] = useState(accounts[0]?.id ?? 'daily')
-  const [toAccountId, setToAccountId] = useState(accounts[1]?.id ?? 'savings')
+  const [categoryId, setCategoryId] = useState('')
+  const [accountId, setAccountId] = useState('')
+  const [toAccountId, setToAccountId] = useState('')
   const [date, setDate] = useState(() => new Date().toISOString().slice(0, 10))
+  const [note, setNote] = useState('')
   const [confirmDelete, setConfirmDelete] = useState(false)
-
-  const isEditing = Boolean(initialTransaction)
 
   useEffect(() => {
     if (initialTransaction) {
       setType(initialTransaction.type)
       setAmount(String(initialTransaction.amount).replace('.', ','))
       setDescription(initialTransaction.description)
-      setCategoryId(initialTransaction.categoryId ?? categories[0]?.id ?? 'food')
+      setCategoryId(initialTransaction.categoryId ?? categories[0]?.id ?? '')
       setAccountId(initialTransaction.accountId)
-      setToAccountId(initialTransaction.toAccountId ?? accounts.find((a) => a.id !== initialTransaction.accountId)?.id ?? accounts[1]?.id ?? 'savings')
+      setToAccountId(initialTransaction.toAccountId ?? accounts.find((a) => a.id !== initialTransaction.accountId)?.id ?? '')
       setDate(initialTransaction.date.slice(0, 10))
+      setNote(initialTransaction.note ?? '')
       setConfirmDelete(false)
     } else {
       setType('expense')
       setAmount('')
       setDescription('')
-      setCategoryId(categories[0]?.id ?? 'food')
-      setAccountId(accounts[0]?.id ?? 'daily')
-      setToAccountId(accounts.find((a) => a.id !== accounts[0]?.id)?.id ?? 'savings')
+      setCategoryId(categories[0]?.id ?? '')
+      setAccountId(accounts.find((a) => a.type === 'spending')?.id ?? accounts[0]?.id ?? '')
+      setToAccountId(accounts.find((a) => a.type === 'savings')?.id ?? accounts[1]?.id ?? '')
       setDate(new Date().toISOString().slice(0, 10))
+      setNote('')
       setConfirmDelete(false)
     }
   }, [initialTransaction, accounts, categories, open])
@@ -58,32 +62,36 @@ export function AddTransactionModal({
   if (!open) return null
 
   const submit = () => {
-    const numeric = Number(amount.replace(',', '.'))
-    if (!numeric || numeric <= 0 || !description.trim()) return
+    const numericAmount = Number(amount.replace(',', '.'))
+    if (!numericAmount || numericAmount <= 0) return
+    if (!description.trim()) return
+    if (!accountId) return
+    if (type === 'transfer' && (!toAccountId || toAccountId === accountId)) return
 
-    const transactionData: CreateTransactionInput = {
+    const payload: CreateTransactionInput = {
       type,
-      amount: numeric,
+      amount: numericAmount,
       description: description.trim(),
-      categoryId: type === 'expense' ? categoryId : undefined,
       accountId,
-      toAccountId: type === 'transfer' ? toAccountId : undefined,
       date: new Date(date).toISOString(),
+      note: note.trim() || undefined,
+      categoryId: type === 'expense' ? categoryId : undefined,
+      toAccountId: type === 'transfer' ? toAccountId : undefined,
     }
 
     if (isEditing && initialTransaction && onUpdate) {
-      onUpdate(initialTransaction.id, transactionData)
+      onUpdate(initialTransaction.id, payload)
     } else if (onAdd) {
-      onAdd(transactionData)
+      onAdd(payload)
     }
-
     onClose()
   }
 
   const handleDelete = () => {
-    if (!initialTransaction || !onDelete) return
-    onDelete(initialTransaction.id)
-    onClose()
+    if (initialTransaction && onDelete) {
+      onDelete(initialTransaction.id)
+      onClose()
+    }
   }
 
   return (
@@ -92,7 +100,7 @@ export function AddTransactionModal({
         <div className="modal-header">
           <h3>{isEditing ? 'Editar movimiento' : 'Añadir movimiento'}</h3>
           <button className="close-btn" onClick={onClose} aria-label="Cerrar">
-            ×
+            <AppIcon name="x" size={18} />
           </button>
         </div>
 
@@ -164,7 +172,7 @@ export function AddTransactionModal({
               <select value={categoryId} onChange={(e) => setCategoryId(e.target.value)}>
                 {categories.map((c) => (
                   <option key={c.id} value={c.id}>
-                    {c.icon} {c.name}
+                    {c.name}
                   </option>
                 ))}
               </select>
