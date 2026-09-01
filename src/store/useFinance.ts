@@ -11,6 +11,7 @@ import {
   transactions as seedTransactions,
 } from '../data/seed'
 import type {
+  Account,
   Budget,
   CreateBudgetInput,
   CreateRecurringPaymentInput,
@@ -37,6 +38,29 @@ import { defaultStorage } from '../services/storage/localStorageAdapter'
 import type { PersistedState, StorageAdapter } from '../services/storage/storageAdapter'
 import { selectBudgetsSummary } from '../utils/budgetSelectors'
 import { ensureAccountInitialBalance, reconcileAccounts } from '../utils/balance'
+import { getSupabase } from '../services/supabase/supabaseClient'
+import {
+  enqueueOfflineMutation,
+  type OfflineMutation,
+} from '../services/supabase/offlineQueue'
+import { markLocalMutation } from '../services/supabase/supabaseRealtime'
+import {
+  syncDeleteBudget,
+  syncDeleteGoal,
+  syncDeleteRecurring,
+  syncDeleteReserve,
+  syncDeleteSpecialPeriod,
+  syncDeleteTransaction,
+  syncInsertTransaction,
+  syncUpdateTransaction,
+  syncUpsertAccount,
+  syncUpsertBudget,
+  syncUpsertGoal,
+  syncUpsertPlanSettings,
+  syncUpsertRecurring,
+  syncUpsertReserve,
+  syncUpsertSpecialPeriod,
+} from '../services/supabase/supabaseSync'
 import {
   selectAssignedSavings,
   selectCommittedAmount,
@@ -102,35 +126,72 @@ export function useFinance(storage: StorageAdapter = defaultAppStorage) {
     return initialFinanceState
   })
 
-  // Carga asíncrona mediante el StorageAdapter (preparado para SQLite)
+  const [storageHydrated, setStorageHydrated] = useState(false)
+  const [syncUserId, setSyncUserId] = useState<string | null>(null)
+
+  // Carga asíncrona mediante el StorageAdapter
   useEffect(() => {
     let mounted = true
-    storage.load().then((loaded) => {
-      if (!mounted || !loaded) return
+    storage
+      .load()
+      .then((loaded) => {
+        if (!mounted) return
+        if (loaded) {
+          const txs = loaded.transactions ?? []
+          const accountsWithInitial = (loaded.accounts ?? initialFinanceState.accounts).map((acc) =>
+            ensureAccountInitialBalance(acc, txs)
+          )
 
-      const txs = loaded.transactions ?? []
-      const accountsWithInitial = (loaded.accounts ?? initialFinanceState.accounts).map((acc) =>
-        ensureAccountInitialBalance(acc, txs)
-      )
-
-      setState((prev) => ({
-        ...prev,
-        ...loaded,
-        accounts: accountsWithInitial,
-        transactions: txs,
-        goals: loaded.goals ?? prev.goals,
-        recurring: loaded.recurring ?? prev.recurring,
-        categories: loaded.categories?.length ? loaded.categories : prev.categories,
-        budgets: loaded.budgets?.length ? loaded.budgets : prev.budgets,
-        reserves: loaded.reserves ?? prev.reserves,
-        specialPeriods: loaded.specialPeriods ?? prev.specialPeriods,
-        planSettings: loaded.planSettings ?? prev.planSettings,
-      }))
-    })
+          setState({
+            accounts: accountsWithInitial,
+            transactions: txs,
+            goals: loaded.goals ?? [],
+            recurring: loaded.recurring ?? [],
+            categories: loaded.categories?.length ? loaded.categories : initialFinanceState.categories,
+            budgets: loaded.budgets ?? [],
+            reserves: loaded.reserves ?? [],
+            specialPeriods: loaded.specialPeriods ?? [],
+            planSettings: loaded.planSettings ?? initialFinanceState.planSettings,
+          })
+        }
+        setStorageHydrated(true)
+      })
+      .catch((err) => {
+        console.warn('[Pocketflow] Error cargando almacenamiento:', err)
+        if (mounted) setStorageHydrated(true)
+      })
     return () => {
       mounted = false
     }
   }, [storage])
+
+  const setSyncUser = useCallback((userId: string | null) => {
+    setSyncUserId(userId)
+  }, [])
+
+  const dispatchSync = useCallback(
+    (
+      entity: OfflineMutation['entity'],
+      action: 'insert' | 'update' | 'delete',
+      id: string,
+      data: unknown,
+      remoteFn: (supabase: any, userId: string) => Promise<void>
+    ) => {
+      markLocalMutation(entity === 'transaction' ? 'transactions' : entity, id)
+      if (!syncUserId) return
+
+      if (typeof navigator !== 'undefined' && navigator.onLine) {
+        const supabase = getSupabase()
+        remoteFn(supabase, syncUserId).catch((err) => {
+          console.warn(`[Sync] Fallo en ${action} ${entity}, encolando offline:`, err)
+          enqueueOfflineMutation({ entity, action, data })
+        })
+      } else {
+        enqueueOfflineMutation({ entity, action, data })
+      }
+    },
+    [syncUserId]
+  )
 
   const commit = useCallback(
     (next: PersistedState) => {
@@ -162,8 +223,11 @@ export function useFinance(storage: StorageAdapter = defaultAppStorage) {
         ...state,
         transactions: [newTx, ...state.transactions],
       })
+      dispatchSync('transaction', 'insert', newTx.id, newTx, (sb, uid) =>
+        syncInsertTransaction(sb, uid, newTx)
+      )
     },
-    [state, commit]
+    [state, commit, dispatchSync]
   )
 
   const updateTransaction = useCallback(
@@ -171,11 +235,10 @@ export function useFinance(storage: StorageAdapter = defaultAppStorage) {
       const existingIndex = state.transactions.findIndex((t) => t.id === id)
       if (existingIndex === -1) return
 
-      const existing = state.transactions[existingIndex]
       const updatedTx: Transaction = {
-        ...existing,
+        ...state.transactions[existingIndex],
         ...updates,
-        amount: updates.amount !== undefined ? Number(updates.amount) : existing.amount,
+        amount: updates.amount !== undefined ? Number(updates.amount) : state.transactions[existingIndex].amount,
       }
 
       const nextTransactions = [...state.transactions]
@@ -185,8 +248,11 @@ export function useFinance(storage: StorageAdapter = defaultAppStorage) {
         ...state,
         transactions: nextTransactions,
       })
+      dispatchSync('transaction', 'update', updatedTx.id, updatedTx, (sb, uid) =>
+        syncUpdateTransaction(sb, uid, updatedTx)
+      )
     },
-    [state, commit]
+    [state, commit, dispatchSync]
   )
 
   const deleteTransaction = useCallback(
@@ -195,8 +261,11 @@ export function useFinance(storage: StorageAdapter = defaultAppStorage) {
         ...state,
         transactions: state.transactions.filter((t) => t.id !== id),
       })
+      dispatchSync('transaction', 'delete', id, { id }, (sb, uid) =>
+        syncDeleteTransaction(sb, uid, id)
+      )
     },
-    [state, commit]
+    [state, commit, dispatchSync]
   )
 
   /* ==========================================================================
@@ -213,8 +282,14 @@ export function useFinance(storage: StorageAdapter = defaultAppStorage) {
         ...state,
         accounts: nextAccounts,
       })
+      const updated = nextAccounts.find((a) => a.id === accountId)
+      if (updated) {
+        dispatchSync('account', 'update', accountId, updated, (sb, uid) =>
+          syncUpsertAccount(sb, uid, updated)
+        )
+      }
     },
-    [state, commit]
+    [state, commit, dispatchSync]
   )
 
   /* ==========================================================================
@@ -234,8 +309,11 @@ export function useFinance(storage: StorageAdapter = defaultAppStorage) {
         ...state,
         goals: [...state.goals, newGoal],
       })
+      dispatchSync('goal', 'insert', newGoal.id, newGoal, (sb, uid) =>
+        syncUpsertGoal(sb, uid, newGoal)
+      )
     },
-    [state, commit]
+    [state, commit, dispatchSync]
   )
 
   const updateSavingsGoal = useCallback(
@@ -253,8 +331,14 @@ export function useFinance(storage: StorageAdapter = defaultAppStorage) {
         ...state,
         goals: nextGoals,
       })
+      const updated = nextGoals.find((g) => g.id === id)
+      if (updated) {
+        dispatchSync('goal', 'update', id, updated, (sb, uid) =>
+          syncUpsertGoal(sb, uid, updated)
+        )
+      }
     },
-    [state, commit]
+    [state, commit, dispatchSync]
   )
 
   const deleteSavingsGoal = useCallback(
@@ -263,8 +347,11 @@ export function useFinance(storage: StorageAdapter = defaultAppStorage) {
         ...state,
         goals: state.goals.filter((g) => g.id !== id),
       })
+      dispatchSync('goal', 'delete', id, { id }, (sb, uid) =>
+        syncDeleteGoal(sb, uid, id)
+      )
     },
-    [state, commit]
+    [state, commit, dispatchSync]
   )
 
   /**
@@ -287,26 +374,33 @@ export function useFinance(storage: StorageAdapter = defaultAppStorage) {
       )
 
       if (numericAmount > freeSavings) {
-        return false // No se puede asignar más de lo que hay libre
+        return false
       }
 
+      let updatedGoal: SavingsGoal | undefined
       const nextGoals = state.goals.map((g) => {
         if (g.id !== goalId) return g
         const updatedCurrent = Math.round((g.current + numericAmount) * 100) / 100
-        return {
+        updatedGoal = {
           ...g,
           current: updatedCurrent,
           completed: updatedCurrent >= g.target,
         }
+        return updatedGoal
       })
 
       commit({
         ...state,
         goals: nextGoals,
       })
+      if (updatedGoal) {
+        dispatchSync('goal', 'update', goalId, updatedGoal, (sb, uid) =>
+          syncUpsertGoal(sb, uid, updatedGoal!)
+        )
+      }
       return true
     },
-    [state, reconciledAccounts, commit]
+    [state, reconciledAccounts, commit, dispatchSync]
   )
 
   /**
@@ -321,23 +415,30 @@ export function useFinance(storage: StorageAdapter = defaultAppStorage) {
       if (!goal || goal.current <= 0) return false
 
       const effectiveDealloc = Math.min(goal.current, numericAmount)
+      let updatedGoal: SavingsGoal | undefined
       const nextGoals = state.goals.map((g) => {
         if (g.id !== goalId) return g
         const updatedCurrent = Math.round((g.current - effectiveDealloc) * 100) / 100
-        return {
+        updatedGoal = {
           ...g,
           current: updatedCurrent,
           completed: updatedCurrent >= g.target,
         }
+        return updatedGoal
       })
 
       commit({
         ...state,
         goals: nextGoals,
       })
+      if (updatedGoal) {
+        dispatchSync('goal', 'update', goalId, updatedGoal, (sb, uid) =>
+          syncUpsertGoal(sb, uid, updatedGoal!)
+        )
+      }
       return true
     },
-    [state, commit]
+    [state, commit, dispatchSync]
   )
 
   /* ==========================================================================
@@ -356,8 +457,11 @@ export function useFinance(storage: StorageAdapter = defaultAppStorage) {
         ...state,
         recurring: [...state.recurring, newRec],
       })
+      dispatchSync('recurring', 'insert', newRec.id, newRec, (sb, uid) =>
+        syncUpsertRecurring(sb, uid, newRec)
+      )
     },
-    [state, commit]
+    [state, commit, dispatchSync]
   )
 
   const updateRecurringPayment = useCallback(
@@ -374,8 +478,14 @@ export function useFinance(storage: StorageAdapter = defaultAppStorage) {
         ...state,
         recurring: nextRecurring,
       })
+      const updated = nextRecurring.find((r) => r.id === id)
+      if (updated) {
+        dispatchSync('recurring', 'update', id, updated, (sb, uid) =>
+          syncUpsertRecurring(sb, uid, updated)
+        )
+      }
     },
-    [state, commit]
+    [state, commit, dispatchSync]
   )
 
   const deleteRecurringPayment = useCallback(
@@ -384,8 +494,11 @@ export function useFinance(storage: StorageAdapter = defaultAppStorage) {
         ...state,
         recurring: state.recurring.filter((r) => r.id !== id),
       })
+      dispatchSync('recurring', 'delete', id, { id }, (sb, uid) =>
+        syncDeleteRecurring(sb, uid, id)
+      )
     },
-    [state, commit]
+    [state, commit, dispatchSync]
   )
 
   const toggleRecurringPayment = useCallback(
@@ -397,8 +510,14 @@ export function useFinance(storage: StorageAdapter = defaultAppStorage) {
         ...state,
         recurring: nextRecurring,
       })
+      const updated = nextRecurring.find((r) => r.id === id)
+      if (updated) {
+        dispatchSync('recurring', 'update', id, updated, (sb, uid) =>
+          syncUpsertRecurring(sb, uid, updated)
+        )
+      }
     },
-    [state, commit]
+    [state, commit, dispatchSync]
   )
 
   /* ==========================================================================
@@ -418,8 +537,11 @@ export function useFinance(storage: StorageAdapter = defaultAppStorage) {
         ...state,
         budgets: [...state.budgets, newBudget],
       })
+      dispatchSync('budget', 'insert', newBudget.id, newBudget, (sb, uid) =>
+        syncUpsertBudget(sb, uid, newBudget)
+      )
     },
-    [state, commit]
+    [state, commit, dispatchSync]
   )
 
   const updateBudget = useCallback(
@@ -438,8 +560,14 @@ export function useFinance(storage: StorageAdapter = defaultAppStorage) {
         ...state,
         budgets: nextBudgets,
       })
+      const updated = nextBudgets.find((b) => b.id === id)
+      if (updated) {
+        dispatchSync('budget', 'update', id, updated, (sb, uid) =>
+          syncUpsertBudget(sb, uid, updated)
+        )
+      }
     },
-    [state, commit]
+    [state, commit, dispatchSync]
   )
 
   const deleteBudget = useCallback(
@@ -448,8 +576,11 @@ export function useFinance(storage: StorageAdapter = defaultAppStorage) {
         ...state,
         budgets: state.budgets.filter((b) => b.id !== id),
       })
+      dispatchSync('budget', 'delete', id, { id }, (sb, uid) =>
+        syncDeleteBudget(sb, uid, id)
+      )
     },
-    [state, commit]
+    [state, commit, dispatchSync]
   )
 
   /* ==========================================================================
@@ -458,15 +589,19 @@ export function useFinance(storage: StorageAdapter = defaultAppStorage) {
 
   const updatePlanSettings = useCallback(
     (updates: UpdatePlanSettingsInput) => {
+      const nextSettings = {
+        ...state.planSettings,
+        ...updates,
+      }
       commit({
         ...state,
-        planSettings: {
-          ...state.planSettings,
-          ...updates,
-        },
+        planSettings: nextSettings,
       })
+      dispatchSync('planSettings', 'update', 'settings', nextSettings, (sb, uid) =>
+        syncUpsertPlanSettings(sb, uid, nextSettings)
+      )
     },
-    [state, commit]
+    [state, commit, dispatchSync]
   )
 
   /**
@@ -491,16 +626,20 @@ export function useFinance(storage: StorageAdapter = defaultAppStorage) {
       if (num > freeSavings) return false
 
       const nextCurrent = Math.round((emergencyAllocated + num) * 100) / 100
+      const nextSettings = {
+        ...state.planSettings,
+        emergencyFundCurrent: nextCurrent,
+      }
       commit({
         ...state,
-        planSettings: {
-          ...state.planSettings,
-          emergencyFundCurrent: nextCurrent,
-        },
+        planSettings: nextSettings,
       })
+      dispatchSync('planSettings', 'update', 'settings', nextSettings, (sb, uid) =>
+        syncUpsertPlanSettings(sb, uid, nextSettings)
+      )
       return true
     },
-    [state, reconciledAccounts, commit]
+    [state, reconciledAccounts, commit, dispatchSync]
   )
 
   /**
@@ -516,16 +655,20 @@ export function useFinance(storage: StorageAdapter = defaultAppStorage) {
 
       const effectiveDealloc = Math.min(current, num)
       const nextCurrent = Math.round((current - effectiveDealloc) * 100) / 100
+      const nextSettings = {
+        ...state.planSettings,
+        emergencyFundCurrent: nextCurrent,
+      }
       commit({
         ...state,
-        planSettings: {
-          ...state.planSettings,
-          emergencyFundCurrent: nextCurrent,
-        },
+        planSettings: nextSettings,
       })
+      dispatchSync('planSettings', 'update', 'settings', nextSettings, (sb, uid) =>
+        syncUpsertPlanSettings(sb, uid, nextSettings)
+      )
       return true
     },
-    [state, commit]
+    [state, commit, dispatchSync]
   )
 
   /* ==========================================================================
@@ -545,8 +688,11 @@ export function useFinance(storage: StorageAdapter = defaultAppStorage) {
         ...state,
         reserves: [...state.reserves, newReserve],
       })
+      dispatchSync('reserve', 'insert', newReserve.id, newReserve, (sb, uid) =>
+        syncUpsertReserve(sb, uid, newReserve)
+      )
     },
-    [state, commit]
+    [state, commit, dispatchSync]
   )
 
   const updateReserve = useCallback(
@@ -565,8 +711,14 @@ export function useFinance(storage: StorageAdapter = defaultAppStorage) {
         ...state,
         reserves: nextReserves,
       })
+      const updated = nextReserves.find((r) => r.id === id)
+      if (updated) {
+        dispatchSync('reserve', 'update', id, updated, (sb, uid) =>
+          syncUpsertReserve(sb, uid, updated)
+        )
+      }
     },
-    [state, commit]
+    [state, commit, dispatchSync]
   )
 
   /**
@@ -578,8 +730,11 @@ export function useFinance(storage: StorageAdapter = defaultAppStorage) {
         ...state,
         reserves: state.reserves.filter((r) => r.id !== id),
       })
+      dispatchSync('reserve', 'delete', id, { id }, (sb, uid) =>
+        syncDeleteReserve(sb, uid, id)
+      )
     },
-    [state, commit]
+    [state, commit, dispatchSync]
   )
 
   /**
@@ -603,19 +758,26 @@ export function useFinance(storage: StorageAdapter = defaultAppStorage) {
 
       if (num > freeSavings) return false
 
+      let updatedRes: Reserve | undefined
       const nextReserves = state.reserves.map((r) => {
         if (r.id !== reserveId) return r
         const updated = Math.round((r.currentAllocated + num) * 100) / 100
-        return { ...r, currentAllocated: updated }
+        updatedRes = { ...r, currentAllocated: updated }
+        return updatedRes
       })
 
       commit({
         ...state,
         reserves: nextReserves,
       })
+      if (updatedRes) {
+        dispatchSync('reserve', 'update', reserveId, updatedRes, (sb, uid) =>
+          syncUpsertReserve(sb, uid, updatedRes!)
+        )
+      }
       return true
     },
-    [state, reconciledAccounts, commit]
+    [state, reconciledAccounts, commit, dispatchSync]
   )
 
   /**
@@ -630,19 +792,26 @@ export function useFinance(storage: StorageAdapter = defaultAppStorage) {
       if (!reserve || reserve.currentAllocated <= 0) return false
 
       const effectiveDealloc = Math.min(reserve.currentAllocated, num)
+      let updatedRes: Reserve | undefined
       const nextReserves = state.reserves.map((r) => {
         if (r.id !== reserveId) return r
         const updated = Math.round((r.currentAllocated - effectiveDealloc) * 100) / 100
-        return { ...r, currentAllocated: updated }
+        updatedRes = { ...r, currentAllocated: updated }
+        return updatedRes
       })
 
       commit({
         ...state,
         reserves: nextReserves,
       })
+      if (updatedRes) {
+        dispatchSync('reserve', 'update', reserveId, updatedRes, (sb, uid) =>
+          syncUpsertReserve(sb, uid, updatedRes!)
+        )
+      }
       return true
     },
-    [state, commit]
+    [state, commit, dispatchSync]
   )
 
   /* ==========================================================================
@@ -660,8 +829,11 @@ export function useFinance(storage: StorageAdapter = defaultAppStorage) {
         ...state,
         specialPeriods: [...state.specialPeriods, newPeriod],
       })
+      dispatchSync('specialPeriod', 'insert', newPeriod.id, newPeriod, (sb, uid) =>
+        syncUpsertSpecialPeriod(sb, uid, newPeriod)
+      )
     },
-    [state, commit]
+    [state, commit, dispatchSync]
   )
 
   const updateSpecialPeriod = useCallback(
@@ -681,8 +853,14 @@ export function useFinance(storage: StorageAdapter = defaultAppStorage) {
         ...state,
         specialPeriods: nextPeriods,
       })
+      const updated = nextPeriods.find((p) => p.id === id)
+      if (updated) {
+        dispatchSync('specialPeriod', 'update', id, updated, (sb, uid) =>
+          syncUpsertSpecialPeriod(sb, uid, updated)
+        )
+      }
     },
-    [state, commit]
+    [state, commit, dispatchSync]
   )
 
   const deleteSpecialPeriod = useCallback(
@@ -691,8 +869,11 @@ export function useFinance(storage: StorageAdapter = defaultAppStorage) {
         ...state,
         specialPeriods: state.specialPeriods.filter((p) => p.id !== id),
       })
+      dispatchSync('specialPeriod', 'delete', id, { id }, (sb, uid) =>
+        syncDeleteSpecialPeriod(sb, uid, id)
+      )
     },
-    [state, commit]
+    [state, commit, dispatchSync]
   )
 
   /* ==========================================================================
@@ -807,6 +988,223 @@ export function useFinance(storage: StorageAdapter = defaultAppStorage) {
     state.planSettings,
   ])
 
+  /* ==========================================================================
+     Manejadores Remotos (Realtime sin echo loops)
+     ========================================================================== */
+
+  const applyRemoteInsertTransaction = useCallback(
+    (tx: Transaction) => {
+      setState((prev) => {
+        if (prev.transactions.some((t) => t.id === tx.id)) return prev
+        const next = { ...prev, transactions: [tx, ...prev.transactions] }
+        storage.save(next).catch(console.error)
+        return next
+      })
+    },
+    [storage]
+  )
+
+  const applyRemoteUpdateTransaction = useCallback(
+    (tx: Transaction) => {
+      setState((prev) => {
+        const next = {
+          ...prev,
+          transactions: prev.transactions.map((t) => (t.id === tx.id ? tx : t)),
+        }
+        storage.save(next).catch(console.error)
+        return next
+      })
+    },
+    [storage]
+  )
+
+  const applyRemoteDeleteTransaction = useCallback(
+    (txId: string) => {
+      setState((prev) => {
+        if (!prev.transactions.some((t) => t.id === txId)) return prev
+        const next = {
+          ...prev,
+          transactions: prev.transactions.filter((t) => t.id !== txId),
+        }
+        storage.save(next).catch(console.error)
+        return next
+      })
+    },
+    [storage]
+  )
+
+  const applyRemoteUpdateAccount = useCallback(
+    (acc: Account) => {
+      setState((prev) => {
+        const next = {
+          ...prev,
+          accounts: prev.accounts.map((a) => (a.id === acc.id ? acc : a)),
+        }
+        storage.save(next).catch(console.error)
+        return next
+      })
+    },
+    [storage]
+  )
+
+  const applyRemoteUpsertBudget = useCallback(
+    (b: Budget) => {
+      setState((prev) => {
+        const exists = prev.budgets.some((x) => x.id === b.id)
+        const next = {
+          ...prev,
+          budgets: exists ? prev.budgets.map((x) => (x.id === b.id ? b : x)) : [...prev.budgets, b],
+        }
+        storage.save(next).catch(console.error)
+        return next
+      })
+    },
+    [storage]
+  )
+
+  const applyRemoteDeleteBudget = useCallback(
+    (budgetId: string) => {
+      setState((prev) => {
+        const next = {
+          ...prev,
+          budgets: prev.budgets.filter((b) => b.id !== budgetId),
+        }
+        storage.save(next).catch(console.error)
+        return next
+      })
+    },
+    [storage]
+  )
+
+  const applyRemoteUpsertGoal = useCallback(
+    (g: SavingsGoal) => {
+      setState((prev) => {
+        const exists = prev.goals.some((x) => x.id === g.id)
+        const next = {
+          ...prev,
+          goals: exists ? prev.goals.map((x) => (x.id === g.id ? g : x)) : [...prev.goals, g],
+        }
+        storage.save(next).catch(console.error)
+        return next
+      })
+    },
+    [storage]
+  )
+
+  const applyRemoteDeleteGoal = useCallback(
+    (goalId: string) => {
+      setState((prev) => {
+        const next = {
+          ...prev,
+          goals: prev.goals.filter((g) => g.id !== goalId),
+        }
+        storage.save(next).catch(console.error)
+        return next
+      })
+    },
+    [storage]
+  )
+
+  const applyRemoteUpsertReserve = useCallback(
+    (r: Reserve) => {
+      setState((prev) => {
+        const exists = prev.reserves.some((x) => x.id === r.id)
+        const next = {
+          ...prev,
+          reserves: exists ? prev.reserves.map((x) => (x.id === r.id ? r : x)) : [...prev.reserves, r],
+        }
+        storage.save(next).catch(console.error)
+        return next
+      })
+    },
+    [storage]
+  )
+
+  const applyRemoteDeleteReserve = useCallback(
+    (reserveId: string) => {
+      setState((prev) => {
+        const next = {
+          ...prev,
+          reserves: prev.reserves.filter((r) => r.id !== reserveId),
+        }
+        storage.save(next).catch(console.error)
+        return next
+      })
+    },
+    [storage]
+  )
+
+  const applyRemoteUpsertRecurring = useCallback(
+    (rec: RecurringPayment) => {
+      setState((prev) => {
+        const exists = prev.recurring.some((x) => x.id === rec.id)
+        const next = {
+          ...prev,
+          recurring: exists ? prev.recurring.map((x) => (x.id === rec.id ? rec : x)) : [...prev.recurring, rec],
+        }
+        storage.save(next).catch(console.error)
+        return next
+      })
+    },
+    [storage]
+  )
+
+  const applyRemoteDeleteRecurring = useCallback(
+    (recId: string) => {
+      setState((prev) => {
+        const next = {
+          ...prev,
+          recurring: prev.recurring.filter((r) => r.id !== recId),
+        }
+        storage.save(next).catch(console.error)
+        return next
+      })
+    },
+    [storage]
+  )
+
+  const applyRemoteUpsertSpecialPeriod = useCallback(
+    (sp: SpecialPeriod) => {
+      setState((prev) => {
+        const exists = prev.specialPeriods.some((x) => x.id === sp.id)
+        const next = {
+          ...prev,
+          specialPeriods: exists
+            ? prev.specialPeriods.map((x) => (x.id === sp.id ? sp : x))
+            : [...prev.specialPeriods, sp],
+        }
+        storage.save(next).catch(console.error)
+        return next
+      })
+    },
+    [storage]
+  )
+
+  const applyRemoteDeleteSpecialPeriod = useCallback(
+    (periodId: string) => {
+      setState((prev) => {
+        const next = {
+          ...prev,
+          specialPeriods: prev.specialPeriods.filter((p) => p.id !== periodId),
+        }
+        storage.save(next).catch(console.error)
+        return next
+      })
+    },
+    [storage]
+  )
+
+  const applyRemoteUpdatePlanSettings = useCallback(
+    (ps: FinancialPlanSettings) => {
+      setState((prev) => {
+        const next = { ...prev, planSettings: ps }
+        storage.save(next).catch(console.error)
+        return next
+      })
+    },
+    [storage]
+  )
+
   const restoreState = useCallback(
     async (newState: PersistedState) => {
       const txs = newState.transactions ?? []
@@ -846,6 +1244,8 @@ export function useFinance(storage: StorageAdapter = defaultAppStorage) {
 
   return {
     ...state,
+    storageHydrated,
+    setSyncUser,
     accounts: reconciledAccounts,
     totals,
     addTransaction,
@@ -887,6 +1287,23 @@ export function useFinance(storage: StorageAdapter = defaultAppStorage) {
     addSpecialPeriod,
     updateSpecialPeriod,
     deleteSpecialPeriod,
+
+    // Manejadores remotos (Realtime)
+    applyRemoteInsertTransaction,
+    applyRemoteUpdateTransaction,
+    applyRemoteDeleteTransaction,
+    applyRemoteUpdateAccount,
+    applyRemoteUpsertBudget,
+    applyRemoteDeleteBudget,
+    applyRemoteUpsertGoal,
+    applyRemoteDeleteGoal,
+    applyRemoteUpsertReserve,
+    applyRemoteDeleteReserve,
+    applyRemoteUpsertRecurring,
+    applyRemoteDeleteRecurring,
+    applyRemoteUpsertSpecialPeriod,
+    applyRemoteDeleteSpecialPeriod,
+    applyRemoteUpdatePlanSettings,
 
     // Copias de seguridad
     restoreState,

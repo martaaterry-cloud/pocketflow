@@ -12,6 +12,36 @@ import type {
 } from '../../models/finance'
 import type { PersistedState } from '../storage/storageAdapter'
 import { migratePersistedState } from '../storage/localStorageAdapter'
+import { categories as seedCategories } from '../../data/seed'
+
+// ==========================================================================
+// Estado limpio para producción (sin datos demo/seed)
+// ==========================================================================
+
+export function createCleanInitialState(): PersistedState {
+  return {
+    accounts: [
+      { id: 'daily', name: 'Cuenta diaria', type: 'spending', initialBalance: 0 },
+      { id: 'savings', name: 'Ahorro', type: 'savings', initialBalance: 0 },
+    ],
+    transactions: [],
+    categories: seedCategories,
+    budgets: [],
+    goals: [],
+    reserves: [],
+    recurring: [],
+    specialPeriods: [],
+    planSettings: {
+      monthlyIncome: 0,
+      targetSavingsType: 'percentage',
+      targetSavingsValue: 15,
+      emergencyFundTargetType: 'months',
+      emergencyFundTargetValue: 3,
+      emergencyFundCurrent: 0,
+      essentialCategoryIds: ['food', 'transport', 'subscriptions'],
+    },
+  }
+}
 
 // ==========================================================================
 // Mappers: TypeScript Models <-> Supabase DB Rows
@@ -24,7 +54,6 @@ export function toDbAccount(acc: Account, userId: string) {
     name: acc.name,
     type: acc.type,
     initial_balance: acc.initialBalance,
-    updated_at: new Date().toISOString(),
   }
 }
 
@@ -44,7 +73,6 @@ export function toDbCategory(cat: Category, userId: string) {
     name: cat.name,
     color: cat.color,
     icon_key: cat.iconKey || cat.icon || 'shopping-basket',
-    updated_at: new Date().toISOString(),
   }
 }
 
@@ -71,7 +99,6 @@ export function toDbTransaction(tx: Transaction, userId: string) {
     date: tx.date,
     note: tx.note || null,
     recurring_payment_id: tx.recurringPaymentId || null,
-    updated_at: new Date().toISOString(),
   }
 }
 
@@ -97,7 +124,6 @@ export function toDbBudget(b: Budget, userId: string) {
     category_id: b.categoryId,
     amount_limit: b.amountLimit,
     period: b.period || 'monthly',
-    updated_at: new Date().toISOString(),
   }
 }
 
@@ -120,7 +146,6 @@ export function toDbGoal(g: SavingsGoal, userId: string) {
     target_date: g.targetDate || null,
     icon_key: g.iconKey || g.icon || 'target',
     completed: Boolean(g.completed),
-    updated_at: new Date().toISOString(),
   }
 }
 
@@ -148,7 +173,6 @@ export function toDbReserve(r: Reserve, userId: string) {
     icon_key: r.iconKey || 'target',
     active: r.active,
     note: r.note || null,
-    updated_at: new Date().toISOString(),
   }
 }
 
@@ -176,7 +200,6 @@ export function toDbRecurring(r: RecurringPayment, userId: string) {
     frequency: r.frequency,
     next_date: r.nextDate,
     active: r.active,
-    updated_at: new Date().toISOString(),
   }
 }
 
@@ -203,7 +226,6 @@ export function toDbSpecialPeriod(sp: SpecialPeriod, userId: string) {
     expected_extra_budget: sp.expectedExtraBudget,
     type: sp.type,
     note: sp.note || null,
-    updated_at: new Date().toISOString(),
   }
 }
 
@@ -229,7 +251,6 @@ export function toDbPlanSettings(ps: FinancialPlanSettings, userId: string) {
     emergency_fund_target_value: ps.emergencyFundTargetValue,
     emergency_fund_current: ps.emergencyFundCurrent,
     essential_category_ids: ps.essentialCategoryIds,
-    updated_at: new Date().toISOString(),
   }
 }
 
@@ -257,7 +278,7 @@ export function fromDbPlanSettings(row: Record<string, unknown>): FinancialPlanS
 }
 
 // ==========================================================================
-// Operaciones de sincronización completa
+// Operaciones de lectura segura (Validación estricta de errores)
 // ==========================================================================
 
 export async function fetchRemoteState(
@@ -286,7 +307,18 @@ export async function fetchRemoteState(
     supabase.from('financial_plan_settings').select('*').eq('user_id', userId).maybeSingle(),
   ])
 
-  // Si no hay cuentas remotas, consideramos que aún no se ha subido estado
+  // Comprobar errores en CADA query para evitar borrado accidental de datos locales
+  if (accountsRes.error) throw new Error(`[Sync] Error leyendo accounts: ${accountsRes.error.message}`)
+  if (categoriesRes.error) throw new Error(`[Sync] Error leyendo categories: ${categoriesRes.error.message}`)
+  if (txsRes.error) throw new Error(`[Sync] Error leyendo transactions: ${txsRes.error.message}`)
+  if (budgetsRes.error) throw new Error(`[Sync] Error leyendo budgets: ${budgetsRes.error.message}`)
+  if (goalsRes.error) throw new Error(`[Sync] Error leyendo savings_goals: ${goalsRes.error.message}`)
+  if (reservesRes.error) throw new Error(`[Sync] Error leyendo reserves: ${reservesRes.error.message}`)
+  if (recurringRes.error) throw new Error(`[Sync] Error leyendo recurring_payments: ${recurringRes.error.message}`)
+  if (periodsRes.error) throw new Error(`[Sync] Error leyendo special_periods: ${periodsRes.error.message}`)
+  if (settingsRes.error) throw new Error(`[Sync] Error leyendo settings: ${settingsRes.error.message}`)
+
+  // Si no hay cuentas remotas, la base de datos de este usuario está virgen
   if (!accountsRes.data || accountsRes.data.length === 0) {
     return null
   }
@@ -306,13 +338,164 @@ export async function fetchRemoteState(
   return migratePersistedState(rawState)
 }
 
+// ==========================================================================
+// Mutaciones granulares directas (CRUD)
+// ==========================================================================
+
+export async function syncInsertTransaction(
+  supabase: SupabaseClient,
+  userId: string,
+  tx: Transaction
+): Promise<void> {
+  const row = toDbTransaction(tx, userId)
+  const { error } = await supabase.from('transactions').insert(row)
+  if (error) throw error
+}
+
+export async function syncUpdateTransaction(
+  supabase: SupabaseClient,
+  userId: string,
+  tx: Transaction
+): Promise<void> {
+  const row = toDbTransaction(tx, userId)
+  const { error } = await supabase.from('transactions').update(row).eq('id', tx.id).eq('user_id', userId)
+  if (error) throw error
+}
+
+export async function syncDeleteTransaction(
+  supabase: SupabaseClient,
+  userId: string,
+  txId: string
+): Promise<void> {
+  const { error } = await supabase.from('transactions').delete().eq('id', txId).eq('user_id', userId)
+  if (error) throw error
+}
+
+export async function syncUpsertAccount(
+  supabase: SupabaseClient,
+  userId: string,
+  acc: Account
+): Promise<void> {
+  const row = toDbAccount(acc, userId)
+  const { error } = await supabase.from('accounts').upsert(row)
+  if (error) throw error
+}
+
+export async function syncUpsertBudget(
+  supabase: SupabaseClient,
+  userId: string,
+  b: Budget
+): Promise<void> {
+  const row = toDbBudget(b, userId)
+  const { error } = await supabase.from('budgets').upsert(row)
+  if (error) throw error
+}
+
+export async function syncDeleteBudget(
+  supabase: SupabaseClient,
+  userId: string,
+  budgetId: string
+): Promise<void> {
+  const { error } = await supabase.from('budgets').delete().eq('id', budgetId).eq('user_id', userId)
+  if (error) throw error
+}
+
+export async function syncUpsertGoal(
+  supabase: SupabaseClient,
+  userId: string,
+  g: SavingsGoal
+): Promise<void> {
+  const row = toDbGoal(g, userId)
+  const { error } = await supabase.from('savings_goals').upsert(row)
+  if (error) throw error
+}
+
+export async function syncDeleteGoal(
+  supabase: SupabaseClient,
+  userId: string,
+  goalId: string
+): Promise<void> {
+  const { error } = await supabase.from('savings_goals').delete().eq('id', goalId).eq('user_id', userId)
+  if (error) throw error
+}
+
+export async function syncUpsertReserve(
+  supabase: SupabaseClient,
+  userId: string,
+  r: Reserve
+): Promise<void> {
+  const row = toDbReserve(r, userId)
+  const { error } = await supabase.from('reserves').upsert(row)
+  if (error) throw error
+}
+
+export async function syncDeleteReserve(
+  supabase: SupabaseClient,
+  userId: string,
+  reserveId: string
+): Promise<void> {
+  const { error } = await supabase.from('reserves').delete().eq('id', reserveId).eq('user_id', userId)
+  if (error) throw error
+}
+
+export async function syncUpsertRecurring(
+  supabase: SupabaseClient,
+  userId: string,
+  r: RecurringPayment
+): Promise<void> {
+  const row = toDbRecurring(r, userId)
+  const { error } = await supabase.from('recurring_payments').upsert(row)
+  if (error) throw error
+}
+
+export async function syncDeleteRecurring(
+  supabase: SupabaseClient,
+  userId: string,
+  recurringId: string
+): Promise<void> {
+  const { error } = await supabase.from('recurring_payments').delete().eq('id', recurringId).eq('user_id', userId)
+  if (error) throw error
+}
+
+export async function syncUpsertSpecialPeriod(
+  supabase: SupabaseClient,
+  userId: string,
+  sp: SpecialPeriod
+): Promise<void> {
+  const row = toDbSpecialPeriod(sp, userId)
+  const { error } = await supabase.from('special_periods').upsert(row)
+  if (error) throw error
+}
+
+export async function syncDeleteSpecialPeriod(
+  supabase: SupabaseClient,
+  userId: string,
+  periodId: string
+): Promise<void> {
+  const { error } = await supabase.from('special_periods').delete().eq('id', periodId).eq('user_id', userId)
+  if (error) throw error
+}
+
+export async function syncUpsertPlanSettings(
+  supabase: SupabaseClient,
+  userId: string,
+  ps: FinancialPlanSettings
+): Promise<void> {
+  const row = toDbPlanSettings(ps, userId)
+  const { error } = await supabase.from('financial_plan_settings').upsert(row)
+  if (error) throw error
+}
+
+// ==========================================================================
+// Subida completa (SOLO para migración inicial o restauración de backup)
+// ==========================================================================
+
 export async function uploadStateToSupabase(
   supabase: SupabaseClient,
   userId: string,
   state: PersistedState
 ): Promise<boolean> {
   try {
-    // 1. Cuentas y Categorías (entidades raíz)
     if (state.accounts?.length) {
       const dbAccounts = state.accounts.map((a) => toDbAccount(a, userId))
       const { error } = await supabase.from('accounts').upsert(dbAccounts)
@@ -325,10 +508,8 @@ export async function uploadStateToSupabase(
       if (error) throw error
     }
 
-    // 2. Transacciones
     if (state.transactions?.length) {
       const dbTxs = state.transactions.map((t) => toDbTransaction(t, userId))
-      // Insertar por lotes de 100 para estabilidad
       for (let i = 0; i < dbTxs.length; i += 100) {
         const batch = dbTxs.slice(i, i + 100)
         const { error } = await supabase.from('transactions').upsert(batch)
@@ -336,7 +517,6 @@ export async function uploadStateToSupabase(
       }
     }
 
-    // 3. Presupuestos, Objetivos, Reservas, Recurrentes, Periodos
     if (state.budgets?.length) {
       const dbBudgets = state.budgets.map((b) => toDbBudget(b, userId))
       const { error } = await supabase.from('budgets').upsert(dbBudgets)

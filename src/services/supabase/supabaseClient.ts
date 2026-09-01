@@ -1,11 +1,13 @@
 import { createClient, type SupabaseClient, type User, type Session } from '@supabase/supabase-js'
 
 export const SUPABASE_PROJECT_URL =
-  (import.meta.env.VITE_SUPABASE_URL as string) || 'https://xcarqzopfaozxugfhslo.supabase.co'
+  (typeof import.meta !== 'undefined' && import.meta.env?.VITE_SUPABASE_URL) ||
+  'https://xcarqzopfaozxugfhslo.supabase.co'
 
 export const SUPABASE_ANON_KEY =
-  (import.meta.env.VITE_SUPABASE_ANON_KEY as string) ||
+  (typeof import.meta !== 'undefined' && import.meta.env?.VITE_SUPABASE_ANON_KEY) ||
   'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InhjYXJxem9wZmFvenh1Z2Zoc2xvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODgyNTUyMjUsImV4cCI6MjEwMzgzMTIyNX0.-P30LrQ_-sE0rFtomrRGxdHXX9QJ2JPsoqc6oklTOUU'
+
 
 let supabaseInstance: SupabaseClient | null = null
 

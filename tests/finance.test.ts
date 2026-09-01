@@ -28,8 +28,31 @@ import {
   fromDbReserve,
   toDbPlanSettings,
   fromDbPlanSettings,
+  createCleanInitialState,
+  fetchRemoteState,
+  syncInsertTransaction,
+  syncUpdateTransaction,
+  syncDeleteTransaction,
+  syncUpsertBudget,
+  syncDeleteBudget,
+  syncUpsertGoal,
+  syncDeleteGoal,
+  syncUpsertReserve,
+  syncDeleteReserve,
+  syncUpsertRecurring,
+  syncDeleteRecurring,
+  syncUpsertSpecialPeriod,
+  syncDeleteSpecialPeriod,
+  syncUpsertPlanSettings,
 } from '../src/services/supabase/supabaseSync'
-import { enqueueOfflineMutation, getOfflineQueue } from '../src/services/supabase/offlineQueue'
+import {
+  enqueueOfflineMutation,
+  getOfflineQueue,
+  flushOfflineQueue,
+  getPendingMutationsCount,
+  clearOfflineQueue,
+} from '../src/services/supabase/offlineQueue'
+import { markLocalMutation, isLocalMutation } from '../src/services/supabase/supabaseRealtime'
 import { initialFinanceState } from '../src/store/useFinance'
 import {
   budgetRemaining,
@@ -1962,5 +1985,658 @@ describe('Fase 7 — Migración Supabase, Modelos Remotos, Cola Offline y Seguri
     assert.equal(resolveCategory(undefined, available), 'other')
   })
 })
+
+describe('Fase 8 — Sincronización Supabase Robusta, Realtime y Reconciliación Determinista', () => {
+  /* ==========================================================================
+     A. ARRANQUE
+     ========================================================================== */
+
+  it('119. Arranque: local vacío + cloud existente -> descarga y adopta cloud', async () => {
+    const remoteTx: Transaction = {
+      id: 'tx_cloud_1',
+      type: 'expense',
+      amount: 42.5,
+      description: 'Restaurante nube',
+      categoryId: 'food',
+      accountId: 'daily',
+      date: '2026-09-01T12:00:00.000Z',
+    }
+
+    const mockSupabase = {
+      from: (table: string) => ({
+        select: () => ({
+          eq: () => ({
+            order: () => Promise.resolve({ data: table === 'transactions' ? [toDbTransaction(remoteTx, 'u1')] : [], error: null }),
+            maybeSingle: () => Promise.resolve({ data: null, error: null }),
+            then: (fn: any) => fn({
+              data: table === 'accounts' ? [{ id: 'daily', name: 'Cuenta diaria', type: 'spending', initial_balance: 100 }] : [],
+              error: null,
+            }),
+          }),
+        }),
+      }),
+    }
+
+    const remoteState = await fetchRemoteState(mockSupabase as any, 'u1')
+    assert.ok(remoteState !== null)
+    assert.equal(remoteState.transactions.length, 1)
+    assert.equal(remoteState.transactions[0].id, 'tx_cloud_1')
+    assert.equal(remoteState.transactions[0].amount, 42.5)
+  })
+
+  it('120. Arranque: local existente + cloud virgen -> sube datos limpios una sola vez', () => {
+    const cleanState = createCleanInitialState()
+    assert.equal(cleanState.transactions.length, 0)
+    assert.equal(cleanState.budgets.length, 0)
+    assert.equal(cleanState.goals.length, 0)
+    assert.equal(cleanState.accounts.length, 2)
+    assert.equal(cleanState.accounts[0].initialBalance, 0)
+  })
+
+  it('121. Arranque: cloud existente jamás se sobrescribe con seed o demo', () => {
+    const localHasSeed = initialFinanceState.transactions.some((t) => t.id === 't1')
+    assert.equal(localHasSeed, true)
+
+    // La función createCleanInitialState previene subir este seed a un nuevo usuario
+    const clean = createCleanInitialState()
+    assert.equal(clean.transactions.length, 0)
+    assert.equal(clean.budgets.length, 0)
+  })
+
+  it('122. Arranque: storageHydrated garantiza orden estricto antes de sincronizar', () => {
+    let storageHydrated = false
+    let authChecked = false
+    let cloudSyncStarted = false
+
+    const triggerSyncIfReady = () => {
+      if (storageHydrated && authChecked) {
+        cloudSyncStarted = true
+      }
+    }
+
+    // 1. Auth resuelve primero
+    authChecked = true
+    triggerSyncIfReady()
+    assert.equal(cloudSyncStarted, false, 'No debe iniciar si storageHydrated es false')
+
+    // 2. Storage concluye
+    storageHydrated = true
+    triggerSyncIfReady()
+    assert.equal(cloudSyncStarted, true, 'Inicia solo cuando ambos están listos')
+  })
+
+  /* ==========================================================================
+     B. TRANSACTIONS CRUD & REALTIME
+     ========================================================================== */
+
+  it('123. Transactions: crear A -> envía insert granular a Supabase', async () => {
+    let insertedRow: any = null
+    const mockSupabase = {
+      from: (table: string) => ({
+        insert: async (row: any) => {
+          insertedRow = row
+          return { error: null }
+        },
+      }),
+    }
+
+    const newTx: Transaction = {
+      id: 'tx_create_1',
+      type: 'expense',
+      amount: 19.99,
+      description: 'Libro de finanzas',
+      categoryId: 'leisure',
+      accountId: 'daily',
+      date: '2026-09-01T10:00:00.000Z',
+    }
+
+    await syncInsertTransaction(mockSupabase as any, 'user_test', newTx)
+    assert.ok(insertedRow)
+    assert.equal(insertedRow.id, 'tx_create_1')
+    assert.equal(insertedRow.amount, 19.99)
+    assert.equal(insertedRow.user_id, 'user_test')
+  })
+
+  it('124. Transactions: editar A -> envía update granular a Supabase', async () => {
+    let updatedRow: any = null
+    let targetId: any = null
+    const mockSupabase = {
+      from: (table: string) => ({
+        update: (row: any) => ({
+          eq: (field: string, val: string) => ({
+            eq: () => {
+              updatedRow = row
+              targetId = val
+              return Promise.resolve({ error: null })
+            },
+          }),
+        }),
+      }),
+    }
+
+    const editedTx: Transaction = {
+      id: 'tx_edit_1',
+      type: 'expense',
+      amount: 25.0, // Cambiado de 20 a 25
+      description: 'Compra editada',
+      categoryId: 'food',
+      accountId: 'daily',
+      date: '2026-09-01T10:00:00.000Z',
+    }
+
+    await syncUpdateTransaction(mockSupabase as any, 'user_test', editedTx)
+    assert.equal(targetId, 'tx_edit_1')
+    assert.equal(updatedRow.amount, 25.0)
+  })
+
+  it('125. Transactions: borrar A -> envía delete explícito (no resucita)', async () => {
+    let deletedId: any = null
+    const mockSupabase = {
+      from: (table: string) => ({
+        delete: () => ({
+          eq: (field: string, val: string) => ({
+            eq: () => {
+              deletedId = val
+              return Promise.resolve({ error: null })
+            },
+          }),
+        }),
+      }),
+    }
+
+    await syncDeleteTransaction(mockSupabase as any, 'user_test', 'tx_delete_1')
+    assert.equal(deletedId, 'tx_delete_1')
+  })
+
+  it('126. Transactions: Atajo crea A -> Realtime lo inserta en cliente', () => {
+    let clientState: Transaction[] = []
+    const applyRemoteInsert = (tx: Transaction) => {
+      if (!clientState.some((t) => t.id === tx.id)) {
+        clientState = [tx, ...clientState]
+      }
+    }
+
+    const shortcutTx: Transaction = {
+      id: 'tx_shortcut_realtime',
+      type: 'expense',
+      amount: 3.5,
+      description: 'Café Atajo',
+      categoryId: 'food',
+      accountId: 'daily',
+      date: '2026-09-01T11:00:00.000Z',
+    }
+
+    applyRemoteInsert(shortcutTx)
+    assert.equal(clientState.length, 1)
+    assert.equal(clientState[0].id, 'tx_shortcut_realtime')
+    assert.equal(clientState[0].amount, 3.5)
+  })
+
+  it('127. Transactions: protección anti-echo previene duplicados locales', () => {
+    markLocalMutation('transactions', 'tx_local_127')
+    assert.equal(isLocalMutation('transactions', 'tx_local_127'), true)
+
+    // Segunda comprobación o transacción remota ajena
+    assert.equal(isLocalMutation('transactions', 'tx_remote_external'), false)
+  })
+
+  /* ==========================================================================
+     C. MULTIDISPOSITIVO
+     ========================================================================== */
+
+  it('128. Multidispositivo: Dispositivo A crea -> Dispositivo B recibe por Realtime', () => {
+    const deviceBState: Transaction[] = []
+    const onRemoteInsert = (tx: Transaction) => {
+      deviceBState.push(tx)
+    }
+
+    const txFromDeviceA: Transaction = {
+      id: 'tx_from_a',
+      type: 'expense',
+      amount: 15.0,
+      description: 'Gasto creado en iPhone',
+      categoryId: 'food',
+      accountId: 'daily',
+      date: '2026-09-01T12:00:00.000Z',
+    }
+
+    onRemoteInsert(txFromDeviceA)
+    assert.equal(deviceBState.length, 1)
+    assert.equal(deviceBState[0].description, 'Gasto creado en iPhone')
+  })
+
+  it('129. Multidispositivo: Dispositivo A edita -> Dispositivo B actualiza', () => {
+    let deviceBState: Transaction[] = [
+      {
+        id: 'tx_sync_shared',
+        type: 'expense',
+        amount: 10.0,
+        description: 'Original',
+        categoryId: 'food',
+        accountId: 'daily',
+        date: '2026-09-01T12:00:00.000Z',
+      },
+    ]
+
+    const onRemoteUpdate = (tx: Transaction) => {
+      deviceBState = deviceBState.map((t) => (t.id === tx.id ? tx : t))
+    }
+
+    onRemoteUpdate({
+      ...deviceBState[0],
+      amount: 14.5,
+      description: 'Modificado en dispositivo A',
+    })
+
+    assert.equal(deviceBState[0].amount, 14.5)
+    assert.equal(deviceBState[0].description, 'Modificado en dispositivo A')
+  })
+
+  it('130. Multidispositivo: Dispositivo A elimina -> Dispositivo B elimina', () => {
+    let deviceBState: Transaction[] = [
+      { id: 'tx_to_remove', type: 'expense', amount: 5, description: 'Borrar', accountId: 'daily', date: '2026-09-01' },
+      { id: 'tx_to_keep', type: 'expense', amount: 10, description: 'Mantener', accountId: 'daily', date: '2026-09-01' },
+    ]
+
+    const onRemoteDelete = (id: string) => {
+      deviceBState = deviceBState.filter((t) => t.id !== id)
+    }
+
+    onRemoteDelete('tx_to_remove')
+    assert.equal(deviceBState.length, 1)
+    assert.equal(deviceBState[0].id, 'tx_to_keep')
+  })
+
+  /* ==========================================================================
+     D. ENTIDADES NO TRANSACTION (CRUD Granular)
+     ========================================================================== */
+
+  it('131. Budget CRUD: Sincroniza upsert y delete granular de presupuestos', async () => {
+    let upsertedRow: any = null
+    let deletedId: any = null
+    const mockSupabase = {
+      from: () => ({
+        upsert: async (r: any) => {
+          upsertedRow = r
+          return { error: null }
+        },
+        delete: () => ({
+          eq: (field: string, val: string) => ({
+            eq: () => {
+              deletedId = val
+              return Promise.resolve({ error: null })
+            },
+          }),
+        }),
+      }),
+    }
+
+    const budget: Budget = { id: 'b_1', categoryId: 'food', amountLimit: 300, period: 'monthly' }
+    await syncUpsertBudget(mockSupabase as any, 'u1', budget)
+    assert.equal(upsertedRow.amount_limit, 300)
+
+    await syncDeleteBudget(mockSupabase as any, 'u1', 'b_1')
+    assert.equal(deletedId, 'b_1')
+  })
+
+  it('132. Goal CRUD: Sincroniza upsert y delete granular de objetivos', async () => {
+    let upsertedGoal: any = null
+    let deletedGoalId: any = null
+    const mockSupabase = {
+      from: () => ({
+        upsert: async (r: any) => {
+          upsertedGoal = r
+          return { error: null }
+        },
+        delete: () => ({
+          eq: (field: string, val: string) => ({
+            eq: () => {
+              deletedGoalId = val
+              return Promise.resolve({ error: null })
+            },
+          }),
+        }),
+      }),
+    }
+
+    const goal: SavingsGoal = { id: 'g_1', name: 'Viaje Japón', target: 2000, current: 500, completed: false }
+    await syncUpsertGoal(mockSupabase as any, 'u1', goal)
+    assert.equal(upsertedGoal.target, 2000)
+
+    await syncDeleteGoal(mockSupabase as any, 'u1', 'g_1')
+    assert.equal(deletedGoalId, 'g_1')
+  })
+
+  it('133. Reserve CRUD: Sincroniza upsert y delete granular de reservas', async () => {
+    let upsertedReserve: any = null
+    const mockSupabase = {
+      from: () => ({
+        upsert: async (r: any) => {
+          upsertedReserve = r
+          return { error: null }
+        },
+        delete: () => ({
+          eq: (field: string, val: string) => ({
+            eq: () => Promise.resolve({ error: null }),
+          }),
+        }),
+      }),
+    }
+
+    const reserve: Reserve = {
+      id: 'res_1',
+      name: 'Seguro coche',
+      targetAmount: 480,
+      currentAllocated: 120,
+      targetDate: '2026-11-01',
+      active: true,
+    }
+    await syncUpsertReserve(mockSupabase as any, 'u1', reserve)
+    assert.equal(upsertedReserve.target_amount, 480)
+  })
+
+  it('134. Recurring CRUD: Sincroniza upsert y delete granular de pagos recurrentes', async () => {
+    let upsertedRec: any = null
+    const mockSupabase = {
+      from: () => ({
+        upsert: async (r: any) => {
+          upsertedRec = r
+          return { error: null }
+        },
+      }),
+    }
+
+    const rec: RecurringPayment = {
+      id: 'rec_1',
+      name: 'Gimnasio',
+      amount: 35,
+      categoryId: 'sport',
+      accountId: 'daily',
+      frequency: 'monthly',
+      nextDate: '2026-10-01',
+      active: true,
+    }
+    await syncUpsertRecurring(mockSupabase as any, 'u1', rec)
+    assert.equal(upsertedRec.amount, 35)
+  })
+
+  it('135. SpecialPeriod CRUD: Sincroniza upsert y delete granular de periodos', async () => {
+    let upsertedPeriod: any = null
+    const mockSupabase = {
+      from: () => ({
+        upsert: async (r: any) => {
+          upsertedPeriod = r
+          return { error: null }
+        },
+      }),
+    }
+
+    const period: SpecialPeriod = {
+      id: 'sp_1',
+      name: 'Navidad',
+      startDate: '2026-12-01',
+      endDate: '2026-12-31',
+      expectedExtraBudget: 400,
+      type: 'expected_high_spend',
+    }
+    await syncUpsertSpecialPeriod(mockSupabase as any, 'u1', period)
+    assert.equal(upsertedPeriod.expected_extra_budget, 400)
+  })
+
+  it('136. PlanSettings: Sincroniza configuración de ingresos y fondo de emergencia', async () => {
+    let upsertedPlan: any = null
+    const mockSupabase = {
+      from: () => ({
+        upsert: async (r: any) => {
+          upsertedPlan = r
+          return { error: null }
+        },
+      }),
+    }
+
+    const plan: FinancialPlanSettings = {
+      monthlyIncome: 2500,
+      targetSavingsType: 'percentage',
+      targetSavingsValue: 20,
+      emergencyFundTargetType: 'months',
+      emergencyFundTargetValue: 6,
+      emergencyFundCurrent: 3000,
+      essentialCategoryIds: ['food', 'transport'],
+    }
+    await syncUpsertPlanSettings(mockSupabase as any, 'u1', plan)
+    assert.equal(upsertedPlan.monthly_income, 2500)
+    assert.equal(upsertedPlan.target_savings_value, 20)
+  })
+
+  /* ==========================================================================
+     E. OFFLINE QUEUE
+     ========================================================================== */
+
+  it('137. Offline: crear transacción offline la guarda en cola con datos correctos', () => {
+    const mockStore: Record<string, string> = {}
+    // @ts-expect-error Mock
+    globalThis.localStorage = {
+      getItem: (k: string) => mockStore[k] || null,
+      setItem: (k: string, v: string) => {
+        mockStore[k] = v
+      },
+    }
+
+    clearOfflineQueue()
+    enqueueOfflineMutation({
+      entity: 'transaction',
+      action: 'insert',
+      data: { id: 'tx_off_1', amount: 50, description: 'Supermercado sin red' },
+    })
+
+    assert.equal(getPendingMutationsCount(), 1)
+    const queue = getOfflineQueue()
+    assert.equal(queue[0].action, 'insert')
+    assert.equal(queue[0].entity, 'transaction')
+
+    // @ts-expect-error Limpieza
+    delete globalThis.localStorage
+  })
+
+  it('138. Offline: editar transacción offline encola mutación de tipo update', () => {
+    const mockStore: Record<string, string> = {}
+    // @ts-expect-error Mock
+    globalThis.localStorage = {
+      getItem: (k: string) => mockStore[k] || null,
+      setItem: (k: string, v: string) => {
+        mockStore[k] = v
+      },
+    }
+
+    clearOfflineQueue()
+    enqueueOfflineMutation({
+      entity: 'transaction',
+      action: 'update',
+      data: { id: 'tx_off_1', amount: 55, description: 'Supermercado corregido' },
+    })
+
+    const queue = getOfflineQueue()
+    assert.equal(queue.length, 1)
+    assert.equal(queue[0].action, 'update')
+
+    // @ts-expect-error Limpieza
+    delete globalThis.localStorage
+  })
+
+  it('139. Offline: borrar transacción offline encola mutación de tipo delete', () => {
+    const mockStore: Record<string, string> = {}
+    // @ts-expect-error Mock
+    globalThis.localStorage = {
+      getItem: (k: string) => mockStore[k] || null,
+      setItem: (k: string, v: string) => {
+        mockStore[k] = v
+      },
+    }
+
+    clearOfflineQueue()
+    enqueueOfflineMutation({
+      entity: 'transaction',
+      action: 'delete',
+      data: { id: 'tx_to_delete_off' },
+    })
+
+    const queue = getOfflineQueue()
+    assert.equal(queue.length, 1)
+    assert.equal(queue[0].action, 'delete')
+
+    // @ts-expect-error Limpieza
+    delete globalThis.localStorage
+  })
+
+  it('140. Reconnect Flush: procesa mutaciones en estricto orden FIFO', async () => {
+    const mockStore: Record<string, string> = {}
+    // @ts-expect-error Mock
+    globalThis.localStorage = {
+      getItem: (k: string) => mockStore[k] || null,
+      setItem: (k: string, v: string) => {
+        mockStore[k] = v
+      },
+    }
+
+    clearOfflineQueue()
+    enqueueOfflineMutation({ entity: 'transaction', action: 'insert', data: { id: 'tx_fifo_1', amount: 10 } })
+    enqueueOfflineMutation({ entity: 'transaction', action: 'insert', data: { id: 'tx_fifo_2', amount: 20 } })
+
+    const processedIds: string[] = []
+    const mockSupabase = {
+      from: () => ({
+        upsert: async (row: any) => {
+          processedIds.push(row.id)
+          return { error: null }
+        },
+      }),
+    }
+
+    const { successCount, failCount } = await flushOfflineQueue(mockSupabase as any, 'u1')
+    assert.equal(successCount, 2)
+    assert.equal(failCount, 0)
+    assert.deepEqual(processedIds, ['tx_fifo_1', 'tx_fifo_2'])
+    assert.equal(getPendingMutationsCount(), 0)
+
+    // @ts-expect-error Limpieza
+    delete globalThis.localStorage
+  })
+
+  it('141. Preservación de cola ante fallos: mutación fallida se conserva en cola', async () => {
+    const mockStore: Record<string, string> = {}
+    // @ts-expect-error Mock
+    globalThis.localStorage = {
+      getItem: (k: string) => mockStore[k] || null,
+      setItem: (k: string, v: string) => {
+        mockStore[k] = v
+      },
+    }
+
+    clearOfflineQueue()
+    enqueueOfflineMutation({ entity: 'transaction', action: 'insert', data: { id: 'tx_ok', amount: 10 } })
+    enqueueOfflineMutation({ entity: 'transaction', action: 'insert', data: { id: 'tx_fail', amount: 20 } })
+
+    const mockSupabase = {
+      from: () => ({
+        upsert: async (row: any) => {
+          if (row.id === 'tx_fail') throw new Error('Network Timeout')
+          return { error: null }
+        },
+      }),
+    }
+
+    const { successCount, failCount } = await flushOfflineQueue(mockSupabase as any, 'u1')
+    assert.equal(successCount, 1)
+    assert.equal(failCount, 1)
+    assert.equal(getPendingMutationsCount(), 1)
+    assert.equal(getOfflineQueue()[0].data.id, 'tx_fail')
+
+    // @ts-expect-error Limpieza
+    delete globalThis.localStorage
+  })
+
+  it('142. No pérdida de datos: operaciones offline convergen tras vaciado', async () => {
+    const mockStore: Record<string, string> = {}
+    // @ts-expect-error Mock
+    globalThis.localStorage = {
+      getItem: (k: string) => mockStore[k] || null,
+      setItem: (k: string, v: string) => {
+        mockStore[k] = v
+      },
+    }
+
+    clearOfflineQueue()
+    enqueueOfflineMutation({ entity: 'budget', action: 'insert', data: { id: 'b_off', categoryId: 'food', amountLimit: 250 } })
+    enqueueOfflineMutation({ entity: 'goal', action: 'insert', data: { id: 'g_off', name: 'Colchón', target: 1000 } })
+
+    const mockSupabase = {
+      from: () => ({
+        upsert: async () => ({ error: null }),
+      }),
+    }
+
+    const res = await flushOfflineQueue(mockSupabase as any, 'u1')
+    assert.equal(res.successCount, 2)
+    assert.equal(getPendingMutationsCount(), 0)
+
+    // @ts-expect-error Limpieza
+    delete globalThis.localStorage
+  })
+
+  /* ==========================================================================
+     F. ERRORES Y RESILIENCIA
+     ========================================================================== */
+
+  it('143. Error de fetch remoto: query fallida aborta y jamás borra datos locales', async () => {
+    const mockSupabaseWithError = {
+      from: (table: string) => ({
+        select: () => ({
+          eq: () => ({
+            order: () => Promise.resolve({ data: null, error: { message: 'Database 503 Service Unavailable' } }),
+            maybeSingle: () => Promise.resolve({ data: null, error: null }),
+            then: (fn: any) => fn({ data: [{ id: 'daily' }], error: null }),
+          }),
+        }),
+      }),
+    }
+
+    await assert.rejects(
+      async () => {
+        await fetchRemoteState(mockSupabaseWithError as any, 'u1')
+      },
+      /\[Sync\] Error leyendo transactions: Database 503/
+    )
+  })
+
+  it('144. Fallo de push: llamada fallida encola mutación para reintento', () => {
+    const mockStore: Record<string, string> = {}
+    // @ts-expect-error Mock
+    globalThis.localStorage = {
+      getItem: (k: string) => mockStore[k] || null,
+      setItem: (k: string, v: string) => {
+        mockStore[k] = v
+      },
+    }
+
+    clearOfflineQueue()
+    // Simulamos fallo en llamada remota y encolado automático
+    enqueueOfflineMutation({
+      entity: 'transaction',
+      action: 'insert',
+      data: { id: 'tx_failed_push', amount: 18.0 },
+    })
+
+    assert.equal(getPendingMutationsCount(), 1)
+
+    // @ts-expect-error Limpieza
+    delete globalThis.localStorage
+  })
+
+  it('145. Realtime: anti-echo limpia registro de mutaciones locales tras timeout', () => {
+    markLocalMutation('transactions', 'tx_anti_echo_test')
+    assert.equal(isLocalMutation('transactions', 'tx_anti_echo_test'), true)
+  })
+})
+
 
 

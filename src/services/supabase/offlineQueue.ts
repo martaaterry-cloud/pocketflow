@@ -179,3 +179,12 @@ export async function flushOfflineQueue(
   saveOfflineQueue(remaining)
   return { successCount, failCount }
 }
+
+export function getPendingMutationsCount(): number {
+  return getOfflineQueue().length
+}
+
+export function clearOfflineQueue(): void {
+  saveOfflineQueue([])
+}
+
