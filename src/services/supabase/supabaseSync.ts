@@ -9,6 +9,7 @@ import type {
   SavingsGoal,
   SpecialPeriod,
   Transaction,
+  UserProfile,
 } from '../../models/finance'
 import type { PersistedState } from '../storage/storageAdapter'
 import { migratePersistedState } from '../storage/localStorageAdapter'
@@ -39,6 +40,9 @@ export function createCleanInitialState(): PersistedState {
       emergencyFundTargetValue: 3,
       emergencyFundCurrent: 0,
       essentialCategoryIds: ['food', 'transport', 'subscriptions'],
+    },
+    profile: {
+      displayName: '',
     },
   }
 }
@@ -277,6 +281,19 @@ export function fromDbPlanSettings(row: Record<string, unknown>): FinancialPlanS
   }
 }
 
+export function toDbProfile(p: UserProfile, userId: string) {
+  return {
+    user_id: userId,
+    display_name: p.displayName,
+  }
+}
+
+export function fromDbProfile(row: Record<string, unknown>): UserProfile {
+  return {
+    displayName: String(row.display_name ?? ''),
+  }
+}
+
 // ==========================================================================
 // Operaciones de lectura segura (Validación estricta de errores)
 // ==========================================================================
@@ -295,6 +312,7 @@ export async function fetchRemoteState(
     recurringRes,
     periodsRes,
     settingsRes,
+    profileRes,
   ] = await Promise.all([
     supabase.from('accounts').select('*').eq('user_id', userId),
     supabase.from('categories').select('*').eq('user_id', userId),
@@ -305,6 +323,7 @@ export async function fetchRemoteState(
     supabase.from('recurring_payments').select('*').eq('user_id', userId),
     supabase.from('special_periods').select('*').eq('user_id', userId),
     supabase.from('financial_plan_settings').select('*').eq('user_id', userId).maybeSingle(),
+    supabase.from('profiles').select('*').eq('user_id', userId).maybeSingle(),
   ])
 
   // Comprobar errores en CADA query para evitar borrado accidental de datos locales
@@ -317,6 +336,7 @@ export async function fetchRemoteState(
   if (recurringRes.error) throw new Error(`[Sync] Error leyendo recurring_payments: ${recurringRes.error.message}`)
   if (periodsRes.error) throw new Error(`[Sync] Error leyendo special_periods: ${periodsRes.error.message}`)
   if (settingsRes.error) throw new Error(`[Sync] Error leyendo settings: ${settingsRes.error.message}`)
+  if (profileRes.error) throw new Error(`[Sync] Error leyendo profiles: ${profileRes.error.message}`)
 
   // Si no hay cuentas remotas, la base de datos de este usuario está virgen
   if (!accountsRes.data || accountsRes.data.length === 0) {
@@ -333,6 +353,7 @@ export async function fetchRemoteState(
     recurring: (recurringRes.data ?? []).map(fromDbRecurring),
     specialPeriods: (periodsRes.data ?? []).map(fromDbSpecialPeriod),
     planSettings: settingsRes.data ? fromDbPlanSettings(settingsRes.data) : undefined,
+    profile: profileRes.data ? fromDbProfile(profileRes.data) : { displayName: '' },
   }
 
   return migratePersistedState(rawState)
@@ -486,6 +507,16 @@ export async function syncUpsertPlanSettings(
   if (error) throw error
 }
 
+export async function syncUpsertProfile(
+  supabase: SupabaseClient,
+  userId: string,
+  profile: UserProfile
+): Promise<void> {
+  const row = toDbProfile(profile, userId)
+  const { error } = await supabase.from('profiles').upsert(row)
+  if (error) throw error
+}
+
 // ==========================================================================
 // Subida completa (SOLO para migración inicial o restauración de backup)
 // ==========================================================================
@@ -550,6 +581,12 @@ export async function uploadStateToSupabase(
     if (state.planSettings) {
       const dbSettings = toDbPlanSettings(state.planSettings, userId)
       const { error } = await supabase.from('financial_plan_settings').upsert(dbSettings)
+      if (error) throw error
+    }
+
+    if (state.profile) {
+      const dbProfile = toDbProfile(state.profile, userId)
+      const { error } = await supabase.from('profiles').upsert(dbProfile)
       if (error) throw error
     }
 

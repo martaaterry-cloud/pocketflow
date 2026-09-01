@@ -4,6 +4,7 @@ import {
   fromDbBudget,
   fromDbGoal,
   fromDbPlanSettings,
+  fromDbProfile,
   fromDbRecurring,
   fromDbReserve,
   fromDbSpecialPeriod,
@@ -18,6 +19,7 @@ import type {
   SavingsGoal,
   SpecialPeriod,
   Transaction,
+  UserProfile,
 } from '../../models/finance'
 
 export interface RealtimeHandlers {
@@ -43,6 +45,7 @@ export interface RealtimeHandlers {
   onSpecialPeriodDelete: (periodId: string) => void
 
   onPlanSettingsUpdate: (ps: FinancialPlanSettings) => void
+  onProfileUpdate: (p: UserProfile) => void
   onStatusChange?: (status: string) => void
 }
 
@@ -229,6 +232,17 @@ export function initRealtimeSubscription(
       const row = payload.new as Record<string, unknown>
       if (!row || isLocalMutation('financial_plan_settings', userId)) return
       handlers.onPlanSettingsUpdate(fromDbPlanSettings(row))
+    }
+  )
+
+  // 9. Perfil de usuario
+  channel.on(
+    'postgres_changes',
+    { event: '*', schema: 'public', table: 'profiles', filter: `user_id=eq.${userId}` },
+    (payload) => {
+      const row = payload.new as Record<string, unknown>
+      if (!row || isLocalMutation('profile', userId)) return
+      handlers.onProfileUpdate(fromDbProfile(row))
     }
   )
 

@@ -41,6 +41,7 @@ import {
   Ticket,
   Trash2,
   Umbrella,
+  User,
   Wrench,
   X,
 } from 'lucide-react'
@@ -108,6 +109,7 @@ export const ICON_MAP: Record<string, React.ComponentType<{ size?: number | stri
   search: Search,
   edit: Pencil,
   sliders: Sliders,
+  user: User,
   'shield-check': ShieldCheck,
   'circle-alert': CircleAlert,
 }

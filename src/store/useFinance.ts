@@ -4,6 +4,7 @@ import {
   budgets as seedBudgets,
   categories as seedCategories,
   goals as seedGoals,
+  initialProfile,
   planSettings as seedPlanSettings,
   recurring as seedRecurring,
   reserves as seedReserves,
@@ -27,11 +28,13 @@ import type {
   Transaction,
   UpdateBudgetInput,
   UpdatePlanSettingsInput,
+  UpdateProfileInput,
   UpdateRecurringPaymentInput,
   UpdateReserveInput,
   UpdateSavingsGoalInput,
   UpdateSpecialPeriodInput,
   UpdateTransactionInput,
+  UserProfile,
 } from '../models/finance'
 import { defaultAppStorage } from '../services/storage/indexedDbAdapter'
 import { defaultStorage } from '../services/storage/localStorageAdapter'
@@ -57,6 +60,7 @@ import {
   syncUpsertBudget,
   syncUpsertGoal,
   syncUpsertPlanSettings,
+  syncUpsertProfile,
   syncUpsertRecurring,
   syncUpsertReserve,
   syncUpsertSpecialPeriod,
@@ -102,6 +106,7 @@ export const initialFinanceState: PersistedState = {
   reserves: seedReserves,
   specialPeriods: seedSpecialPeriods,
   planSettings: seedPlanSettings,
+  profile: initialProfile,
 }
 
 export function useFinance(storage: StorageAdapter = defaultAppStorage) {
@@ -125,6 +130,7 @@ export function useFinance(storage: StorageAdapter = defaultAppStorage) {
           reserves: parsed.reserves ?? initialFinanceState.reserves,
           specialPeriods: parsed.specialPeriods ?? initialFinanceState.specialPeriods,
           planSettings: parsed.planSettings ?? initialFinanceState.planSettings,
+          profile: parsed.profile ?? initialFinanceState.profile ?? initialProfile,
         }
       }
     } catch {
@@ -915,6 +921,31 @@ export function useFinance(storage: StorageAdapter = defaultAppStorage) {
   )
 
   /* ==========================================================================
+     Perfil de Usuario
+     ========================================================================== */
+
+  const updateProfile = useCallback(
+    (updates: UpdateProfileInput) => {
+      const nextProfile: UserProfile = {
+        ...(state.profile ?? initialProfile),
+        ...updates,
+        displayName: updates.displayName !== undefined ? updates.displayName.trim() : (state.profile?.displayName ?? ''),
+      }
+      commit(
+        {
+          ...state,
+          profile: nextProfile,
+        },
+        'profile'
+      )
+      dispatchSync('profile', 'update', syncUserId || 'profile', nextProfile, (sb, uid) =>
+        syncUpsertProfile(sb, uid, nextProfile)
+      )
+    },
+    [state, commit, dispatchSync, syncUserId]
+  )
+
+  /* ==========================================================================
      Totales y Conceptos Financieros Centralizados
      ========================================================================== */
 
@@ -1249,6 +1280,19 @@ export function useFinance(storage: StorageAdapter = defaultAppStorage) {
     [persistStateAsync]
   )
 
+  const applyRemoteUpdateProfile = useCallback(
+    (p: UserProfile) => {
+      logPerfRealtimeReceived('profile')
+      setState((prev) => {
+        const next = { ...prev, profile: p }
+        persistStateAsync(next, 'profile')
+        return next
+      })
+      logPerfUiUpdated('profile')
+    },
+    [persistStateAsync]
+  )
+
   const restoreState = useCallback(
     async (newState: PersistedState) => {
       const txs = newState.transactions ?? []
@@ -1265,6 +1309,7 @@ export function useFinance(storage: StorageAdapter = defaultAppStorage) {
         reserves: newState.reserves ?? [],
         specialPeriods: newState.specialPeriods ?? [],
         planSettings: newState.planSettings ?? initialFinanceState.planSettings,
+        profile: newState.profile ?? initialFinanceState.profile,
       }
       setState(completeState)
       await storage.save(completeState)
@@ -1283,11 +1328,13 @@ export function useFinance(storage: StorageAdapter = defaultAppStorage) {
       reserves: state.reserves,
       specialPeriods: state.specialPeriods,
       planSettings: state.planSettings,
+      profile: state.profile ?? initialFinanceState.profile,
     }
   }, [reconciledAccounts, state])
 
   return {
     ...state,
+    profile: state.profile ?? initialFinanceState.profile,
     storageHydrated,
     setSyncUser,
     accounts: reconciledAccounts,
@@ -1296,6 +1343,9 @@ export function useFinance(storage: StorageAdapter = defaultAppStorage) {
     updateTransaction,
     deleteTransaction,
     updateAccountInitialBalance,
+
+    // Perfil
+    updateProfile,
 
     // Objetivos de ahorro
     addSavingsGoal,
@@ -1348,6 +1398,7 @@ export function useFinance(storage: StorageAdapter = defaultAppStorage) {
     applyRemoteUpsertSpecialPeriod,
     applyRemoteDeleteSpecialPeriod,
     applyRemoteUpdatePlanSettings,
+    applyRemoteUpdateProfile,
 
     // Copias de seguridad
     restoreState,

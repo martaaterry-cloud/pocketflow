@@ -191,6 +191,9 @@ export default function App() {
       onPlanSettingsUpdate: (ps) => {
         financeRef.current.applyRemoteUpdatePlanSettings(ps)
       },
+      onProfileUpdate: (p) => {
+        financeRef.current.applyRemoteUpdateProfile(p)
+      },
     })
 
     return () => {

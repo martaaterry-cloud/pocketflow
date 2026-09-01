@@ -11,8 +11,9 @@ import { PlanFinancialPage } from './PlanFinancialPage'
 import { RecurringPaymentsPage } from './RecurringPaymentsPage'
 import { SettingsPage } from './SettingsPage'
 import { StatisticsPage } from './StatisticsPage'
+import { ProfilePage } from './ProfilePage'
 
-type MoreSubView = 'menu' | 'accounts' | 'settings' | 'recurring' | 'budgets' | 'statistics' | 'plan' | 'backup' | 'cloud'
+type MoreSubView = 'menu' | 'profile' | 'accounts' | 'settings' | 'recurring' | 'budgets' | 'statistics' | 'plan' | 'backup' | 'cloud'
 
 export function MorePage({
   finance,
@@ -28,6 +29,17 @@ export function MorePage({
   onSignOut?: () => void
 }) {
   const [subView, setSubView] = useState<MoreSubView>('menu')
+
+  if (subView === 'profile') {
+    return (
+      <ProfilePage
+        finance={finance}
+        user={user ?? null}
+        onBack={() => setSubView('menu')}
+        onToast={onToast}
+      />
+    )
+  }
 
   if (subView === 'cloud') {
     return (
@@ -108,6 +120,19 @@ export function MorePage({
 
       {/* Menú de Opciones */}
       <section className="menu-card">
+        <button type="button" onClick={() => setSubView('profile')}>
+          <span className="menu-icon">
+            <AppIcon name="user" size={18} />
+          </span>
+          <div>
+            <strong>Perfil</strong>
+            <small>{finance.profile?.displayName ? finance.profile.displayName : 'Nombre y usuario'}</small>
+          </div>
+          <b className="chevron">
+            <AppIcon name="chevron-right" size={16} />
+          </b>
+        </button>
+
         {/* Plan Financiero (Nueva Sección) */}
         <button type="button" onClick={() => setSubView('plan')}>
           <span className="menu-icon">

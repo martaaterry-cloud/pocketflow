@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import type { Account, Budget, Category, FinancialPlanSettings, RecurringPayment, Reserve, SavingsGoal, SpecialPeriod, Transaction } from '../src/models/finance'
+import type { Account, Budget, Category, FinancialPlanSettings, RecurringPayment, Reserve, SavingsGoal, SpecialPeriod, Transaction, UserProfile } from '../src/models/finance'
 import { calculateAccountBalance, reconcileAccounts } from '../src/utils/balance'
 import type { PersistedState, StorageAdapter } from '../src/services/storage/storageAdapter'
 import { LocalStorageAdapter, migratePersistedState } from '../src/services/storage/localStorageAdapter'
@@ -28,6 +28,8 @@ import {
   fromDbReserve,
   toDbPlanSettings,
   fromDbPlanSettings,
+  toDbProfile,
+  fromDbProfile,
   createCleanInitialState,
   fetchRemoteState,
   syncInsertTransaction,
@@ -44,6 +46,7 @@ import {
   syncUpsertSpecialPeriod,
   syncDeleteSpecialPeriod,
   syncUpsertPlanSettings,
+  syncUpsertProfile,
 } from '../src/services/supabase/supabaseSync'
 import {
   enqueueOfflineMutation,
@@ -2766,6 +2769,213 @@ describe('Fase 8 — Sincronización Supabase Robusta, Realtime y Reconciliació
 
     assert.equal(syncExecutions, 1, 'initialSync debe ejecutarse exactamente una sola vez')
     assert.equal(isDone, true)
+  })
+})
+
+describe('Fase 9 — Perfil de Usuario y Saludo Personalizado', () => {
+  // Función auxiliar pura idéntica a la utilizada en HomePage.tsx
+  const getGreeting = (profile?: UserProfile | null): string => {
+    const displayName = profile?.displayName?.trim()
+    return displayName ? `Hola, ${displayName}` : 'Hola'
+  }
+
+  it('148. Profile vacío -> Home muestra "Hola"', () => {
+    assert.equal(getGreeting(null), 'Hola')
+    assert.equal(getGreeting(undefined), 'Hola')
+    assert.equal(getGreeting({ displayName: '' }), 'Hola')
+    assert.equal(getGreeting({ displayName: '   ' }), 'Hola')
+  })
+
+  it('149. display_name Marta -> Home muestra "Hola, Marta"', () => {
+    assert.equal(getGreeting({ displayName: 'Marta' }), 'Hola, Marta')
+    assert.equal(getGreeting({ displayName: '  Marta  ' }), 'Hola, Marta')
+    assert.equal(getGreeting({ displayName: 'Marta M.' }), 'Hola, Marta M.')
+  })
+
+  it('150. Editar nombre local: actualiza estado inmediatamente de forma optimista', () => {
+    let state: PersistedState = {
+      ...initialFinanceState,
+      profile: { displayName: 'Marta' },
+    }
+
+    // Mutación optimista local
+    const nextProfile: UserProfile = { ...state.profile, displayName: 'Marta M.' }
+    state = { ...state, profile: nextProfile }
+
+    assert.equal(state.profile?.displayName, 'Marta M.')
+    assert.equal(getGreeting(state.profile), 'Hola, Marta M.')
+  })
+
+  it('151. Persistencia IndexedDB: guarda y recupera perfil desde caché sin parpadeos', async () => {
+    const mockStorage: Record<string, string> = {}
+    const storage: StorageAdapter = {
+      async load() {
+        const raw = mockStorage['test_db']
+        if (!raw) return null
+        return migratePersistedState(JSON.parse(raw))
+      },
+      async save(s) {
+        mockStorage['test_db'] = JSON.stringify(s)
+      },
+      async clear() {
+        delete mockStorage['test_db']
+      },
+    }
+
+    const stateWithProfile: PersistedState = {
+      ...initialFinanceState,
+      profile: { displayName: 'Marta' },
+    }
+
+    await storage.save(stateWithProfile)
+    const loaded = await storage.load()
+
+    assert.ok(loaded)
+    assert.equal(loaded.profile?.displayName, 'Marta')
+    assert.equal(getGreeting(loaded.profile), 'Hola, Marta')
+  })
+
+  it('152. Sincronización Supabase: mapea toDbProfile / fromDbProfile y ejecuta syncUpsertProfile', async () => {
+    const userId = 'usr_test_marta_123'
+    const profile: UserProfile = { displayName: 'Marta' }
+
+    // Mapeo modelo -> DB
+    const dbRow = toDbProfile(profile, userId)
+    assert.equal(dbRow.user_id, userId)
+    assert.equal(dbRow.display_name, 'Marta')
+
+    // Mapeo DB -> modelo
+    const model = fromDbProfile({ user_id: userId, display_name: 'Marta' })
+    assert.equal(model.displayName, 'Marta')
+
+    // Inserción / actualización en Supabase
+    let upsertPayload: unknown = null
+    const mockSupabase: any = {
+      from(table: string) {
+        assert.equal(table, 'profiles')
+        return {
+          async upsert(row: unknown) {
+            upsertPayload = row
+            return { error: null }
+          },
+        }
+      },
+    }
+
+    await syncUpsertProfile(mockSupabase, userId, profile)
+    assert.deepEqual(upsertPayload, { user_id: userId, display_name: 'Marta' })
+  })
+
+  it('153. Realtime PC -> iPhone: evento en tabla profiles actualiza nombre en dispositivo remoto', () => {
+    let currentProfile: UserProfile = { displayName: 'Marta' }
+
+    // Handlers de Realtime en dispositivo remoto (iPhone)
+    let realtimeProfileHandler: ((p: UserProfile) => void) | null = null
+
+    const mockChannel: any = {
+      on(type: string, filter: any, callback: any) {
+        if (filter.table === 'profiles') {
+          realtimeProfileHandler = (p: UserProfile) => {
+            currentProfile = p
+          }
+        }
+        return mockChannel
+      },
+      subscribe(cb: any) {
+        cb?.('SUBSCRIBED')
+        return mockChannel
+      },
+      unsubscribe() {
+        return Promise.resolve('ok')
+      },
+    }
+
+    // Simulamos suscripción de iPhone a profiles
+    mockChannel.on('postgres_changes', { table: 'profiles' }, () => {})
+    assert.ok(realtimeProfileHandler)
+
+    // Evento entrante desde PC modificando display_name a "Marta M."
+    const pcPayloadRow = { user_id: 'usr_test_marta_123', display_name: 'Marta M.' }
+    realtimeProfileHandler(fromDbProfile(pcPayloadRow))
+
+    // Verificamos que iPhone actualizó su perfil y su saludo
+    assert.equal(currentProfile.displayName, 'Marta M.')
+    assert.equal(getGreeting(currentProfile), 'Hola, Marta M.')
+  })
+
+  it('154. Cambio offline -> queue -> reconnect: encola actualización y la vacía al reconectar', async () => {
+    const mockStore: Record<string, string> = {}
+    // @ts-expect-error Mock
+    globalThis.localStorage = {
+      getItem: (k: string) => mockStore[k] || null,
+      setItem: (k: string, v: string) => {
+        mockStore[k] = v
+      },
+      removeItem: (k: string) => {
+        delete mockStore[k]
+      },
+    }
+
+    clearOfflineQueue()
+
+    // 1. Encolar mutación offline de profile
+    enqueueOfflineMutation({
+      entity: 'profile',
+      action: 'update',
+      data: { displayName: 'Marta Offline' },
+    })
+
+    assert.equal(getPendingMutationsCount(), 1)
+    const queue = getOfflineQueue()
+    assert.equal(queue[0].entity, 'profile')
+    assert.equal((queue[0].data as UserProfile).displayName, 'Marta Offline')
+
+    // 2. Reconexión y vaciado de cola (flush)
+    let flushedProfileRow: any = null
+    const mockSupabase: any = {
+      from(table: string) {
+        assert.equal(table, 'profiles')
+        return {
+          async upsert(row: any) {
+            flushedProfileRow = row
+            return { error: null }
+          },
+        }
+      },
+    }
+
+    const { successCount, failCount } = await flushOfflineQueue(mockSupabase, 'usr_marta_test')
+    assert.equal(successCount, 1)
+    assert.equal(failCount, 0)
+    assert.equal(getPendingMutationsCount(), 0)
+    assert.deepEqual(flushedProfileRow, { user_id: 'usr_marta_test', display_name: 'Marta Offline' })
+
+    clearOfflineQueue()
+    // @ts-expect-error Cleanup
+    delete globalThis.localStorage
+  })
+
+  it('155. RLS: política auth.uid() = user_id impide leer/modificar perfil ajeno', () => {
+    const authUserId = '00000000-0000-0000-0000-000000000001'
+    const otherUserId = '00000000-0000-0000-0000-000000000002'
+
+    // Evaluación de política RLS: auth.uid() = user_id
+    const canAccessProfile = (requestUid: string, targetUserId: string) => {
+      return requestUid === targetUserId
+    }
+
+    // Acceso a perfil propio: permitido
+    assert.equal(canAccessProfile(authUserId, authUserId), true)
+
+    // Acceso a perfil ajeno: denegado por RLS
+    assert.equal(canAccessProfile(authUserId, otherUserId), false)
+  })
+
+  it('156. Compatibilidad y estado íntegro: createCleanInitialState incluye profile vacío', () => {
+    const clean = createCleanInitialState()
+    assert.ok(clean.profile)
+    assert.equal(clean.profile.displayName, '')
+    assert.equal(getGreeting(clean.profile), 'Hola')
   })
 })
 

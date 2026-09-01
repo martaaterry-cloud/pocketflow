@@ -4,6 +4,7 @@ import {
   toDbBudget,
   toDbGoal,
   toDbPlanSettings,
+  toDbProfile,
   toDbRecurring,
   toDbReserve,
   toDbSpecialPeriod,
@@ -18,6 +19,7 @@ import type {
   SavingsGoal,
   SpecialPeriod,
   Transaction,
+  UserProfile,
 } from '../../models/finance'
 
 export interface OfflineMutation {
@@ -31,6 +33,7 @@ export interface OfflineMutation {
     | 'recurring'
     | 'specialPeriod'
     | 'planSettings'
+    | 'profile'
   action: 'insert' | 'update' | 'delete'
   data: unknown
   timestamp: number
@@ -166,6 +169,10 @@ export async function flushOfflineQueue(
       } else if (item.entity === 'planSettings') {
         const dbRow = toDbPlanSettings(item.data as FinancialPlanSettings, userId)
         const { error } = await supabase.from('financial_plan_settings').upsert(dbRow)
+        if (error) throw error
+      } else if (item.entity === 'profile') {
+        const dbRow = toDbProfile(item.data as UserProfile, userId)
+        const { error } = await supabase.from('profiles').upsert(dbRow)
         if (error) throw error
       }
       successCount++

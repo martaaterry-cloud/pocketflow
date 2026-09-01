@@ -8,7 +8,12 @@ import type {
   SavingsGoal,
   SpecialPeriod,
   Transaction,
+  UserProfile,
 } from '../models/finance'
+
+export const initialProfile: UserProfile = {
+  displayName: '',
+}
 
 export const categories: Category[] = [
   { id: 'food', name: 'Alimentación', color: '#8DB596', icon: 'shopping-basket', iconKey: 'shopping-basket' },

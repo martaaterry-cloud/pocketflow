@@ -15,12 +15,15 @@ export function HomePage({
   onAdd: () => void
   onSelectTransaction?: (tx: Transaction) => void
 }) {
+  const displayName = finance.profile?.displayName?.trim()
+  const greeting = displayName ? `Hola, ${displayName}` : 'Hola'
+
   return (
     <main className="page">
       <header className="topbar">
         <div>
           <span className="eyebrow">Mi dinero</span>
-          <h1>Hola</h1>
+          <h1>{greeting}</h1>
         </div>
         <button className="round-button" onClick={onAdd} aria-label="Añadir movimiento">
           <AppIcon name="plus" size={18} />

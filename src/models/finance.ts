@@ -140,3 +140,12 @@ export interface FinancialPlanSettings {
 }
 
 export type UpdatePlanSettingsInput = Partial<FinancialPlanSettings>
+ 
+/**
+ * Perfil privado del usuario para personalización y saludo.
+ */
+export interface UserProfile {
+  displayName: string
+}
+
+export type UpdateProfileInput = Partial<UserProfile>

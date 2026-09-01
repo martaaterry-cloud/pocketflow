@@ -8,6 +8,7 @@ import type {
   SavingsGoal,
   SpecialPeriod,
   Transaction,
+  UserProfile,
 } from '../../models/finance'
 
 export interface PersistedState {
@@ -20,6 +21,7 @@ export interface PersistedState {
   reserves: Reserve[]
   specialPeriods: SpecialPeriod[]
   planSettings: FinancialPlanSettings
+  profile?: UserProfile
 }
 
 export interface StorageAdapter {
