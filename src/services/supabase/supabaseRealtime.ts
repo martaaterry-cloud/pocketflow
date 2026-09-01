@@ -231,19 +231,38 @@ export function initRealtimeSubscription(
     }
   )
 
+  activeChannel = channel
+  currentStatus = 'SUBSCRIBING'
+
   channel.subscribe((status) => {
+    currentStatus = status
     if (status === 'SUBSCRIBED') {
       console.log(`[Supabase Realtime] Canal suscrito para usuario ${userId}`)
     }
   })
 
-  activeChannel = channel
   return channel
+}
+
+let currentStatus: string = 'CLOSED'
+
+export function getRealtimeChannelStatus(): string {
+  return currentStatus
+}
+
+export function isRealtimeSubscribed(): boolean {
+  return activeChannel !== null && currentStatus === 'SUBSCRIBED'
+}
+
+export function getActiveChannel(): RealtimeChannel | null {
+  return activeChannel
 }
 
 export function unsubscribeRealtime(): void {
   if (activeChannel) {
     activeChannel.unsubscribe()
     activeChannel = null
+    currentStatus = 'CLOSED'
   }
 }
+

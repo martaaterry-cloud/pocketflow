@@ -32,6 +32,10 @@ export default function App() {
   const [authChecked, setAuthChecked] = useState(false)
   const [syncStatus, setSyncStatus] = useState<SyncStatus>('synced')
   const [pendingCount, setPendingCount] = useState<number>(0)
+  const financeRef = useRef(finance)
+  financeRef.current = finance
+
+  const isInitialSyncInProgressRef = useRef(false)
   const isInitialSyncDoneRef = useRef(false)
 
   const deduplicatorRef = useRef(createDeepLinkDeduplicator(2500))
@@ -62,115 +66,129 @@ export default function App() {
 
   // 2. Asociar usuario autenticado a las mutaciones locales de useFinance
   useEffect(() => {
-    finance.setSyncUser(user?.id ?? null)
-  }, [user, finance.setSyncUser])
+    financeRef.current.setSyncUser(user?.id ?? null)
+  }, [user?.id])
 
-  // 3. Sincronización inicial determinista y Suscripción Realtime
-  // ORDEN ESTRICTO:
-  // 1. Inicialización app -> 2. Hidratación IndexedDB -> 3. Auth Supabase -> 4. Sincronización cloud -> 5. App lista
+  // 3. Sincronización inicial determinista (solo una vez por sesión de usuario)
+  // Bloquea ejecuciones concurrentes y solo corre cuando storageHydrated es true
   useEffect(() => {
-    if (!user || !authChecked || !finance.storageHydrated || isInitialSyncDoneRef.current) return
+    if (!user?.id || !authChecked || !finance.storageHydrated) return
+    if (isInitialSyncInProgressRef.current || isInitialSyncDoneRef.current) return
+
+    isInitialSyncInProgressRef.current = true
+    setSyncStatus('syncing')
     const supabase = getSupabase()
+    const userId = user.id
 
     const runInitialSync = async () => {
-      setSyncStatus('syncing')
       try {
         // A. Vaciado de cola offline pendiente
-        await flushOfflineQueue(supabase, user.id)
+        await flushOfflineQueue(supabase, userId)
         setPendingCount(getPendingMutationsCount())
 
         // B. Lectura de estado remoto validando cada consulta
-        const remoteState = await fetchRemoteState(supabase, user.id)
+        const remoteState = await fetchRemoteState(supabase, userId)
 
         if (remoteState) {
           // La nube ya tiene datos de este usuario -> Fuente de verdad principal
-          await finance.restoreState(remoteState)
+          await financeRef.current.restoreState(remoteState)
         } else {
           // La nube está virgen para este usuario
-          const localState = finance.getFullState()
+          const localState = financeRef.current.getFullState()
           const hasRealData = localState.transactions.length > 0 &&
             !localState.transactions.every((t) => t.id.startsWith('tx-') || t.description === 'Mercadona')
 
           if (hasRealData) {
             // Migrar datos reales locales preexistentes una sola vez
-            await uploadStateToSupabase(supabase, user.id, localState)
+            await uploadStateToSupabase(supabase, userId, localState)
           } else {
             // Usuario nuevo sin datos o solo con seed demo -> inicializar con estado limpio (0 movimientos ficticios)
             const clean = createCleanInitialState()
-            await uploadStateToSupabase(supabase, user.id, clean)
-            await finance.restoreState(clean)
+            await uploadStateToSupabase(supabase, userId, clean)
+            await financeRef.current.restoreState(clean)
           }
         }
-
-        // C. Conectar Suscripción Realtime (INSERT / UPDATE / DELETE sin echo loops)
-        initRealtimeSubscription(supabase, user.id, {
-          onTransactionInsert: (tx) => {
-            finance.applyRemoteInsertTransaction(tx)
-            showToast(`+${tx.amount.toFixed(2)} € (${tx.description})`)
-          },
-          onTransactionUpdate: (tx) => {
-            finance.applyRemoteUpdateTransaction(tx)
-          },
-          onTransactionDelete: (txId) => {
-            finance.applyRemoteDeleteTransaction(txId)
-          },
-          onAccountUpdate: (acc) => {
-            finance.applyRemoteUpdateAccount(acc)
-          },
-          onBudgetUpsert: (b) => {
-            finance.applyRemoteUpsertBudget(b)
-          },
-          onBudgetDelete: (budgetId) => {
-            finance.applyRemoteDeleteBudget(budgetId)
-          },
-          onGoalUpsert: (g) => {
-            finance.applyRemoteUpsertGoal(g)
-          },
-          onGoalDelete: (goalId) => {
-            finance.applyRemoteDeleteGoal(goalId)
-          },
-          onReserveUpsert: (r) => {
-            finance.applyRemoteUpsertReserve(r)
-          },
-          onReserveDelete: (reserveId) => {
-            finance.applyRemoteDeleteReserve(reserveId)
-          },
-          onRecurringUpsert: (rec) => {
-            finance.applyRemoteUpsertRecurring(rec)
-          },
-          onRecurringDelete: (recId) => {
-            finance.applyRemoteDeleteRecurring(recId)
-          },
-          onSpecialPeriodUpsert: (sp) => {
-            finance.applyRemoteUpsertSpecialPeriod(sp)
-          },
-          onSpecialPeriodDelete: (periodId) => {
-            finance.applyRemoteDeleteSpecialPeriod(periodId)
-          },
-          onPlanSettingsUpdate: (ps) => {
-            finance.applyRemoteUpdatePlanSettings(ps)
-          },
-        })
 
         isInitialSyncDoneRef.current = true
         setSyncStatus('synced')
       } catch (err) {
         console.warn('[Supabase] Error en sincronización inicial:', err)
         setSyncStatus(typeof navigator !== 'undefined' && !navigator.onLine ? 'offline' : 'error')
+      } finally {
+        isInitialSyncInProgressRef.current = false
       }
     }
 
     void runInitialSync()
+  }, [user?.id, authChecked, finance.storageHydrated])
+
+  // 4. Suscripción Realtime PERMANENTE durante toda la sesión del usuario
+  // DEPENDENCIAS ESTABLES: [user?.id]. Jamás se destruye por cambios de estado de finance!
+  useEffect(() => {
+    if (!user?.id) return
+    const supabase = getSupabase()
+    const userId = user.id
+
+    initRealtimeSubscription(supabase, userId, {
+      onTransactionInsert: (tx) => {
+        financeRef.current.applyRemoteInsertTransaction(tx)
+        showToast(`+${tx.amount.toFixed(2)} € (${tx.description})`)
+      },
+      onTransactionUpdate: (tx) => {
+        financeRef.current.applyRemoteUpdateTransaction(tx)
+      },
+      onTransactionDelete: (txId) => {
+        financeRef.current.applyRemoteDeleteTransaction(txId)
+      },
+      onAccountUpdate: (acc) => {
+        financeRef.current.applyRemoteUpdateAccount(acc)
+      },
+      onBudgetUpsert: (b) => {
+        financeRef.current.applyRemoteUpsertBudget(b)
+      },
+      onBudgetDelete: (budgetId) => {
+        financeRef.current.applyRemoteDeleteBudget(budgetId)
+      },
+      onGoalUpsert: (g) => {
+        financeRef.current.applyRemoteUpsertGoal(g)
+      },
+      onGoalDelete: (goalId) => {
+        financeRef.current.applyRemoteDeleteGoal(goalId)
+      },
+      onReserveUpsert: (r) => {
+        financeRef.current.applyRemoteUpsertReserve(r)
+      },
+      onReserveDelete: (reserveId) => {
+        financeRef.current.applyRemoteDeleteReserve(reserveId)
+      },
+      onRecurringUpsert: (rec) => {
+        financeRef.current.applyRemoteUpsertRecurring(rec)
+      },
+      onRecurringDelete: (recId) => {
+        financeRef.current.applyRemoteDeleteRecurring(recId)
+      },
+      onSpecialPeriodUpsert: (sp) => {
+        financeRef.current.applyRemoteUpsertSpecialPeriod(sp)
+      },
+      onSpecialPeriodDelete: (periodId) => {
+        financeRef.current.applyRemoteDeleteSpecialPeriod(periodId)
+      },
+      onPlanSettingsUpdate: (ps) => {
+        financeRef.current.applyRemoteUpdatePlanSettings(ps)
+      },
+    })
 
     return () => {
+      // Este cleanup SOLO se ejecuta cuando el usuario cierra sesión, cambia de usuario o se desmonta la App
       unsubscribeRealtime()
     }
-  }, [user, authChecked, finance.storageHydrated, finance])
+  }, [user?.id])
 
-  // 4. Conectividad de red (Online / Offline)
+  // 5. Conectividad de red (Online / Offline)
   useEffect(() => {
+    if (!user?.id) return
+
     const handleOnline = async () => {
-      if (!user) return
       setSyncStatus('syncing')
       try {
         const supabase = getSupabase()
@@ -180,7 +198,7 @@ export default function App() {
         // Reconciliación determinista al recuperar conexión
         const remote = await fetchRemoteState(supabase, user.id)
         if (remote) {
-          await finance.restoreState(remote)
+          await financeRef.current.restoreState(remote)
         }
         setSyncStatus('synced')
       } catch (err) {
@@ -201,11 +219,11 @@ export default function App() {
       window.removeEventListener('online', handleOnline)
       window.removeEventListener('offline', handleOffline)
     }
-  }, [user, finance])
+  }, [user?.id])
 
-  // 5. Fallback al volver a primer plano (sin comparación por length)
+  // 6. Fallback al volver a primer plano (sin comparación por length)
   useEffect(() => {
-    if (!user) return
+    if (!user?.id) return
 
     const handleFocus = async () => {
       if (typeof document !== 'undefined' && document.visibilityState === 'visible' && navigator.onLine) {
@@ -228,7 +246,7 @@ export default function App() {
       document.removeEventListener('visibilitychange', handleFocus)
       window.removeEventListener('focus', handleFocus)
     }
-  }, [user])
+  }, [user?.id])
 
   const processIncomingUrl = useCallback(
     (rawUrl: string, isWebQuery = false) => {
@@ -237,7 +255,7 @@ export default function App() {
         return
       }
 
-      const validCategoryIds = finance.categories.map((c) => c.id)
+      const validCategoryIds = financeRef.current.categories.map((c) => c.id)
       const parsed = parseShortcutUrl(rawUrl, validCategoryIds)
 
       if (isWebQuery) {
@@ -251,7 +269,7 @@ export default function App() {
         return
       }
 
-      finance.addTransaction({
+      financeRef.current.addTransaction({
         type: 'expense',
         amount: parsed.amount,
         description: parsed.description,
@@ -263,7 +281,7 @@ export default function App() {
       setTab('home')
       showToast('Gasto añadido', 'success')
     },
-    [finance]
+    []
   )
 
   useEffect(() => {

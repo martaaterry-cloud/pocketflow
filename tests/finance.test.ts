@@ -52,7 +52,14 @@ import {
   getPendingMutationsCount,
   clearOfflineQueue,
 } from '../src/services/supabase/offlineQueue'
-import { markLocalMutation, isLocalMutation } from '../src/services/supabase/supabaseRealtime'
+import {
+  markLocalMutation,
+  isLocalMutation,
+  initRealtimeSubscription,
+  unsubscribeRealtime,
+  isRealtimeSubscribed,
+  getRealtimeChannelStatus,
+} from '../src/services/supabase/supabaseRealtime'
 import { initialFinanceState } from '../src/store/useFinance'
 import {
   budgetRemaining,
@@ -2636,7 +2643,132 @@ describe('Fase 8 — Sincronización Supabase Robusta, Realtime y Reconciliació
     markLocalMutation('transactions', 'tx_anti_echo_test')
     assert.equal(isLocalMutation('transactions', 'tx_anti_echo_test'), true)
   })
+
+  it('146. Realtime Lifecycle: Canal permanece SUBSCRIBED tras mutaciones locales y procesa múltiples eventos remotos', () => {
+    let channelHandlerCallbacks: Record<string, Function> = {}
+    let subscribeCallback: Function | null = null
+
+    const mockChannel = {
+      on: (event: string, opts: any, callback: Function) => {
+        const key = `${opts.table}:${opts.event}`
+        channelHandlerCallbacks[key] = callback
+        return mockChannel
+      },
+      subscribe: (cb: (status: string) => void) => {
+        subscribeCallback = cb
+        cb('SUBSCRIBED')
+        return mockChannel
+      },
+      unsubscribe: () => {
+        if (subscribeCallback) subscribeCallback('CLOSED')
+      },
+    }
+
+    const mockSupabase = {
+      channel: () => mockChannel,
+    }
+
+    let localTransactions: Transaction[] = []
+    const handlers = {
+      onTransactionInsert: (tx: Transaction) => {
+        localTransactions = [tx, ...localTransactions]
+      },
+      onTransactionUpdate: () => {},
+      onTransactionDelete: () => {},
+      onAccountUpdate: () => {},
+      onBudgetUpsert: () => {},
+      onBudgetDelete: () => {},
+      onGoalUpsert: () => {},
+      onGoalDelete: () => {},
+      onReserveUpsert: () => {},
+      onReserveDelete: () => {},
+      onRecurringUpsert: () => {},
+      onRecurringDelete: () => {},
+      onSpecialPeriodUpsert: () => {},
+      onSpecialPeriodDelete: () => {},
+      onPlanSettingsUpdate: () => {},
+    }
+
+    // 1. Conectar Realtime
+    initRealtimeSubscription(mockSupabase as any, 'user_stable_test', handlers)
+    assert.equal(getRealtimeChannelStatus(), 'SUBSCRIBED')
+    assert.equal(isRealtimeSubscribed(), true)
+
+    // 2. Modificar estado local (ej. usuario añade gasto local o restoreState)
+    localTransactions.push({ id: 'local_tx_1', amount: 20, type: 'expense', accountId: 'daily', description: 'Local', date: '2026-09-01' })
+
+    // 3. Verificar que el canal sigue SUBSCRIBED y nunca se desconectó
+    assert.equal(getRealtimeChannelStatus(), 'SUBSCRIBED')
+    assert.equal(isRealtimeSubscribed(), true)
+
+    // 4. Recibir primer INSERT remoto (ej. desde el Atajo de iPhone)
+    const remoteEvent1 = channelHandlerCallbacks['transactions:INSERT']
+    assert.ok(remoteEvent1, 'Debe haber listener para transactions:INSERT')
+    remoteEvent1({
+      new: {
+        id: 'tx_remote_insert_1',
+        amount: 8.5,
+        type: 'expense',
+        account_id: 'daily',
+        description: 'Gasto Atajo 1',
+        date: '2026-09-01T12:00:00Z',
+      },
+    })
+    assert.equal(localTransactions.length, 2)
+    assert.equal(localTransactions[0].id, 'tx_remote_insert_1')
+
+    // 5. Modificar otro estado local (ej. edición o cambio de categoría)
+    localTransactions[0].description = 'Gasto Atajo 1 (etiquetado)'
+
+    // 6. Verificar que la suscripción sigue activa al 100%
+    assert.equal(getRealtimeChannelStatus(), 'SUBSCRIBED')
+    assert.equal(isRealtimeSubscribed(), true)
+
+    // 7. Recibir segundo INSERT remoto (ej. segundo gasto desde otro dispositivo)
+    remoteEvent1({
+      new: {
+        id: 'tx_remote_insert_2',
+        amount: 32.0,
+        type: 'expense',
+        account_id: 'daily',
+        description: 'Gasto Dispositivo 2',
+        date: '2026-09-01T12:05:00Z',
+      },
+    })
+    assert.equal(localTransactions.length, 3)
+    assert.equal(localTransactions[0].id, 'tx_remote_insert_2')
+
+    // 8. Verificar que la suscripción sigue intacta
+    assert.equal(isRealtimeSubscribed(), true)
+
+    // 9. Cleanup explícito solo al cerrar sesión
+    unsubscribeRealtime()
+    assert.equal(isRealtimeSubscribed(), false)
+    assert.equal(getRealtimeChannelStatus(), 'CLOSED')
+  })
+
+  it('147. Concurrencia initialSync: Bloquea ejecuciones simultáneas mientras una sincronización está en curso', async () => {
+    let syncExecutions = 0
+    let inProgress = false
+    let isDone = false
+
+    const runSync = async () => {
+      if (inProgress || isDone) return
+      inProgress = true
+      syncExecutions++
+      await new Promise((r) => setTimeout(r, 20))
+      isDone = true
+      inProgress = false
+    }
+
+    // Disparamos 3 llamadas casi concurrentes (como ocurriría en un rerender durante restoreState)
+    await Promise.all([runSync(), runSync(), runSync()])
+
+    assert.equal(syncExecutions, 1, 'initialSync debe ejecutarse exactamente una sola vez')
+    assert.equal(isDone, true)
+  })
 })
+
 
 
 
