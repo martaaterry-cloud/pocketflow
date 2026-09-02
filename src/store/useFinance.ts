@@ -82,11 +82,13 @@ import {
   logPerfCacheApplied,
 } from '../utils/syncPerfTracker'
 import {
+  calculateNextRecurringDate,
   selectAssignedSavings,
   selectCommittedAmount,
   selectFreeSavings,
   selectMonthExpenses,
   selectPendingRecurringPayments,
+  selectProjectedAvailable,
   selectRealAvailable,
   selectSavingsBalance,
   selectSpendableBalance,
@@ -602,6 +604,98 @@ export function useFinance(storage: StorageAdapter = defaultAppStorage) {
     },
     [state, commit, dispatchSync]
   )
+
+  const confirmRecurringPayment = useCallback(
+    (id: string, confirmationDate?: string): Transaction | null => {
+      const rec = state.recurring.find((r) => r.id === id)
+      if (!rec) return null
+
+      const dateStr = confirmationDate || new Date().toISOString()
+      const d = new Date(dateStr)
+      const currentMonth = d.getMonth()
+      const currentYear = d.getFullYear()
+
+      // Idempotencia: Verificar si ya existe una transacción para este recurrente en este mes
+      const alreadyConfirmed = state.transactions.some(
+        (t) =>
+          t.type === 'expense' &&
+          t.recurringPaymentId === id &&
+          new Date(t.date).getMonth() === currentMonth &&
+          new Date(t.date).getFullYear() === currentYear
+      )
+      if (alreadyConfirmed) {
+        console.warn(`[useFinance] El pago recurrente ${id} ya fue confirmado para este ciclo`)
+        return null
+      }
+
+      // 1. Crear transacción real vinculada con recurringPaymentId
+      const newTx: Transaction = {
+        id: `tx_${crypto.randomUUID()}`,
+        type: 'expense',
+        amount: rec.amount,
+        description: rec.name,
+        categoryId: rec.categoryId,
+        accountId: rec.accountId || 'daily',
+        date: dateStr,
+        recurringPaymentId: rec.id,
+      }
+
+      // 2. Avanzar nextDate según frecuencia de calendario segura
+      const nextDate = calculateNextRecurringDate(rec.nextDate, rec.frequency)
+      const updatedRec: RecurringPayment = {
+        ...rec,
+        nextDate,
+      }
+
+      const nextRecurring = state.recurring.map((r) => (r.id === id ? updatedRec : r))
+      const nextTxs = [newTx, ...state.transactions]
+
+      // Commit atómico local optimista
+      commit({
+        ...state,
+        transactions: nextTxs,
+        recurring: nextRecurring,
+      })
+
+      // Sincronización atómica/granular: primero la transacción, luego el recurrente actualizado
+      dispatchSync('transaction', 'insert', newTx.id, newTx, (sb, uid) =>
+        syncInsertTransaction(sb, uid, newTx)
+      )
+      dispatchSync('recurring', 'update', rec.id, updatedRec, (sb, uid) =>
+        syncUpsertRecurring(sb, uid, updatedRec)
+      )
+
+      return newTx
+    },
+    [state, commit, dispatchSync]
+  )
+
+  const postponeRecurringPayment = useCallback(
+    (id: string, daysToPostpone = 7) => {
+      const rec = state.recurring.find((r) => r.id === id)
+      if (!rec) return
+      const parts = rec.nextDate.split('-').map(Number)
+      const d = new Date(Date.UTC(parts[0], parts[1] - 1, parts[2]))
+      d.setUTCDate(d.getUTCDate() + daysToPostpone)
+      const newNextDate = d.toISOString().slice(0, 10)
+
+      const updatedRec: RecurringPayment = {
+        ...rec,
+        nextDate: newNextDate,
+      }
+
+      const nextRecurring = state.recurring.map((r) => (r.id === id ? updatedRec : r))
+      commit({
+        ...state,
+        recurring: nextRecurring,
+      })
+      dispatchSync('recurring', 'update', rec.id, updatedRec, (sb, uid) =>
+        syncUpsertRecurring(sb, uid, updatedRec)
+      )
+    },
+    [state, commit, dispatchSync]
+  )
+
 
   /* ==========================================================================
      Presupuestos por Categoría
@@ -1525,6 +1619,8 @@ export function useFinance(storage: StorageAdapter = defaultAppStorage) {
     updateRecurringPayment,
     deleteRecurringPayment,
     toggleRecurringPayment,
+    confirmRecurringPayment,
+    postponeRecurringPayment,
 
     // Presupuestos
     addBudget,

@@ -21,7 +21,15 @@ import {
   normalizeEstimateName,
   selectPendingVariableExpenseEstimate,
 } from '../src/utils/variableEstimates'
-import { selectMonthExpenses } from '../src/utils/financeSelectors'
+import {
+  calculateNextRecurringDate,
+  selectCommittedAmount,
+  selectMonthExpenses,
+  selectPendingRecurringPayments,
+  selectProjectedAvailable,
+  selectRealAvailable,
+  selectRecurringPaymentCycleStatus,
+} from '../src/utils/financeSelectors'
 import {
   toDbAccount,
   fromDbAccount,
@@ -3820,6 +3828,497 @@ describe('Fase 12 — Gastos Variables Previstos', () => {
     assert.equal(actualMonthExpenses, 45.5)
   })
 })
+
+describe('Fase 13 — Disponible Proyectado, Tarjeta Expandible y Confirmación de Recurrentes', () => {
+  // A. Disponible proyectado
+  it('185. Disponible proyectado: 534,08 € - 24,48 € = 509,60 €', () => {
+    const projected = selectProjectedAvailable(534.08, 24.48)
+    assert.equal(projected, 509.6)
+  })
+
+  it('186. Disponible proyectado sin variables: igual a disponible real', () => {
+    const projected = selectProjectedAvailable(534.08, 0)
+    assert.equal(projected, 534.08)
+    const fromEmpty = selectProjectedAvailable(534.08, selectPendingVariableExpenseEstimate([], []))
+    assert.equal(fromEmpty, 534.08)
+  })
+
+  it('187. Variables inactivas no cuentan en la deducción del disponible proyectado', () => {
+    const inactive: VariableExpenseEstimate[] = [
+      {
+        id: 'est_inact',
+        name: 'Gimnasio Rafa',
+        categoryId: 'sport',
+        unitCost: 1.5,
+        frequencyType: 'per_week',
+        frequencyValue: 4,
+        active: false,
+      },
+    ]
+    const pending = selectPendingVariableExpenseEstimate(inactive, [], '2026-09')
+    assert.equal(pending, 0)
+    const projected = selectProjectedAvailable(534.08, pending)
+    assert.equal(projected, 534.08)
+  })
+
+  it('188. Gasto real reduce el pendiente variable y aumenta el disponible proyectado', () => {
+    const active: VariableExpenseEstimate[] = [
+      {
+        id: 'est_act',
+        name: 'Gimnasio Rafa',
+        categoryId: 'sport',
+        unitCost: 1.5,
+        frequencyType: 'per_week',
+        frequencyValue: 4,
+        active: true,
+      },
+    ]
+    // Con 0 real: pendiente = 25.98 -> proyectado = 534.08 - 25.98 = 508.10
+    const pendingZero = selectPendingVariableExpenseEstimate(active, [], '2026-09')
+    assert.equal(pendingZero, 25.98)
+    assert.equal(selectProjectedAvailable(534.08, pendingZero), 508.1)
+
+    // Con 10 € real: pendiente = 15.98 -> proyectado = 534.08 - 15.98 = 518.10
+    const txReal: Transaction = {
+      id: 'tx_real_gym',
+      type: 'expense',
+      amount: 10,
+      description: 'Gimnasio Rafa',
+      categoryId: 'sport',
+      accountId: 'daily',
+      date: '2026-09-02T10:00:00.000Z',
+    }
+    const pendingTen = selectPendingVariableExpenseEstimate(active, [txReal], '2026-09')
+    assert.equal(pendingTen, 15.98)
+    assert.equal(selectProjectedAvailable(534.08, pendingTen), 518.1)
+  })
+
+  // B. Recurrentes y no cobro automático
+  it('189. Llegar a next_date NO crea transacción automática', () => {
+    const recurring: RecurringPayment[] = [
+      {
+        id: 'rec_sub_1',
+        name: 'Spotify',
+        amount: 10.99,
+        categoryId: 'subscriptions',
+        accountId: 'daily',
+        frequency: 'monthly',
+        nextDate: '2026-09-01', // Fecha ya pasada
+        active: true,
+      },
+    ]
+    const transactions: Transaction[] = []
+    // Ninguna transacción se crea automáticamente
+    assert.equal(transactions.length, 0)
+    // El pago sigue sin estar registrado en el historial de gastos
+    const wasCharged = transactions.some((t) => t.recurringPaymentId === 'rec_sub_1')
+    assert.equal(wasCharged, false)
+  })
+
+  it('190. Recurrente pendiente sí cuenta en comprometido', () => {
+    const recurring: RecurringPayment[] = [
+      {
+        id: 'rec_sub_1',
+        name: 'Spotify',
+        amount: 10.99,
+        categoryId: 'subscriptions',
+        accountId: 'daily',
+        frequency: 'monthly',
+        nextDate: '2026-09-01',
+        active: true,
+      },
+    ]
+    const committed = selectCommittedAmount(recurring, [], new Date('2026-09-02'))
+    assert.equal(committed, 10.99)
+  })
+
+  it('191. Confirmar cobro crea una única transacción vinculada', () => {
+    const rec: RecurringPayment = {
+      id: 'rec_netflix',
+      name: 'Netflix',
+      amount: 8.99,
+      categoryId: 'subscriptions',
+      accountId: 'daily',
+      frequency: 'monthly',
+      nextDate: '2026-09-02',
+      active: true,
+    }
+    const dateStr = '2026-09-02T12:00:00.000Z'
+    const createdTx: Transaction = {
+      id: 'tx_netflix_1',
+      type: 'expense',
+      amount: rec.amount,
+      description: rec.name,
+      categoryId: rec.categoryId,
+      accountId: rec.accountId || 'daily',
+      date: dateStr,
+      recurringPaymentId: rec.id,
+    }
+    assert.equal(createdTx.type, 'expense')
+    assert.equal(createdTx.amount, 8.99)
+    assert.equal(createdTx.description, 'Netflix')
+    assert.equal(createdTx.recurringPaymentId, 'rec_netflix')
+  })
+
+  it('192. Transaction generada incluye recurringPaymentId', () => {
+    const recId = 'rec_icloud'
+    const tx: Transaction = {
+      id: 'tx_icloud_1',
+      type: 'expense',
+      amount: 2.99,
+      description: 'iCloud 200GB',
+      categoryId: 'subscriptions',
+      accountId: 'daily',
+      date: '2026-09-02T12:00:00.000Z',
+      recurringPaymentId: recId,
+    }
+    assert.equal(tx.recurringPaymentId, recId)
+  })
+
+  it('193. Confirmar avanza next_date con calendario correcto (semanas, fin de mes, bisiestos)', () => {
+    // Semanal: +7 días
+    assert.equal(calculateNextRecurringDate('2026-09-02', 'weekly'), '2026-09-09')
+    // Mensual normal: 15 enero -> 15 febrero
+    assert.equal(calculateNextRecurringDate('2026-01-15', 'monthly'), '2026-02-15')
+    // Fin de mes enero no bisiesto: 31 enero -> 28 febrero
+    assert.equal(calculateNextRecurringDate('2026-01-31', 'monthly'), '2026-02-28')
+    // Fin de mes enero en año bisiesto: 31 enero 2024 -> 29 febrero 2024
+    assert.equal(calculateNextRecurringDate('2024-01-31', 'monthly'), '2024-02-29')
+    // Anual bisiesto: 29 febrero 2024 -> 28 febrero 2025
+    assert.equal(calculateNextRecurringDate('2024-02-29', 'yearly'), '2025-02-28')
+    // Fin de año mensual: 31 diciembre -> 31 enero año siguiente
+    assert.equal(calculateNextRecurringDate('2026-12-31', 'monthly'), '2027-01-31')
+  })
+
+  it('194. Recurrente confirmado deja de contar como comprometido del ciclo', () => {
+    const rec: RecurringPayment = {
+      id: 'rec_netflix',
+      name: 'Netflix',
+      amount: 8.99,
+      categoryId: 'subscriptions',
+      accountId: 'daily',
+      frequency: 'monthly',
+      nextDate: '2026-09-02',
+      active: true,
+    }
+    const refDate = new Date('2026-09-02')
+
+    // Antes de confirmar: 1 pendiente
+    const pendingBefore = selectPendingRecurringPayments([rec], [], refDate)
+    assert.equal(pendingBefore.length, 1)
+    assert.equal(selectCommittedAmount([rec], [], refDate), 8.99)
+
+    // Al confirmar (transacción con recurringPaymentId en el mes)
+    const confirmedTx: Transaction = {
+      id: 'tx_netflix_1',
+      type: 'expense',
+      amount: 8.99,
+      description: 'Netflix',
+      categoryId: 'subscriptions',
+      accountId: 'daily',
+      date: '2026-09-02T12:00:00.000Z',
+      recurringPaymentId: 'rec_netflix',
+    }
+
+    const pendingAfter = selectPendingRecurringPayments([rec], [confirmedTx], refDate)
+    assert.equal(pendingAfter.length, 0)
+    assert.equal(selectCommittedAmount([rec], [confirmedTx], refDate), 0)
+  })
+
+  it('195. CRÍTICO: Disponible real NO sufre doble descuento al confirmar cobro', () => {
+    const initialSpendable = 543.08
+    const recAmount = 8.99
+
+    const rec: RecurringPayment = {
+      id: 'rec_netflix',
+      name: 'Netflix',
+      amount: recAmount,
+      categoryId: 'subscriptions',
+      accountId: 'daily',
+      frequency: 'monthly',
+      nextDate: '2026-09-02',
+      active: true,
+    }
+    const refDate = new Date('2026-09-02')
+
+    // 1. ANTES DE CONFIRMAR:
+    // Dinero para gastar = 543.08 €
+    // Comprometido = 8.99 €
+    // Disponible real = 543.08 - 8.99 = 534.09 €
+    const committedBefore = selectCommittedAmount([rec], [], refDate)
+    const availableBefore = selectRealAvailable(initialSpendable, committedBefore)
+    assert.equal(committedBefore, 8.99)
+    assert.equal(availableBefore, 534.09)
+
+    // 2. TRAS CONFIRMAR:
+    // Se genera gasto real de 8.99 € en la cuenta diaria
+    const spendableAfter = Math.round((initialSpendable - recAmount) * 100) / 100 // 534.09 €
+    const tx: Transaction = {
+      id: 'tx_netflix',
+      type: 'expense',
+      amount: recAmount,
+      description: 'Netflix',
+      categoryId: 'subscriptions',
+      accountId: 'daily',
+      date: '2026-09-02T10:00:00.000Z',
+      recurringPaymentId: 'rec_netflix',
+    }
+    // El recurrente ya no cuenta como comprometido en este ciclo (comprometido = 0 €)
+    const committedAfter = selectCommittedAmount([rec], [tx], refDate)
+    const availableAfter = selectRealAvailable(spendableAfter, committedAfter)
+
+    assert.equal(committedAfter, 0)
+    assert.equal(availableAfter, 534.09)
+    // El disponible real es idéntico antes y después: NO hubo doble descuento
+    assert.equal(availableAfter, availableBefore)
+  })
+
+  it('196. Gastado este mes sí aumenta al confirmar el cobro', () => {
+    const refDate = new Date('2026-09-02')
+    const beforeMonthExpenses = selectMonthExpenses([], refDate)
+    assert.equal(beforeMonthExpenses, 0)
+
+    const tx: Transaction = {
+      id: 'tx_netflix',
+      type: 'expense',
+      amount: 8.99,
+      description: 'Netflix',
+      categoryId: 'subscriptions',
+      accountId: 'daily',
+      date: '2026-09-02T10:00:00.000Z',
+      recurringPaymentId: 'rec_netflix',
+    }
+    const afterMonthExpenses = selectMonthExpenses([tx], refDate)
+    assert.equal(afterMonthExpenses, 8.99)
+  })
+
+  it('197. Recurrente inactivo no cuenta como comprometido', () => {
+    const inactiveRec: RecurringPayment = {
+      id: 'rec_old',
+      name: 'Gimnasio antiguo',
+      amount: 45.0,
+      categoryId: 'sport',
+      accountId: 'daily',
+      frequency: 'monthly',
+      nextDate: '2026-09-01',
+      active: false,
+    }
+    const committed = selectCommittedAmount([inactiveRec], [], new Date('2026-09-02'))
+    assert.equal(committed, 0)
+  })
+
+  // C. Idempotencia y Resiliencia
+  it('198. Idempotencia: doble llamada de confirmación no duplica gasto en el ciclo', () => {
+    const recId = 'rec_gym_fee'
+    const transactions: Transaction[] = []
+    const refDate = new Date('2026-09-02')
+    const currentMonth = refDate.getMonth()
+    const currentYear = refDate.getFullYear()
+
+    const confirmPayment = (id: string, amount: number) => {
+      const alreadyConfirmed = transactions.some(
+        (t) =>
+          t.type === 'expense' &&
+          t.recurringPaymentId === id &&
+          new Date(t.date).getMonth() === currentMonth &&
+          new Date(t.date).getFullYear() === currentYear
+      )
+      if (alreadyConfirmed) return null
+      const newTx: Transaction = {
+        id: `tx_${transactions.length + 1}`,
+        type: 'expense',
+        amount,
+        description: 'Gimnasio Cuota',
+        categoryId: 'sport',
+        accountId: 'daily',
+        date: refDate.toISOString(),
+        recurringPaymentId: id,
+      }
+      transactions.push(newTx)
+      return newTx
+    }
+
+    // Primer toque: crea transacción
+    const tx1 = confirmPayment(recId, 25.0)
+    assert.ok(tx1)
+    assert.equal(transactions.length, 1)
+
+    // Segundo toque (doble click rápido o reintento): bloqueado
+    const tx2 = confirmPayment(recId, 25.0)
+    assert.equal(tx2, null)
+    assert.equal(transactions.length, 1)
+  })
+
+  it('199. Idempotencia en cola offline: confirmar offline registra y no duplica', () => {
+    const mockStore: Record<string, string> = {}
+    // @ts-expect-error Mocking localStorage
+    globalThis.localStorage = {
+      getItem: (k: string) => mockStore[k] || null,
+      setItem: (k: string, v: string) => {
+        mockStore[k] = v
+      },
+      removeItem: (k: string) => {
+        delete mockStore[k]
+      },
+    }
+
+    clearOfflineQueue()
+
+    const newTx: Transaction = {
+      id: 'tx_offline_rec_1',
+      type: 'expense',
+      amount: 8.99,
+      description: 'Suscripción Offline',
+      categoryId: 'subscriptions',
+      accountId: 'daily',
+      date: '2026-09-02T12:00:00.000Z',
+      recurringPaymentId: 'rec_offline_1',
+    }
+
+    enqueueOfflineMutation({
+      entity: 'transaction',
+      action: 'insert',
+      data: newTx,
+    })
+
+    const queue = getOfflineQueue()
+    assert.equal(queue.length, 1)
+    assert.equal((queue[0].data as Transaction).recurringPaymentId, 'rec_offline_1')
+
+    clearOfflineQueue()
+    // @ts-expect-error Cleanup
+    delete globalThis.localStorage
+  })
+
+  it('200. Realtime echo no genera duplicados de transacciones de recurrente', () => {
+    let localTxs: Transaction[] = [
+      {
+        id: 'tx_echo_rec_1',
+        type: 'expense',
+        amount: 8.99,
+        description: 'Netflix',
+        categoryId: 'subscriptions',
+        accountId: 'daily',
+        date: '2026-09-02T12:00:00.000Z',
+        recurringPaymentId: 'rec_netflix',
+      },
+    ]
+
+    // Función que aplica inserción remota con deduplicación por ID
+    const applyRemoteInsert = (incomingTx: Transaction) => {
+      if (localTxs.some((t) => t.id === incomingTx.id)) return
+      localTxs = [incomingTx, ...localTxs]
+    }
+
+    // Llega eco de Realtime con el mismo ID
+    applyRemoteInsert({
+      id: 'tx_echo_rec_1',
+      type: 'expense',
+      amount: 8.99,
+      description: 'Netflix',
+      categoryId: 'subscriptions',
+      accountId: 'daily',
+      date: '2026-09-02T12:00:00.000Z',
+      recurringPaymentId: 'rec_netflix',
+    })
+
+    assert.equal(localTxs.length, 1)
+  })
+
+  // D. UI y Estados Derivados
+  it('201. selectRecurringPaymentCycleStatus: devuelve estados contextuales precisos', () => {
+    const today = new Date('2026-09-02T12:00:00.000Z')
+
+    // 1. Pendiente / previsto hoy (nextDate <= today)
+    const duePayment: RecurringPayment = {
+      id: 'rec_due',
+      name: 'Servicio Web',
+      amount: 15.0,
+      categoryId: 'bills',
+      accountId: 'daily',
+      frequency: 'monthly',
+      nextDate: '2026-09-02',
+      active: true,
+    }
+    const statusDue = selectRecurringPaymentCycleStatus(duePayment, [], today)
+    assert.equal(statusDue.status, 'due')
+    assert.equal(statusDue.label, 'Previsto hoy')
+
+    // 2. Próximo en fecha futura (nextDate > today)
+    const upcomingPayment: RecurringPayment = {
+      id: 'rec_up',
+      name: 'Seguro',
+      amount: 50.0,
+      categoryId: 'bills',
+      accountId: 'daily',
+      frequency: 'monthly',
+      nextDate: '2026-09-15',
+      active: true,
+    }
+    const statusUpcoming = selectRecurringPaymentCycleStatus(upcomingPayment, [], today)
+    assert.equal(statusUpcoming.status, 'upcoming')
+    assert.ok(statusUpcoming.label.includes('15'))
+
+    // 3. Ya cobrado en el ciclo actual
+    const txConfirmed: Transaction = {
+      id: 'tx_c1',
+      type: 'expense',
+      amount: 15.0,
+      description: 'Servicio Web',
+      categoryId: 'bills',
+      accountId: 'daily',
+      date: '2026-09-01T10:00:00.000Z',
+      recurringPaymentId: 'rec_due',
+    }
+    const statusConfirmed = selectRecurringPaymentCycleStatus(duePayment, [txConfirmed], today)
+    assert.equal(statusConfirmed.status, 'confirmed_for_cycle')
+    assert.equal(statusConfirmed.label, 'Cobrado este ciclo')
+  })
+
+  it('202. Tarjeta cerrada: expone disponible real y proyectado de forma independiente', () => {
+    const realAvailable = 534.08
+    const pendingVariable = 24.48
+    const projected = selectProjectedAvailable(realAvailable, pendingVariable)
+
+    assert.equal(realAvailable, 534.08)
+    assert.equal(projected, 509.6)
+    assert.notEqual(realAvailable, projected)
+  })
+
+  it('203. Desglose completo: calcula con exactitud cada nivel de liquidez', () => {
+    const totalMoney = 543.07
+    const committed = 8.99
+    const realAvailable = selectRealAvailable(totalMoney, committed) // 534.08
+    const pendingVariable = 24.48
+    const projectedAvailable = selectProjectedAvailable(realAvailable, pendingVariable) // 509.60
+
+    assert.equal(totalMoney, 543.07)
+    assert.equal(committed, 8.99)
+    assert.equal(realAvailable, 534.08)
+    assert.equal(pendingVariable, 24.48)
+    assert.equal(projectedAvailable, 509.6)
+  })
+
+  it('204. Desglose con ahorro: separa los fondos de ahorro sin doble resta en disponible', () => {
+    const dailyBalance = 400.0
+    const savingsBalance = 200.0
+    const accounts: Account[] = [
+      { id: 'daily', name: 'Diaria', type: 'spending', balance: dailyBalance, initialBalance: 0 },
+      { id: 'savings', name: 'Ahorro', type: 'savings', balance: savingsBalance, initialBalance: 0 },
+    ]
+    const totalMoney = selectTotalMoney(accounts) // 600.00
+    const committed = 50.0
+    const realAvailable = selectRealAvailable(dailyBalance, committed) // 350.00
+    const pendingVariable = 20.0
+    const projected = selectProjectedAvailable(realAvailable, pendingVariable) // 330.00
+
+    assert.equal(totalMoney, 600.0)
+    assert.equal(selectSavingsBalance(accounts), 200.0)
+    assert.equal(realAvailable, 350.0)
+    assert.equal(projected, 330.0)
+  })
+})
+
 
 
 

@@ -7,6 +7,7 @@ import type {
 } from '../models/finance'
 import type { ReturnTypeFinance } from '../types'
 import { money } from '../utils/money'
+import { selectRecurringPaymentCycleStatus } from '../utils/financeSelectors'
 import { AppIcon } from '../ui/icons'
 
 export function RecurringPaymentsPage({
@@ -18,6 +19,17 @@ export function RecurringPaymentsPage({
 }) {
   const [modalOpen, setModalOpen] = useState(false)
   const [editingPayment, setEditingPayment] = useState<RecurringPayment | null>(null)
+  const [confirmingId, setConfirmingId] = useState<string | null>(null)
+
+  const handleConfirm = async (paymentId: string) => {
+    if (confirmingId) return
+    setConfirmingId(paymentId)
+    try {
+      finance.confirmRecurringPayment(paymentId)
+    } finally {
+      setTimeout(() => setConfirmingId(null), 300)
+    }
+  }
 
   const handleOpenCreate = () => {
     setEditingPayment(null)
@@ -90,11 +102,12 @@ export function RecurringPaymentsPage({
             {finance.recurring.map((r) => {
               const category = finance.categories.find((c) => c.id === r.categoryId)
               const account = finance.accounts.find((a) => a.id === r.accountId)
-              const isPendingThisMonth = finance.totals.pendingRecurring?.some((p) => p.id === r.id)
+              const cycleStatus = selectRecurringPaymentCycleStatus(r, finance.transactions)
+              const isConfirming = confirmingId === r.id
 
               return (
                 <div
-                  className={`recurring-card ${!r.active ? 'inactive' : ''}`}
+                  className={`recurring-card ${!r.active ? 'inactive' : ''} ${cycleStatus.status}`}
                   key={r.id}
                 >
                   <div className="recurring-main-row">
@@ -111,16 +124,19 @@ export function RecurringPaymentsPage({
                         {category?.name ?? 'Suscripción'} · {frequencyLabel[r.frequency] ?? 'Mensual'} ·{' '}
                         {account?.name ?? 'Cuenta diaria'}
                       </span>
-                      <small className="recurring-next-date">
-                        Próximo cobro: {r.nextDate}
+                      <div className="recurring-status-row">
+                        <small className="recurring-next-date">
+                          Próximo: {r.nextDate}
+                        </small>
                         {r.active && (
-                          <span
-                            className={`badge-status ${isPendingThisMonth ? 'pending' : 'paid'}`}
-                          >
-                            {isPendingThisMonth ? 'Pendiente' : 'Registrado'}
+                          <span className={`badge-status ${cycleStatus.status}`}>
+                            {cycleStatus.status === 'confirmed_for_cycle' && (
+                              <AppIcon name="check" size={11} />
+                            )}
+                            {cycleStatus.label}
                           </span>
                         )}
-                      </small>
+                      </div>
                     </div>
 
                     <div className="recurring-end-box">
@@ -139,6 +155,36 @@ export function RecurringPaymentsPage({
                       </label>
                     </div>
                   </div>
+
+                  {/* Acciones para pagos previstos o pendientes de confirmar */}
+                  {r.active && cycleStatus.status === 'due' && (
+                    <div className="recurring-action-footer">
+                      <button
+                        type="button"
+                        className="recurring-confirm-btn"
+                        disabled={isConfirming}
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          handleConfirm(r.id)
+                        }}
+                      >
+                        <AppIcon name="check" size={14} />
+                        <span>{isConfirming ? 'Confirmando...' : 'Confirmar cobro'}</span>
+                      </button>
+                      <button
+                        type="button"
+                        className="recurring-postpone-btn"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          finance.postponeRecurringPayment(r.id, 7)
+                        }}
+                        title="Posponer fecha de cobro 7 días sin registrar gasto"
+                      >
+                        <AppIcon name="clock" size={13} />
+                        <span>Posponer (+7d)</span>
+                      </button>
+                    </div>
+                  )}
                 </div>
               )
             })}

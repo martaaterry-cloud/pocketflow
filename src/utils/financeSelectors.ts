@@ -1,4 +1,4 @@
-import type { Account, RecurringPayment, SavingsGoal, Transaction } from '../models/finance'
+import type { Account, RecurringFrequency, RecurringPayment, SavingsGoal, Transaction } from '../models/finance'
 
 /**
  * Dinero para gastar = saldo actual de Cuenta diaria.
@@ -151,3 +151,127 @@ export function selectMonthExpenses(
 
   return Math.round(sum * 100) / 100
 }
+
+/**
+ * Disponible proyectado = Disponible real - Previsto variable pendiente.
+ * No oculta valores negativos si financieramente tienen significado.
+ * Redondeado a 2 decimales.
+ */
+export function selectProjectedAvailable(
+  realAvailable: number,
+  pendingVariableEstimate: number
+): number {
+  return Math.round((realAvailable - pendingVariableEstimate) * 100) / 100
+}
+
+/**
+ * Calcula la siguiente fecha para un pago recurrente respetando fines de mes
+ * y calendario gregoriano sin romper por meses de 28/29/30 días.
+ */
+export function calculateNextRecurringDate(
+  currentDateStr: string,
+  frequency: RecurringFrequency
+): string {
+  if (!currentDateStr || !/^\d{4}-\d{2}-\d{2}$/.test(currentDateStr)) {
+    return new Date().toISOString().slice(0, 10)
+  }
+
+  const parts = currentDateStr.split('-').map(Number)
+  const year = parts[0]
+  const month = parts[1] // 1-12
+  const day = parts[2] // 1-31
+
+  if (frequency === 'weekly') {
+    const d = new Date(Date.UTC(year, month - 1, day))
+    d.setUTCDate(d.getUTCDate() + 7)
+    return d.toISOString().slice(0, 10)
+  }
+
+  if (frequency === 'monthly') {
+    let targetYear = year
+    let targetMonth = month + 1 // 1-indexed
+    if (targetMonth > 12) {
+      targetYear += 1
+      targetMonth = 1
+    }
+    const maxDaysInTargetMonth = new Date(Date.UTC(targetYear, targetMonth, 0)).getUTCDate()
+    const targetDay = Math.min(day, maxDaysInTargetMonth)
+    const mm = String(targetMonth).padStart(2, '0')
+    const dd = String(targetDay).padStart(2, '0')
+    return `${targetYear}-${mm}-${dd}`
+  }
+
+  if (frequency === 'yearly') {
+    const targetYear = year + 1
+    const maxDaysInTargetMonth = new Date(Date.UTC(targetYear, month, 0)).getUTCDate()
+    const targetDay = Math.min(day, maxDaysInTargetMonth)
+    const mm = String(month).padStart(2, '0')
+    const dd = String(targetDay).padStart(2, '0')
+    return `${targetYear}-${mm}-${dd}`
+  }
+
+  return currentDateStr
+}
+
+export type RecurringPaymentCycleStatus = 'confirmed_for_cycle' | 'due' | 'upcoming'
+
+/**
+ * Determina el estado contextual de un pago recurrente en el ciclo actual:
+ * - 'confirmed_for_cycle': ya cobrado este mes
+ * - 'due': pendiente de confirmar o previsto hoy
+ * - 'upcoming': próximo en fecha futura
+ */
+export function selectRecurringPaymentCycleStatus(
+  payment: RecurringPayment,
+  transactions: Transaction[],
+  referenceDate: Date = new Date()
+): {
+  status: RecurringPaymentCycleStatus
+  label: string
+  confirmedTx?: Transaction
+} {
+  const currentMonth = referenceDate.getMonth()
+  const currentYear = referenceDate.getFullYear()
+  const todayStr = referenceDate.toISOString().slice(0, 10)
+
+  // 1. Comprobar si ya fue confirmado en el ciclo/mes en curso mediante recurringPaymentId
+  const confirmedTx = transactions.find((t) => {
+    if (t.type !== 'expense') return false
+    const d = new Date(t.date)
+    if (d.getMonth() !== currentMonth || d.getFullYear() !== currentYear) return false
+    if (t.recurringPaymentId && t.recurringPaymentId === payment.id) return true
+    return false
+  })
+
+  if (confirmedTx) {
+    return {
+      status: 'confirmed_for_cycle',
+      label: 'Cobrado este ciclo',
+      confirmedTx,
+    }
+  }
+
+  // 2. Si la fecha ya llegó o es hoy
+  if (payment.nextDate <= todayStr) {
+    return {
+      status: 'due',
+      label: payment.nextDate === todayStr ? 'Previsto hoy' : 'Pendiente de confirmar',
+    }
+  }
+
+  // 3. Si la fecha es futura
+  const parts = payment.nextDate.split('-')
+  const day = parseInt(parts[2], 10)
+  const monthNames = [
+    'ene', 'feb', 'mar', 'abr', 'may', 'jun',
+    'jul', 'ago', 'sep', 'oct', 'nov', 'dic',
+  ]
+  const monthIndex = parseInt(parts[1], 10) - 1
+  const formattedDate = `${day} ${monthNames[monthIndex] || ''}`
+
+  return {
+    status: 'upcoming',
+    label: `Próximo: ${formattedDate}`,
+  }
+}
+

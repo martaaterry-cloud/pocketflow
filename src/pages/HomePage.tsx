@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { DonutChart } from '../components/DonutChart'
 import { TransactionList } from '../components/TransactionList'
 import type { Transaction } from '../models/finance'
@@ -17,6 +18,7 @@ export function HomePage({
   onSelectTransaction?: (tx: Transaction) => void
   onNavigateToVariableEstimates?: () => void
 }) {
+  const [isExpanded, setIsExpanded] = useState(false)
   const displayName = finance.profile?.displayName?.trim()
   const greeting = displayName ? `Hola, ${displayName}` : 'Hola'
 
@@ -39,9 +41,22 @@ export function HomePage({
         </button>
       </header>
 
-      <section className="hero-card">
+      <section
+        className={`hero-card interactive ${isExpanded ? 'expanded' : ''}`}
+        onClick={() => setIsExpanded(!isExpanded)}
+        role="button"
+        tabIndex={0}
+        aria-expanded={isExpanded}
+        aria-label="Tarjeta de dinero disponible. Toca para ver el desglose."
+      >
         <div className="hero-top-row">
-          <span className="hero-tag">Disponible real</span>
+          <div className="hero-tag-group">
+            <span className="hero-tag">Disponible real</span>
+            <span className="hero-expand-badge">
+              <AppIcon name={isExpanded ? 'chevron-up' : 'chevron-down'} size={13} />
+              <span>{isExpanded ? 'Cerrar' : 'Desglose'}</span>
+            </span>
+          </div>
           {finance.totals.committedAmount > 0 && (
             <span className="hero-committed-pill">
               {money(finance.totals.committedAmount)} comprometidos
@@ -50,6 +65,14 @@ export function HomePage({
         </div>
 
         <strong className="hero-main-number">{money(finance.totals.realAvailable)}</strong>
+
+        {/* Indicador discreto de disponible proyectado en tarjeta cerrada */}
+        {hasActiveEstimates && !isExpanded && (
+          <div className="hero-projected-sub">
+            <span>Disponible proyectado:</span>
+            <strong>{money(finance.totals.projectedAvailable)}</strong>
+          </div>
+        )}
 
         <div className="hero-kpis">
           <div className="hero-kpi-item">
@@ -70,6 +93,84 @@ export function HomePage({
             <strong>{money(finance.totals.monthExpenses)}</strong>
           </div>
         </div>
+
+        {/* Desglose expandido al tocar la tarjeta */}
+        {isExpanded && (
+          <div className="hero-breakdown" onClick={(e) => e.stopPropagation()}>
+            <div className="hero-breakdown-divider" />
+            <div className="hero-breakdown-header">
+              <span>Desglose de liquidez y previsión</span>
+            </div>
+
+            <div className="hero-breakdown-row">
+              <div className="breakdown-label">
+                <span>Dinero total</span>
+                <small>Saldo actual en todas tus cuentas</small>
+              </div>
+              <strong className="breakdown-value">{money(finance.totals.totalMoney)}</strong>
+            </div>
+
+            {finance.totals.savingsBalance > 0 && (
+              <div className="hero-breakdown-row sub">
+                <div className="breakdown-label">
+                  <span>· Ahorro reservado</span>
+                  <small>Fondos separados en cuenta de ahorro</small>
+                </div>
+                <span className="breakdown-value text-muted">
+                  {money(finance.totals.savingsBalance)}
+                </span>
+              </div>
+            )}
+
+            <div className="hero-breakdown-row">
+              <div className="breakdown-label">
+                <span>Comprometido pendiente</span>
+                <small>Pagos recurrentes previstos aún no cobrados</small>
+              </div>
+              <strong className="breakdown-value negative">
+                {finance.totals.committedAmount > 0 ? `-${money(finance.totals.committedAmount)}` : '0,00 €'}
+              </strong>
+            </div>
+
+            <div className="hero-breakdown-row highlight">
+              <div className="breakdown-label">
+                <span>= Disponible real</span>
+                <small>Dinero disponible tras compromisos conocidos</small>
+              </div>
+              <strong className="breakdown-value positive">
+                {money(finance.totals.realAvailable)}
+              </strong>
+            </div>
+
+            <div className="hero-breakdown-row">
+              <div className="breakdown-label">
+                <span>Previsto variable pendiente</span>
+                <small>Estimaciones habituales del mes (ej. Gimnasio Rafa)</small>
+              </div>
+              <strong className="breakdown-value negative">
+                {pendingVariableExpenses > 0 ? `-${money(pendingVariableExpenses)}` : '0,00 €'}
+              </strong>
+            </div>
+
+            <div className="hero-breakdown-row highlight projected">
+              <div className="breakdown-label">
+                <span>= Disponible proyectado</span>
+                <small>Guía de lo que probablemente te quedará</small>
+              </div>
+              <strong className="breakdown-value">
+                {money(finance.totals.projectedAvailable)}
+              </strong>
+            </div>
+
+            <button
+              type="button"
+              className="hero-breakdown-close-btn"
+              onClick={() => setIsExpanded(false)}
+            >
+              <span>Toca para cerrar el desglose</span>
+            </button>
+          </div>
+        )}
       </section>
 
       {/* Indicador compacto de gastos variables previstos */}

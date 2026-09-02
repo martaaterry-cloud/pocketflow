@@ -2834,6 +2834,252 @@ input:checked + .slider:before {
   align-items: center;
 }
 
+/* ==========================================================================
+   Tarjeta Negra Expandible & Disponible Proyectado (Home)
+   ========================================================================== */
+
+.hero-card.interactive {
+  cursor: pointer;
+  user-select: none;
+  transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.2s ease;
+  outline: none;
+}
+
+.hero-card.interactive:focus-visible {
+  box-shadow: 0 0 0 2px #3b82f6, var(--shadow-md);
+}
+
+.hero-card.interactive:active {
+  transform: scale(0.992);
+}
+
+.hero-tag-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.hero-expand-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 11px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.75);
+  background: rgba(255, 255, 255, 0.12);
+  padding: 2px 8px;
+  border-radius: var(--radius-pill);
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.hero-card.interactive:hover .hero-expand-badge {
+  background: rgba(255, 255, 255, 0.22);
+  color: #ffffff;
+}
+
+.hero-projected-sub {
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.75);
+  margin-top: -12px;
+  margin-bottom: 16px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.hero-projected-sub strong {
+  color: #93c5fd;
+  font-weight: 700;
+}
+
+.hero-breakdown {
+  margin-top: 18px;
+  animation: fadeIn 0.22s ease-out;
+  cursor: default;
+}
+
+.hero-breakdown-divider {
+  height: 1px;
+  background: rgba(255, 255, 255, 0.14);
+  margin-bottom: 12px;
+}
+
+.hero-breakdown-header {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  color: rgba(255, 255, 255, 0.6);
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+
+.hero-breakdown-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  padding: 7px 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.hero-breakdown-row.sub {
+  padding-left: 12px;
+  border-bottom: none;
+}
+
+.hero-breakdown-row.highlight {
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: var(--radius-sm);
+  padding: 9px 12px;
+  margin: 6px 0;
+  border-bottom: none;
+}
+
+.hero-breakdown-row.highlight.projected {
+  background: rgba(59, 130, 246, 0.18);
+  border: 1px solid rgba(147, 197, 253, 0.3);
+}
+
+.hero-breakdown-row .breakdown-label {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 13px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.95);
+}
+
+.hero-breakdown-row .breakdown-label small {
+  font-size: 11px;
+  font-weight: 400;
+  color: rgba(255, 255, 255, 0.65);
+}
+
+.hero-breakdown-row .breakdown-value {
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: -0.2px;
+  color: #ffffff;
+  white-space: nowrap;
+}
+
+.hero-breakdown-row .breakdown-value.negative {
+  color: #fca5a5;
+}
+
+.hero-breakdown-row .breakdown-value.positive {
+  color: #86efac;
+}
+
+.hero-breakdown-close-btn {
+  width: 100%;
+  background: transparent;
+  border: none;
+  color: rgba(255, 255, 255, 0.5);
+  font-size: 11px;
+  font-weight: 500;
+  text-align: center;
+  padding: 10px 0 2px;
+  cursor: pointer;
+}
+
+.hero-breakdown-close-btn:hover {
+  color: rgba(255, 255, 255, 0.8);
+}
+
+/* ==========================================================================
+   Recurrentes: Estados Contextuales y Confirmación de Cobro
+   ========================================================================== */
+
+.recurring-card.due {
+  border-left: 3px solid #f59e0b;
+}
+
+.recurring-card.confirmed_for_cycle {
+  border-left: 3px solid #10b981;
+}
+
+.recurring-status-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 3px;
+}
+
+.badge-status.due {
+  background: rgba(245, 158, 11, 0.12);
+  color: #d97706;
+}
+
+.badge-status.confirmed_for_cycle {
+  background: rgba(16, 185, 129, 0.12);
+  color: #059669;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.badge-status.upcoming {
+  background: rgba(100, 116, 139, 0.1);
+  color: var(--text-muted);
+}
+
+.recurring-action-footer {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px dashed var(--border-color);
+}
+
+.recurring-confirm-btn {
+  flex: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  background: var(--primary, #3b82f6);
+  color: #ffffff;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 7px 12px;
+  border-radius: var(--radius-sm);
+  border: none;
+  cursor: pointer;
+  transition: background 0.15s ease, opacity 0.15s ease;
+}
+
+.recurring-confirm-btn:hover:not(:disabled) {
+  background: var(--primary-hover, #2563eb);
+}
+
+.recurring-confirm-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.recurring-postpone-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 500;
+  padding: 6px 10px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-color);
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.recurring-postpone-btn:hover {
+  background: var(--bg-card-light, #f8fafc);
+  color: var(--text-main);
+}
+
+
 
 
 
