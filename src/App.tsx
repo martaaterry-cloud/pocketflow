@@ -14,11 +14,11 @@ import { useFinance } from './store/useFinance'
 import { cleanUrlQueryParams, createDeepLinkDeduplicator, parseShortcutUrl } from './utils/deepLink'
 import { getSupabase } from './services/supabase/supabaseClient'
 import { createCleanInitialState, fetchRemoteState, uploadStateToSupabase } from './services/supabase/supabaseSync'
-import { flushOfflineQueue, getPendingMutationsCount } from './services/supabase/offlineQueue'
-import { initRealtimeSubscription, unsubscribeRealtime } from './services/supabase/supabaseRealtime'
+import { flushOfflineQueue, getPendingMutationsCount, subscribeOfflineQueue } from './services/supabase/offlineQueue'
+import { ensureRealtimeConnection, initRealtimeSubscription, unsubscribeRealtime } from './services/supabase/supabaseRealtime'
 
 type Tab = 'home' | 'movements' | 'calendar' | 'savings' | 'more'
-type SyncStatus = 'connecting' | 'syncing' | 'synced' | 'offline' | 'error'
+export type SyncStatus = 'connecting' | 'connected' | 'syncing' | 'up_to_date' | 'synced' | 'offline' | 'error'
 
 export default function App() {
   const finance = useFinance()
@@ -70,6 +70,35 @@ export default function App() {
     financeRef.current.setSyncUser(user?.id ?? null)
   }, [user?.id])
 
+  // 2.1. Reflejar cambios de la cola offline de inmediato en el contador
+  useEffect(() => {
+    return subscribeOfflineQueue((count) => {
+      setPendingCount(count)
+    })
+  }, [])
+
+  // 2.2. Conectar mutaciones locales de useFinance al badge de sincronización
+  useEffect(() => {
+    financeRef.current.setOnSyncStatusChange((status) => {
+      setSyncStatus(status)
+    })
+    return () => {
+      financeRef.current.setOnSyncStatusChange(null)
+    }
+  }, [])
+
+  // 2.3. Transición suave: tras confirmar "Al día", pasar a "Conectado" tras breve intervalo
+  useEffect(() => {
+    if (syncStatus === 'up_to_date' || syncStatus === 'synced') {
+      const timer = setTimeout(() => {
+        setSyncStatus((prev) =>
+          (prev === 'up_to_date' || prev === 'synced') && isRealtimeConnected ? 'connected' : prev
+        )
+      }, 2500)
+      return () => clearTimeout(timer)
+    }
+  }, [syncStatus, isRealtimeConnected])
+
   // 3. Sincronización inicial determinista (solo una vez por sesión de usuario)
   // Bloquea ejecuciones concurrentes y solo corre cuando storageHydrated es true
   useEffect(() => {
@@ -111,8 +140,8 @@ export default function App() {
         }
 
         isInitialSyncDoneRef.current = true
-        // Solo marcar Sincronizado si Realtime ya está SUBSCRIBED
-        setSyncStatus(isRealtimeConnected ? 'synced' : 'connecting')
+        // Al completar la reconciliación inicial confirmada, marcar "Al día"
+        setSyncStatus('up_to_date')
       } catch (err) {
         console.warn('[Supabase] Error en sincronización inicial:', err)
         setSyncStatus(typeof navigator !== 'undefined' && !navigator.onLine ? 'offline' : 'error')
@@ -135,9 +164,7 @@ export default function App() {
       onStatusChange: (status) => {
         if (status === 'SUBSCRIBED') {
           setIsRealtimeConnected(true)
-          if (isInitialSyncDoneRef.current && (typeof navigator === 'undefined' || navigator.onLine)) {
-            setSyncStatus('synced')
-          }
+          setSyncStatus((prev) => (prev === 'connecting' ? 'connected' : prev))
         } else if (status === 'CLOSED' || status === 'CHANNEL_ERROR') {
           setIsRealtimeConnected(false)
           if (typeof navigator !== 'undefined' && navigator.onLine) {
@@ -148,6 +175,7 @@ export default function App() {
       onTransactionInsert: (tx) => {
         financeRef.current.applyRemoteInsertTransaction(tx)
         showToast(`+${tx.amount.toFixed(2)} € (${tx.description})`)
+        setSyncStatus('up_to_date')
       },
       onTransactionUpdate: (tx) => {
         financeRef.current.applyRemoteUpdateTransaction(tx)
@@ -211,6 +239,7 @@ export default function App() {
       setSyncStatus('syncing')
       try {
         const supabase = getSupabase()
+        ensureRealtimeConnection(supabase, user.id)
         await flushOfflineQueue(supabase, user.id)
         setPendingCount(getPendingMutationsCount())
 
@@ -219,7 +248,7 @@ export default function App() {
         if (remote) {
           await financeRef.current.restoreState(remote)
         }
-        setSyncStatus('synced')
+        setSyncStatus('up_to_date')
       } catch (err) {
         console.warn('[Sync] Error al sincronizar tras reconexión:', err)
         setSyncStatus('error')
@@ -240,21 +269,38 @@ export default function App() {
     }
   }, [user?.id])
 
-  // 6. Fallback al volver a primer plano (sin comparación por length)
+  // 6. Recuperación en primer plano (iOS PWA / Resume / Focus)
+  // Al volver de background: comprueba socket zombie, hace pull inmediato y reconcilia
   useEffect(() => {
     if (!user?.id) return
 
     const handleFocus = async () => {
       if (typeof document !== 'undefined' && document.visibilityState === 'visible' && navigator.onLine) {
+        setSyncStatus('syncing')
         try {
           const supabase = getSupabase()
+
+          // A. Comprobar salud real del canal Realtime y reconectar si está muerto/zombie sin duplicar
+          ensureRealtimeConnection(supabase, user.id)
+
+          // B. Procesar cola offline si la había
           const count = getPendingMutationsCount()
           if (count > 0) {
             await flushOfflineQueue(supabase, user.id)
             setPendingCount(getPendingMutationsCount())
           }
+
+          // C. Reconciliación incremental inmediata con pull cloud (recupera gastos del Atajo creados mientras dormía)
+          const remote = await fetchRemoteState(supabase, user.id)
+          if (remote) {
+            await financeRef.current.restoreState(remote)
+          }
+
+          // D. Solo después de reconciliar con éxito marcar "Al día"
+          setSyncStatus('up_to_date')
         } catch (err) {
-          console.warn('[Supabase] Error en comprobación de primer plano:', err)
+          console.warn('[Supabase] Error en reconciliación de primer plano:', err)
+          setSyncStatus(typeof navigator !== 'undefined' && !navigator.onLine ? 'offline' : 'error')
         }
       }
     }
@@ -353,24 +399,27 @@ export default function App() {
       <div
         className={`sync-badge ${syncStatus}`}
         title={
-          syncStatus === 'synced'
-            ? 'Sincronizado con Supabase'
+          syncStatus === 'up_to_date' || syncStatus === 'synced'
+            ? 'Al día con Supabase'
+            : syncStatus === 'connected'
+            ? 'Conectado a Supabase Realtime'
             : syncStatus === 'syncing'
-            ? 'Sincronizando...'
+            ? 'Sincronizando…'
             : syncStatus === 'connecting'
-            ? 'Conectando con Supabase Realtime...'
+            ? 'Conectando con Supabase Realtime…'
             : syncStatus === 'offline'
-            ? `Sin conexión (${pendingCount} operaciones pendientes)`
+            ? (pendingCount > 0 ? `${pendingCount} operaciones pendientes sin conexión` : 'Sin conexión')
             : 'Error de sincronización'
         }
       >
         <span className="sync-dot" />
         <span>
-          {syncStatus === 'synced' && 'Sincronizado'}
+          {(syncStatus === 'up_to_date' || syncStatus === 'synced') && 'Al día'}
+          {syncStatus === 'connected' && 'Conectado'}
           {syncStatus === 'syncing' && 'Sincronizando…'}
           {syncStatus === 'connecting' && 'Conectando…'}
           {syncStatus === 'offline' && (pendingCount > 0 ? `${pendingCount} offline` : 'Sin conexión')}
-          {syncStatus === 'error' && 'Error sinc'}
+          {syncStatus === 'error' && 'Error de sincronización'}
         </span>
       </div>
 

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   accounts as seedAccounts,
   budgets as seedBudgets,
@@ -194,6 +194,15 @@ export function useFinance(storage: StorageAdapter = defaultAppStorage) {
     }
   }, [storage])
 
+  const onSyncStatusChangeRef = useRef<((status: 'syncing' | 'up_to_date' | 'offline' | 'error') => void) | null>(null)
+
+  const setOnSyncStatusChange = useCallback(
+    (cb: ((status: 'syncing' | 'up_to_date' | 'offline' | 'error') => void) | null) => {
+      onSyncStatusChangeRef.current = cb
+    },
+    []
+  )
+
   const setSyncUser = useCallback((userId: string | null) => {
     setSyncUserId(userId)
   }, [])
@@ -210,18 +219,22 @@ export function useFinance(storage: StorageAdapter = defaultAppStorage) {
       markLocalMutation(entity === 'transaction' ? 'transactions' : entity, id)
       if (!syncUserId) return
 
+      onSyncStatusChangeRef.current?.('syncing')
       if (typeof navigator !== 'undefined' && navigator.onLine) {
         const supabase = getSupabase()
         remoteFn(supabase, syncUserId)
           .then(() => {
             logPerfCloudConfirmed(id)
+            onSyncStatusChangeRef.current?.('up_to_date')
           })
           .catch((err) => {
             console.warn(`[Sync] Fallo en ${action} ${entity}, encolando offline:`, err)
             enqueueOfflineMutation({ entity, action, data })
+            onSyncStatusChangeRef.current?.('offline')
           })
       } else {
         enqueueOfflineMutation({ entity, action, data })
+        onSyncStatusChangeRef.current?.('offline')
       }
     },
     [syncUserId]
@@ -1353,6 +1366,7 @@ export function useFinance(storage: StorageAdapter = defaultAppStorage) {
     profile: state.profile ?? initialFinanceState.profile,
     storageHydrated,
     setSyncUser,
+    setOnSyncStatusChange,
     accounts: reconciledAccounts,
     totals,
     addTransaction,

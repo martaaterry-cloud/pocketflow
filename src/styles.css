@@ -2720,8 +2720,13 @@ input:checked + .slider:before {
   border-radius: 50%;
 }
 
+.sync-badge.up_to_date .sync-dot,
 .sync-badge.synced .sync-dot {
   background-color: #22c55e;
+}
+
+.sync-badge.connected .sync-dot {
+  background-color: #10b981;
 }
 
 .sync-badge.syncing .sync-dot {

@@ -53,10 +53,32 @@ export function getOfflineQueue(): OfflineMutation[] {
   }
 }
 
+type QueueListener = (count: number) => void
+const queueListeners = new Set<QueueListener>()
+
+export function subscribeOfflineQueue(listener: QueueListener): () => void {
+  queueListeners.add(listener)
+  return () => {
+    queueListeners.delete(listener)
+  }
+}
+
+function notifyQueueChanged(): void {
+  const count = getPendingMutationsCount()
+  for (const listener of queueListeners) {
+    try {
+      listener(count)
+    } catch (err) {
+      console.warn('[OfflineQueue] Error en listener:', err)
+    }
+  }
+}
+
 export function saveOfflineQueue(queue: OfflineMutation[]): void {
   if (typeof localStorage === 'undefined') return
   try {
     localStorage.setItem(QUEUE_STORAGE_KEY, JSON.stringify(queue))
+    notifyQueueChanged()
   } catch (err) {
     console.warn('[OfflineQueue] Error guardando cola offline:', err)
   }

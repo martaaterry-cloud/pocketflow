@@ -72,14 +72,24 @@ export function isLocalMutation(entity: string, id: string): boolean {
 }
 
 let activeChannel: RealtimeChannel | null = null
+let currentHandlers: RealtimeHandlers | null = null
+let currentUserId: string | null = null
 
 export function initRealtimeSubscription(
   supabase: SupabaseClient,
   userId: string,
   handlers: RealtimeHandlers
 ): RealtimeChannel {
+  currentHandlers = handlers
+  currentUserId = userId
+
   if (activeChannel) {
-    activeChannel.unsubscribe()
+    try {
+      activeChannel.unsubscribe()
+      supabase.removeChannel(activeChannel)
+    } catch {
+      // Ignorar errores en cleanup previo
+    }
     activeChannel = null
   }
 
@@ -90,10 +100,20 @@ export function initRealtimeSubscription(
     'postgres_changes',
     { event: 'INSERT', schema: 'public', table: 'transactions', filter: `user_id=eq.${userId}` },
     (payload) => {
+      const eventReceivedTime = new Date().toISOString()
       const row = payload.new as Record<string, unknown>
       if (!row || isLocalMutation('transactions', String(row.id))) return
+      const dbCreatedAt = String(row.created_at || row.date || '')
+      console.log(`[REALTIME PERF]
+DB created_at: ${dbCreatedAt}
+event received: ${eventReceivedTime}`)
+
       const tx = fromDbTransaction(row)
+      const t0 = performance.now()
       handlers.onTransactionInsert(tx)
+      const stateAppliedTime = new Date().toISOString()
+      const deltaMs = (performance.now() - t0).toFixed(1)
+      console.log(`state applied: ${stateAppliedTime} (+${deltaMs}ms)`)
     }
   )
 
@@ -281,4 +301,33 @@ export function unsubscribeRealtime(): void {
     currentStatus = 'CLOSED'
   }
 }
+
+/**
+ * Comprueba la salud del canal Realtime y reconecta limpiamente si está cerrado,
+ * caído o en estado zombie por suspensión de iOS, sin duplicar canales.
+ */
+export function ensureRealtimeConnection(
+  supabase: SupabaseClient,
+  userId: string,
+  handlers?: RealtimeHandlers
+): RealtimeChannel {
+  if (handlers) {
+    currentHandlers = handlers
+  }
+  currentUserId = userId
+
+  // Si ya tenemos un canal activo y en estado SUBSCRIBED, lo conservamos (no duplicar)
+  if (activeChannel && currentStatus === 'SUBSCRIBED') {
+    return activeChannel
+  }
+
+  const effectiveHandlers = handlers || currentHandlers
+  if (!effectiveHandlers) {
+    throw new Error('[Supabase Realtime] No hay handlers disponibles para reconectar el canal.')
+  }
+
+  console.log(`[Supabase Realtime] Comprobación de salud: canal en estado '${currentStatus}'. Reconectando...`)
+  return initRealtimeSubscription(supabase, userId, effectiveHandlers)
+}
+
 

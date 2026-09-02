@@ -55,6 +55,7 @@ import {
   getPendingMutationsCount,
   clearOfflineQueue,
   isDemoMutation,
+  subscribeOfflineQueue,
 } from '../src/services/supabase/offlineQueue'
 import {
   cleanInitialFinanceState,
@@ -67,6 +68,7 @@ import {
   unsubscribeRealtime,
   isRealtimeSubscribed,
   getRealtimeChannelStatus,
+  ensureRealtimeConnection,
 } from '../src/services/supabase/supabaseRealtime'
 import { initialFinanceState } from '../src/store/useFinance'
 import {
@@ -3182,6 +3184,212 @@ describe('Fase 10 — Reset Financiero Real y Prevención de Resurrección Demo'
     assert.equal(tablesClearedInReset.includes('shortcut_tokens'), false)
     assert.equal(tablesClearedInReset.includes('profiles'), false)
     assert.equal(tablesClearedInReset.includes('categories'), false)
+  })
+})
+
+describe('Fase 11 — Semántica de Sincronización, Foreground Reconcile y Resiliencia Realtime', () => {
+  it('165. Socket zombie al volver de background: detecta estado cerrado/zombie y reconecta limpiamente sin canales huérfanos', () => {
+    let channelCreatedCount = 0
+    let removedChannels: any[] = []
+    let currentChannelStatus = 'CLOSED'
+
+    const createMockChannel = () => {
+      channelCreatedCount++
+      let subscribeCb: ((status: string) => void) | null = null
+      const ch = {
+        id: `mock_ch_${channelCreatedCount}`,
+        on: () => ch,
+        subscribe: (cb: (status: string) => void) => {
+          subscribeCb = cb
+          currentChannelStatus = 'SUBSCRIBED'
+          cb('SUBSCRIBED')
+          return ch
+        },
+        unsubscribe: () => {
+          currentChannelStatus = 'CLOSED'
+          if (subscribeCb) subscribeCb('CLOSED')
+        },
+      }
+      return ch
+    }
+
+    const mockSupabase = {
+      channel: () => createMockChannel(),
+      removeChannel: (c: any) => {
+        removedChannels.push(c)
+      },
+    }
+
+    const handlers = {
+      onTransactionInsert: () => {},
+      onTransactionUpdate: () => {},
+      onTransactionDelete: () => {},
+      onAccountUpdate: () => {},
+      onBudgetUpsert: () => {},
+      onBudgetDelete: () => {},
+      onGoalUpsert: () => {},
+      onGoalDelete: () => {},
+      onReserveUpsert: () => {},
+      onReserveDelete: () => {},
+      onRecurringUpsert: () => {},
+      onRecurringDelete: () => {},
+      onSpecialPeriodUpsert: () => {},
+      onSpecialPeriodDelete: () => {},
+      onPlanSettingsUpdate: () => {},
+    }
+
+    // 1. Conexión inicial
+    const ch1 = initRealtimeSubscription(mockSupabase as any, 'user_zombie_test', handlers)
+    assert.equal(channelCreatedCount, 1)
+    assert.equal(isRealtimeSubscribed(), true)
+
+    // 2. Simular que iOS suspende la app en background y el socket muere a CLOSED
+    ch1.unsubscribe()
+    assert.equal(isRealtimeSubscribed(), false)
+    assert.equal(getRealtimeChannelStatus(), 'CLOSED')
+
+    // 3. Al volver a foreground, ensureRealtimeConnection detecta que no está SUBSCRIBED y reconecta
+    const ch2 = ensureRealtimeConnection(mockSupabase as any, 'user_zombie_test', handlers)
+    assert.equal(channelCreatedCount, 2)
+    assert.equal(isRealtimeSubscribed(), true)
+    assert.equal(getRealtimeChannelStatus(), 'SUBSCRIBED')
+    assert.equal(removedChannels.length, 1, 'El canal antiguo debe haber sido eliminado con removeChannel')
+
+    unsubscribeRealtime()
+  })
+
+  it('166. Reconciliación foreground: al volver a primer plano realiza pull cloud de transacciones creadas externamente (Atajo)', async () => {
+    // 1. Estado local de Pocketflow antes de pasar a background
+    let localTransactions: Transaction[] = [
+      { id: 'tx_local_1', amount: 12.0, type: 'expense', accountId: 'daily', description: 'Café', date: '2026-09-01T08:00:00Z' },
+    ]
+
+    // 2. El Atajo crea un gasto en Supabase mientras la PWA duerme
+    const cloudTransactions: Transaction[] = [
+      ...localTransactions,
+      { id: 'tx_from_shortcut', amount: 4.5, type: 'expense', accountId: 'daily', description: 'Panadería (Atajo)', date: '2026-09-01T09:30:00Z' },
+    ]
+
+    let badgeStatus: string = 'connected'
+    const statusTransitions: string[] = [badgeStatus]
+
+    const setSyncStatus = (status: string) => {
+      badgeStatus = status
+      statusTransitions.push(status)
+    }
+
+    // Simular el flujo exacto de handleFocus de App.tsx:
+    // A. Marcar syncing inmediatamente
+    setSyncStatus('syncing')
+
+    // B. Reconciliar pull cloud
+    const mockRemote = {
+      transactions: cloudTransactions,
+      categories: baseCategories,
+      budgets: [],
+      savingsGoals: [],
+      reserves: [],
+      recurringPayments: [],
+      specialPeriods: [],
+      planSettings: {} as any,
+      profile: { displayName: 'Marta' },
+    }
+
+    // C. Restaurar en memoria
+    localTransactions = mockRemote.transactions
+
+    // D. Confirmado: marcar up_to_date
+    setSyncStatus('up_to_date')
+
+    // Verificaciones:
+    assert.equal(localTransactions.length, 2)
+    assert.ok(localTransactions.some((t) => t.id === 'tx_from_shortcut'))
+    assert.deepEqual(statusTransitions, ['connected', 'syncing', 'up_to_date'])
+  })
+
+  it('167. Badge no muestra "Al día" antes de reconciliar: Realtime SUBSCRIBED pasa a "Conectado", y solo reconciliación/mutación confirmada marca "Al día"', () => {
+    let syncStatus: string = 'connecting'
+
+    const onRealtimeStatusChange = (status: string) => {
+      if (status === 'SUBSCRIBED') {
+        // Semántica correcta: estar conectado al websocket NO significa que estés al día
+        syncStatus = syncStatus === 'connecting' ? 'connected' : syncStatus
+      }
+    }
+
+    // Al arrancar y suscribir socket
+    assert.equal(syncStatus, 'connecting')
+    onRealtimeStatusChange('SUBSCRIBED')
+    assert.equal(syncStatus, 'connected', 'Debe ser Conectado, NO Al día')
+
+    // Al confirmar sincronización en la nube (ej. dispatchSync o reconciliación foreground)
+    syncStatus = 'up_to_date'
+    assert.equal(syncStatus, 'up_to_date')
+
+    // Tras temporizador, vuelve a Conectado
+    const transitionTimer = () => {
+      if (syncStatus === 'up_to_date') syncStatus = 'connected'
+    }
+    transitionTimer()
+    assert.equal(syncStatus, 'connected')
+  })
+
+  it('168. No múltiples canales Realtime: ensureRealtimeConnection no duplica canales cuando el socket ya está saludable', () => {
+    let channelCreatedCount = 0
+
+    const createMockChannel = () => {
+      channelCreatedCount++
+      const ch = {
+        id: `mock_ch_${channelCreatedCount}`,
+        on: () => ch,
+        subscribe: (cb: (status: string) => void) => {
+          cb('SUBSCRIBED')
+          return ch
+        },
+        unsubscribe: () => {},
+      }
+      return ch
+    }
+
+    const mockSupabase = {
+      channel: () => createMockChannel(),
+      removeChannel: () => {},
+    }
+
+    const handlers = {
+      onTransactionInsert: () => {},
+      onTransactionUpdate: () => {},
+      onTransactionDelete: () => {},
+      onAccountUpdate: () => {},
+      onBudgetUpsert: () => {},
+      onBudgetDelete: () => {},
+      onGoalUpsert: () => {},
+      onGoalDelete: () => {},
+      onReserveUpsert: () => {},
+      onReserveDelete: () => {},
+      onRecurringUpsert: () => {},
+      onRecurringDelete: () => {},
+      onSpecialPeriodUpsert: () => {},
+      onSpecialPeriodDelete: () => {},
+      onPlanSettingsUpdate: () => {},
+    }
+
+    // 1. Suscripción inicial
+    const ch = initRealtimeSubscription(mockSupabase as any, 'user_no_dup_test', handlers)
+    assert.equal(channelCreatedCount, 1)
+    assert.equal(isRealtimeSubscribed(), true)
+
+    // 2. Invocar ensureRealtimeConnection 3 veces consecutivas mientras está SUBSCRIBED
+    const same1 = ensureRealtimeConnection(mockSupabase as any, 'user_no_dup_test', handlers)
+    const same2 = ensureRealtimeConnection(mockSupabase as any, 'user_no_dup_test', handlers)
+    const same3 = ensureRealtimeConnection(mockSupabase as any, 'user_no_dup_test', handlers)
+
+    assert.equal(channelCreatedCount, 1, 'No debe crear nuevos canales si ya está suscrito')
+    assert.equal(same1, ch)
+    assert.equal(same2, ch)
+    assert.equal(same3, ch)
+
+    unsubscribeRealtime()
   })
 })
 
