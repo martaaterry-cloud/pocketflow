@@ -43,20 +43,20 @@ export function HomePage({
 
       <section
         className={`hero-card interactive ${isExpanded ? 'expanded' : ''}`}
-        onClick={() => setIsExpanded(!isExpanded)}
+        onClick={() => setIsExpanded((prev) => !prev)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault()
+            setIsExpanded((prev) => !prev)
+          }
+        }}
         role="button"
         tabIndex={0}
         aria-expanded={isExpanded}
-        aria-label="Tarjeta de dinero disponible. Toca para ver el desglose."
+        aria-label="Tarjeta de dinero disponible. Toca para ver u ocultar el desglose."
       >
         <div className="hero-top-row">
-          <div className="hero-tag-group">
-            <span className="hero-tag">Disponible real</span>
-            <span className="hero-expand-badge">
-              <AppIcon name={isExpanded ? 'chevron-up' : 'chevron-down'} size={13} />
-              <span>{isExpanded ? 'Cerrar' : 'Desglose'}</span>
-            </span>
-          </div>
+          <span className="hero-tag">Disponible real</span>
           {finance.totals.committedAmount > 0 && (
             <span className="hero-committed-pill">
               {money(finance.totals.committedAmount)} comprometidos
@@ -94,9 +94,9 @@ export function HomePage({
           </div>
         </div>
 
-        {/* Desglose expandido al tocar la tarjeta */}
+        {/* Desglose expandido al tocar cualquier parte de la tarjeta */}
         {isExpanded && (
-          <div className="hero-breakdown" onClick={(e) => e.stopPropagation()}>
+          <div className="hero-breakdown">
             <div className="hero-breakdown-divider" />
             <div className="hero-breakdown-header">
               <span>Desglose de liquidez y previsión</span>
@@ -162,13 +162,9 @@ export function HomePage({
               </strong>
             </div>
 
-            <button
-              type="button"
-              className="hero-breakdown-close-btn"
-              onClick={() => setIsExpanded(false)}
-            >
-              <span>Toca para cerrar el desglose</span>
-            </button>
+            <div className="hero-breakdown-hint">
+              <span>Toca cualquier parte de la tarjeta para cerrar</span>
+            </div>
           </div>
         )}
       </section>

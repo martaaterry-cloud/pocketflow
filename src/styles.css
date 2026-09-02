@@ -2853,30 +2853,6 @@ input:checked + .slider:before {
   transform: scale(0.992);
 }
 
-.hero-tag-group {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.hero-expand-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 3px;
-  font-size: 11px;
-  font-weight: 600;
-  color: rgba(255, 255, 255, 0.75);
-  background: rgba(255, 255, 255, 0.12);
-  padding: 2px 8px;
-  border-radius: var(--radius-pill);
-  transition: background 0.15s ease, color 0.15s ease;
-}
-
-.hero-card.interactive:hover .hero-expand-badge {
-  background: rgba(255, 255, 255, 0.22);
-  color: #ffffff;
-}
-
 .hero-projected-sub {
   font-size: 12px;
   color: rgba(255, 255, 255, 0.75);
