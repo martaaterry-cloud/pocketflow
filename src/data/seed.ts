@@ -9,6 +9,7 @@ import type {
   SpecialPeriod,
   Transaction,
   UserProfile,
+  VariableExpenseEstimate,
 } from '../models/finance'
 
 export const initialProfile: UserProfile = {
@@ -146,5 +147,6 @@ export const cleanInitialFinanceState = {
   specialPeriods: [] as SpecialPeriod[],
   planSettings: cleanPlanSettings,
   profile: initialProfile,
+  variableExpenseEstimates: [] as VariableExpenseEstimate[],
 }
 

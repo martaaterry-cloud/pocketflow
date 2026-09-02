@@ -9,6 +9,7 @@ import type {
   SpecialPeriod,
   Transaction,
   UserProfile,
+  VariableExpenseEstimate,
 } from '../../models/finance'
 
 export interface PersistedState {
@@ -22,6 +23,7 @@ export interface PersistedState {
   specialPeriods: SpecialPeriod[]
   planSettings: FinancialPlanSettings
   profile?: UserProfile
+  variableExpenseEstimates?: VariableExpenseEstimate[]
 }
 
 export interface StorageAdapter {

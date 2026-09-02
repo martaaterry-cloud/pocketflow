@@ -38,12 +38,16 @@ import type {
   UpdateSpecialPeriodInput,
   UpdateTransactionInput,
   UserProfile,
+  VariableExpenseEstimate,
+  CreateVariableExpenseEstimateInput,
+  UpdateVariableExpenseEstimateInput,
 } from '../models/finance'
 import { defaultAppStorage } from '../services/storage/indexedDbAdapter'
 import { defaultStorage } from '../services/storage/localStorageAdapter'
 import type { PersistedState, StorageAdapter } from '../services/storage/storageAdapter'
 import { selectBudgetsSummary } from '../utils/budgetSelectors'
 import { ensureAccountInitialBalance, reconcileAccounts } from '../utils/balance'
+import { calculateVariableEstimatesSummary } from '../utils/variableEstimates'
 import { getSupabase } from '../services/supabase/supabaseClient'
 import {
   enqueueOfflineMutation,
@@ -57,6 +61,7 @@ import {
   syncDeleteReserve,
   syncDeleteSpecialPeriod,
   syncDeleteTransaction,
+  syncDeleteVariableExpenseEstimate,
   syncInsertTransaction,
   syncUpdateTransaction,
   syncUpsertAccount,
@@ -67,6 +72,7 @@ import {
   syncUpsertRecurring,
   syncUpsertReserve,
   syncUpsertSpecialPeriod,
+  syncUpsertVariableExpenseEstimate,
 } from '../services/supabase/supabaseSync'
 import {
   logPerfMutationStart,
@@ -110,6 +116,7 @@ export const demoFinanceState: PersistedState = {
   specialPeriods: seedSpecialPeriods,
   planSettings: seedPlanSettings,
   profile: initialProfile,
+  variableExpenseEstimates: [],
 }
 
 export const initialFinanceState: PersistedState = demoFinanceState
@@ -146,6 +153,7 @@ export function useFinance(storage: StorageAdapter = defaultAppStorage) {
             specialPeriods: parsed.specialPeriods ?? [],
             planSettings: parsed.planSettings ?? cleanPlanSettings,
             profile: parsed.profile ?? initialProfile,
+            variableExpenseEstimates: parsed.variableExpenseEstimates ?? [],
           }
         }
       }
@@ -181,6 +189,8 @@ export function useFinance(storage: StorageAdapter = defaultAppStorage) {
             reserves: loaded.reserves ?? [],
             specialPeriods: loaded.specialPeriods ?? [],
             planSettings: loaded.planSettings ?? initialFinanceState.planSettings,
+            profile: loaded.profile ?? initialProfile,
+            variableExpenseEstimates: loaded.variableExpenseEstimates ?? [],
           })
         }
         setStorageHydrated(true)
@@ -975,6 +985,79 @@ export function useFinance(storage: StorageAdapter = defaultAppStorage) {
   )
 
   /* ==========================================================================
+     Gastos Variables Previstos (por uso o sesión periódica)
+     ========================================================================== */
+
+  const addVariableExpenseEstimate = useCallback(
+    (input: CreateVariableExpenseEstimateInput) => {
+      const newEstimate: VariableExpenseEstimate = {
+        ...input,
+        id: `est_${crypto.randomUUID()}`,
+        unitCost: Number(input.unitCost),
+        frequencyValue: Number(input.frequencyValue),
+        active: input.active !== false,
+      }
+      commit({
+        ...state,
+        variableExpenseEstimates: [...(state.variableExpenseEstimates ?? []), newEstimate],
+      })
+      dispatchSync('variable_expense_estimate', 'insert', newEstimate.id, newEstimate, (sb, uid) =>
+        syncUpsertVariableExpenseEstimate(sb, uid, newEstimate)
+      )
+    },
+    [state, commit, dispatchSync]
+  )
+
+  const updateVariableExpenseEstimate = useCallback(
+    (id: string, updates: UpdateVariableExpenseEstimateInput) => {
+      const nextEstimates = (state.variableExpenseEstimates ?? []).map((e) => {
+        if (e.id !== id) return e
+        return {
+          ...e,
+          ...updates,
+          unitCost: updates.unitCost !== undefined ? Number(updates.unitCost) : e.unitCost,
+          frequencyValue: updates.frequencyValue !== undefined ? Number(updates.frequencyValue) : e.frequencyValue,
+          active: updates.active !== undefined ? updates.active : e.active,
+        }
+      })
+      commit({
+        ...state,
+        variableExpenseEstimates: nextEstimates,
+      })
+      const updated = nextEstimates.find((e) => e.id === id)
+      if (updated) {
+        dispatchSync('variable_expense_estimate', 'update', id, updated, (sb, uid) =>
+          syncUpsertVariableExpenseEstimate(sb, uid, updated)
+        )
+      }
+    },
+    [state, commit, dispatchSync]
+  )
+
+  const deleteVariableExpenseEstimate = useCallback(
+    (id: string) => {
+      commit({
+        ...state,
+        variableExpenseEstimates: (state.variableExpenseEstimates ?? []).filter((e) => e.id !== id),
+      })
+      dispatchSync('variable_expense_estimate', 'delete', id, { id }, (sb, uid) =>
+        syncDeleteVariableExpenseEstimate(sb, uid, id)
+      )
+    },
+    [state, commit, dispatchSync]
+  )
+
+  const toggleVariableExpenseEstimate = useCallback(
+    (id: string) => {
+      const current = (state.variableExpenseEstimates ?? []).find((e) => e.id === id)
+      if (current) {
+        updateVariableExpenseEstimate(id, { active: !current.active })
+      }
+    },
+    [state.variableExpenseEstimates, updateVariableExpenseEstimate]
+  )
+
+  /* ==========================================================================
      Totales y Conceptos Financieros Centralizados
      ========================================================================== */
 
@@ -1038,6 +1121,15 @@ export function useFinance(storage: StorageAdapter = defaultAppStorage) {
     const monthlyOutflow = essentialExpenses + variableExpenses + targetMonthlySavings
     const estimatedMonthlyMargin = Math.round((monthlyIncome - monthlyOutflow) * 100) / 100
 
+    const currentMonthKey = now.toISOString().slice(0, 7)
+    const variableEstimatesSummary = calculateVariableEstimatesSummary(
+      state.variableExpenseEstimates ?? [],
+      state.transactions,
+      currentMonthKey
+    )
+    const pendingVariableExpenses = variableEstimatesSummary.totalPendingEstimated
+    const projectedAvailable = Math.round((realAvailable - pendingVariableExpenses) * 100) / 100
+
     return {
       // Compatibilidad
       daily: spendable,
@@ -1046,6 +1138,11 @@ export function useFinance(storage: StorageAdapter = defaultAppStorage) {
       committed,
       available: realAvailable,
       monthExpenses,
+
+      // Previsión de gastos variables
+      pendingVariableExpenses,
+      projectedAvailable,
+      variableEstimatesSummary,
 
       // Conceptos explícitos de dominio
       totalMoney,
@@ -1322,6 +1419,36 @@ export function useFinance(storage: StorageAdapter = defaultAppStorage) {
     [persistStateAsync]
   )
 
+  const applyRemoteUpsertVariableExpenseEstimate = useCallback(
+    (est: VariableExpenseEstimate) => {
+      setState((prev) => {
+        const existing = prev.variableExpenseEstimates ?? []
+        const exists = existing.some((e) => e.id === est.id)
+        const nextEstimates = exists
+          ? existing.map((e) => (e.id === est.id ? est : e))
+          : [...existing, est]
+        const next = { ...prev, variableExpenseEstimates: nextEstimates }
+        persistStateAsync(next)
+        return next
+      })
+    },
+    [persistStateAsync]
+  )
+
+  const applyRemoteDeleteVariableExpenseEstimate = useCallback(
+    (estimateId: string) => {
+      setState((prev) => {
+        const next = {
+          ...prev,
+          variableExpenseEstimates: (prev.variableExpenseEstimates ?? []).filter((e) => e.id !== estimateId),
+        }
+        persistStateAsync(next)
+        return next
+      })
+    },
+    [persistStateAsync]
+  )
+
   const restoreState = useCallback(
     async (newState: PersistedState) => {
       const txs = newState.transactions ?? []
@@ -1339,6 +1466,7 @@ export function useFinance(storage: StorageAdapter = defaultAppStorage) {
         specialPeriods: newState.specialPeriods ?? [],
         planSettings: newState.planSettings ?? initialFinanceState.planSettings,
         profile: newState.profile ?? initialFinanceState.profile,
+        variableExpenseEstimates: newState.variableExpenseEstimates ?? [],
       }
       setState(completeState)
       await storage.save(completeState)
@@ -1358,12 +1486,14 @@ export function useFinance(storage: StorageAdapter = defaultAppStorage) {
       specialPeriods: state.specialPeriods,
       planSettings: state.planSettings,
       profile: state.profile ?? initialFinanceState.profile,
+      variableExpenseEstimates: state.variableExpenseEstimates ?? [],
     }
   }, [reconciledAccounts, state])
 
   return {
     ...state,
     profile: state.profile ?? initialFinanceState.profile,
+    variableExpenseEstimates: state.variableExpenseEstimates ?? [],
     storageHydrated,
     setSyncUser,
     setOnSyncStatusChange,
@@ -1376,6 +1506,12 @@ export function useFinance(storage: StorageAdapter = defaultAppStorage) {
 
     // Perfil
     updateProfile,
+
+    // Gastos variables previstos
+    addVariableExpenseEstimate,
+    updateVariableExpenseEstimate,
+    deleteVariableExpenseEstimate,
+    toggleVariableExpenseEstimate,
 
     // Objetivos de ahorro
     addSavingsGoal,
@@ -1429,6 +1565,8 @@ export function useFinance(storage: StorageAdapter = defaultAppStorage) {
     applyRemoteDeleteSpecialPeriod,
     applyRemoteUpdatePlanSettings,
     applyRemoteUpdateProfile,
+    applyRemoteUpsertVariableExpenseEstimate,
+    applyRemoteDeleteVariableExpenseEstimate,
 
     // Copias de seguridad
     restoreState,

@@ -10,6 +10,7 @@ import type {
   SpecialPeriod,
   Transaction,
   UserProfile,
+  VariableExpenseEstimate,
 } from '../../models/finance'
 import type { PersistedState } from '../storage/storageAdapter'
 import { migratePersistedState } from '../storage/localStorageAdapter'
@@ -44,6 +45,7 @@ export function createCleanInitialState(): PersistedState {
     profile: {
       displayName: '',
     },
+    variableExpenseEstimates: [],
   }
 }
 
@@ -294,6 +296,33 @@ export function fromDbProfile(row: Record<string, unknown>): UserProfile {
   }
 }
 
+export function toDbVariableExpenseEstimate(est: VariableExpenseEstimate, userId: string) {
+  return {
+    id: est.id,
+    user_id: userId,
+    name: est.name,
+    category_id: est.categoryId,
+    unit_cost: est.unitCost,
+    frequency_type: est.frequencyType,
+    frequency_value: est.frequencyValue,
+    active: est.active,
+  }
+}
+
+export function fromDbVariableExpenseEstimate(row: Record<string, unknown>): VariableExpenseEstimate {
+  return {
+    id: String(row.id),
+    name: String(row.name),
+    categoryId: String(row.category_id),
+    unitCost: Number(row.unit_cost ?? 0),
+    frequencyType: (row.frequency_type as 'per_week' | 'per_month') || 'per_week',
+    frequencyValue: Number(row.frequency_value ?? 1),
+    active: row.active !== false,
+    createdAt: row.created_at ? String(row.created_at) : undefined,
+    updatedAt: row.updated_at ? String(row.updated_at) : undefined,
+  }
+}
+
 // ==========================================================================
 // Operaciones de lectura segura (Validación estricta de errores)
 // ==========================================================================
@@ -313,6 +342,7 @@ export async function fetchRemoteState(
     periodsRes,
     settingsRes,
     profileRes,
+    estimatesRes,
   ] = await Promise.all([
     supabase.from('accounts').select('*').eq('user_id', userId),
     supabase.from('categories').select('*').eq('user_id', userId),
@@ -324,6 +354,7 @@ export async function fetchRemoteState(
     supabase.from('special_periods').select('*').eq('user_id', userId),
     supabase.from('financial_plan_settings').select('*').eq('user_id', userId).maybeSingle(),
     supabase.from('profiles').select('*').eq('user_id', userId).maybeSingle(),
+    supabase.from('variable_expense_estimates').select('*').eq('user_id', userId),
   ])
 
   // Comprobar errores en CADA query para evitar borrado accidental de datos locales
@@ -337,6 +368,7 @@ export async function fetchRemoteState(
   if (periodsRes.error) throw new Error(`[Sync] Error leyendo special_periods: ${periodsRes.error.message}`)
   if (settingsRes.error) throw new Error(`[Sync] Error leyendo settings: ${settingsRes.error.message}`)
   if (profileRes.error) throw new Error(`[Sync] Error leyendo profiles: ${profileRes.error.message}`)
+  if (estimatesRes.error) throw new Error(`[Sync] Error leyendo variable_expense_estimates: ${estimatesRes.error.message}`)
 
   // Si no hay cuentas remotas, la base de datos de este usuario está virgen
   if (!accountsRes.data || accountsRes.data.length === 0) {
@@ -354,6 +386,7 @@ export async function fetchRemoteState(
     specialPeriods: (periodsRes.data ?? []).map(fromDbSpecialPeriod),
     planSettings: settingsRes.data ? fromDbPlanSettings(settingsRes.data) : undefined,
     profile: profileRes.data ? fromDbProfile(profileRes.data) : { displayName: '' },
+    variableExpenseEstimates: (estimatesRes.data ?? []).map(fromDbVariableExpenseEstimate),
   }
 
   return migratePersistedState(rawState)
@@ -517,6 +550,25 @@ export async function syncUpsertProfile(
   if (error) throw error
 }
 
+export async function syncUpsertVariableExpenseEstimate(
+  supabase: SupabaseClient,
+  userId: string,
+  est: VariableExpenseEstimate
+): Promise<void> {
+  const row = toDbVariableExpenseEstimate(est, userId)
+  const { error } = await supabase.from('variable_expense_estimates').upsert(row)
+  if (error) throw error
+}
+
+export async function syncDeleteVariableExpenseEstimate(
+  supabase: SupabaseClient,
+  userId: string,
+  estimateId: string
+): Promise<void> {
+  const { error } = await supabase.from('variable_expense_estimates').delete().eq('id', estimateId).eq('user_id', userId)
+  if (error) throw error
+}
+
 // ==========================================================================
 // Subida completa (SOLO para migración inicial o restauración de backup)
 // ==========================================================================
@@ -587,6 +639,12 @@ export async function uploadStateToSupabase(
     if (state.profile) {
       const dbProfile = toDbProfile(state.profile, userId)
       const { error } = await supabase.from('profiles').upsert(dbProfile)
+      if (error) throw error
+    }
+
+    if (state.variableExpenseEstimates?.length) {
+      const dbEstimates = state.variableExpenseEstimates.map((e) => toDbVariableExpenseEstimate(e, userId))
+      const { error } = await supabase.from('variable_expense_estimates').upsert(dbEstimates)
       if (error) throw error
     }
 

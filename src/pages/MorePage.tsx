@@ -12,8 +12,20 @@ import { RecurringPaymentsPage } from './RecurringPaymentsPage'
 import { SettingsPage } from './SettingsPage'
 import { StatisticsPage } from './StatisticsPage'
 import { ProfilePage } from './ProfilePage'
+import { VariableEstimatesPage } from './VariableEstimatesPage'
 
-type MoreSubView = 'menu' | 'profile' | 'accounts' | 'settings' | 'recurring' | 'budgets' | 'statistics' | 'plan' | 'backup' | 'cloud'
+type MoreSubView =
+  | 'menu'
+  | 'profile'
+  | 'accounts'
+  | 'settings'
+  | 'recurring'
+  | 'variable_estimates'
+  | 'budgets'
+  | 'statistics'
+  | 'plan'
+  | 'backup'
+  | 'cloud'
 
 export function MorePage({
   finance,
@@ -73,6 +85,10 @@ export function MorePage({
 
   if (subView === 'recurring') {
     return <RecurringPaymentsPage finance={finance} onBack={() => setSubView('menu')} />
+  }
+
+  if (subView === 'variable_estimates') {
+    return <VariableEstimatesPage finance={finance} onBack={() => setSubView('menu')} />
   }
 
   if (subView === 'budgets') {
@@ -190,6 +206,21 @@ export function MorePage({
             <strong>Gastos recurrentes</strong>
             <small>
               {finance.recurring.length} suscripciones y pagos programados
+            </small>
+          </div>
+          <b className="chevron">
+            <AppIcon name="chevron-right" size={16} />
+          </b>
+        </button>
+
+        <button type="button" onClick={() => setSubView('variable_estimates')}>
+          <span className="menu-icon">
+            <AppIcon name="activity" size={18} />
+          </span>
+          <div>
+            <strong>Gastos variables previstos</strong>
+            <small>
+              {finance.variableExpenseEstimates?.length ?? 0} previstos · {money(finance.totals.variableEstimatesSummary?.totalEstimatedMonthly ?? 0)}/mes aprox.
             </small>
           </div>
           <b className="chevron">

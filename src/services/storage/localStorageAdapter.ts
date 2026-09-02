@@ -36,6 +36,7 @@ export function migratePersistedState(parsed: Partial<PersistedState>): Persiste
     specialPeriods: parsed.specialPeriods ?? [],
     planSettings: parsed.planSettings ?? cleanPlanSettings,
     profile: parsed.profile ? { displayName: String(parsed.profile.displayName ?? '') } : { displayName: '' },
+    variableExpenseEstimates: parsed.variableExpenseEstimates ?? [],
   }
 }
 

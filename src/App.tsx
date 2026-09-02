@@ -222,6 +222,12 @@ export default function App() {
       onProfileUpdate: (p) => {
         financeRef.current.applyRemoteUpdateProfile(p)
       },
+      onVariableExpenseEstimateUpsert: (est) => {
+        financeRef.current.applyRemoteUpsertVariableExpenseEstimate(est)
+      },
+      onVariableExpenseEstimateDelete: (estId) => {
+        financeRef.current.applyRemoteDeleteVariableExpenseEstimate(estId)
+      },
     })
 
     return () => {

@@ -9,6 +9,7 @@ import {
   toDbReserve,
   toDbSpecialPeriod,
   toDbTransaction,
+  toDbVariableExpenseEstimate,
 } from './supabaseSync'
 import type {
   Account,
@@ -20,6 +21,7 @@ import type {
   SpecialPeriod,
   Transaction,
   UserProfile,
+  VariableExpenseEstimate,
 } from '../../models/finance'
 
 export interface OfflineMutation {
@@ -34,6 +36,7 @@ export interface OfflineMutation {
     | 'specialPeriod'
     | 'planSettings'
     | 'profile'
+    | 'variable_expense_estimate'
   action: 'insert' | 'update' | 'delete'
   data: unknown
   timestamp: number
@@ -240,6 +243,20 @@ export async function flushOfflineQueue(
         const dbRow = toDbProfile(item.data as UserProfile, userId)
         const { error } = await supabase.from('profiles').upsert(dbRow)
         if (error) throw error
+      } else if (item.entity === 'variable_expense_estimate') {
+        if (item.action === 'delete') {
+          const id = (item.data as { id: string }).id
+          const { error } = await supabase
+            .from('variable_expense_estimates')
+            .delete()
+            .eq('id', id)
+            .eq('user_id', userId)
+          if (error) throw error
+        } else {
+          const dbRow = toDbVariableExpenseEstimate(item.data as VariableExpenseEstimate, userId)
+          const { error } = await supabase.from('variable_expense_estimates').upsert(dbRow)
+          if (error) throw error
+        }
       }
       successCount++
     } catch (err) {

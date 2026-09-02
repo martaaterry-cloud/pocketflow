@@ -149,3 +149,25 @@ export interface UserProfile {
 }
 
 export type UpdateProfileInput = Partial<UserProfile>
+
+/* ==========================================================================
+   Gastos Variables Previstos (estimación por uso periódico)
+   ========================================================================== */
+
+export type FrequencyType = 'per_week' | 'per_month'
+
+export interface VariableExpenseEstimate {
+  id: string
+  name: string
+  categoryId: string
+  unitCost: number
+  frequencyType: FrequencyType
+  frequencyValue: number
+  active: boolean
+  createdAt?: string
+  updatedAt?: string
+}
+
+export type CreateVariableExpenseEstimateInput = Omit<VariableExpenseEstimate, 'id' | 'createdAt' | 'updatedAt'>
+export type UpdateVariableExpenseEstimateInput = Partial<CreateVariableExpenseEstimateInput>
+

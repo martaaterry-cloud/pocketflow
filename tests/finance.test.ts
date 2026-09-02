@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import type { Account, Budget, Category, FinancialPlanSettings, RecurringPayment, Reserve, SavingsGoal, SpecialPeriod, Transaction, UserProfile } from '../src/models/finance'
+import type { Account, Budget, Category, FinancialPlanSettings, RecurringPayment, Reserve, SavingsGoal, SpecialPeriod, Transaction, UserProfile, VariableExpenseEstimate } from '../src/models/finance'
 import { calculateAccountBalance, reconcileAccounts } from '../src/utils/balance'
 import type { PersistedState, StorageAdapter } from '../src/services/storage/storageAdapter'
 import { LocalStorageAdapter, migratePersistedState } from '../src/services/storage/localStorageAdapter'
@@ -13,6 +13,13 @@ import {
   createBackupPayload,
   validateBackupPayload,
 } from '../src/utils/backup'
+import {
+  calculateMonthlyEstimate,
+  calculateRealSpentForEstimate,
+  calculatePendingEstimate,
+  calculateVariableEstimatesSummary,
+  normalizeEstimateName,
+} from '../src/utils/variableEstimates'
 import {
   toDbAccount,
   fromDbAccount,
@@ -30,6 +37,8 @@ import {
   fromDbPlanSettings,
   toDbProfile,
   fromDbProfile,
+  toDbVariableExpenseEstimate,
+  fromDbVariableExpenseEstimate,
   createCleanInitialState,
   fetchRemoteState,
   syncInsertTransaction,
@@ -47,6 +56,8 @@ import {
   syncDeleteSpecialPeriod,
   syncUpsertPlanSettings,
   syncUpsertProfile,
+  syncUpsertVariableExpenseEstimate,
+  syncDeleteVariableExpenseEstimate,
 } from '../src/services/supabase/supabaseSync'
 import {
   enqueueOfflineMutation,
@@ -3392,6 +3403,298 @@ describe('Fase 11 — Semántica de Sincronización, Foreground Reconcile y Resi
     unsubscribeRealtime()
   })
 })
+
+/* ==========================================================================
+   FASE 12 — GASTOS VARIABLES PREVISTOS
+   ========================================================================== */
+
+describe('Fase 12 — Gastos Variables Previstos', () => {
+  it('169. Cálculo semanal: 1,50 € × 4 veces/semana × 4,33 = 25,98 €/mes aproximado', () => {
+    const estimate = calculateMonthlyEstimate(1.50, 'per_week', 4)
+    assert.equal(estimate, 25.98)
+  })
+
+  it('170. Cálculo mensual: 15,00 € × 2 veces/mes = 30,00 €/mes exacto', () => {
+    const estimate = calculateMonthlyEstimate(15.00, 'per_month', 2)
+    assert.equal(estimate, 30.00)
+  })
+
+  it('171. Estimación no cuenta como gasto real en saldos ni altera balances', () => {
+    const initialAccounts: Account[] = [
+      { id: 'daily', name: 'Cuenta diaria', type: 'spending', initialBalance: 500 },
+      { id: 'savings', name: 'Ahorro', type: 'savings', initialBalance: 1000 },
+    ]
+    const transactions: Transaction[] = []
+    const reconciled = reconcileAccounts(initialAccounts, transactions)
+
+    // Tener una estimación de 25,98 €/mes no debe restar nada del saldo de la cuenta diaria
+    assert.equal(reconciled.find((a) => a.id === 'daily')?.balance, 500)
+    assert.equal(reconciled.find((a) => a.id === 'savings')?.balance, 1000)
+  })
+
+  it('172. Matching conservador por nombre exacto normalizado (no agrupa gastos distintos de la misma categoría)', () => {
+    const estimate: VariableExpenseEstimate = {
+      id: 'est_gym',
+      name: 'Gimnasio Rafa',
+      categoryId: 'sport',
+      unitCost: 1.5,
+      frequencyType: 'per_week',
+      frequencyValue: 4,
+      active: true,
+    }
+
+    assert.equal(normalizeEstimateName('  Gimnasio Rafa  '), 'gimnasio rafa')
+    assert.equal(normalizeEstimateName('GIMNASIO RAFA'), 'gimnasio rafa')
+
+    const txSame: Transaction = {
+      id: 'tx_gym_1',
+      type: 'expense',
+      amount: 1.5,
+      description: '  Gimnasio Rafa  ',
+      categoryId: 'sport',
+      accountId: 'daily',
+      date: '2026-09-02T10:00:00.000Z',
+    }
+
+    const txDifferentSport: Transaction = {
+      id: 'tx_padel',
+      type: 'expense',
+      amount: 10.0,
+      description: 'Pádel fin de semana',
+      categoryId: 'sport',
+      accountId: 'daily',
+      date: '2026-09-02T11:00:00.000Z',
+    }
+
+    const currentMonth = '2026-09'
+    const spent = calculateRealSpentForEstimate(estimate, [txSame, txDifferentSport], currentMonth)
+
+    // Solo debe contar txSame (1.50 €), jamás txDifferentSport (10 €) aunque comparta sport
+    assert.equal(spent, 1.5)
+  })
+
+  it('173. Gasto real del mes suma correctamente transacciones del mes y descarta otros meses', () => {
+    const estimate: VariableExpenseEstimate = {
+      id: 'est_gym',
+      name: 'Gimnasio Rafa',
+      categoryId: 'sport',
+      unitCost: 1.5,
+      frequencyType: 'per_week',
+      frequencyValue: 4,
+      active: true,
+    }
+
+    const txThisMonth1: Transaction = {
+      id: 'tx_1',
+      type: 'expense',
+      amount: 1.5,
+      description: 'Gimnasio Rafa',
+      categoryId: 'sport',
+      accountId: 'daily',
+      date: '2026-09-01T08:00:00.000Z',
+    }
+    const txThisMonth2: Transaction = {
+      id: 'tx_2',
+      type: 'expense',
+      amount: 1.5,
+      description: 'gimnasio rafa',
+      categoryId: 'sport',
+      accountId: 'daily',
+      date: '2026-09-02T08:00:00.000Z',
+    }
+    const txPastMonth: Transaction = {
+      id: 'tx_past',
+      type: 'expense',
+      amount: 1.5,
+      description: 'Gimnasio Rafa',
+      categoryId: 'sport',
+      accountId: 'daily',
+      date: '2026-08-25T08:00:00.000Z',
+    }
+
+    const spent = calculateRealSpentForEstimate(estimate, [txThisMonth1, txThisMonth2, txPastMonth], '2026-09')
+    assert.equal(spent, 3.0)
+  })
+
+  it('174. Pendiente estimado = max(0, previsto - real) sin doble cómputo', () => {
+    const monthlyEstimate = 25.98
+
+    // Caso 1: real menor que previsto (10 € gastados)
+    const pending1 = calculatePendingEstimate(monthlyEstimate, 10.0)
+    assert.equal(pending1, 15.98)
+
+    // Caso 2: real igual al previsto (25.98 € gastados)
+    const pending2 = calculatePendingEstimate(monthlyEstimate, 25.98)
+    assert.equal(pending2, 0)
+
+    // Caso 3: real superior al previsto (30 € gastados -> no debe ser negativo)
+    const pending3 = calculatePendingEstimate(monthlyEstimate, 30.0)
+    assert.equal(pending3, 0)
+  })
+
+  it('175. CRUD local: añadir, actualizar, alternar activo y borrar estimación', () => {
+    let estimates: VariableExpenseEstimate[] = []
+
+    // 1. Añadir
+    const newEst: VariableExpenseEstimate = {
+      id: 'est_1',
+      name: 'Gimnasio Rafa',
+      categoryId: 'sport',
+      unitCost: 1.5,
+      frequencyType: 'per_week',
+      frequencyValue: 4,
+      active: true,
+    }
+    estimates = [...estimates, newEst]
+    assert.equal(estimates.length, 1)
+
+    // 2. Actualizar coste
+    estimates = estimates.map((e) => (e.id === 'est_1' ? { ...e, unitCost: 2.0 } : e))
+    assert.equal(estimates[0].unitCost, 2.0)
+
+    // 3. Alternar activo/pausado
+    estimates = estimates.map((e) => (e.id === 'est_1' ? { ...e, active: !e.active } : e))
+    assert.equal(estimates[0].active, false)
+
+    // 4. Borrar
+    estimates = estimates.filter((e) => e.id !== 'est_1')
+    assert.equal(estimates.length, 0)
+  })
+
+  it('176. Sincronización Supabase: mapea toDbVariableExpenseEstimate y fromDbVariableExpenseEstimate', () => {
+    const model: VariableExpenseEstimate = {
+      id: 'est_gym_123',
+      name: 'Gimnasio Rafa',
+      categoryId: 'sport',
+      unitCost: 1.5,
+      frequencyType: 'per_week',
+      frequencyValue: 4,
+      active: true,
+    }
+    const userId = 'user_marta_test'
+
+    const dbRow = toDbVariableExpenseEstimate(model, userId)
+    assert.equal(dbRow.id, 'est_gym_123')
+    assert.equal(dbRow.user_id, userId)
+    assert.equal(dbRow.name, 'Gimnasio Rafa')
+    assert.equal(dbRow.category_id, 'sport')
+    assert.equal(dbRow.unit_cost, 1.5)
+    assert.equal(dbRow.frequency_type, 'per_week')
+    assert.equal(dbRow.frequency_value, 4)
+    assert.equal(dbRow.active, true)
+
+    const restored = fromDbVariableExpenseEstimate(dbRow)
+    assert.equal(restored.id, model.id)
+    assert.equal(restored.name, model.name)
+    assert.equal(restored.categoryId, model.categoryId)
+    assert.equal(restored.unitCost, model.unitCost)
+    assert.equal(restored.frequencyType, model.frequencyType)
+    assert.equal(restored.frequencyValue, model.frequencyValue)
+    assert.equal(restored.active, model.active)
+  })
+
+  it('177. Realtime: eventos remotos de upsert y delete actualizan la lista de estimaciones', () => {
+    let stateEstimates: VariableExpenseEstimate[] = []
+
+    const onUpsert = (est: VariableExpenseEstimate) => {
+      const exists = stateEstimates.some((e) => e.id === est.id)
+      stateEstimates = exists
+        ? stateEstimates.map((e) => (e.id === est.id ? est : e))
+        : [...stateEstimates, est]
+    }
+
+    const onDelete = (id: string) => {
+      stateEstimates = stateEstimates.filter((e) => e.id !== id)
+    }
+
+    const remoteEst: VariableExpenseEstimate = {
+      id: 'est_remote_1',
+      name: 'Gimnasio Rafa',
+      categoryId: 'sport',
+      unitCost: 1.5,
+      frequencyType: 'per_week',
+      frequencyValue: 4,
+      active: true,
+    }
+
+    // 1. Insert remoto
+    onUpsert(remoteEst)
+    assert.equal(stateEstimates.length, 1)
+    assert.equal(stateEstimates[0].name, 'Gimnasio Rafa')
+
+    // 2. Update remoto
+    onUpsert({ ...remoteEst, frequencyValue: 5 })
+    assert.equal(stateEstimates.length, 1)
+    assert.equal(stateEstimates[0].frequencyValue, 5)
+
+    // 3. Delete remoto
+    onDelete('est_remote_1')
+    assert.equal(stateEstimates.length, 0)
+  })
+
+  it('178. Offline Queue: encola mutación de estimación variable y la vacía al reconectar', async () => {
+    const mockStore: Record<string, string> = {}
+    // @ts-expect-error Mocking localStorage in node test environment
+    globalThis.localStorage = {
+      getItem: (k: string) => mockStore[k] || null,
+      setItem: (k: string, v: string) => {
+        mockStore[k] = v
+      },
+      removeItem: (k: string) => {
+        delete mockStore[k]
+      },
+    }
+
+    clearOfflineQueue()
+
+    const est: VariableExpenseEstimate = {
+      id: 'est_offline_1',
+      name: 'Gimnasio Rafa',
+      categoryId: 'sport',
+      unitCost: 1.5,
+      frequencyType: 'per_week',
+      frequencyValue: 4,
+      active: true,
+    }
+
+    // 1. Encolar offline
+    enqueueOfflineMutation({
+      entity: 'variable_expense_estimate',
+      action: 'insert',
+      data: est,
+    })
+
+    const queue = getOfflineQueue()
+    assert.equal(queue.length, 1)
+    assert.equal(queue[0].entity, 'variable_expense_estimate')
+
+    // 2. Mock Supabase para flush
+    let upsertCalled = false
+    const mockSupabase = {
+      from: (table: string) => {
+        assert.equal(table, 'variable_expense_estimates')
+        return {
+          upsert: async (row: any) => {
+            upsertCalled = true
+            assert.equal(row.id, 'est_offline_1')
+            return { error: null }
+          },
+        }
+      },
+    }
+
+    const { successCount, failCount } = await flushOfflineQueue(mockSupabase as any, 'user_test_178')
+    assert.equal(successCount, 1)
+    assert.equal(failCount, 0)
+    assert.equal(upsertCalled, true)
+    assert.equal(getOfflineQueue().length, 0)
+
+    clearOfflineQueue()
+    // @ts-expect-error Cleanup
+    delete globalThis.localStorage
+  })
+})
+
 
 
 

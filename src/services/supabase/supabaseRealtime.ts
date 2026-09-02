@@ -9,6 +9,7 @@ import {
   fromDbReserve,
   fromDbSpecialPeriod,
   fromDbTransaction,
+  fromDbVariableExpenseEstimate,
 } from './supabaseSync'
 import type {
   Account,
@@ -20,6 +21,7 @@ import type {
   SpecialPeriod,
   Transaction,
   UserProfile,
+  VariableExpenseEstimate,
 } from '../../models/finance'
 
 export interface RealtimeHandlers {
@@ -46,6 +48,8 @@ export interface RealtimeHandlers {
 
   onPlanSettingsUpdate: (ps: FinancialPlanSettings) => void
   onProfileUpdate: (p: UserProfile) => void
+  onVariableExpenseEstimateUpsert?: (est: VariableExpenseEstimate) => void
+  onVariableExpenseEstimateDelete?: (estimateId: string) => void
   onStatusChange?: (status: string) => void
 }
 
@@ -263,6 +267,37 @@ event received: ${eventReceivedTime}`)
       const row = payload.new as Record<string, unknown>
       if (!row || isLocalMutation('profile', userId)) return
       handlers.onProfileUpdate(fromDbProfile(row))
+    }
+  )
+
+  // 10. Gastos variables previstos
+  channel.on(
+    'postgres_changes',
+    { event: 'INSERT', schema: 'public', table: 'variable_expense_estimates', filter: `user_id=eq.${userId}` },
+    (payload) => {
+      const row = payload.new as Record<string, unknown>
+      if (!row || isLocalMutation('variable_expense_estimates', String(row.id))) return
+      handlers.onVariableExpenseEstimateUpsert?.(fromDbVariableExpenseEstimate(row))
+    }
+  )
+
+  channel.on(
+    'postgres_changes',
+    { event: 'UPDATE', schema: 'public', table: 'variable_expense_estimates', filter: `user_id=eq.${userId}` },
+    (payload) => {
+      const row = payload.new as Record<string, unknown>
+      if (!row || isLocalMutation('variable_expense_estimates', String(row.id))) return
+      handlers.onVariableExpenseEstimateUpsert?.(fromDbVariableExpenseEstimate(row))
+    }
+  )
+
+  channel.on(
+    'postgres_changes',
+    { event: 'DELETE', schema: 'public', table: 'variable_expense_estimates', filter: `user_id=eq.${userId}` },
+    (payload) => {
+      const oldRow = payload.old as Record<string, unknown>
+      if (!oldRow || isLocalMutation('variable_expense_estimates', String(oldRow.id))) return
+      handlers.onVariableExpenseEstimateDelete?.(String(oldRow.id))
     }
   )
 
