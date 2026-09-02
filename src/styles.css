@@ -540,6 +540,7 @@ button, input, select {
 }
 
 .calendar-day-btn {
+  position: relative;
   border: 0;
   background: transparent;
   border-radius: var(--radius-sm);
@@ -566,6 +567,16 @@ button, input, select {
   white-space: nowrap;
 }
 
+.calendar-income-indicator {
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: #10b981;
+  position: absolute;
+  top: 4px;
+  right: 6px;
+}
+
 .calendar-day-btn.has-expense {
   background: rgba(192, 73, 73, 0.05);
 }
@@ -578,6 +589,23 @@ button, input, select {
 .calendar-day-btn.selected small {
   color: #ffffff;
   opacity: 0.85;
+}
+
+.calendar-day-btn.selected .calendar-income-indicator {
+  background: #ffffff;
+}
+
+.day-breakdown-row {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 12px;
+  font-size: 12px;
+  color: var(--text-muted);
+  flex-wrap: wrap;
+}
+
+.day-breakdown-row strong {
+  color: var(--text-main);
 }
 
 .mini-row {
@@ -3056,6 +3084,592 @@ input:checked + .slider:before {
   background: var(--bg-card-light, #f8fafc);
   color: var(--text-main);
 }
+
+/* ==========================================================================
+   Action Sheet (+ button)
+   ========================================================================== */
+
+.action-sheet {
+  background: var(--bg-card, #ffffff);
+  border-radius: 20px 20px 0 0;
+  width: 100%;
+  max-width: 480px;
+  margin-top: auto;
+  padding: 20px 20px calc(20px + env(safe-area-inset-bottom, 0px));
+  box-shadow: 0 -8px 30px rgba(0, 0, 0, 0.12);
+  animation: slideUpActionSheet 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes slideUpActionSheet {
+  from {
+    transform: translateY(100%);
+    opacity: 0.8;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+.action-sheet-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 16px;
+}
+
+.action-sheet-header h3 {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 700;
+  color: var(--text-main);
+}
+
+.action-sheet-options {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.action-sheet-option {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 14px 16px;
+  background: var(--bg-card-light, #f8fafc);
+  border: 1px solid var(--border-color, #e2e8f0);
+  border-radius: 14px;
+  cursor: pointer;
+  text-align: left;
+  transition: transform 0.12s ease, background 0.12s ease;
+}
+
+.action-sheet-option:active {
+  transform: scale(0.98);
+  background: var(--border-color, #edf2f7);
+}
+
+.action-sheet-icon {
+  width: 42px;
+  height: 42px;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.action-sheet-icon.expense {
+  background: #ef4444;
+}
+
+.action-sheet-icon.income {
+  background: #10b981;
+}
+
+.action-sheet-icon.reimbursement {
+  background: #8b5cf6;
+}
+
+.action-sheet-text {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.action-sheet-text strong {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-main);
+}
+
+.action-sheet-text span {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+/* ==========================================================================
+   Swipeable Rows (Gestos táctiles / pointer)
+   ========================================================================== */
+
+.swipeable-row-container {
+  position: relative;
+  overflow: hidden;
+  width: 100%;
+  border-radius: var(--radius-md);
+  margin-bottom: 8px;
+  touch-action: pan-y;
+  background: var(--bg-card, #ffffff);
+}
+
+.swipeable-content {
+  position: relative;
+  z-index: 2;
+  background: var(--bg-card, #ffffff);
+  width: 100%;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.swipe-action-button {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 80px;
+  border: none;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  cursor: pointer;
+  z-index: 1;
+  font-size: 11px;
+  font-weight: 600;
+  color: #ffffff;
+  transition: background 0.15s ease;
+}
+
+.swipe-action-button.edit {
+  left: 0;
+  background: #3b82f6;
+}
+
+.swipe-action-button.delete {
+  right: 0;
+  background: #ef4444;
+}
+
+.swipe-action-button.delete.confirm {
+  background: #dc2626;
+  font-weight: 700;
+}
+
+/* ==========================================================================
+   Etiquetas y badges de dominio
+   ========================================================================== */
+
+.transaction-title-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.pill-reimbursement {
+  font-size: 10px;
+  font-weight: 600;
+  color: #7c3aed;
+  background: #f3e8ff;
+  padding: 2px 6px;
+  border-radius: 6px;
+  letter-spacing: -0.2px;
+}
+
+.pill-shared {
+  font-size: 10px;
+  font-weight: 600;
+  padding: 2px 6px;
+  border-radius: 6px;
+  letter-spacing: -0.2px;
+}
+
+.pill-shared.pending {
+  color: #2563eb;
+  background: #eff6ff;
+}
+
+.pill-shared.completed {
+  color: #059669;
+  background: #ecfdf5;
+}
+
+.transaction-amount.positive.reimbursement {
+  color: #7c3aed;
+}
+
+/* ==========================================================================
+   Gasto Compartido en AddTransactionModal
+   ========================================================================== */
+
+.income-kind-selector {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+
+.income-kind-pill {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-color);
+  background: var(--bg-card-light, #f8fafc);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 500;
+  transition: all 0.15s ease;
+}
+
+.income-kind-pill input {
+  margin: 0;
+}
+
+.income-kind-pill.active {
+  border-color: var(--accent-dark);
+  background: rgba(0, 0, 0, 0.04);
+  font-weight: 600;
+}
+
+.shared-expense-section {
+  background: var(--bg-card-light, #f8fafc);
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  padding: 12px 14px;
+  margin-bottom: 14px;
+}
+
+.shared-toggle-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.shared-toggle-text strong {
+  display: block;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-main);
+}
+
+.shared-toggle-text span {
+  display: block;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.shared-config-box {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border-color);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.checkbox-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  cursor: pointer;
+  color: var(--text-main);
+}
+
+.participant-input-row {
+  display: flex;
+  gap: 8px;
+}
+
+.participant-input-row input {
+  flex: 1;
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-color);
+  font-size: 13px;
+}
+
+.add-participant-btn {
+  white-space: nowrap;
+  padding: 8px 12px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.participant-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.participant-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: var(--bg-card, #ffffff);
+  border: 1px solid var(--border-color);
+  border-radius: 20px;
+  padding: 4px 8px 4px 10px;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.participant-chip button {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--text-muted);
+  font-size: 14px;
+  line-height: 1;
+  padding: 0 2px;
+}
+
+.split-preview {
+  background: var(--bg-card, #ffffff);
+  border-radius: 8px;
+  padding: 8px 10px;
+  border: 1px dashed var(--border-color);
+}
+
+.split-preview-title {
+  display: block;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+  margin-bottom: 6px;
+}
+
+.split-preview-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.split-preview-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 12px;
+}
+
+.split-preview-item strong {
+  color: var(--text-main);
+}
+
+/* ==========================================================================
+   ReimbursementModal
+   ========================================================================== */
+
+.reimbursement-modal {
+  max-width: 440px;
+}
+
+.debt-chip-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 180px;
+  overflow-y: auto;
+}
+
+.debt-chip {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 10px 12px;
+  background: var(--bg-card-light, #f8fafc);
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+  cursor: pointer;
+  text-align: left;
+  transition: all 0.15s ease;
+}
+
+.debt-chip.selected {
+  border-color: #8b5cf6;
+  background: rgba(139, 92, 246, 0.06);
+}
+
+.debt-chip-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.debt-chip-top strong {
+  font-size: 13px;
+  color: var(--text-main);
+}
+
+.debt-chip-amount {
+  font-size: 12px;
+  font-weight: 600;
+  color: #8b5cf6;
+}
+
+.debt-chip-subtitle {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.reimbursement-toggle-row {
+  margin: 6px 0 12px;
+  text-align: right;
+}
+
+/* ==========================================================================
+   SharedExpenseDetailModal
+   ========================================================================== */
+
+.shared-detail-modal {
+  max-width: 440px;
+}
+
+.badge-shared {
+  display: inline-block;
+  font-size: 11px;
+  font-weight: 600;
+  color: #2563eb;
+  background: #eff6ff;
+  padding: 3px 8px;
+  border-radius: 6px;
+}
+
+.shared-summary-card {
+  background: var(--bg-card-light, #f8fafc);
+  border-radius: 12px;
+  padding: 12px 14px;
+  margin: 14px 0;
+  border: 1px solid var(--border-color);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.shared-summary-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 13px;
+}
+
+.shared-summary-row.highlight-personal {
+  color: var(--text-main);
+  font-weight: 600;
+}
+
+.shared-summary-row.highlight-pending {
+  color: #2563eb;
+  font-weight: 600;
+}
+
+.shared-participants-section h4,
+.shared-reimbursements-history h4 {
+  margin: 14px 0 8px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-main);
+}
+
+.shared-participants-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.shared-participant-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 12px;
+  background: var(--bg-card, #ffffff);
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+}
+
+.shared-participant-row.payer {
+  background: rgba(0, 0, 0, 0.02);
+}
+
+.participant-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.participant-info strong {
+  font-size: 13px;
+  color: var(--text-main);
+}
+
+.participant-role {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.participant-status-badge {
+  font-size: 10px;
+  font-weight: 600;
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
+.participant-status-badge.status-pending {
+  background: #fef3c7;
+  color: #b45309;
+}
+
+.participant-status-badge.status-partial {
+  background: #e0e7ff;
+  color: #3730a3;
+}
+
+.participant-status-badge.status-received {
+  background: #d1fae5;
+  color: #065f46;
+}
+
+.participant-action-col {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+}
+
+.participant-expected {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-main);
+}
+
+.small-action-button {
+  background: #8b5cf6;
+  color: #ffffff;
+  border: none;
+  border-radius: 6px;
+  padding: 4px 8px;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.shared-reimbursements-history {
+  margin-top: 10px;
+}
+
+.reimbursements-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.reimbursement-item {
+  display: flex;
+  align-items: center;
+  padding: 8px 10px;
+  background: var(--bg-card-light, #f8fafc);
+  border-radius: 8px;
+  font-size: 12px;
+}
+
+.reimbursement-item strong {
+  color: #7c3aed;
+  margin-right: 6px;
+}
+
 
 
 

@@ -10,6 +10,8 @@ import {
   fromDbSpecialPeriod,
   fromDbTransaction,
   fromDbVariableExpenseEstimate,
+  fromDbSharedContact,
+  fromDbExpenseShare,
 } from './supabaseSync'
 import type {
   Account,
@@ -22,6 +24,8 @@ import type {
   Transaction,
   UserProfile,
   VariableExpenseEstimate,
+  SharedContact,
+  ExpenseShare,
 } from '../../models/finance'
 
 export interface RealtimeHandlers {
@@ -50,6 +54,10 @@ export interface RealtimeHandlers {
   onProfileUpdate: (p: UserProfile) => void
   onVariableExpenseEstimateUpsert?: (est: VariableExpenseEstimate) => void
   onVariableExpenseEstimateDelete?: (estimateId: string) => void
+  onSharedContactUpsert?: (contact: SharedContact) => void
+  onSharedContactDelete?: (contactId: string) => void
+  onExpenseShareUpsert?: (share: ExpenseShare) => void
+  onExpenseShareDelete?: (shareId: string) => void
   onStatusChange?: (status: string) => void
 }
 
@@ -298,6 +306,68 @@ event received: ${eventReceivedTime}`)
       const oldRow = payload.old as Record<string, unknown>
       if (!oldRow || isLocalMutation('variable_expense_estimates', String(oldRow.id))) return
       handlers.onVariableExpenseEstimateDelete?.(String(oldRow.id))
+    }
+  )
+
+  // 12. Contactos compartidos
+  channel.on(
+    'postgres_changes',
+    { event: 'INSERT', schema: 'public', table: 'shared_contacts', filter: `user_id=eq.${userId}` },
+    (payload) => {
+      const row = payload.new as Record<string, unknown>
+      if (!row || isLocalMutation('shared_contacts', String(row.id))) return
+      handlers.onSharedContactUpsert?.(fromDbSharedContact(row))
+    }
+  )
+
+  channel.on(
+    'postgres_changes',
+    { event: 'UPDATE', schema: 'public', table: 'shared_contacts', filter: `user_id=eq.${userId}` },
+    (payload) => {
+      const row = payload.new as Record<string, unknown>
+      if (!row || isLocalMutation('shared_contacts', String(row.id))) return
+      handlers.onSharedContactUpsert?.(fromDbSharedContact(row))
+    }
+  )
+
+  channel.on(
+    'postgres_changes',
+    { event: 'DELETE', schema: 'public', table: 'shared_contacts', filter: `user_id=eq.${userId}` },
+    (payload) => {
+      const oldRow = payload.old as Record<string, unknown>
+      if (!oldRow || isLocalMutation('shared_contacts', String(oldRow.id))) return
+      handlers.onSharedContactDelete?.(String(oldRow.id))
+    }
+  )
+
+  // 13. Partes de gastos compartidos (expense_shares)
+  channel.on(
+    'postgres_changes',
+    { event: 'INSERT', schema: 'public', table: 'expense_shares', filter: `user_id=eq.${userId}` },
+    (payload) => {
+      const row = payload.new as Record<string, unknown>
+      if (!row || isLocalMutation('expense_shares', String(row.id))) return
+      handlers.onExpenseShareUpsert?.(fromDbExpenseShare(row))
+    }
+  )
+
+  channel.on(
+    'postgres_changes',
+    { event: 'UPDATE', schema: 'public', table: 'expense_shares', filter: `user_id=eq.${userId}` },
+    (payload) => {
+      const row = payload.new as Record<string, unknown>
+      if (!row || isLocalMutation('expense_shares', String(row.id))) return
+      handlers.onExpenseShareUpsert?.(fromDbExpenseShare(row))
+    }
+  )
+
+  channel.on(
+    'postgres_changes',
+    { event: 'DELETE', schema: 'public', table: 'expense_shares', filter: `user_id=eq.${userId}` },
+    (payload) => {
+      const oldRow = payload.old as Record<string, unknown>
+      if (!oldRow || isLocalMutation('expense_shares', String(oldRow.id))) return
+      handlers.onExpenseShareDelete?.(String(oldRow.id))
     }
   )
 

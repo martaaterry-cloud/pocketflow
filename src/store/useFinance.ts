@@ -41,6 +41,10 @@ import type {
   VariableExpenseEstimate,
   CreateVariableExpenseEstimateInput,
   UpdateVariableExpenseEstimateInput,
+  SharedContact,
+  ExpenseShare,
+  CreateSharedContactInput,
+  CreateExpenseShareInput,
 } from '../models/finance'
 import { defaultAppStorage } from '../services/storage/indexedDbAdapter'
 import { defaultStorage } from '../services/storage/localStorageAdapter'
@@ -48,6 +52,16 @@ import type { PersistedState, StorageAdapter } from '../services/storage/storage
 import { selectBudgetsSummary } from '../utils/budgetSelectors'
 import { ensureAccountInitialBalance, reconcileAccounts } from '../utils/balance'
 import { calculateVariableEstimatesSummary } from '../utils/variableEstimates'
+import {
+  selectGrossExpenses,
+  selectReimbursementsReceived,
+  selectNetPersonalExpenses,
+  selectRealIncome,
+  selectPendingReimbursements,
+  selectExpenseShareDetails,
+  selectPendingDebtors,
+  splitExpenseEqually,
+} from '../utils/sharedExpenseSelectors'
 import { getSupabase } from '../services/supabase/supabaseClient'
 import {
   enqueueOfflineMutation,
@@ -62,6 +76,8 @@ import {
   syncDeleteSpecialPeriod,
   syncDeleteTransaction,
   syncDeleteVariableExpenseEstimate,
+  syncDeleteSharedContact,
+  syncDeleteExpenseShare,
   syncInsertTransaction,
   syncUpdateTransaction,
   syncUpsertAccount,
@@ -73,6 +89,8 @@ import {
   syncUpsertReserve,
   syncUpsertSpecialPeriod,
   syncUpsertVariableExpenseEstimate,
+  syncUpsertSharedContact,
+  syncUpsertExpenseShare,
 } from '../services/supabase/supabaseSync'
 import {
   logPerfMutationStart,
@@ -119,6 +137,8 @@ export const demoFinanceState: PersistedState = {
   planSettings: seedPlanSettings,
   profile: initialProfile,
   variableExpenseEstimates: [],
+  sharedContacts: [],
+  expenseShares: [],
 }
 
 export const initialFinanceState: PersistedState = demoFinanceState
@@ -309,6 +329,173 @@ export function useFinance(storage: StorageAdapter = defaultAppStorage) {
     [state, commit, dispatchSync]
   )
 
+  const addSharedExpense = useCallback(
+    (
+      input: CreateTransactionInput,
+      shares: { participantName: string; contactId?: string; isPayerShare: boolean; expectedAmount: number }[]
+    ) => {
+      const txId = crypto.randomUUID()
+      const newTx: Transaction = {
+        ...input,
+        id: txId,
+        amount: Number(input.amount),
+        isShared: true,
+      }
+
+      const createdShares: ExpenseShare[] = shares.map((s) => ({
+        id: crypto.randomUUID(),
+        expenseTransactionId: txId,
+        contactId: s.contactId,
+        participantName: s.participantName.trim(),
+        isPayerShare: s.isPayerShare,
+        expectedAmount: Number(s.expectedAmount),
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      }))
+
+      // Auto-guardar participantes no pagadores en sharedContacts para autocompletado
+      const currentContacts = state.sharedContacts ?? []
+      const newContacts: SharedContact[] = []
+      shares.forEach((s) => {
+        if (!s.isPayerShare) {
+          const name = s.participantName.trim()
+          const exists =
+            currentContacts.some((c) => c.displayName.toLowerCase() === name.toLowerCase()) ||
+            newContacts.some((c) => c.displayName.toLowerCase() === name.toLowerCase())
+          if (!exists && name.length > 0) {
+            newContacts.push({
+              id: s.contactId || crypto.randomUUID(),
+              displayName: name,
+              createdAt: new Date().toISOString(),
+              updatedAt: new Date().toISOString(),
+            })
+          }
+        }
+      })
+
+      const nextContacts = [...newContacts, ...currentContacts]
+      const nextShares = [...createdShares, ...(state.expenseShares ?? [])]
+
+      commit(
+        {
+          ...state,
+          transactions: [newTx, ...state.transactions],
+          expenseShares: nextShares,
+          sharedContacts: nextContacts,
+        },
+        newTx.id
+      )
+
+      dispatchSync('transaction', 'insert', newTx.id, newTx, (sb, uid) =>
+        syncInsertTransaction(sb, uid, newTx)
+      )
+      createdShares.forEach((share) => {
+        dispatchSync('expense_share' as any, 'insert', share.id, share, (sb, uid) =>
+          syncUpsertExpenseShare(sb, uid, share)
+        )
+      })
+      newContacts.forEach((c) => {
+        dispatchSync('shared_contact' as any, 'insert', c.id, c, (sb, uid) =>
+          syncUpsertSharedContact(sb, uid, c)
+        )
+      })
+
+      return { transaction: newTx, shares: createdShares }
+    },
+    [state, commit, dispatchSync]
+  )
+
+  const recordReimbursement = useCallback(
+    (input: {
+      parentExpenseId?: string
+      expenseShareId?: string
+      amount: number
+      accountId?: string
+      date?: string
+      note?: string
+      description?: string
+    }) => {
+      const parentTx = state.transactions.find((t) => t.id === input.parentExpenseId)
+      const share = (state.expenseShares ?? []).find((s) => s.id === input.expenseShareId)
+      const targetExpenseId = input.parentExpenseId || share?.expenseTransactionId
+
+      const desc =
+        input.description ||
+        (share
+          ? `Bizum ${share.participantName} · ${parentTx?.description || 'Reembolso'}`
+          : `Reembolso · ${parentTx?.description || 'Gasto'}`)
+
+      const newTx: Transaction = {
+        id: crypto.randomUUID(),
+        type: 'income',
+        incomeKind: 'reimbursement',
+        amount: Number(input.amount),
+        accountId: input.accountId || parentTx?.accountId || 'daily',
+        date: input.date || new Date().toISOString(),
+        description: desc,
+        note: input.note,
+        parentExpenseId: targetExpenseId,
+        expenseShareId: input.expenseShareId,
+      }
+
+      commit(
+        {
+          ...state,
+          transactions: [newTx, ...state.transactions],
+        },
+        newTx.id
+      )
+
+      dispatchSync('transaction', 'insert', newTx.id, newTx, (sb, uid) =>
+        syncInsertTransaction(sb, uid, newTx)
+      )
+
+      return newTx
+    },
+    [state, commit, dispatchSync]
+  )
+
+  const addSharedContact = useCallback(
+    (displayName: string) => {
+      const trimmed = displayName.trim()
+      if (!trimmed) return null
+      const existing = (state.sharedContacts ?? []).find(
+        (c) => c.displayName.toLowerCase() === trimmed.toLowerCase()
+      )
+      if (existing) return existing
+
+      const newContact: SharedContact = {
+        id: crypto.randomUUID(),
+        displayName: trimmed,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      }
+
+      commit({
+        ...state,
+        sharedContacts: [newContact, ...(state.sharedContacts ?? [])],
+      })
+      dispatchSync('shared_contact' as any, 'insert', newContact.id, newContact, (sb, uid) =>
+        syncUpsertSharedContact(sb, uid, newContact)
+      )
+      return newContact
+    },
+    [state, commit, dispatchSync]
+  )
+
+  const deleteSharedContact = useCallback(
+    (id: string) => {
+      commit({
+        ...state,
+        sharedContacts: (state.sharedContacts ?? []).filter((c) => c.id !== id),
+      })
+      dispatchSync('shared_contact' as any, 'delete', id, { id }, (sb, uid) =>
+        syncDeleteSharedContact(sb, uid, id)
+      )
+    },
+    [state, commit, dispatchSync]
+  )
+
   const updateTransaction = useCallback(
     (id: string, updates: UpdateTransactionInput) => {
       const existingIndex = state.transactions.findIndex((t) => t.id === id)
@@ -339,10 +526,14 @@ export function useFinance(storage: StorageAdapter = defaultAppStorage) {
 
   const deleteTransaction = useCallback(
     (id: string) => {
+      const remainingShares = (state.expenseShares ?? []).filter(
+        (s) => s.expenseTransactionId !== id
+      )
       commit(
         {
           ...state,
           transactions: state.transactions.filter((t) => t.id !== id),
+          expenseShares: remainingShares,
         },
         id
       )
@@ -638,6 +829,36 @@ export function useFinance(storage: StorageAdapter = defaultAppStorage) {
         accountId: rec.accountId || 'daily',
         date: dateStr,
         recurringPaymentId: rec.id,
+        isShared: Boolean(rec.isShared),
+      }
+
+      // Si es un recurrente compartido, crear las partes independientes para ESTE ciclo
+      let cycleShares: ExpenseShare[] = []
+      if (rec.isShared && rec.sharingTemplate) {
+        cycleShares = rec.sharingTemplate.participants.map((p) => ({
+          id: crypto.randomUUID(),
+          expenseTransactionId: newTx.id,
+          contactId: p.contactId,
+          participantName: p.name,
+          isPayerShare: false,
+          expectedAmount: Number(p.amount),
+          createdAt: dateStr,
+          updatedAt: dateStr,
+        }))
+
+        if (rec.sharingTemplate.includePayer) {
+          const externalTotal = cycleShares.reduce((s, sh) => s + sh.expectedAmount, 0)
+          const payerAmount = Math.max(0, Math.round((rec.amount - externalTotal) * 100) / 100)
+          cycleShares.unshift({
+            id: crypto.randomUUID(),
+            expenseTransactionId: newTx.id,
+            participantName: 'Tú',
+            isPayerShare: true,
+            expectedAmount: payerAmount,
+            createdAt: dateStr,
+            updatedAt: dateStr,
+          })
+        }
       }
 
       // 2. Avanzar nextDate según frecuencia de calendario segura
@@ -649,18 +870,25 @@ export function useFinance(storage: StorageAdapter = defaultAppStorage) {
 
       const nextRecurring = state.recurring.map((r) => (r.id === id ? updatedRec : r))
       const nextTxs = [newTx, ...state.transactions]
+      const nextShares = [...cycleShares, ...(state.expenseShares ?? [])]
 
       // Commit atómico local optimista
       commit({
         ...state,
         transactions: nextTxs,
         recurring: nextRecurring,
+        expenseShares: nextShares,
       })
 
-      // Sincronización atómica/granular: primero la transacción, luego el recurrente actualizado
+      // Sincronización atómica/granular: primero la transacción, luego shares, luego el recurrente
       dispatchSync('transaction', 'insert', newTx.id, newTx, (sb, uid) =>
         syncInsertTransaction(sb, uid, newTx)
       )
+      cycleShares.forEach((share) => {
+        dispatchSync('expense_share' as any, 'insert', share.id, share, (sb, uid) =>
+          syncUpsertExpenseShare(sb, uid, share)
+        )
+      })
       dispatchSync('recurring', 'update', rec.id, updatedRec, (sb, uid) =>
         syncUpsertRecurring(sb, uid, updatedRec)
       )
@@ -1224,6 +1452,13 @@ export function useFinance(storage: StorageAdapter = defaultAppStorage) {
     const pendingVariableExpenses = variableEstimatesSummary.totalPendingEstimated
     const projectedAvailable = Math.round((realAvailable - pendingVariableExpenses) * 100) / 100
 
+    // Métricas de gastos brutos vs netos e ingresos reales vs reembolsos
+    const grossMonthExpenses = selectGrossExpenses(state.transactions, now)
+    const reimbursementsMonth = selectReimbursementsReceived(state.transactions, now)
+    const netMonthExpenses = selectNetPersonalExpenses(state.transactions, now)
+    const realMonthIncome = selectRealIncome(state.transactions, now)
+    const pendingReimbursements = selectPendingReimbursements(state.expenseShares ?? [], state.transactions)
+
     return {
       // Compatibilidad
       daily: spendable,
@@ -1237,6 +1472,13 @@ export function useFinance(storage: StorageAdapter = defaultAppStorage) {
       pendingVariableExpenses,
       projectedAvailable,
       variableEstimatesSummary,
+
+      // Gastos compartidos y reembolsos
+      grossMonthExpenses,
+      reimbursementsMonth,
+      netMonthExpenses,
+      realMonthIncome,
+      pendingReimbursements,
 
       // Conceptos explícitos de dominio
       totalMoney,
@@ -1275,6 +1517,8 @@ export function useFinance(storage: StorageAdapter = defaultAppStorage) {
     state.reserves,
     state.specialPeriods,
     state.planSettings,
+    state.variableExpenseEstimates,
+    state.expenseShares,
   ])
 
   /* ==========================================================================
@@ -1543,6 +1787,66 @@ export function useFinance(storage: StorageAdapter = defaultAppStorage) {
     [persistStateAsync]
   )
 
+  const applyRemoteUpsertSharedContact = useCallback(
+    (contact: SharedContact) => {
+      setState((prev) => {
+        const existing = prev.sharedContacts ?? []
+        const exists = existing.some((c) => c.id === contact.id)
+        const nextContacts = exists
+          ? existing.map((c) => (c.id === contact.id ? contact : c))
+          : [contact, ...existing]
+        const next = { ...prev, sharedContacts: nextContacts }
+        persistStateAsync(next)
+        return next
+      })
+    },
+    [persistStateAsync]
+  )
+
+  const applyRemoteDeleteSharedContact = useCallback(
+    (contactId: string) => {
+      setState((prev) => {
+        const next = {
+          ...prev,
+          sharedContacts: (prev.sharedContacts ?? []).filter((c) => c.id !== contactId),
+        }
+        persistStateAsync(next)
+        return next
+      })
+    },
+    [persistStateAsync]
+  )
+
+  const applyRemoteUpsertExpenseShare = useCallback(
+    (share: ExpenseShare) => {
+      setState((prev) => {
+        const existing = prev.expenseShares ?? []
+        const exists = existing.some((s) => s.id === share.id)
+        const nextShares = exists
+          ? existing.map((s) => (s.id === share.id ? share : s))
+          : [share, ...existing]
+        const next = { ...prev, expenseShares: nextShares }
+        persistStateAsync(next)
+        return next
+      })
+    },
+    [persistStateAsync]
+  )
+
+  const applyRemoteDeleteExpenseShare = useCallback(
+    (shareId: string) => {
+      setState((prev) => {
+        const next = {
+          ...prev,
+          expenseShares: (prev.expenseShares ?? []).filter((s) => s.id !== shareId),
+        }
+        persistStateAsync(next)
+        return next
+      })
+    },
+    [persistStateAsync]
+  )
+
   const restoreState = useCallback(
     async (newState: PersistedState) => {
       const txs = newState.transactions ?? []
@@ -1561,6 +1865,8 @@ export function useFinance(storage: StorageAdapter = defaultAppStorage) {
         planSettings: newState.planSettings ?? initialFinanceState.planSettings,
         profile: newState.profile ?? initialFinanceState.profile,
         variableExpenseEstimates: newState.variableExpenseEstimates ?? [],
+        sharedContacts: newState.sharedContacts ?? [],
+        expenseShares: newState.expenseShares ?? [],
       }
       setState(completeState)
       await storage.save(completeState)
@@ -1581,6 +1887,8 @@ export function useFinance(storage: StorageAdapter = defaultAppStorage) {
       planSettings: state.planSettings,
       profile: state.profile ?? initialFinanceState.profile,
       variableExpenseEstimates: state.variableExpenseEstimates ?? [],
+      sharedContacts: state.sharedContacts ?? [],
+      expenseShares: state.expenseShares ?? [],
     }
   }, [reconciledAccounts, state])
 
@@ -1588,12 +1896,18 @@ export function useFinance(storage: StorageAdapter = defaultAppStorage) {
     ...state,
     profile: state.profile ?? initialFinanceState.profile,
     variableExpenseEstimates: state.variableExpenseEstimates ?? [],
+    sharedContacts: state.sharedContacts ?? [],
+    expenseShares: state.expenseShares ?? [],
     storageHydrated,
     setSyncUser,
     setOnSyncStatusChange,
     accounts: reconciledAccounts,
     totals,
     addTransaction,
+    addSharedExpense,
+    recordReimbursement,
+    addSharedContact,
+    deleteSharedContact,
     updateTransaction,
     deleteTransaction,
     updateAccountInitialBalance,
@@ -1663,6 +1977,10 @@ export function useFinance(storage: StorageAdapter = defaultAppStorage) {
     applyRemoteUpdateProfile,
     applyRemoteUpsertVariableExpenseEstimate,
     applyRemoteDeleteVariableExpenseEstimate,
+    applyRemoteUpsertSharedContact,
+    applyRemoteDeleteSharedContact,
+    applyRemoteUpsertExpenseShare,
+    applyRemoteDeleteExpenseShare,
 
     // Copias de seguridad
     restoreState,

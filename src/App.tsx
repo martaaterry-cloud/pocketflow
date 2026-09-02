@@ -2,6 +2,9 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { App as CapacitorApp } from '@capacitor/app'
 import type { User } from '@supabase/supabase-js'
 import { AddTransactionModal } from './components/AddTransactionModal'
+import { QuickActionSheet } from './components/QuickActionSheet'
+import { ReimbursementModal } from './components/ReimbursementModal'
+import { SharedExpenseDetailModal } from './components/SharedExpenseDetailModal'
 import type { Transaction } from './models/finance'
 import { CalendarPage } from './pages/CalendarPage'
 import { HomePage } from './pages/HomePage'
@@ -229,6 +232,18 @@ export default function App() {
       onVariableExpenseEstimateDelete: (estId) => {
         financeRef.current.applyRemoteDeleteVariableExpenseEstimate(estId)
       },
+      onSharedContactUpsert: (contact) => {
+        financeRef.current.applyRemoteUpsertSharedContact(contact)
+      },
+      onSharedContactDelete: (contactId) => {
+        financeRef.current.applyRemoteDeleteSharedContact(contactId)
+      },
+      onExpenseShareUpsert: (share) => {
+        financeRef.current.applyRemoteUpsertExpenseShare(share)
+      },
+      onExpenseShareDelete: (shareId) => {
+        financeRef.current.applyRemoteDeleteExpenseShare(shareId)
+      },
     })
 
     return () => {
@@ -375,14 +390,24 @@ export default function App() {
     }
   }, [processIncomingUrl])
 
+  const [isActionSheetOpen, setIsActionSheetOpen] = useState(false)
+  const [modalDefaultType, setModalDefaultType] = useState<'expense' | 'income' | 'transfer'>('expense')
+  const [isReimbursementModalOpen, setIsReimbursementModalOpen] = useState(false)
+  const [reimbursementShareId, setReimbursementShareId] = useState<string | undefined>(undefined)
+  const [selectedSharedTx, setSelectedSharedTx] = useState<Transaction | null>(null)
+
   const handleOpenAdd = () => {
-    setSelectedTx(null)
-    setIsModalOpen(true)
+    setIsActionSheetOpen(true)
   }
 
   const handleSelectTransaction = (tx: Transaction) => {
-    setSelectedTx(tx)
-    setIsModalOpen(true)
+    if (tx.isShared) {
+      setSelectedSharedTx(tx)
+    } else {
+      setSelectedTx(tx)
+      setModalDefaultType(tx.type)
+      setIsModalOpen(true)
+    }
   }
 
   const handleCloseModal = () => {
@@ -519,13 +544,72 @@ export default function App() {
         </div>
       )}
 
+      <QuickActionSheet
+        open={isActionSheetOpen}
+        onClose={() => setIsActionSheetOpen(false)}
+        onSelectExpense={() => {
+          setSelectedTx(null)
+          setModalDefaultType('expense')
+          setIsModalOpen(true)
+        }}
+        onSelectIncome={() => {
+          setSelectedTx(null)
+          setModalDefaultType('income')
+          setIsModalOpen(true)
+        }}
+        onSelectReimbursement={() => {
+          setReimbursementShareId(undefined)
+          setIsReimbursementModalOpen(true)
+        }}
+      />
+
+      <ReimbursementModal
+        open={isReimbursementModalOpen}
+        onClose={() => {
+          setIsReimbursementModalOpen(false)
+          setReimbursementShareId(undefined)
+        }}
+        accounts={finance.accounts}
+        transactions={finance.transactions}
+        expenseShares={finance.expenseShares}
+        initialShareId={reimbursementShareId}
+        onSubmit={(input) => {
+          finance.recordReimbursement(input)
+          showToast(`Reembolso registrado (+${input.amount.toFixed(2)} €)`, 'success')
+        }}
+      />
+
+      {selectedSharedTx && (
+        <SharedExpenseDetailModal
+          open={Boolean(selectedSharedTx)}
+          onClose={() => setSelectedSharedTx(null)}
+          expenseTransaction={selectedSharedTx}
+          allTransactions={finance.transactions}
+          expenseShares={finance.expenseShares}
+          onRecordReimbursement={(shareId) => {
+            setSelectedSharedTx(null)
+            setReimbursementShareId(shareId)
+            setIsReimbursementModalOpen(true)
+          }}
+          onEditExpense={(tx) => {
+            setSelectedSharedTx(null)
+            setSelectedTx(tx)
+            setModalDefaultType('expense')
+            setIsModalOpen(true)
+          }}
+        />
+      )}
+
       <AddTransactionModal
         open={isModalOpen}
         onClose={handleCloseModal}
         accounts={finance.accounts}
         categories={finance.categories}
+        sharedContacts={finance.sharedContacts}
+        defaultType={modalDefaultType}
         initialTransaction={selectedTx}
         onAdd={finance.addTransaction}
+        onAddShared={finance.addSharedExpense}
         onUpdate={finance.updateTransaction}
         onDelete={finance.deleteTransaction}
       />

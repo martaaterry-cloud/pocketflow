@@ -8,6 +8,8 @@ import type {
   SavingsGoal,
   SpecialPeriod,
   Transaction,
+  SharedContact,
+  ExpenseShare,
   UserProfile,
   VariableExpenseEstimate,
 } from '../../models/finance'
@@ -24,6 +26,8 @@ export interface PersistedState {
   planSettings: FinancialPlanSettings
   profile?: UserProfile
   variableExpenseEstimates?: VariableExpenseEstimate[]
+  sharedContacts?: SharedContact[]
+  expenseShares?: ExpenseShare[]
 }
 
 export interface StorageAdapter {

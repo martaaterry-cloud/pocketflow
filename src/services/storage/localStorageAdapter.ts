@@ -37,6 +37,8 @@ export function migratePersistedState(parsed: Partial<PersistedState>): Persiste
     planSettings: parsed.planSettings ?? cleanPlanSettings,
     profile: parsed.profile ? { displayName: String(parsed.profile.displayName ?? '') } : { displayName: '' },
     variableExpenseEstimates: parsed.variableExpenseEstimates ?? [],
+    sharedContacts: parsed.sharedContacts ?? [],
+    expenseShares: parsed.expenseShares ?? [],
   }
 }
 

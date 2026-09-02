@@ -6,6 +6,7 @@ import { money } from '../utils/money'
 import { AppIcon } from '../ui/icons'
 
 type FilterType = 'all' | TransactionType
+type IncomeSubFilter = 'all' | 'income' | 'reimbursement'
 
 export function MovementsPage({
   finance,
@@ -17,23 +18,38 @@ export function MovementsPage({
   onSelectTransaction?: (tx: Transaction) => void
 }) {
   const [filter, setFilter] = useState<FilterType>('all')
+  const [incomeSubFilter, setIncomeSubFilter] = useState<IncomeSubFilter>('all')
   const [search, setSearch] = useState('')
 
   const filteredTransactions = useMemo(() => {
     return finance.transactions.filter((tx) => {
       const matchesType = filter === 'all' || tx.type === filter
+
+      let matchesSub = true
+      if (filter === 'income' && incomeSubFilter !== 'all') {
+        const isReimbursement = tx.incomeKind === 'reimbursement'
+        matchesSub = incomeSubFilter === 'reimbursement' ? isReimbursement : !isReimbursement
+      }
+
       const matchesSearch =
         !search.trim() ||
         tx.description.toLowerCase().includes(search.toLowerCase().trim()) ||
         finance.categories.find((c) => c.id === tx.categoryId)?.name.toLowerCase().includes(search.toLowerCase().trim())
-      return matchesType && matchesSearch
+      return matchesType && matchesSub && matchesSearch
     })
-  }, [finance.transactions, finance.categories, filter, search])
+  }, [finance.transactions, finance.categories, filter, incomeSubFilter, search])
 
   const stats = useMemo(() => {
     const expenses = filteredTransactions.filter((t) => t.type === 'expense').reduce((s, t) => s + t.amount, 0)
     const incomes = filteredTransactions.filter((t) => t.type === 'income').reduce((s, t) => s + t.amount, 0)
-    return { expenses, incomes }
+    const realIncomes = filteredTransactions
+      .filter((t) => t.type === 'income' && t.incomeKind !== 'reimbursement')
+      .reduce((s, t) => s + t.amount, 0)
+    const reimbursements = filteredTransactions
+      .filter((t) => t.type === 'income' && t.incomeKind === 'reimbursement')
+      .reduce((s, t) => s + t.amount, 0)
+
+    return { expenses, incomes, realIncomes, reimbursements }
   }, [filteredTransactions])
 
   return (
@@ -93,9 +109,43 @@ export function MovementsPage({
         </button>
       </div>
 
+      {/* Subfiltro discreto para Ingresos */}
+      {filter === 'income' && (
+        <div className="filter-pills sub-pills" style={{ marginTop: 8 }}>
+          <button
+            type="button"
+            className={incomeSubFilter === 'all' ? 'active' : ''}
+            onClick={() => setIncomeSubFilter('all')}
+          >
+            Todos los ingresos
+          </button>
+          <button
+            type="button"
+            className={incomeSubFilter === 'income' ? 'active' : ''}
+            onClick={() => setIncomeSubFilter('income')}
+          >
+            Ingresos reales
+          </button>
+          <button
+            type="button"
+            className={incomeSubFilter === 'reimbursement' ? 'active' : ''}
+            onClick={() => setIncomeSubFilter('reimbursement')}
+          >
+            Reembolsos / Bizums
+          </button>
+        </div>
+      )}
+
       <div className="filter-summary">
         {filter === 'income' ? (
-          <span>Total ingresos: <strong className="positive">+{money(stats.incomes)}</strong></span>
+          <span>
+            Total: <strong className="positive">+{money(stats.incomes)}</strong>
+            {stats.reimbursements > 0 && (
+              <small className="muted" style={{ marginLeft: 8 }}>
+                (Reales: +{money(stats.realIncomes)} · Reembolsos: +{money(stats.reimbursements)})
+              </small>
+            )}
+          </span>
         ) : filter === 'expense' ? (
           <span>Total gastos: <strong>−{money(stats.expenses)}</strong></span>
         ) : (
@@ -107,7 +157,10 @@ export function MovementsPage({
         <TransactionList
           transactions={filteredTransactions}
           categories={finance.categories}
+          expenseShares={finance.expenseShares}
           onSelect={onSelectTransaction}
+          onEdit={onSelectTransaction}
+          onDelete={(t) => finance.deleteTransaction(t.id)}
         />
       </section>
     </main>

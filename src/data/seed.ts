@@ -8,6 +8,8 @@ import type {
   SavingsGoal,
   SpecialPeriod,
   Transaction,
+  SharedContact,
+  ExpenseShare,
   UserProfile,
   VariableExpenseEstimate,
 } from '../models/finance'
@@ -148,5 +150,7 @@ export const cleanInitialFinanceState = {
   planSettings: cleanPlanSettings,
   profile: initialProfile,
   variableExpenseEstimates: [] as VariableExpenseEstimate[],
+  sharedContacts: [] as SharedContact[],
+  expenseShares: [] as ExpenseShare[],
 }
 

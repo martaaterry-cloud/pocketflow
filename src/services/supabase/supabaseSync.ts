@@ -9,12 +9,16 @@ import type {
   SavingsGoal,
   SpecialPeriod,
   Transaction,
+  IncomeKind,
+  SharedContact,
+  ExpenseShare,
+  RecurringSharingTemplate,
   UserProfile,
   VariableExpenseEstimate,
 } from '../../models/finance'
 import type { PersistedState } from '../storage/storageAdapter'
-import { migratePersistedState } from '../storage/localStorageAdapter'
 import { categories as seedCategories } from '../../data/seed'
+import { migratePersistedState } from '../storage/localStorageAdapter'
 
 // ==========================================================================
 // Estado limpio para producción (sin datos demo/seed)
@@ -46,6 +50,8 @@ export function createCleanInitialState(): PersistedState {
       displayName: '',
     },
     variableExpenseEstimates: [],
+    sharedContacts: [],
+    expenseShares: [],
   }
 }
 
@@ -105,6 +111,10 @@ export function toDbTransaction(tx: Transaction, userId: string) {
     date: tx.date,
     note: tx.note || null,
     recurring_payment_id: tx.recurringPaymentId || null,
+    income_kind: tx.incomeKind || 'income',
+    parent_expense_id: tx.parentExpenseId || null,
+    expense_share_id: tx.expenseShareId || null,
+    is_shared: Boolean(tx.isShared),
   }
 }
 
@@ -120,6 +130,10 @@ export function fromDbTransaction(row: Record<string, unknown>): Transaction {
     date: String(row.date),
     note: row.note ? String(row.note) : undefined,
     recurringPaymentId: row.recurring_payment_id ? String(row.recurring_payment_id) : undefined,
+    incomeKind: (row.income_kind as IncomeKind) || 'income',
+    parentExpenseId: row.parent_expense_id ? String(row.parent_expense_id) : undefined,
+    expenseShareId: row.expense_share_id ? String(row.expense_share_id) : undefined,
+    isShared: Boolean(row.is_shared),
   }
 }
 
@@ -206,6 +220,8 @@ export function toDbRecurring(r: RecurringPayment, userId: string) {
     frequency: r.frequency,
     next_date: r.nextDate,
     active: r.active,
+    is_shared: Boolean(r.isShared),
+    sharing_template: r.sharingTemplate || null,
   }
 }
 
@@ -219,6 +235,8 @@ export function fromDbRecurring(row: Record<string, unknown>): RecurringPayment 
     frequency: row.frequency as 'weekly' | 'monthly' | 'yearly',
     nextDate: String(row.next_date),
     active: Boolean(row.active),
+    isShared: Boolean(row.is_shared),
+    sharingTemplate: (row.sharing_template as RecurringSharingTemplate) || undefined,
   }
 }
 
@@ -323,6 +341,48 @@ export function fromDbVariableExpenseEstimate(row: Record<string, unknown>): Var
   }
 }
 
+export function toDbSharedContact(c: SharedContact, userId: string) {
+  return {
+    id: c.id,
+    user_id: userId,
+    display_name: c.displayName,
+  }
+}
+
+export function fromDbSharedContact(row: Record<string, unknown>): SharedContact {
+  return {
+    id: String(row.id),
+    displayName: String(row.display_name),
+    createdAt: row.created_at ? String(row.created_at) : undefined,
+    updatedAt: row.updated_at ? String(row.updated_at) : undefined,
+  }
+}
+
+export function toDbExpenseShare(s: ExpenseShare, userId: string) {
+  return {
+    id: s.id,
+    user_id: userId,
+    expense_transaction_id: s.expenseTransactionId,
+    contact_id: s.contactId || null,
+    participant_name: s.participantName,
+    is_payer_share: Boolean(s.isPayerShare),
+    expected_amount: s.expectedAmount,
+  }
+}
+
+export function fromDbExpenseShare(row: Record<string, unknown>): ExpenseShare {
+  return {
+    id: String(row.id),
+    expenseTransactionId: String(row.expense_transaction_id),
+    contactId: row.contact_id ? String(row.contact_id) : undefined,
+    participantName: String(row.participant_name),
+    isPayerShare: Boolean(row.is_payer_share),
+    expectedAmount: Number(row.expected_amount),
+    createdAt: row.created_at ? String(row.created_at) : undefined,
+    updatedAt: row.updated_at ? String(row.updated_at) : undefined,
+  }
+}
+
 // ==========================================================================
 // Operaciones de lectura segura (Validación estricta de errores)
 // ==========================================================================
@@ -343,6 +403,8 @@ export async function fetchRemoteState(
     settingsRes,
     profileRes,
     estimatesRes,
+    contactsRes,
+    sharesRes,
   ] = await Promise.all([
     supabase.from('accounts').select('*').eq('user_id', userId),
     supabase.from('categories').select('*').eq('user_id', userId),
@@ -355,6 +417,8 @@ export async function fetchRemoteState(
     supabase.from('financial_plan_settings').select('*').eq('user_id', userId).maybeSingle(),
     supabase.from('profiles').select('*').eq('user_id', userId).maybeSingle(),
     supabase.from('variable_expense_estimates').select('*').eq('user_id', userId),
+    supabase.from('shared_contacts').select('*').eq('user_id', userId),
+    supabase.from('expense_shares').select('*').eq('user_id', userId),
   ])
 
   // Comprobar errores en CADA query para evitar borrado accidental de datos locales
@@ -369,6 +433,8 @@ export async function fetchRemoteState(
   if (settingsRes.error) throw new Error(`[Sync] Error leyendo settings: ${settingsRes.error.message}`)
   if (profileRes.error) throw new Error(`[Sync] Error leyendo profiles: ${profileRes.error.message}`)
   if (estimatesRes.error) throw new Error(`[Sync] Error leyendo variable_expense_estimates: ${estimatesRes.error.message}`)
+  if (contactsRes.error) throw new Error(`[Sync] Error leyendo shared_contacts: ${contactsRes.error.message}`)
+  if (sharesRes.error) throw new Error(`[Sync] Error leyendo expense_shares: ${sharesRes.error.message}`)
 
   // Si no hay cuentas remotas, la base de datos de este usuario está virgen
   if (!accountsRes.data || accountsRes.data.length === 0) {
@@ -387,6 +453,8 @@ export async function fetchRemoteState(
     planSettings: settingsRes.data ? fromDbPlanSettings(settingsRes.data) : undefined,
     profile: profileRes.data ? fromDbProfile(profileRes.data) : { displayName: '' },
     variableExpenseEstimates: (estimatesRes.data ?? []).map(fromDbVariableExpenseEstimate),
+    sharedContacts: (contactsRes.data ?? []).map(fromDbSharedContact),
+    expenseShares: (sharesRes.data ?? []).map(fromDbExpenseShare),
   }
 
   return migratePersistedState(rawState)
@@ -569,6 +637,44 @@ export async function syncDeleteVariableExpenseEstimate(
   if (error) throw error
 }
 
+export async function syncUpsertSharedContact(
+  supabase: SupabaseClient,
+  userId: string,
+  contact: SharedContact
+): Promise<void> {
+  const row = toDbSharedContact(contact, userId)
+  const { error } = await supabase.from('shared_contacts').upsert(row)
+  if (error) throw error
+}
+
+export async function syncDeleteSharedContact(
+  supabase: SupabaseClient,
+  userId: string,
+  contactId: string
+): Promise<void> {
+  const { error } = await supabase.from('shared_contacts').delete().eq('id', contactId).eq('user_id', userId)
+  if (error) throw error
+}
+
+export async function syncUpsertExpenseShare(
+  supabase: SupabaseClient,
+  userId: string,
+  share: ExpenseShare
+): Promise<void> {
+  const row = toDbExpenseShare(share, userId)
+  const { error } = await supabase.from('expense_shares').upsert(row)
+  if (error) throw error
+}
+
+export async function syncDeleteExpenseShare(
+  supabase: SupabaseClient,
+  userId: string,
+  shareId: string
+): Promise<void> {
+  const { error } = await supabase.from('expense_shares').delete().eq('id', shareId).eq('user_id', userId)
+  if (error) throw error
+}
+
 // ==========================================================================
 // Subida completa (SOLO para migración inicial o restauración de backup)
 // ==========================================================================
@@ -645,6 +751,18 @@ export async function uploadStateToSupabase(
     if (state.variableExpenseEstimates?.length) {
       const dbEstimates = state.variableExpenseEstimates.map((e) => toDbVariableExpenseEstimate(e, userId))
       const { error } = await supabase.from('variable_expense_estimates').upsert(dbEstimates)
+      if (error) throw error
+    }
+
+    if (state.sharedContacts?.length) {
+      const dbContacts = state.sharedContacts.map((c) => toDbSharedContact(c, userId))
+      const { error } = await supabase.from('shared_contacts').upsert(dbContacts)
+      if (error) throw error
+    }
+
+    if (state.expenseShares?.length) {
+      const dbShares = state.expenseShares.map((s) => toDbExpenseShare(s, userId))
+      const { error } = await supabase.from('expense_shares').upsert(dbShares)
       if (error) throw error
     }
 

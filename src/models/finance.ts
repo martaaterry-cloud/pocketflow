@@ -18,6 +18,8 @@ export interface Category {
   iconKey?: string
 }
 
+export type IncomeKind = 'income' | 'reimbursement'
+
 export interface Transaction {
   id: string
   type: TransactionType
@@ -29,10 +31,52 @@ export interface Transaction {
   date: string
   note?: string
   recurringPaymentId?: string
+  incomeKind?: IncomeKind
+  parentExpenseId?: string
+  expenseShareId?: string
+  isShared?: boolean
 }
 
 export type CreateTransactionInput = Omit<Transaction, 'id'>
 export type UpdateTransactionInput = Partial<CreateTransactionInput>
+
+export interface SharedContact {
+  id: string
+  displayName: string
+  createdAt?: string
+  updatedAt?: string
+}
+
+export type CreateSharedContactInput = Omit<SharedContact, 'id' | 'createdAt' | 'updatedAt'>
+export type UpdateSharedContactInput = Partial<CreateSharedContactInput>
+
+export interface ExpenseShare {
+  id: string
+  expenseTransactionId: string
+  contactId?: string
+  participantName: string
+  isPayerShare: boolean
+  expectedAmount: number
+  createdAt?: string
+  updatedAt?: string
+}
+
+export type CreateExpenseShareInput = Omit<ExpenseShare, 'id' | 'createdAt' | 'updatedAt'>
+export type UpdateExpenseShareInput = Partial<CreateExpenseShareInput>
+
+export type ExpenseShareStatus = 'pending' | 'partial' | 'received'
+
+export interface RecurringSharingParticipant {
+  contactId?: string
+  name: string
+  amount: number
+}
+
+export interface RecurringSharingTemplate {
+  includePayer: boolean
+  splitType: 'equal' | 'custom'
+  participants: RecurringSharingParticipant[]
+}
 
 export interface SavingsGoal {
   id: string
@@ -59,6 +103,8 @@ export interface RecurringPayment {
   frequency: RecurringFrequency
   nextDate: string
   active: boolean
+  isShared?: boolean
+  sharingTemplate?: RecurringSharingTemplate
 }
 
 export type CreateRecurringPaymentInput = Omit<RecurringPayment, 'id'>

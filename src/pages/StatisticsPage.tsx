@@ -87,12 +87,17 @@ export function StatisticsPage({
 
         <div className="hero-kpis">
           <div className="hero-kpi-item">
-            <span>Ingresos</span>
-            <strong className="positive">+{money(stats.income)}</strong>
+            <span>{stats.reimbursements > 0 ? 'Ingresos reales' : 'Ingresos'}</span>
+            <strong className="positive">+{money(stats.realIncome)}</strong>
           </div>
           <div className="hero-kpi-item">
-            <span>Gastos</span>
-            <strong>−{money(stats.expenses)}</strong>
+            <span>{stats.reimbursements > 0 ? 'Gasto neto' : 'Gastos'}</span>
+            <strong>−{money(stats.netExpenses)}</strong>
+            {stats.reimbursements > 0 && (
+              <small className="hero-kpi-sub" style={{ color: '#8b5cf6' }}>
+                Bruto: {money(stats.expenses)} · Devuelto: +{money(stats.reimbursements)}
+              </small>
+            )}
           </div>
           <div className="hero-kpi-item">
             <span>Ahorro transferido</span>

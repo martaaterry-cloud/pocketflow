@@ -27,7 +27,10 @@ export interface PeriodStatistics {
   period: StatsPeriod
   dateRange: DateRange
   income: number
+  realIncome: number
+  reimbursements: number
   expenses: number
+  netExpenses: number
   savingsTransferred: number
   netFlow: number
   transactionCount: number
@@ -137,6 +140,8 @@ export function calculatePeriodStatistics(
   const periodTxs = filterTransactionsByRange(transactions, dateRange)
 
   let income = 0
+  let realIncome = 0
+  let reimbursements = 0
   let expenses = 0
   let savingsTransferred = 0
 
@@ -145,6 +150,11 @@ export function calculatePeriodStatistics(
   periodTxs.forEach((t) => {
     if (t.type === 'income') {
       income += t.amount
+      if (t.incomeKind === 'reimbursement') {
+        reimbursements += t.amount
+      } else {
+        realIncome += t.amount
+      }
     } else if (t.type === 'expense') {
       expenses += t.amount
       const catId = t.categoryId ?? 'other'
@@ -158,9 +168,13 @@ export function calculatePeriodStatistics(
   })
 
   income = Math.round(income * 100) / 100
+  realIncome = Math.round(realIncome * 100) / 100
+  reimbursements = Math.round(reimbursements * 100) / 100
   expenses = Math.round(expenses * 100) / 100
+  const netExpenses = Math.max(0, Math.round((expenses - reimbursements) * 100) / 100)
   savingsTransferred = Math.round(savingsTransferred * 100) / 100
-  const netFlow = Math.round((income - expenses) * 100) / 100
+  // Balance neto real = Ingresos reales - Gasto neto (o ingresos totales - gastos totales, ambos son numéricamente idénticos porque reimbursements se cancela en la resta)
+  const netFlow = Math.round((realIncome - netExpenses) * 100) / 100
 
   // Desglose por categoría
   const categoryBreakdown: CategoryExpenseBreakdown[] = []
@@ -201,7 +215,10 @@ export function calculatePeriodStatistics(
     period,
     dateRange,
     income,
+    realIncome,
+    reimbursements,
     expenses,
+    netExpenses,
     savingsTransferred,
     netFlow,
     transactionCount: periodTxs.length,

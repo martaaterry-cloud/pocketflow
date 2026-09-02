@@ -38,17 +38,26 @@ export function CalendarPage({
     setSelectedDay(today.getDate())
   }
 
-  const monthExpensesByDay = useMemo(() => {
-    const map = new Map<number, number>()
-    finance.transactions
-      .filter((t) => t.type === 'expense')
-      .forEach((t) => {
-        const d = new Date(t.date)
-        if (d.getFullYear() === year && d.getMonth() === month) {
-          const prev = map.get(d.getDate()) ?? 0
-          map.set(d.getDate(), Math.round((prev + t.amount) * 100) / 100)
+  const monthDataByDay = useMemo(() => {
+    const map = new Map<number, { expenses: number; realIncomes: number; reimbursements: number }>()
+
+    finance.transactions.forEach((t) => {
+      const d = new Date(t.date)
+      if (d.getFullYear() === year && d.getMonth() === month) {
+        const day = d.getDate()
+        const prev = map.get(day) ?? { expenses: 0, realIncomes: 0, reimbursements: 0 }
+        if (t.type === 'expense') {
+          prev.expenses = Math.round((prev.expenses + t.amount) * 100) / 100
+        } else if (t.type === 'income') {
+          if (t.incomeKind === 'reimbursement') {
+            prev.reimbursements = Math.round((prev.reimbursements + t.amount) * 100) / 100
+          } else {
+            prev.realIncomes = Math.round((prev.realIncomes + t.amount) * 100) / 100
+          }
         }
-      })
+        map.set(day, prev)
+      }
+    })
     return map
   }, [finance.transactions, month, year])
 
@@ -58,19 +67,24 @@ export function CalendarPage({
       return (
         d.getFullYear() === year &&
         d.getMonth() === month &&
-        d.getDate() === selectedDay &&
-        t.type === 'expense'
+        d.getDate() === selectedDay
       )
     })
   }, [finance.transactions, year, month, selectedDay])
 
-  const monthTotal = useMemo(() => {
+  const monthTotalExpenses = useMemo(() => {
     let total = 0
-    monthExpensesByDay.forEach((amount) => {
-      total += amount
+    monthDataByDay.forEach((data) => {
+      total += data.expenses
     })
     return Math.round(total * 100) / 100
-  }, [monthExpensesByDay])
+  }, [monthDataByDay])
+
+  const selectedDayStats = useMemo(() => {
+    const data = monthDataByDay.get(selectedDay) ?? { expenses: 0, realIncomes: 0, reimbursements: 0 }
+    const net = Math.round((data.realIncomes + data.reimbursements - data.expenses) * 100) / 100
+    return { ...data, net }
+  }, [monthDataByDay, selectedDay])
 
   const monthLabel = new Intl.DateTimeFormat('es-ES', { month: 'long', year: 'numeric' }).format(currentDate)
 
@@ -95,7 +109,7 @@ export function CalendarPage({
         </div>
 
         <div className="calendar-month-total">
-          <span>Gasto mensual: <strong>{money(monthTotal)}</strong></span>
+          <span>Gasto mensual: <strong>{money(monthTotalExpenses)}</strong></span>
         </div>
 
         <div className="calendar-grid weekdays">
@@ -110,9 +124,10 @@ export function CalendarPage({
           ))}
 
           {Array.from({ length: daysInMonth }, (_, i) => i + 1).map((day) => {
-            const hasExpense = monthExpensesByDay.has(day)
+            const data = monthDataByDay.get(day)
+            const hasExpense = data && data.expenses > 0
+            const hasIncome = data && (data.realIncomes > 0 || data.reimbursements > 0)
             const isSelected = selectedDay === day
-            const amount = monthExpensesByDay.get(day)
 
             return (
               <button
@@ -122,7 +137,13 @@ export function CalendarPage({
                 onClick={() => setSelectedDay(day)}
               >
                 <b>{day}</b>
-                {hasExpense && <small>{money(amount!)}</small>}
+                {hasExpense && <small>{money(data!.expenses)}</small>}
+                {hasIncome && (
+                  <span
+                    className="calendar-income-indicator"
+                    title={`Ingresos/Reembolsos`}
+                  />
+                )}
               </button>
             )
           })}
@@ -132,29 +153,67 @@ export function CalendarPage({
       <section className="section">
         <div className="section-title">
           <h2>Día {selectedDay} de {new Intl.DateTimeFormat('es-ES', { month: 'short' }).format(currentDate)}</h2>
-          <span>{money(selectedRows.reduce((s, t) => s + t.amount, 0))}</span>
+          <span className={selectedDayStats.net >= 0 ? 'positive' : ''}>
+            Balance: {selectedDayStats.net >= 0 ? '+' : ''}{money(selectedDayStats.net)}
+          </span>
         </div>
+
+        {/* Resumen del día */}
+        {(selectedDayStats.expenses > 0 || selectedDayStats.realIncomes > 0 || selectedDayStats.reimbursements > 0) && (
+          <div className="day-breakdown-row">
+            {selectedDayStats.expenses > 0 && <span>Gastos: <strong>−{money(selectedDayStats.expenses)}</strong></span>}
+            {selectedDayStats.realIncomes > 0 && <span className="positive">Ingresos: <strong>+{money(selectedDayStats.realIncomes)}</strong></span>}
+            {selectedDayStats.reimbursements > 0 && <span style={{ color: '#8b5cf6' }}>Reembolsos: <strong>+{money(selectedDayStats.reimbursements)}</strong></span>}
+          </div>
+        )}
 
         {selectedRows.length ? (
           <div className="transaction-list">
-            {selectedRows.map((t) => (
-              <div
-                className="mini-row clickable"
-                key={t.id}
-                onClick={() => onSelectTransaction?.(t)}
-                role="button"
-                tabIndex={0}
-              >
-                <div>
-                  <strong>{t.description}</strong>
-                  <span>Toca para editar o ver detalle</span>
+            {selectedRows.map((t) => {
+              const isIncome = t.type === 'income'
+              const isReimbursement = isIncome && t.incomeKind === 'reimbursement'
+              const isTransfer = t.type === 'transfer'
+
+              return (
+                <div
+                  className="mini-row clickable"
+                  key={t.id}
+                  onClick={() => onSelectTransaction?.(t)}
+                  role="button"
+                  tabIndex={0}
+                >
+                  <div>
+                    <strong>{t.description}</strong>
+                    <span>
+                      {isTransfer
+                        ? 'Transferencia'
+                        : isReimbursement
+                        ? 'Reembolso recibido'
+                        : isIncome
+                        ? 'Ingreso'
+                        : 'Gasto'}
+                    </span>
+                  </div>
+                  <strong
+                    className={`expense-amount ${
+                      isReimbursement
+                        ? 'positive reimbursement'
+                        : isIncome
+                        ? 'positive'
+                        : isTransfer
+                        ? 'transfer'
+                        : ''
+                    }`}
+                  >
+                    {isIncome ? '+' : isTransfer ? '↔ ' : '−'}
+                    {money(t.amount)}
+                  </strong>
                 </div>
-                <strong className="expense-amount">−{money(t.amount)}</strong>
-              </div>
-            ))}
+              )
+            })}
           </div>
         ) : (
-          <p className="muted">Sin gastos registrados para este día.</p>
+          <p className="muted">Sin movimientos registrados para este día.</p>
         )}
       </section>
     </main>

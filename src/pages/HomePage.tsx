@@ -161,6 +161,18 @@ export function HomePage({
                 {money(finance.totals.projectedAvailable)}
               </strong>
             </div>
+
+            {finance.totals.pendingReimbursements > 0 && (
+              <div className="hero-breakdown-row sub">
+                <div className="breakdown-label">
+                  <span>Por recuperar (gastos compartidos)</span>
+                  <small>Dinero que adelantaste y está pendiente de cobro</small>
+                </div>
+                <span className="breakdown-value" style={{ color: '#8b5cf6', fontWeight: 600 }}>
+                  +{money(finance.totals.pendingReimbursements)}
+                </span>
+              </div>
+            )}
           </div>
         )}
       </section>
@@ -210,6 +222,7 @@ export function HomePage({
         <TransactionList
           transactions={finance.transactions}
           categories={finance.categories}
+          expenseShares={finance.expenseShares}
           limit={5}
           onSelect={onSelectTransaction}
         />

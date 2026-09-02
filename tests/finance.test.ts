@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import type { Account, Budget, Category, FinancialPlanSettings, RecurringPayment, Reserve, SavingsGoal, SpecialPeriod, Transaction, UserProfile, VariableExpenseEstimate } from '../src/models/finance'
+import type { Account, Budget, Category, FinancialPlanSettings, RecurringPayment, Reserve, SavingsGoal, SpecialPeriod, Transaction, UserProfile, VariableExpenseEstimate, SharedContact, ExpenseShare } from '../src/models/finance'
 import { calculateAccountBalance, reconcileAccounts } from '../src/utils/balance'
 import { money } from '../src/utils/money'
 import type { PersistedState, StorageAdapter } from '../src/services/storage/storageAdapter'
@@ -31,6 +31,27 @@ import {
   selectRealAvailable,
   selectRecurringPaymentCycleStatus,
 } from '../src/utils/financeSelectors'
+import {
+  splitExpenseEqually,
+  selectGrossExpenses,
+  selectReimbursementsReceived,
+  selectNetPersonalExpenses,
+  selectRealIncome,
+  selectPendingReimbursements,
+  selectExpenseShareStatus,
+  selectPendingDebtors,
+  selectExpenseShareDetails,
+} from '../src/utils/sharedExpenseSelectors'
+import {
+  toDbSharedContact,
+  fromDbSharedContact,
+  toDbExpenseShare,
+  fromDbExpenseShare,
+  syncUpsertSharedContact,
+  syncDeleteSharedContact,
+  syncUpsertExpenseShare,
+  syncDeleteExpenseShare,
+} from '../src/services/supabase/supabaseSync'
 import {
   toDbAccount,
   fromDbAccount,
@@ -4325,6 +4346,396 @@ describe('Fase 13 — Disponible Proyectado, Tarjeta Expandible y Confirmación 
     // Debe incluir los decimales de céntimos (1,50 €) y no redondearse erróneamente a 2 €
     assert.ok(formatted.includes('1,50'))
     assert.ok(!formatted.startsWith('2'))
+  })
+
+  /* ==========================================================================
+     FASE 14 — INGRESOS REALES, REEMBOLSOS, GASTOS COMPARTIDOS Y RECURRENTES
+     ========================================================================== */
+
+  it('206. Reparto exacto de céntimos: 7,49 € entre 3 con pagador -> 2,49 € pagador, 2,50 € y 2,50 € contactos (suma exacta 7,49 €)', () => {
+    const contacts = [
+      { name: 'Manuela', contactId: 'c1' },
+      { name: 'Pepa', contactId: 'c2' },
+    ]
+    const shares = splitExpenseEqually(7.49, contacts, true, 'Marta')
+
+    assert.equal(shares.length, 3)
+    const payerShare = shares.find((s) => s.isPayerShare)
+    const manuelaShare = shares.find((s) => s.participantName === 'Manuela')
+    const pepaShare = shares.find((s) => s.participantName === 'Pepa')
+
+    assert.ok(payerShare)
+    assert.ok(manuelaShare)
+    assert.ok(pepaShare)
+
+    assert.equal(payerShare.amount, 2.49)
+    assert.equal(manuelaShare.amount, 2.50)
+    assert.equal(pepaShare.amount, 2.50)
+
+    const sum = Math.round((payerShare.amount + manuelaShare.amount + pepaShare.amount) * 100) / 100
+    assert.equal(sum, 7.49)
+  })
+
+  it('207. Reparto exacto de céntimos: 10,00 € entre 3 con pagador -> 3,34 € pagador, 3,33 € y 3,33 € contactos (suma 10,00 €)', () => {
+    const contacts = [
+      { name: 'Amigo 1' },
+      { name: 'Amigo 2' },
+    ]
+    const shares = splitExpenseEqually(10.00, contacts, true, 'Tú')
+
+    assert.equal(shares.length, 3)
+    const sum = Math.round(shares.reduce((s, x) => s + x.amount, 0) * 100) / 100
+    assert.equal(sum, 10.00)
+
+    const amounts = shares.map((s) => s.amount).sort()
+    assert.deepEqual(amounts, [3.33, 3.33, 3.34])
+  })
+
+  it('208. Reparto sin participación del pagador: el importe se divide íntegramente entre los externos sin cuota de pagador', () => {
+    const contacts = [
+      { name: 'Amigo 1' },
+      { name: 'Amigo 2' },
+    ]
+    const shares = splitExpenseEqually(20.00, contacts, false, 'Tú')
+
+    assert.equal(shares.length, 2)
+    assert.ok(!shares.some((s) => s.isPayerShare))
+    assert.equal(shares[0].amount, 10.00)
+    assert.equal(shares[1].amount, 10.00)
+    assert.equal(shares[0].amount + shares[1].amount, 20.00)
+  })
+
+  it('209. Gasto compartido inicial: genera expenseShares en estado pending con importes correctos', () => {
+    const expenseTx: Transaction = {
+      id: 'tx_dinner_1',
+      accountId: 'daily',
+      type: 'expense',
+      amount: 60.00,
+      description: 'Cena compartida',
+      date: '2026-09-02T20:00:00.000Z',
+      isShared: true,
+    }
+
+    const shares: ExpenseShare[] = [
+      { id: 'sh_p', expenseTransactionId: 'tx_dinner_1', participantName: 'Tú', isPayerShare: true, expectedAmount: 20.00 },
+      { id: 'sh_m', expenseTransactionId: 'tx_dinner_1', participantName: 'Manuela', isPayerShare: false, expectedAmount: 20.00 },
+      { id: 'sh_pe', expenseTransactionId: 'tx_dinner_1', participantName: 'Pepa', isPayerShare: false, expectedAmount: 20.00 },
+    ]
+
+    const txs = [expenseTx]
+
+    const manuelaStatus = selectExpenseShareStatus(shares[1], txs)
+    assert.equal(manuelaStatus.status, 'pending')
+    assert.equal(manuelaStatus.receivedAmount, 0)
+    assert.equal(manuelaStatus.pendingAmount, 20.00)
+
+    const totalPending = selectPendingReimbursements(shares, txs)
+    assert.equal(totalPending, 40.00) // Solo cuotas de Manuela y Pepa (40 €)
+  })
+
+  it('210. Bizum parcial: abono de 10 € sobre 20 € pasa a partial y deja 10 € pendientes', () => {
+    const expenseTx: Transaction = {
+      id: 'tx_dinner_1',
+      accountId: 'daily',
+      type: 'expense',
+      amount: 60.00,
+      description: 'Cena compartida',
+      date: '2026-09-02T20:00:00.000Z',
+      isShared: true,
+    }
+
+    const shareManuela: ExpenseShare = {
+      id: 'sh_m',
+      expenseTransactionId: 'tx_dinner_1',
+      participantName: 'Manuela',
+      isPayerShare: false,
+      expectedAmount: 20.00,
+    }
+
+    const reimbursementPartial: Transaction = {
+      id: 'tx_reimb_1',
+      accountId: 'daily',
+      type: 'income',
+      incomeKind: 'reimbursement',
+      amount: 10.00,
+      description: 'Bizum Manuela parte cena',
+      date: '2026-09-03T10:00:00.000Z',
+      parentExpenseId: 'tx_dinner_1',
+      expenseShareId: 'sh_m',
+    }
+
+    const txs = [expenseTx, reimbursementPartial]
+
+    const status = selectExpenseShareStatus(shareManuela, txs)
+    assert.equal(status.status, 'partial')
+    assert.equal(status.receivedAmount, 10.00)
+    assert.equal(status.pendingAmount, 10.00)
+
+    const pending = selectPendingReimbursements([shareManuela], txs)
+    assert.equal(pending, 10.00)
+  })
+
+  it('211. Bizum total: abono del restante completa la deuda (received) y deja 0 € pendiente', () => {
+    const expenseTx: Transaction = {
+      id: 'tx_dinner_1',
+      accountId: 'daily',
+      type: 'expense',
+      amount: 60.00,
+      description: 'Cena compartida',
+      date: '2026-09-02T20:00:00.000Z',
+      isShared: true,
+    }
+
+    const shareManuela: ExpenseShare = {
+      id: 'sh_m',
+      expenseTransactionId: 'tx_dinner_1',
+      participantName: 'Manuela',
+      isPayerShare: false,
+      expectedAmount: 20.00,
+    }
+
+    const r1: Transaction = {
+      id: 'tx_r1',
+      accountId: 'daily',
+      type: 'income',
+      incomeKind: 'reimbursement',
+      amount: 10.00,
+      description: 'Bizum Manuela parte 1',
+      date: '2026-09-03T10:00:00.000Z',
+      parentExpenseId: 'tx_dinner_1',
+      expenseShareId: 'sh_m',
+    }
+
+    const r2: Transaction = {
+      id: 'tx_r2',
+      accountId: 'daily',
+      type: 'income',
+      incomeKind: 'reimbursement',
+      amount: 10.00,
+      description: 'Bizum Manuela parte 2',
+      date: '2026-09-03T11:00:00.000Z',
+      parentExpenseId: 'tx_dinner_1',
+      expenseShareId: 'sh_m',
+    }
+
+    const txs = [expenseTx, r1, r2]
+
+    const status = selectExpenseShareStatus(shareManuela, txs)
+    assert.equal(status.status, 'received')
+    assert.equal(status.receivedAmount, 20.00)
+    assert.equal(status.pendingAmount, 0.00)
+
+    const pending = selectPendingReimbursements([shareManuela], txs)
+    assert.equal(pending, 0.00)
+  })
+
+  it('212. Reversibilidad: eliminar una transacción de reembolso restaura automáticamente la deuda pendiente', () => {
+    const expenseTx: Transaction = {
+      id: 'tx_dinner_1',
+      accountId: 'daily',
+      type: 'expense',
+      amount: 60.00,
+      description: 'Cena compartida',
+      date: '2026-09-02T20:00:00.000Z',
+      isShared: true,
+    }
+
+    const shareManuela: ExpenseShare = {
+      id: 'sh_m',
+      expenseTransactionId: 'tx_dinner_1',
+      participantName: 'Manuela',
+      isPayerShare: false,
+      expectedAmount: 20.00,
+    }
+
+    let txs = [
+      expenseTx,
+      {
+        id: 'tx_r_to_delete',
+        accountId: 'daily',
+        type: 'income' as const,
+        incomeKind: 'reimbursement' as const,
+        amount: 20.00,
+        description: 'Bizum Manuela que luego se cancela',
+        date: '2026-09-03T10:00:00.000Z',
+        parentExpenseId: 'tx_dinner_1',
+        expenseShareId: 'sh_m',
+      },
+    ]
+
+    // Antes de borrar: pagado
+    assert.equal(selectExpenseShareStatus(shareManuela, txs).status, 'received')
+    assert.equal(selectPendingReimbursements([shareManuela], txs), 0.00)
+
+    // Simulamos borrado de la transacción de reembolso
+    txs = txs.filter((t) => t.id !== 'tx_r_to_delete')
+
+    // Después de borrar: automáticamente vuelve a estar pendiente sin flags estáticos rotos
+    const revertedStatus = selectExpenseShareStatus(shareManuela, txs)
+    assert.equal(revertedStatus.status, 'pending')
+    assert.equal(revertedStatus.pendingAmount, 20.00)
+    assert.equal(selectPendingReimbursements([shareManuela], txs), 20.00)
+  })
+
+  it('213. selectRealIncome vs selectReimbursementsReceived: los reembolsos nunca inflan los ingresos reales', () => {
+    const txs: Transaction[] = [
+      { id: '1', accountId: 'daily', type: 'income', incomeKind: 'income', amount: 2000.00, description: 'Nómina', date: '2026-09-01T10:00:00.000Z' },
+      { id: '2', accountId: 'daily', type: 'income', incomeKind: 'income', amount: 50.00, description: 'Regalo', date: '2026-09-02T10:00:00.000Z' },
+      { id: '3', accountId: 'daily', type: 'income', incomeKind: 'reimbursement', amount: 40.00, description: 'Bizum cena', date: '2026-09-03T10:00:00.000Z' },
+    ]
+
+    const realIncome = selectRealIncome(txs)
+    const reimbursements = selectReimbursementsReceived(txs)
+
+    assert.equal(realIncome, 2050.00)
+    assert.equal(reimbursements, 40.00)
+  })
+
+  it('214. selectNetPersonalExpenses: descuenta correctamente los reembolsos del gasto bruto', () => {
+    const txs: Transaction[] = [
+      { id: 'e1', accountId: 'daily', type: 'expense', amount: 60.00, description: 'Cena 3 personas', date: '2026-09-02T20:00:00.000Z' },
+      { id: 'e2', accountId: 'daily', type: 'expense', amount: 15.00, description: 'Farmacia personal', date: '2026-09-03T10:00:00.000Z' },
+      { id: 'r1', accountId: 'daily', type: 'income', incomeKind: 'reimbursement', amount: 40.00, description: 'Bizums amigos cena', date: '2026-09-04T10:00:00.000Z' },
+    ]
+
+    const gross = selectGrossExpenses(txs) // 75.00
+    const reimbursements = selectReimbursementsReceived(txs) // 40.00
+    const net = selectNetPersonalExpenses(txs) // 35.00 (20 € cena propia + 15 € farmacia)
+
+    assert.equal(gross, 75.00)
+    assert.equal(reimbursements, 40.00)
+    assert.equal(net, 35.00)
+  })
+
+  it('215. Recurrente compartido: cada ciclo crea shares independientes y nunca reutiliza estado pagado', () => {
+    const recurring: RecurringPayment = {
+      id: 'rec_crunchyroll',
+      name: 'Crunchyroll Mega Fan',
+      amount: 7.49,
+      categoryId: 'entertainment',
+      accountId: 'daily',
+      frequency: 'monthly',
+      paymentDay: 5,
+      isShared: true,
+      sharingTemplate: {
+        selfParticipates: true,
+        participants: [
+          { name: 'Manuela', contactId: 'c_manuela', expectedAmount: 2.50 },
+          { name: 'Pepa', contactId: 'c_pepa', expectedAmount: 2.50 },
+        ],
+      },
+      active: true,
+    }
+
+    // Ciclo 1 (Septiembre): Gasto creado y cobro recibido
+    const txSep: Transaction = {
+      id: 'tx_rec_sep',
+      accountId: 'daily',
+      type: 'expense',
+      amount: 7.49,
+      description: 'Crunchyroll Mega Fan (Septiembre 2026)',
+      date: '2026-09-05T00:00:00.000Z',
+      isShared: true,
+    }
+    const shareSepManuela: ExpenseShare = {
+      id: 'sh_sep_manuela',
+      expenseTransactionId: 'tx_rec_sep',
+      participantName: 'Manuela',
+      isPayerShare: false,
+      expectedAmount: 2.50,
+    }
+    const reimbSep: Transaction = {
+      id: 'tx_reimb_sep',
+      accountId: 'daily',
+      type: 'income',
+      incomeKind: 'reimbursement',
+      amount: 2.50,
+      description: 'Bizum Manuela Crunchyroll Sep',
+      date: '2026-09-06T00:00:00.000Z',
+      parentExpenseId: 'tx_rec_sep',
+      expenseShareId: 'sh_sep_manuela',
+    }
+
+    // Ciclo 2 (Octubre): Gasto confirmado con NUEVAS shares
+    const txOct: Transaction = {
+      id: 'tx_rec_oct',
+      accountId: 'daily',
+      type: 'expense',
+      amount: 7.49,
+      description: 'Crunchyroll Mega Fan (Octubre 2026)',
+      date: '2026-10-05T00:00:00.000Z',
+      isShared: true,
+    }
+    const shareOctManuela: ExpenseShare = {
+      id: 'sh_oct_manuela',
+      expenseTransactionId: 'tx_rec_oct',
+      participantName: 'Manuela',
+      isPayerShare: false,
+      expectedAmount: 2.50,
+    }
+
+    const txs = [txSep, reimbSep, txOct]
+
+    // Septiembre está pagado
+    assert.equal(selectExpenseShareStatus(shareSepManuela, txs).status, 'received')
+    assert.equal(selectExpenseShareStatus(shareSepManuela, txs).pendingAmount, 0.00)
+
+    // Octubre es una share completamente nueva y está PENDIENTE
+    assert.equal(selectExpenseShareStatus(shareOctManuela, txs).status, 'pending')
+    assert.equal(selectExpenseShareStatus(shareOctManuela, txs).pendingAmount, 2.50)
+  })
+
+  it('216. selectPendingDebtors: agrupa personas con deuda y calcula sus importes pendientes acumulados', () => {
+    const shares: ExpenseShare[] = [
+      { id: 's1', expenseTransactionId: 'tx1', participantName: 'Manuela', isPayerShare: false, expectedAmount: 15.00 },
+      { id: 's2', expenseTransactionId: 'tx2', participantName: 'Manuela', isPayerShare: false, expectedAmount: 10.00 },
+      { id: 's3', expenseTransactionId: 'tx1', participantName: 'Pepa', isPayerShare: false, expectedAmount: 15.00 },
+    ]
+
+    const txs: Transaction[] = [
+      { id: 'tx1', accountId: 'daily', type: 'expense', amount: 45.00, description: 'Cena', date: '2026-09-01T00:00:00.000Z' },
+      { id: 'tx2', accountId: 'daily', type: 'expense', amount: 20.00, description: 'Taxi', date: '2026-09-02T00:00:00.000Z' },
+      // Manuela pagó 5 € del taxi
+      { id: 'r1', accountId: 'daily', type: 'income', incomeKind: 'reimbursement', amount: 5.00, description: 'Bizum taxi', date: '2026-09-03T00:00:00.000Z', expenseShareId: 's2' },
+    ]
+
+    const debtors = selectPendingDebtors(shares, txs)
+    assert.equal(debtors.length, 2)
+    // Manuela debe 15 + (10 - 5) = 20 €
+    const manuela = debtors.find((d) => d.name === 'Manuela')!
+    assert.equal(manuela.totalPending, 20.00)
+    assert.equal(manuela.pendingShares.length, 2)
+
+    // Pepa debe 15 €
+    const pepa = debtors.find((d) => d.name === 'Pepa')!
+    assert.equal(pepa.totalPending, 15.00)
+    assert.equal(pepa.pendingShares.length, 1)
+  })
+
+  it('217. Sincronización Supabase mappers: toDbSharedContact y toDbExpenseShare preservan campos exactos', () => {
+    const contact: SharedContact = {
+      id: 'cont_1',
+      displayName: 'Manuela Pérez',
+      createdAt: '2026-09-02T10:00:00.000Z',
+    }
+    const dbContact = toDbSharedContact(contact, 'user_marta')
+    assert.equal(dbContact.id, 'cont_1')
+    assert.equal(dbContact.user_id, 'user_marta')
+    assert.equal(dbContact.display_name, 'Manuela Pérez')
+
+    const share: ExpenseShare = {
+      id: 'sh_test_1',
+      expenseTransactionId: 'tx_orig',
+      contactId: 'cont_1',
+      participantName: 'Manuela Pérez',
+      isPayerShare: false,
+      expectedAmount: 14.99,
+    }
+    const dbShare = toDbExpenseShare(share, 'user_marta')
+    assert.equal(dbShare.id, 'sh_test_1')
+    assert.equal(dbShare.user_id, 'user_marta')
+    assert.equal(dbShare.expected_amount, 14.99)
+    assert.equal(dbShare.is_payer_share, false)
   })
 })
 
