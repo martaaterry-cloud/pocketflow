@@ -2,6 +2,7 @@ import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import type { Account, Budget, Category, FinancialPlanSettings, RecurringPayment, Reserve, SavingsGoal, SpecialPeriod, Transaction, UserProfile, VariableExpenseEstimate } from '../src/models/finance'
 import { calculateAccountBalance, reconcileAccounts } from '../src/utils/balance'
+import { money } from '../src/utils/money'
 import type { PersistedState, StorageAdapter } from '../src/services/storage/storageAdapter'
 import { LocalStorageAdapter, migratePersistedState } from '../src/services/storage/localStorageAdapter'
 import { IndexedDbAdapter } from '../src/services/storage/indexedDbAdapter'
@@ -4316,6 +4317,14 @@ describe('Fase 13 — Disponible Proyectado, Tarjeta Expandible y Confirmación 
     assert.equal(selectSavingsBalance(accounts), 200.0)
     assert.equal(realAvailable, 350.0)
     assert.equal(projected, 330.0)
+  })
+
+  it('205. Calendario: importe diario de 1,50 € se formatea con money() y no se redondea a 2 €', () => {
+    const amount = 1.5
+    const formatted = money(amount)
+    // Debe incluir los decimales de céntimos (1,50 €) y no redondearse erróneamente a 2 €
+    assert.ok(formatted.includes('1,50'))
+    assert.ok(!formatted.startsWith('2'))
   })
 })
 

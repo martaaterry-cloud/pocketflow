@@ -45,7 +45,8 @@ export function CalendarPage({
       .forEach((t) => {
         const d = new Date(t.date)
         if (d.getFullYear() === year && d.getMonth() === month) {
-          map.set(d.getDate(), (map.get(d.getDate()) ?? 0) + t.amount)
+          const prev = map.get(d.getDate()) ?? 0
+          map.set(d.getDate(), Math.round((prev + t.amount) * 100) / 100)
         }
       })
     return map
@@ -68,7 +69,7 @@ export function CalendarPage({
     monthExpensesByDay.forEach((amount) => {
       total += amount
     })
-    return total
+    return Math.round(total * 100) / 100
   }, [monthExpensesByDay])
 
   const monthLabel = new Intl.DateTimeFormat('es-ES', { month: 'long', year: 'numeric' }).format(currentDate)
@@ -121,7 +122,7 @@ export function CalendarPage({
                 onClick={() => setSelectedDay(day)}
               >
                 <b>{day}</b>
-                {hasExpense && <small>{Math.round(amount!)}€</small>}
+                {hasExpense && <small>{money(amount!)}</small>}
               </button>
             )
           })}

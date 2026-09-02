@@ -559,9 +559,11 @@ button, input, select {
 }
 
 .calendar-day-btn small {
-  font-size: 9px;
+  font-size: 8.5px;
   color: var(--accent-red);
   font-weight: 600;
+  letter-spacing: -0.3px;
+  white-space: nowrap;
 }
 
 .calendar-day-btn.has-expense {
