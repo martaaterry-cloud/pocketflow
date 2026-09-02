@@ -161,10 +161,6 @@ export function HomePage({
                 {money(finance.totals.projectedAvailable)}
               </strong>
             </div>
-
-            <div className="hero-breakdown-hint">
-              <span>Toca cualquier parte de la tarjeta para cerrar</span>
-            </div>
           </div>
         )}
       </section>
