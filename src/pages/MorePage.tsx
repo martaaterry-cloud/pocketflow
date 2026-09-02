@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import type { ReturnTypeFinance } from '../types'
 import { money } from '../utils/money'
 import { AppIcon } from '../ui/icons'
@@ -14,7 +14,7 @@ import { StatisticsPage } from './StatisticsPage'
 import { ProfilePage } from './ProfilePage'
 import { VariableEstimatesPage } from './VariableEstimatesPage'
 
-type MoreSubView =
+export type MoreSubView =
   | 'menu'
   | 'profile'
   | 'accounts'
@@ -30,17 +30,25 @@ type MoreSubView =
 export function MorePage({
   finance,
   user,
+  initialSubView = 'menu',
   onNavigateToSavings,
   onToast,
   onSignOut,
 }: {
   finance: ReturnTypeFinance
   user?: User | null
+  initialSubView?: MoreSubView
   onNavigateToSavings?: () => void
   onToast?: (message: string, type?: 'success' | 'error') => void
   onSignOut?: () => void
 }) {
-  const [subView, setSubView] = useState<MoreSubView>('menu')
+  const [subView, setSubView] = useState<MoreSubView>(initialSubView)
+
+  useEffect(() => {
+    if (initialSubView) {
+      setSubView(initialSubView)
+    }
+  }, [initialSubView])
 
   if (subView === 'profile') {
     return (

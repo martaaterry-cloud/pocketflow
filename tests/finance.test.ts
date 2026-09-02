@@ -19,7 +19,9 @@ import {
   calculatePendingEstimate,
   calculateVariableEstimatesSummary,
   normalizeEstimateName,
+  selectPendingVariableExpenseEstimate,
 } from '../src/utils/variableEstimates'
+import { selectMonthExpenses } from '../src/utils/financeSelectors'
 import {
   toDbAccount,
   fromDbAccount,
@@ -3693,7 +3695,132 @@ describe('Fase 12 — Gastos Variables Previstos', () => {
     // @ts-expect-error Cleanup
     delete globalThis.localStorage
   })
+
+  /* ==========================================================================
+     Indicador Home y Selector Puro selectPendingVariableExpenseEstimate
+     ========================================================================== */
+
+  it('179. selectPendingVariableExpenseEstimate: sin estimaciones devuelve 0', () => {
+    assert.equal(selectPendingVariableExpenseEstimate([], []), 0)
+    assert.equal(selectPendingVariableExpenseEstimate(null as any, []), 0)
+  })
+
+  it('180. selectPendingVariableExpenseEstimate: Gimnasio Rafa 25,98 previsto / 0 real -> 25,98 pendiente', () => {
+    const gymEstimate: VariableExpenseEstimate = {
+      id: 'est_gym',
+      name: 'Gimnasio Rafa',
+      categoryId: 'sport',
+      unitCost: 1.5,
+      frequencyType: 'per_week',
+      frequencyValue: 4,
+      active: true,
+    }
+
+    const pending = selectPendingVariableExpenseEstimate([gymEstimate], [], '2026-09')
+    assert.equal(pending, 25.98)
+  })
+
+  it('181. selectPendingVariableExpenseEstimate: 1,50 real -> 24,48 pendiente', () => {
+    const gymEstimate: VariableExpenseEstimate = {
+      id: 'est_gym',
+      name: 'Gimnasio Rafa',
+      categoryId: 'sport',
+      unitCost: 1.5,
+      frequencyType: 'per_week',
+      frequencyValue: 4,
+      active: true,
+    }
+
+    const tx: Transaction = {
+      id: 'tx_gym_real_1',
+      type: 'expense',
+      amount: 1.5,
+      description: 'Gimnasio Rafa',
+      categoryId: 'sport',
+      accountId: 'daily',
+      date: '2026-09-02T10:00:00.000Z',
+    }
+
+    const pending = selectPendingVariableExpenseEstimate([gymEstimate], [tx], '2026-09')
+    assert.equal(pending, 24.48)
+  })
+
+  it('182. selectPendingVariableExpenseEstimate: si real supera previsto -> pendiente 0', () => {
+    const gymEstimate: VariableExpenseEstimate = {
+      id: 'est_gym',
+      name: 'Gimnasio Rafa',
+      categoryId: 'sport',
+      unitCost: 1.5,
+      frequencyType: 'per_week',
+      frequencyValue: 4,
+      active: true,
+    }
+
+    const txOver: Transaction = {
+      id: 'tx_gym_over',
+      type: 'expense',
+      amount: 30.0,
+      description: 'Gimnasio Rafa',
+      categoryId: 'sport',
+      accountId: 'daily',
+      date: '2026-09-02T10:00:00.000Z',
+    }
+
+    const pending = selectPendingVariableExpenseEstimate([gymEstimate], [txOver], '2026-09')
+    assert.equal(pending, 0)
+  })
+
+  it('183. selectPendingVariableExpenseEstimate: estimaciones inactivas no cuentan', () => {
+    const inactiveGym: VariableExpenseEstimate = {
+      id: 'est_gym_paused',
+      name: 'Gimnasio Rafa',
+      categoryId: 'sport',
+      unitCost: 1.5,
+      frequencyType: 'per_week',
+      frequencyValue: 4,
+      active: false,
+    }
+
+    const pending = selectPendingVariableExpenseEstimate([inactiveGym], [], '2026-09')
+    assert.equal(pending, 0)
+  })
+
+  it('184. Home: indicador de variable pendiente no altera "Gastado este mes"', () => {
+    const gymEstimate: VariableExpenseEstimate = {
+      id: 'est_gym',
+      name: 'Gimnasio Rafa',
+      categoryId: 'sport',
+      unitCost: 1.5,
+      frequencyType: 'per_week',
+      frequencyValue: 4,
+      active: true,
+    }
+
+    const txs: Transaction[] = [
+      {
+        id: 'tx_food',
+        type: 'expense',
+        amount: 45.5,
+        description: 'Supermercado',
+        categoryId: 'food',
+        accountId: 'daily',
+        date: '2026-09-01T12:00:00.000Z',
+      },
+    ]
+
+    const targetDate = new Date('2026-09-02T12:00:00.000Z')
+    const actualMonthExpenses = selectMonthExpenses(txs, targetDate)
+    const pendingVariable = selectPendingVariableExpenseEstimate([gymEstimate], txs, '2026-09')
+
+    // El gasto real del mes es exactamente 45.50 € (las transacciones reales)
+    assert.equal(actualMonthExpenses, 45.5)
+    // El pendiente estimado variable es 25.98 €
+    assert.equal(pendingVariable, 25.98)
+    // "Gastado este mes" NO se incrementa con la estimación variable (no hay mezcla)
+    assert.equal(actualMonthExpenses, 45.5)
+  })
 })
+
 
 
 

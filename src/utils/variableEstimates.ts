@@ -108,3 +108,36 @@ export function calculateVariableEstimatesSummary(
     activeCount: activeEstimates.length,
   }
 }
+
+/**
+ * Selector puro para calcular el total pendiente estimado de los gastos variables previstos:
+ * sum(max(0, estimated_monthly - actual_month_spend_matching_estimate))
+ * Considera únicamente estimaciones activas (active: true).
+ */
+export function selectPendingVariableExpenseEstimate(
+  estimates: VariableExpenseEstimate[],
+  transactions: Transaction[],
+  monthKey?: string
+): number {
+  if (!estimates || !Array.isArray(estimates) || estimates.length === 0) {
+    return 0
+  }
+
+  const activeEstimates = estimates.filter((e) => e.active)
+  if (activeEstimates.length === 0) {
+    return 0
+  }
+
+  const currentMonth = monthKey || new Date().toISOString().slice(0, 7)
+
+  let totalPending = 0
+  for (const est of activeEstimates) {
+    const monthly = calculateMonthlyEstimate(est.unitCost, est.frequencyType, est.frequencyValue)
+    const real = calculateRealSpentForEstimate(est, transactions, currentMonth)
+    const pending = calculatePendingEstimate(monthly, real)
+    totalPending += pending
+  }
+
+  return Math.round(totalPending * 100) / 100
+}
+

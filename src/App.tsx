@@ -6,7 +6,7 @@ import type { Transaction } from './models/finance'
 import { CalendarPage } from './pages/CalendarPage'
 import { HomePage } from './pages/HomePage'
 import { LoginPage } from './pages/LoginPage'
-import { MorePage } from './pages/MorePage'
+import { MorePage, type MoreSubView } from './pages/MorePage'
 import { MovementsPage } from './pages/MovementsPage'
 import { SavingsPage } from './pages/SavingsPage'
 import { AppIcon } from './ui/icons'
@@ -23,6 +23,7 @@ export type SyncStatus = 'connecting' | 'connected' | 'syncing' | 'up_to_date' |
 export default function App() {
   const finance = useFinance()
   const [tab, setTab] = useState<Tab>('home')
+  const [moreSubView, setMoreSubView] = useState<MoreSubView>('menu')
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [selectedTx, setSelectedTx] = useState<Transaction | null>(null)
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null)
@@ -434,6 +435,10 @@ export default function App() {
           finance={finance}
           onAdd={handleOpenAdd}
           onSelectTransaction={handleSelectTransaction}
+          onNavigateToVariableEstimates={() => {
+            setMoreSubView('variable_estimates')
+            setTab('more')
+          }}
         />
       )}
       {tab === 'movements' && (
@@ -454,6 +459,7 @@ export default function App() {
         <MorePage
           finance={finance}
           user={user}
+          initialSubView={moreSubView}
           onNavigateToSavings={() => setTab('savings')}
           onToast={showToast}
           onSignOut={() => setUser(null)}
@@ -496,7 +502,10 @@ export default function App() {
         <button
           type="button"
           className={tab === 'more' ? 'active' : ''}
-          onClick={() => setTab('more')}
+          onClick={() => {
+            setMoreSubView('menu')
+            setTab('more')
+          }}
         >
           <span className="nav-icon"><AppIcon name="more-horizontal" size={20} /></span>
           <span className="nav-label">Más</span>
