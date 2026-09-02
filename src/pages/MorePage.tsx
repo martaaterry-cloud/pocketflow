@@ -13,6 +13,8 @@ import { SettingsPage } from './SettingsPage'
 import { StatisticsPage } from './StatisticsPage'
 import { ProfilePage } from './ProfilePage'
 import { VariableEstimatesPage } from './VariableEstimatesPage'
+import { ReceivablesPage } from './ReceivablesPage'
+import { selectPendingDebtors } from '../utils/sharedExpenseSelectors'
 
 export type MoreSubView =
   | 'menu'
@@ -21,6 +23,7 @@ export type MoreSubView =
   | 'settings'
   | 'recurring'
   | 'variable_estimates'
+  | 'receivables'
   | 'budgets'
   | 'statistics'
   | 'plan'
@@ -32,6 +35,7 @@ export function MorePage({
   user,
   initialSubView = 'menu',
   onNavigateToSavings,
+  onRecordReimbursement,
   onToast,
   onSignOut,
 }: {
@@ -39,6 +43,7 @@ export function MorePage({
   user?: User | null
   initialSubView?: MoreSubView
   onNavigateToSavings?: () => void
+  onRecordReimbursement?: (shareId: string) => void
   onToast?: (message: string, type?: 'success' | 'error') => void
   onSignOut?: () => void
 }) {
@@ -99,6 +104,16 @@ export function MorePage({
     return <VariableEstimatesPage finance={finance} onBack={() => setSubView('menu')} />
   }
 
+  if (subView === 'receivables') {
+    return (
+      <ReceivablesPage
+        finance={finance}
+        onBack={() => setSubView('menu')}
+        onRecordReimbursement={onRecordReimbursement ?? (() => {})}
+      />
+    )
+  }
+
   if (subView === 'budgets') {
     return <BudgetsPage finance={finance} onBack={() => setSubView('menu')} />
   }
@@ -110,6 +125,8 @@ export function MorePage({
   if (subView === 'plan') {
     return <PlanFinancialPage finance={finance} onBack={() => setSubView('menu')} />
   }
+
+  const pendingDebtors = selectPendingDebtors(finance.expenseShares ?? [], finance.transactions ?? [])
 
   return (
     <main className="page">
@@ -229,6 +246,21 @@ export function MorePage({
             <strong>Gastos variables previstos</strong>
             <small>
               {finance.variableExpenseEstimates?.length ?? 0} previstos · {money(finance.totals.variableEstimatesSummary?.totalEstimatedMonthly ?? 0)}/mes aprox.
+            </small>
+          </div>
+          <b className="chevron">
+            <AppIcon name="chevron-right" size={16} />
+          </b>
+        </button>
+
+        <button type="button" onClick={() => setSubView('receivables')}>
+          <span className="menu-icon" style={{ background: 'rgba(124, 58, 237, 0.1)', color: '#7c3aed' }}>
+            <AppIcon name="users" size={18} />
+          </span>
+          <div>
+            <strong>Por cobrar</strong>
+            <small>
+              {money(finance.totals.pendingReimbursements)} pendientes · {pendingDebtors.length} {pendingDebtors.length === 1 ? 'persona' : 'personas'}
             </small>
           </div>
           <b className="chevron">

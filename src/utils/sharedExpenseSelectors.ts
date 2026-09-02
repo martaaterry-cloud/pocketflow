@@ -1,10 +1,209 @@
-import type { ExpenseShare, ExpenseShareStatus, Transaction } from '../models/finance'
+import type { Category, ExpenseShare, ExpenseShareStatus, Transaction } from '../models/finance'
 
 export interface SplitResult {
   participantName: string
   contactId?: string
   isPayerShare: boolean
   amount: number
+}
+
+export interface NetCategoryExpense {
+  id: string
+  name: string
+  color: string
+  icon: string
+  amount: number
+  percentage: number
+}
+
+/**
+ * Reembolsos vinculados a un gasto concreto (por parentExpenseId).
+ */
+export function selectLinkedReimbursementsForExpense(
+  expenseId: string,
+  transactions: Transaction[]
+): number {
+  const reimbursements = transactions.filter(
+    (t) => t.type === 'income' && t.incomeKind === 'reimbursement' && t.parentExpenseId === expenseId
+  )
+  const sum = reimbursements.reduce((acc, t) => acc + t.amount, 0)
+  return Math.round(sum * 100) / 100
+}
+
+/**
+ * Gasto bruto del periodo = suma de todos los gastos (expense) realizados en el periodo.
+ */
+export function selectGrossExpensesForPeriod(
+  transactions: Transaction[],
+  referenceDate: Date = new Date(),
+  scope: 'month' | 'all' = 'month'
+): number {
+  const currentMonth = referenceDate.getMonth()
+  const currentYear = referenceDate.getFullYear()
+
+  const sum = transactions
+    .filter((t) => t.type === 'expense')
+    .filter((t) => {
+      if (scope === 'all') return true
+      const d = new Date(t.date)
+      return d.getMonth() === currentMonth && d.getFullYear() === currentYear
+    })
+    .reduce((acc, t) => acc + t.amount, 0)
+
+  return Math.round(sum * 100) / 100
+}
+
+export const selectGrossExpenses = selectGrossExpensesForPeriod
+
+/**
+ * Reembolsos vinculados a los gastos de este periodo.
+ * Solo descuenta reembolsos asociados a gastos cuya fecha pertenece al periodo,
+ * independientemente de la fecha en que se recibió el Bizum.
+ */
+export function selectLinkedReimbursementsForPeriod(
+  transactions: Transaction[],
+  referenceDate: Date = new Date(),
+  scope: 'month' | 'all' = 'month'
+): number {
+  const currentMonth = referenceDate.getMonth()
+  const currentYear = referenceDate.getFullYear()
+
+  const periodExpenses = transactions.filter((t) => {
+    if (t.type !== 'expense') return false
+    if (scope === 'all') return true
+    const d = new Date(t.date)
+    return d.getMonth() === currentMonth && d.getFullYear() === currentYear
+  })
+
+  let sum = 0
+  periodExpenses.forEach((exp) => {
+    const linked = selectLinkedReimbursementsForExpense(exp.id, transactions)
+    // Capped al importe del gasto para evitar excesos
+    sum += Math.min(exp.amount, linked)
+  })
+
+  return Math.round(sum * 100) / 100
+}
+
+/**
+ * Reembolsos recibidos en el periodo (flujo de caja de entrada).
+ * Incluye cualquier ingreso con incomeKind = 'reimbursement' que entró en este mes,
+ * incluso si es un reembolso histórico o de gastos de meses anteriores.
+ */
+export function selectReimbursementsReceived(
+  transactions: Transaction[],
+  referenceDate: Date = new Date(),
+  scope: 'month' | 'all' = 'month'
+): number {
+  const currentMonth = referenceDate.getMonth()
+  const currentYear = referenceDate.getFullYear()
+
+  const sum = transactions
+    .filter((t) => t.type === 'income' && t.incomeKind === 'reimbursement')
+    .filter((t) => {
+      if (scope === 'all') return true
+      const d = new Date(t.date)
+      return d.getMonth() === currentMonth && d.getFullYear() === currentYear
+    })
+    .reduce((acc, t) => acc + t.amount, 0)
+
+  return Math.round(sum * 100) / 100
+}
+
+/**
+ * Gasto neto personal del periodo:
+ * Para cada gasto realizado en el periodo: net = max(0, expense.amount - linkedReimbursements).
+ * Suma matemática de todos los netos.
+ */
+export function selectNetPersonalExpensesForPeriod(
+  transactions: Transaction[],
+  referenceDate: Date = new Date(),
+  scope: 'month' | 'all' = 'month'
+): number {
+  const currentMonth = referenceDate.getMonth()
+  const currentYear = referenceDate.getFullYear()
+
+  const periodExpenses = transactions.filter((t) => {
+    if (t.type !== 'expense') return false
+    if (scope === 'all') return true
+    const d = new Date(t.date)
+    return d.getMonth() === currentMonth && d.getFullYear() === currentYear
+  })
+
+  let totalNet = 0
+  periodExpenses.forEach((exp) => {
+    const linked = selectLinkedReimbursementsForExpense(exp.id, transactions)
+    const net = Math.max(0, Math.round((exp.amount - linked) * 100) / 100)
+    totalNet += net
+  })
+
+  return Math.round(totalNet * 100) / 100
+}
+
+export const selectNetPersonalExpenses = selectNetPersonalExpensesForPeriod
+
+/**
+ * Gasto neto personal agrupado por categoría para el periodo.
+ * Hereda la categoría del gasto original y nunca produce importes negativos.
+ */
+export function selectNetExpensesByCategory(
+  transactions: Transaction[],
+  categories: Category[],
+  referenceDate: Date = new Date(),
+  scope: 'month' | 'all' = 'month'
+): NetCategoryExpense[] {
+  const currentMonth = referenceDate.getMonth()
+  const currentYear = referenceDate.getFullYear()
+
+  const periodExpenses = transactions.filter((t) => {
+    if (t.type !== 'expense') return false
+    if (scope === 'all') return true
+    const d = new Date(t.date)
+    return d.getMonth() === currentMonth && d.getFullYear() === currentYear
+  })
+
+  const netByCategory = new Map<string, number>()
+
+  periodExpenses.forEach((exp) => {
+    const catId = exp.categoryId || 'other'
+    const linked = selectLinkedReimbursementsForExpense(exp.id, transactions)
+    const net = Math.max(0, Math.round((exp.amount - linked) * 100) / 100)
+    netByCategory.set(catId, Math.round(((netByCategory.get(catId) ?? 0) + net) * 100) / 100)
+  })
+
+  const totalNet = Array.from(netByCategory.values()).reduce((sum, v) => sum + v, 0)
+
+  const results: NetCategoryExpense[] = []
+  categories.forEach((cat) => {
+    const amount = netByCategory.get(cat.id) ?? 0
+    if (amount > 0) {
+      const percentage = totalNet > 0 ? Math.round((amount / totalNet) * 100) : 0
+      results.push({
+        id: cat.id,
+        name: cat.name,
+        color: cat.color ?? '#8b8d86',
+        icon: cat.iconKey || cat.icon || 'shopping-basket',
+        amount,
+        percentage,
+      })
+    }
+  })
+
+  const otherAmount = netByCategory.get('other') ?? 0
+  if (otherAmount > 0) {
+    const percentage = totalNet > 0 ? Math.round((otherAmount / totalNet) * 100) : 0
+    results.push({
+      id: 'other',
+      name: 'Otras',
+      color: '#8b8d86',
+      icon: 'shopping-basket',
+      amount: otherAmount,
+      percentage,
+    })
+  }
+
+  results.sort((a, b) => b.amount - a.amount)
+  return results
 }
 
 /**
@@ -66,65 +265,6 @@ export function splitExpenseEqually(
   }
 
   return results
-}
-
-/**
- * Gasto bruto = suma de todos los gastos (expense) en el periodo.
- */
-export function selectGrossExpenses(
-  transactions: Transaction[],
-  referenceDate: Date = new Date(),
-  scope: 'month' | 'all' = 'month'
-): number {
-  const currentMonth = referenceDate.getMonth()
-  const currentYear = referenceDate.getFullYear()
-
-  const sum = transactions
-    .filter((t) => t.type === 'expense')
-    .filter((t) => {
-      if (scope === 'all') return true
-      const d = new Date(t.date)
-      return d.getMonth() === currentMonth && d.getFullYear() === currentYear
-    })
-    .reduce((acc, t) => acc + t.amount, 0)
-
-  return Math.round(sum * 100) / 100
-}
-
-/**
- * Reembolsos recibidos = suma de transacciones de ingreso clasificadas como 'reimbursement'.
- */
-export function selectReimbursementsReceived(
-  transactions: Transaction[],
-  referenceDate: Date = new Date(),
-  scope: 'month' | 'all' = 'month'
-): number {
-  const currentMonth = referenceDate.getMonth()
-  const currentYear = referenceDate.getFullYear()
-
-  const sum = transactions
-    .filter((t) => t.type === 'income' && t.incomeKind === 'reimbursement')
-    .filter((t) => {
-      if (scope === 'all') return true
-      const d = new Date(t.date)
-      return d.getMonth() === currentMonth && d.getFullYear() === currentYear
-    })
-    .reduce((acc, t) => acc + t.amount, 0)
-
-  return Math.round(sum * 100) / 100
-}
-
-/**
- * Gasto neto personal = Gasto bruto - Reembolsos recibidos.
- */
-export function selectNetPersonalExpenses(
-  transactions: Transaction[],
-  referenceDate: Date = new Date(),
-  scope: 'month' | 'all' = 'month'
-): number {
-  const gross = selectGrossExpenses(transactions, referenceDate, scope)
-  const reimbursements = selectReimbursementsReceived(transactions, referenceDate, scope)
-  return Math.max(0, Math.round((gross - reimbursements) * 100) / 100)
 }
 
 /**
@@ -290,4 +430,40 @@ export function selectPendingDebtors(
   })
 
   return Array.from(map.values()).sort((a, b) => b.totalPending - a.totalPending)
+}
+
+export const selectPendingReimbursementsByContact = selectPendingDebtors
+
+/**
+ * Lista de cuotas externas ya cobradas / recuperadas en su totalidad.
+ */
+export function selectSettledReimbursements(
+  shares: ExpenseShare[],
+  transactions: Transaction[]
+) {
+  const externalShares = shares.filter((s) => !s.isPayerShare)
+  const settledList: {
+    share: ExpenseShare
+    participantName: string
+    amount: number
+    expenseDescription: string
+    settledDate: string
+  }[] = []
+
+  externalShares.forEach((s) => {
+    const status = selectExpenseShareStatus(s, transactions)
+    if (status.status === 'received') {
+      const tx = transactions.find((t) => t.id === s.expenseTransactionId)
+      const lastReimb = status.reimbursements[status.reimbursements.length - 1]
+      settledList.push({
+        share: s,
+        participantName: s.participantName,
+        amount: s.expectedAmount,
+        expenseDescription: tx?.description || 'Gasto compartido',
+        settledDate: lastReimb?.date || tx?.date || s.createdAt || new Date().toISOString(),
+      })
+    }
+  })
+
+  return settledList.sort((a, b) => new Date(b.settledDate).getTime() - new Date(a.settledDate).getTime())
 }

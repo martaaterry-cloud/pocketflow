@@ -54,8 +54,12 @@ import { ensureAccountInitialBalance, reconcileAccounts } from '../utils/balance
 import { calculateVariableEstimatesSummary } from '../utils/variableEstimates'
 import {
   selectGrossExpenses,
+  selectGrossExpensesForPeriod,
+  selectLinkedReimbursementsForPeriod,
   selectReimbursementsReceived,
   selectNetPersonalExpenses,
+  selectNetPersonalExpensesForPeriod,
+  selectNetExpensesByCategory,
   selectRealIncome,
   selectPendingReimbursements,
   selectExpenseShareDetails,
@@ -1453,20 +1457,22 @@ export function useFinance(storage: StorageAdapter = defaultAppStorage) {
     const projectedAvailable = Math.round((realAvailable - pendingVariableExpenses) * 100) / 100
 
     // Métricas de gastos brutos vs netos e ingresos reales vs reembolsos
-    const grossMonthExpenses = selectGrossExpenses(state.transactions, now)
-    const reimbursementsMonth = selectReimbursementsReceived(state.transactions, now)
-    const netMonthExpenses = selectNetPersonalExpenses(state.transactions, now)
+    const grossMonthExpenses = selectGrossExpensesForPeriod(state.transactions, now, 'month')
+    const linkedReimbursementsMonth = selectLinkedReimbursementsForPeriod(state.transactions, now, 'month')
+    const reimbursementsMonth = selectReimbursementsReceived(state.transactions, now, 'month')
+    const netMonthExpenses = selectNetPersonalExpensesForPeriod(state.transactions, now, 'month')
+    const netCategoryExpenses = selectNetExpensesByCategory(state.transactions, state.categories, now, 'month')
     const realMonthIncome = selectRealIncome(state.transactions, now)
     const pendingReimbursements = selectPendingReimbursements(state.expenseShares ?? [], state.transactions)
 
     return {
-      // Compatibilidad
+      // Compatibilidad y concepto neto principal
       daily: spendable,
       savings,
       total: totalMoney,
       committed,
       available: realAvailable,
-      monthExpenses,
+      monthExpenses: netMonthExpenses, // "Gastado este mes" representa el gasto neto personal
 
       // Previsión de gastos variables
       pendingVariableExpenses,
@@ -1475,8 +1481,10 @@ export function useFinance(storage: StorageAdapter = defaultAppStorage) {
 
       // Gastos compartidos y reembolsos
       grossMonthExpenses,
+      linkedReimbursementsMonth,
       reimbursementsMonth,
       netMonthExpenses,
+      netCategoryExpenses,
       realMonthIncome,
       pendingReimbursements,
 

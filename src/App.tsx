@@ -464,6 +464,10 @@ export default function App() {
             setMoreSubView('variable_estimates')
             setTab('more')
           }}
+          onNavigateToReceivables={() => {
+            setMoreSubView('receivables')
+            setTab('more')
+          }}
         />
       )}
       {tab === 'movements' && (
@@ -486,6 +490,10 @@ export default function App() {
           user={user}
           initialSubView={moreSubView}
           onNavigateToSavings={() => setTab('savings')}
+          onRecordReimbursement={(shareId) => {
+            setReimbursementShareId(shareId)
+            setIsReimbursementModalOpen(true)
+          }}
           onToast={showToast}
           onSignOut={() => setUser(null)}
         />

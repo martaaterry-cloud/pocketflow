@@ -1,4 +1,5 @@
 import type { Budget, Category, Transaction } from '../models/finance'
+import { selectLinkedReimbursementsForExpense } from './sharedExpenseSelectors'
 
 export interface BudgetStatusItem {
   id: string
@@ -23,8 +24,8 @@ export interface BudgetsSummary {
 }
 
 /**
- * Calcula el gasto de una categoría en el mes y año de la fecha de referencia.
- * Regla de producto: solo transacciones de tipo 'expense'.
+ * Calcula el gasto neto personal de una categoría en el mes y año de la fecha de referencia.
+ * Regla de producto: gastos del mes menos los reembolsos vinculados a esos gastos.
  * Transferencias, ingresos y movimientos de ahorro quedan estrictamente excluidos.
  */
 export function spentByCategoryThisMonth(
@@ -35,15 +36,20 @@ export function spentByCategoryThisMonth(
   const currentMonth = referenceDate.getMonth()
   const currentYear = referenceDate.getFullYear()
 
-  const sum = transactions
+  const expenses = transactions
     .filter((t) => t.type === 'expense' && t.categoryId === categoryId)
     .filter((t) => {
       const d = new Date(t.date)
       return d.getMonth() === currentMonth && d.getFullYear() === currentYear
     })
-    .reduce((acc, t) => acc + t.amount, 0)
 
-  return Math.round(sum * 100) / 100
+  let netSum = 0
+  expenses.forEach((exp) => {
+    const linked = selectLinkedReimbursementsForExpense(exp.id, transactions)
+    netSum += Math.max(0, Math.round((exp.amount - linked) * 100) / 100)
+  })
+
+  return Math.round(netSum * 100) / 100
 }
 
 /**

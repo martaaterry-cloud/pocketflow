@@ -12,11 +12,13 @@ export function HomePage({
   onAdd,
   onSelectTransaction,
   onNavigateToVariableEstimates,
+  onNavigateToReceivables,
 }: {
   finance: ReturnTypeFinance
   onAdd: () => void
   onSelectTransaction?: (tx: Transaction) => void
   onNavigateToVariableEstimates?: () => void
+  onNavigateToReceivables?: () => void
 }) {
   const [isExpanded, setIsExpanded] = useState(false)
   const displayName = finance.profile?.displayName?.trim()
@@ -162,11 +164,62 @@ export function HomePage({
               </strong>
             </div>
 
+            {finance.totals.grossMonthExpenses > 0 && (
+              <>
+                <div className="hero-breakdown-divider" />
+                <div className="hero-breakdown-header">
+                  <span>Gastos de este mes</span>
+                </div>
+
+                <div className="hero-breakdown-row">
+                  <div className="breakdown-label">
+                    <span>Gasto bruto</span>
+                    <small>Total salido de cuenta en compras y pagos</small>
+                  </div>
+                  <strong className="breakdown-value">{money(finance.totals.grossMonthExpenses)}</strong>
+                </div>
+
+                {finance.totals.linkedReimbursementsMonth > 0 && (
+                  <div className="hero-breakdown-row sub">
+                    <div className="breakdown-label">
+                      <span>· Reembolsado de gastos del mes</span>
+                      <small>Devoluciones recibidas de compras de este mes</small>
+                    </div>
+                    <span className="breakdown-value" style={{ color: '#8b5cf6', fontWeight: 600 }}>
+                      -{money(finance.totals.linkedReimbursementsMonth)}
+                    </span>
+                  </div>
+                )}
+
+                <div className="hero-breakdown-row highlight">
+                  <div className="breakdown-label">
+                    <span>= Gasto neto personal</span>
+                    <small>Lo que realmente te ha costado el mes</small>
+                  </div>
+                  <strong className="breakdown-value">
+                    {money(finance.totals.netMonthExpenses)}
+                  </strong>
+                </div>
+              </>
+            )}
+
             {finance.totals.pendingReimbursements > 0 && (
-              <div className="hero-breakdown-row sub">
+              <div
+                className="hero-breakdown-row sub clickable"
+                style={{ cursor: 'pointer' }}
+                onClick={(e) => {
+                  e.stopPropagation()
+                  onNavigateToReceivables?.()
+                }}
+                role="button"
+                tabIndex={0}
+              >
                 <div className="breakdown-label">
-                  <span>Por recuperar (gastos compartidos)</span>
-                  <small>Dinero que adelantaste y está pendiente de cobro</small>
+                  <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                    Por recuperar (gastos compartidos)
+                    <AppIcon name="chevron-right" size={14} color="#8b5cf6" />
+                  </span>
+                  <small>Toca para ver el desglose en Por cobrar</small>
                 </div>
                 <span className="breakdown-value" style={{ color: '#8b5cf6', fontWeight: 600 }}>
                   +{money(finance.totals.pendingReimbursements)}
@@ -207,12 +260,12 @@ export function HomePage({
         <div className="section-title">
           <h2>Gastos por categoría</h2>
           <span>
-            {money(finance.totals.monthExpenses)} este mes
+            {money(finance.totals.netMonthExpenses)} este mes
             {finance.totals.budgetsSummary.totalBudgeted > 0 &&
               ` · Presupuestos: ${finance.totals.budgetsSummary.overallUsagePercentage}%`}
           </span>
         </div>
-        <DonutChart transactions={finance.transactions} categories={finance.categories} />
+        <DonutChart categoryItems={finance.totals.netCategoryExpenses} />
       </section>
 
       <section className="section">

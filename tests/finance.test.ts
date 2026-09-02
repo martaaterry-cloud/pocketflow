@@ -34,14 +34,21 @@ import {
 import {
   splitExpenseEqually,
   selectGrossExpenses,
+  selectGrossExpensesForPeriod,
+  selectLinkedReimbursementsForPeriod,
   selectReimbursementsReceived,
   selectNetPersonalExpenses,
+  selectNetPersonalExpensesForPeriod,
+  selectNetExpensesByCategory,
   selectRealIncome,
   selectPendingReimbursements,
   selectExpenseShareStatus,
   selectPendingDebtors,
+  selectPendingReimbursementsByContact,
+  selectSettledReimbursements,
   selectExpenseShareDetails,
 } from '../src/utils/sharedExpenseSelectors'
+import { spentByCategoryThisMonth } from '../src/utils/budgetSelectors'
 import {
   toDbSharedContact,
   fromDbSharedContact,
@@ -4595,7 +4602,7 @@ describe('Fase 13 — Disponible Proyectado, Tarjeta Expandible y Confirmación 
     const txs: Transaction[] = [
       { id: 'e1', accountId: 'daily', type: 'expense', amount: 60.00, description: 'Cena 3 personas', date: '2026-09-02T20:00:00.000Z' },
       { id: 'e2', accountId: 'daily', type: 'expense', amount: 15.00, description: 'Farmacia personal', date: '2026-09-03T10:00:00.000Z' },
-      { id: 'r1', accountId: 'daily', type: 'income', incomeKind: 'reimbursement', amount: 40.00, description: 'Bizums amigos cena', date: '2026-09-04T10:00:00.000Z' },
+      { id: 'r1', accountId: 'daily', type: 'income', incomeKind: 'reimbursement', amount: 40.00, description: 'Bizums amigos cena', date: '2026-09-04T10:00:00.000Z', parentExpenseId: 'e1' },
     ]
 
     const gross = selectGrossExpenses(txs) // 75.00
@@ -4736,6 +4743,287 @@ describe('Fase 13 — Disponible Proyectado, Tarjeta Expandible y Confirmación 
     assert.equal(dbShare.user_id, 'user_marta')
     assert.equal(dbShare.expected_amount, 14.99)
     assert.equal(dbShare.is_payer_share, false)
+  })
+
+  /* ==========================================================================
+     REFINAMIENTO FASE 14 — GASTO NETO PERSONAL, ROSQUILLA Y POR COBRAR
+     ========================================================================== */
+
+  it('218. Expense 80 sin reimbursement -> neto 80', () => {
+    const txs: Transaction[] = [
+      { id: 'tx_e80', accountId: 'daily', type: 'expense', amount: 80.00, description: 'Cena', date: '2026-09-02T20:00:00.000Z' },
+    ]
+    const net = selectNetPersonalExpensesForPeriod(txs, new Date('2026-09-02'), 'month')
+    assert.equal(net, 80.00)
+  })
+
+  it('219. Expense 80 + reimbursement 60 -> neto 20', () => {
+    const txs: Transaction[] = [
+      { id: 'tx_e80', accountId: 'daily', type: 'expense', amount: 80.00, description: 'Cena', date: '2026-09-02T20:00:00.000Z' },
+      { id: 'tx_r60', accountId: 'daily', type: 'income', incomeKind: 'reimbursement', amount: 60.00, description: 'Bizum amigos', date: '2026-09-03T10:00:00.000Z', parentExpenseId: 'tx_e80' },
+    ]
+    const net = selectNetPersonalExpensesForPeriod(txs, new Date('2026-09-02'), 'month')
+    assert.equal(net, 20.00)
+  })
+
+  it('220. Reimbursements parciales actualizan 80 -> 60 -> 20', () => {
+    const exp: Transaction = { id: 'tx_e80', accountId: 'daily', type: 'expense', amount: 80.00, description: 'Cena', date: '2026-09-02T20:00:00.000Z' }
+    const r1: Transaction = { id: 'r1', accountId: 'daily', type: 'income', incomeKind: 'reimbursement', amount: 20.00, description: 'Bizum 1', date: '2026-09-02T21:00:00.000Z', parentExpenseId: 'tx_e80' }
+    const r2: Transaction = { id: 'r2', accountId: 'daily', type: 'income', incomeKind: 'reimbursement', amount: 40.00, description: 'Bizum 2', date: '2026-09-03T10:00:00.000Z', parentExpenseId: 'tx_e80' }
+
+    assert.equal(selectNetPersonalExpensesForPeriod([exp], new Date('2026-09-02'), 'month'), 80.00)
+    assert.equal(selectNetPersonalExpensesForPeriod([exp, r1], new Date('2026-09-02'), 'month'), 60.00)
+    assert.equal(selectNetPersonalExpensesForPeriod([exp, r1, r2], new Date('2026-09-02'), 'month'), 20.00)
+  })
+
+  it('221. Eliminar reimbursement reabre gasto neto', () => {
+    const exp: Transaction = { id: 'tx_e80', accountId: 'daily', type: 'expense', amount: 80.00, description: 'Cena', date: '2026-09-02T20:00:00.000Z' }
+    const r1: Transaction = { id: 'r1', accountId: 'daily', type: 'income', incomeKind: 'reimbursement', amount: 60.00, description: 'Bizum', date: '2026-09-03T10:00:00.000Z', parentExpenseId: 'tx_e80' }
+
+    let list = [exp, r1]
+    assert.equal(selectNetPersonalExpensesForPeriod(list, new Date('2026-09-02'), 'month'), 20.00)
+
+    // Borrado del Bizum
+    list = list.filter((t) => t.id !== 'r1')
+    assert.equal(selectNetPersonalExpensesForPeriod(list, new Date('2026-09-02'), 'month'), 80.00)
+  })
+
+  it('222. Reimbursement histórico sin padre no reduce gasto mensual', () => {
+    const expSep: Transaction = { id: 'e_sep', accountId: 'daily', type: 'expense', amount: 50.00, description: 'Supermercado', date: '2026-09-05T10:00:00.000Z' }
+    // Bizum recibido sin gasto padre (ej. deuda antigua anterior a Pocketflow)
+    const histReimb: Transaction = { id: 'r_hist', accountId: 'daily', type: 'income', incomeKind: 'reimbursement', amount: 30.00, description: 'Bizum antiguo', date: '2026-09-06T10:00:00.000Z' }
+
+    const netSep = selectNetPersonalExpensesForPeriod([expSep, histReimb], new Date('2026-09-05'), 'month')
+    assert.equal(netSep, 50.00) // No se reduce a 20 € erróneamente
+  })
+
+  it('223. Reimbursement recibido este mes de expense del mes pasado reduce neto del mes pasado, no del actual', () => {
+    // Gasto en agosto: 30 €
+    const expAug: Transaction = { id: 'e_aug', accountId: 'daily', type: 'expense', amount: 30.00, description: 'Cena agosto', date: '2026-08-31T20:00:00.000Z' }
+    // Gasto en septiembre: 40 €
+    const expSep: Transaction = { id: 'e_sep', accountId: 'daily', type: 'expense', amount: 40.00, description: 'Cena septiembre', date: '2026-09-05T20:00:00.000Z' }
+    // Bizum recibido el 2 de septiembre pero correspondiente a la cena de agosto
+    const reimb: Transaction = { id: 'r_sep', accountId: 'daily', type: 'income', incomeKind: 'reimbursement', amount: 20.00, description: 'Bizum cena agosto', date: '2026-09-02T10:00:00.000Z', parentExpenseId: 'e_aug' }
+
+    const allTxs = [expAug, expSep, reimb]
+
+    const netAug = selectNetPersonalExpensesForPeriod(allTxs, new Date('2026-08-15'), 'month')
+    const netSep = selectNetPersonalExpensesForPeriod(allTxs, new Date('2026-09-15'), 'month')
+
+    // Agosto queda en 10 € (30 - 20)
+    assert.equal(netAug, 10.00)
+    // Septiembre queda en 40 € (el Bizum de agosto no reduce el gasto de septiembre)
+    assert.equal(netSep, 40.00)
+  })
+
+  it('224. Rosquilla usa gasto neto por categoría', () => {
+    const cats: Category[] = [
+      { id: 'c_ocio', name: 'Ocio', color: '#ff5500', icon: 'film' },
+      { id: 'c_food', name: 'Alimentación', color: '#00ff55', icon: 'shopping-bag' },
+    ]
+    const txs: Transaction[] = [
+      { id: 'e1', accountId: 'daily', type: 'expense', amount: 80.00, categoryId: 'c_ocio', description: 'Cena amigos', date: '2026-09-02T20:00:00.000Z' },
+      { id: 'e2', accountId: 'daily', type: 'expense', amount: 30.00, categoryId: 'c_food', description: 'Mercadona', date: '2026-09-03T10:00:00.000Z' },
+      { id: 'r1', accountId: 'daily', type: 'income', incomeKind: 'reimbursement', amount: 60.00, description: 'Bizum cena', date: '2026-09-03T11:00:00.000Z', parentExpenseId: 'e1' },
+    ]
+
+    const donutItems = selectNetExpensesByCategory(txs, cats, new Date('2026-09-02'), 'month')
+
+    const ocio = donutItems.find((item) => item.id === 'c_ocio')!
+    const food = donutItems.find((item) => item.id === 'c_food')!
+
+    assert.equal(ocio.amount, 20.00) // 80 € - 60 €
+    assert.equal(food.amount, 30.00)
+  })
+
+  it('225. Suma de categorías = gasto neto total', () => {
+    const cats: Category[] = [
+      { id: 'c1', name: 'Ocio', color: '#f00', icon: 'film' },
+      { id: 'c2', name: 'Casa', color: '#0f0', icon: 'home' },
+    ]
+    const txs: Transaction[] = [
+      { id: 'e1', accountId: 'daily', type: 'expense', amount: 100.00, categoryId: 'c1', description: 'Concierto', date: '2026-09-01T20:00:00.000Z' },
+      { id: 'e2', accountId: 'daily', type: 'expense', amount: 50.00, categoryId: 'c2', description: 'Luz', date: '2026-09-02T20:00:00.000Z' },
+      { id: 'r1', accountId: 'daily', type: 'income', incomeKind: 'reimbursement', amount: 40.00, description: 'Bizum entrada', date: '2026-09-03T10:00:00.000Z', parentExpenseId: 'e1' },
+    ]
+
+    const donutItems = selectNetExpensesByCategory(txs, cats, new Date('2026-09-01'), 'month')
+    const totalFromDonut = donutItems.reduce((sum, item) => sum + item.amount, 0)
+    const totalNet = selectNetPersonalExpensesForPeriod(txs, new Date('2026-09-01'), 'month')
+
+    assert.equal(totalFromDonut, 110.00) // (100 - 40) + 50
+    assert.equal(totalNet, 110.00)
+    assert.equal(totalFromDonut, totalNet)
+  })
+
+  it('226. Income real no afecta gasto neto', () => {
+    const txs: Transaction[] = [
+      { id: 'e1', accountId: 'daily', type: 'expense', amount: 40.00, description: 'Compra', date: '2026-09-01T10:00:00.000Z' },
+      { id: 'i1', accountId: 'daily', type: 'income', incomeKind: 'income', amount: 2500.00, description: 'Nómina', date: '2026-09-01T11:00:00.000Z' },
+    ]
+    const net = selectNetPersonalExpensesForPeriod(txs, new Date('2026-09-01'), 'month')
+    assert.equal(net, 40.00)
+  })
+
+  it('227. Reimbursement no cuenta como ingreso real', () => {
+    const txs: Transaction[] = [
+      { id: 'r1', accountId: 'daily', type: 'income', incomeKind: 'reimbursement', amount: 60.00, description: 'Bizum cena', date: '2026-09-02T10:00:00.000Z' },
+    ]
+    const realIncome = selectRealIncome(txs, new Date('2026-09-02'), 'month')
+    const reimbursements = selectReimbursementsReceived(txs, new Date('2026-09-02'), 'month')
+
+    assert.equal(realIncome, 0.00)
+    assert.equal(reimbursements, 60.00)
+  })
+
+  it('228. Pending reimbursements agrupados por persona', () => {
+    const shares: ExpenseShare[] = [
+      { id: 's1', expenseTransactionId: 'tx1', participantName: 'Manuela', isPayerShare: false, expectedAmount: 10.00 },
+      { id: 's2', expenseTransactionId: 'tx2', participantName: 'Manuela', isPayerShare: false, expectedAmount: 7.50 },
+    ]
+    const txs: Transaction[] = [
+      { id: 'tx1', accountId: 'daily', type: 'expense', amount: 20.00, description: 'Gasto 1', date: '2026-09-01T00:00:00.000Z' },
+      { id: 'tx2', accountId: 'daily', type: 'expense', amount: 15.00, description: 'Gasto 2', date: '2026-09-02T00:00:00.000Z' },
+    ]
+
+    const debtors = selectPendingReimbursementsByContact(shares, txs)
+    assert.equal(debtors.length, 1)
+    assert.equal(debtors[0].name, 'Manuela')
+    assert.equal(debtors[0].totalPending, 17.50)
+    assert.equal(debtors[0].pendingShares.length, 2)
+  })
+
+  it('229. Persona desaparece de Pendiente al pagar todo', () => {
+    const shares: ExpenseShare[] = [
+      { id: 's1', expenseTransactionId: 'tx1', participantName: 'Manuela', isPayerShare: false, expectedAmount: 20.00 },
+    ]
+    let txs: Transaction[] = [
+      { id: 'tx1', accountId: 'daily', type: 'expense', amount: 40.00, description: 'Cena', date: '2026-09-01T00:00:00.000Z' },
+    ]
+
+    assert.equal(selectPendingDebtors(shares, txs).length, 1)
+
+    // Manuela abona los 20 € íntegros
+    txs = [
+      ...txs,
+      { id: 'r1', accountId: 'daily', type: 'income', incomeKind: 'reimbursement', amount: 20.00, description: 'Bizum Manuela', date: '2026-09-02T00:00:00.000Z', expenseShareId: 's1' },
+    ]
+
+    const debtors = selectPendingDebtors(shares, txs)
+    assert.equal(debtors.length, 0) // Desaparece de pendientes
+
+    const settled = selectSettledReimbursements(shares, txs)
+    assert.equal(settled.length, 1) // Pasa a cobrado
+    assert.equal(settled[0].participantName, 'Manuela')
+    assert.equal(settled[0].amount, 20.00)
+  })
+
+  it('230. Pago parcial mantiene deuda restante', () => {
+    const shares: ExpenseShare[] = [
+      { id: 's1', expenseTransactionId: 'tx1', participantName: 'Manuela', isPayerShare: false, expectedAmount: 20.00 },
+    ]
+    const txs: Transaction[] = [
+      { id: 'tx1', accountId: 'daily', type: 'expense', amount: 40.00, description: 'Cena', date: '2026-09-01T00:00:00.000Z' },
+      { id: 'r1', accountId: 'daily', type: 'income', incomeKind: 'reimbursement', amount: 5.00, description: 'Bizum parcial', date: '2026-09-02T00:00:00.000Z', expenseShareId: 's1' },
+    ]
+
+    const debtors = selectPendingDebtors(shares, txs)
+    assert.equal(debtors.length, 1)
+    assert.equal(debtors[0].totalPending, 15.00)
+  })
+
+  it('231. Eliminar reimbursement vuelve a aumentar deuda', () => {
+    const shares: ExpenseShare[] = [
+      { id: 's1', expenseTransactionId: 'tx1', participantName: 'Manuela', isPayerShare: false, expectedAmount: 20.00 },
+    ]
+    let txs: Transaction[] = [
+      { id: 'tx1', accountId: 'daily', type: 'expense', amount: 40.00, description: 'Cena', date: '2026-09-01T00:00:00.000Z' },
+      { id: 'r1', accountId: 'daily', type: 'income', incomeKind: 'reimbursement', amount: 20.00, description: 'Bizum Manuela', date: '2026-09-02T00:00:00.000Z', expenseShareId: 's1' },
+    ]
+
+    assert.equal(selectPendingDebtors(shares, txs).length, 0)
+
+    // Se borra r1
+    txs = txs.filter((t) => t.id !== 'r1')
+    const debtors = selectPendingDebtors(shares, txs)
+    assert.equal(debtors.length, 1)
+    assert.equal(debtors[0].totalPending, 20.00)
+  })
+
+  it('232. Presupuesto neto por categoría: mide consumo neto real', () => {
+    const txs: Transaction[] = [
+      { id: 'e1', accountId: 'daily', type: 'expense', categoryId: 'cat_ocio', amount: 80.00, description: 'Cena grupo', date: '2026-09-02T20:00:00.000Z' },
+      { id: 'r1', accountId: 'daily', type: 'income', incomeKind: 'reimbursement', amount: 60.00, description: 'Bizum amigos', date: '2026-09-03T10:00:00.000Z', parentExpenseId: 'e1' },
+    ]
+
+    const spent = spentByCategoryThisMonth(txs, 'cat_ocio', new Date('2026-09-02'))
+    assert.equal(spent, 20.00) // Consumido real es 20 €, no 80 €
+  })
+
+  it('233. Cashflow y gasto neto son métricas distintas y correctas', () => {
+    const txs: Transaction[] = [
+      { id: 'i1', accountId: 'daily', type: 'income', incomeKind: 'income', amount: 100.00, description: 'Venta', date: '2026-09-01T10:00:00.000Z' },
+      { id: 'e1', accountId: 'daily', type: 'expense', amount: 50.00, description: 'Compra', date: '2026-09-02T10:00:00.000Z' },
+      // Bizum recibido de un gasto que fue el mes pasado
+      { id: 'r1', accountId: 'daily', type: 'income', incomeKind: 'reimbursement', amount: 20.00, description: 'Bizum mes pasado', date: '2026-09-03T10:00:00.000Z' },
+    ]
+
+    const realIncome = selectRealIncome(txs, new Date('2026-09-01'), 'month') // 100
+    const reimbursementsRecv = selectReimbursementsReceived(txs, new Date('2026-09-01'), 'month') // 20
+    const grossExp = selectGrossExpensesForPeriod(txs, new Date('2026-09-01'), 'month') // 50
+    const netExp = selectNetPersonalExpensesForPeriod(txs, new Date('2026-09-01'), 'month') // 50 (r1 no tiene parent en septiembre)
+
+    // Cashflow del mes: +100 + 20 - 50 = +70 €
+    const cashflow = realIncome + reimbursementsRecv - grossExp
+    assert.equal(cashflow, 70.00)
+
+    // Coste neto personal del mes: 50 €
+    assert.equal(netExp, 50.00)
+  })
+
+  it('234. Expense con reimbursements superiores nunca produce neto negativo', () => {
+    const txs: Transaction[] = [
+      { id: 'e1', accountId: 'daily', type: 'expense', amount: 20.00, description: 'Cine', date: '2026-09-02T10:00:00.000Z' },
+      { id: 'r1', accountId: 'daily', type: 'income', incomeKind: 'reimbursement', amount: 15.00, description: 'Bizum 1', date: '2026-09-02T11:00:00.000Z', parentExpenseId: 'e1' },
+      { id: 'r2', accountId: 'daily', type: 'income', incomeKind: 'reimbursement', amount: 15.00, description: 'Bizum 2 (exceso)', date: '2026-09-02T12:00:00.000Z', parentExpenseId: 'e1' },
+    ]
+
+    const net = selectNetPersonalExpensesForPeriod(txs, new Date('2026-09-02'), 'month')
+    assert.equal(net, 0.00) // Clamped en 0, nunca negativo
+  })
+
+  it('235. Reembolso histórico aumenta saldo pero no modifica donut', () => {
+    const cats: Category[] = [
+      { id: 'cat1', name: 'Comida', color: '#f00', icon: 'coffee' },
+    ]
+    const txs: Transaction[] = [
+      { id: 'e1', accountId: 'daily', type: 'expense', categoryId: 'cat1', amount: 35.00, description: 'Cena', date: '2026-09-02T10:00:00.000Z' },
+      { id: 'r_hist', accountId: 'daily', type: 'income', incomeKind: 'reimbursement', amount: 15.00, description: 'Bizum viejo', date: '2026-09-03T10:00:00.000Z' },
+    ]
+
+    const donut = selectNetExpensesByCategory(txs, cats, new Date('2026-09-02'), 'month')
+    assert.equal(donut.length, 1)
+    assert.equal(donut[0].amount, 35.00) // No se resta 15 € de la comida
+  })
+
+  it('236. Home monthExpenses coincide con gasto neto personal', () => {
+    const exp: Transaction = { id: 'e1', accountId: 'daily', type: 'expense', amount: 7.49, description: 'Crunchyroll', date: '2026-09-01T00:00:00.000Z' }
+    const r1: Transaction = { id: 'r1', accountId: 'daily', type: 'income', incomeKind: 'reimbursement', amount: 2.50, description: 'Bizum Manuela', date: '2026-09-02T00:00:00.000Z', parentExpenseId: 'e1' }
+    const r2: Transaction = { id: 'r2', accountId: 'daily', type: 'income', incomeKind: 'reimbursement', amount: 2.50, description: 'Bizum Pepa', date: '2026-09-02T00:00:00.000Z', parentExpenseId: 'e1' }
+
+    const net = selectNetPersonalExpensesForPeriod([exp, r1, r2], new Date('2026-09-01'), 'month')
+    assert.equal(net, 2.49)
+  })
+
+  it('237. Gasto bruto sigue disponible para estadísticas', () => {
+    const exp: Transaction = { id: 'e1', accountId: 'daily', type: 'expense', amount: 7.49, description: 'Crunchyroll', date: '2026-09-01T00:00:00.000Z' }
+    const r1: Transaction = { id: 'r1', accountId: 'daily', type: 'income', incomeKind: 'reimbursement', amount: 5.00, description: 'Bizum', date: '2026-09-02T00:00:00.000Z', parentExpenseId: 'e1' }
+
+    const gross = selectGrossExpensesForPeriod([exp, r1], new Date('2026-09-01'), 'month')
+    const net = selectNetPersonalExpensesForPeriod([exp, r1], new Date('2026-09-01'), 'month')
+
+    assert.equal(gross, 7.49)
+    assert.equal(net, 2.49)
   })
 })
 

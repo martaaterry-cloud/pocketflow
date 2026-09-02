@@ -3670,6 +3670,213 @@ input:checked + .slider:before {
   margin-right: 6px;
 }
 
+/* ==========================================================================
+   ReceivablesPage (Por cobrar)
+   ========================================================================== */
+
+.receivables-section {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.debtors-group-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.debtor-card {
+  background: var(--bg-card, #ffffff);
+  border: 1px solid var(--border-color, #e2e8f0);
+  border-radius: 14px;
+  overflow: hidden;
+  box-shadow: var(--shadow-sm, 0 1px 3px rgba(0, 0, 0, 0.04));
+  transition: all 0.15s ease;
+}
+
+.debtor-card-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 16px;
+  background: var(--bg-card, #ffffff);
+  user-select: none;
+}
+
+.debtor-card-header.clickable {
+  cursor: pointer;
+}
+
+.debtor-avatar {
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  background: rgba(124, 58, 237, 0.1);
+  color: #7c3aed;
+  font-weight: 700;
+  font-size: 15px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.debtor-header-info {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.debtor-header-info strong {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-main);
+}
+
+.debtor-header-info span {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.debtor-header-amount {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.debtor-header-amount strong {
+  font-size: 15px;
+  font-weight: 700;
+  color: #7c3aed;
+}
+
+.debtor-shares-list {
+  border-top: 1px solid var(--border-light, #f1f5f9);
+  background: var(--bg-card-light, #f8fafc);
+  padding: 8px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.debtor-share-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 12px;
+  background: var(--bg-card, #ffffff);
+  border: 1px solid var(--border-light, #f1f5f9);
+  border-radius: 10px;
+}
+
+.debtor-share-info {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.debtor-share-info strong {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-main);
+}
+
+.debtor-share-info span {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.debtor-share-action {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+}
+
+.debtor-share-amount {
+  font-size: 13px;
+  font-weight: 700;
+  color: #7c3aed;
+}
+
+.settled-shares-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.settled-share-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  background: var(--bg-card, #ffffff);
+  border: 1px solid var(--border-color, #e2e8f0);
+  border-radius: 12px;
+}
+
+.settled-avatar {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: #d1fae5;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.settled-info {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.settled-info strong {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-main);
+}
+
+.settled-info span {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.empty-state-box {
+  padding: 32px 16px;
+  text-align: center;
+  background: var(--bg-card, #ffffff);
+  border: 1px dashed var(--border-color, #e2e8f0);
+  border-radius: 14px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.empty-state-box p {
+  margin: 0;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+.empty-icon {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: rgba(16, 185, 129, 0.1);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+
 
 
 

@@ -1,22 +1,25 @@
 import type { Category, Transaction } from '../models/finance'
 import { money } from '../utils/money'
+import { selectNetExpensesByCategory, type NetCategoryExpense } from '../utils/sharedExpenseSelectors'
 
-export function DonutChart({ transactions, categories }: { transactions: Transaction[]; categories: Category[] }) {
-  const expenses = transactions.filter((t) => t.type === 'expense')
-  const total = expenses.reduce((sum, t) => sum + t.amount, 0)
-  const byCategory = categories
-    .map((category) => ({
-      ...category,
-      amount: expenses.filter((t) => t.categoryId === category.id).reduce((sum, t) => sum + t.amount, 0),
-    }))
-    .filter((item) => item.amount > 0)
+interface DonutChartProps {
+  transactions?: Transaction[]
+  categories?: Category[]
+  categoryItems?: NetCategoryExpense[]
+}
+
+export function DonutChart({ transactions = [], categories = [], categoryItems }: DonutChartProps) {
+  const byCategory = categoryItems ?? selectNetExpensesByCategory(transactions, categories)
+  const total = Math.round(byCategory.reduce((sum, item) => sum + item.amount, 0) * 100) / 100
 
   let cursor = 0
-  const gradient = byCategory.map((item) => {
-    const start = cursor
-    cursor += total ? (item.amount / total) * 100 : 0
-    return `${item.color} ${start}% ${cursor}%`
-  }).join(', ')
+  const gradient = byCategory
+    .map((item) => {
+      const start = cursor
+      cursor += total ? (item.amount / total) * 100 : 0
+      return `${item.color} ${start}% ${cursor}%`
+    })
+    .join(', ')
 
   return (
     <div className="donut-wrap">
@@ -28,7 +31,10 @@ export function DonutChart({ transactions, categories }: { transactions: Transac
       </div>
       <div className="legend">
         {byCategory.slice(0, 4).map((item) => (
-          <span key={item.id}><i style={{ background: item.color }} />{item.name}</span>
+          <span key={item.id}>
+            <i style={{ background: item.color }} />
+            {item.name}
+          </span>
         ))}
       </div>
     </div>
