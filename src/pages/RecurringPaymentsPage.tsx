@@ -105,47 +105,66 @@ export function RecurringPaymentsPage({
               const cycleStatus = selectRecurringPaymentCycleStatus(r, finance.transactions)
               const isConfirming = confirmingId === r.id
 
+              const externalCount = r.sharingTemplate?.participants?.length ?? 0
+              const sharedLabel = externalCount > 0
+                ? (externalCount === 1 ? 'Con 1 persona' : `Con ${externalCount} personas`)
+                : 'Compartido'
+
+              const humanNextDate = (() => {
+                try {
+                  const [y, m, d] = r.nextDate.split('-').map(Number)
+                  if (!y || !m || !d) return r.nextDate
+                  const dt = new Date(Date.UTC(y, m - 1, d))
+                  return dt.toLocaleDateString('es-ES', { day: 'numeric', month: 'short' })
+                } catch {
+                  return r.nextDate
+                }
+              })()
+
               return (
                 <div
                   className={`recurring-card ${!r.active ? 'inactive' : ''} ${cycleStatus.status}`}
                   key={r.id}
                 >
-                  <div className="recurring-main-row">
-                    <div
-                      className="category-dot"
-                      style={{ background: category?.color ?? '#bbb' }}
-                    >
-                      <AppIcon name={category?.iconKey || category?.icon || 'refresh-cw'} size={15} color="#fff" />
-                    </div>
-
-                    <div className="recurring-info" onClick={() => handleOpenEdit(r)}>
-                      <strong>{r.name}</strong>
-                      <span>
-                        {category?.name ?? 'Suscripción'} · {frequencyLabel[r.frequency] ?? 'Mensual'} ·{' '}
-                        {account?.name ?? 'Cuenta diaria'}
-                      </span>
-                      <div className="recurring-status-row">
-                        <small className="recurring-next-date">
-                          Próximo: {r.nextDate}
-                        </small>
-                        {r.isShared && (
-                          <span className="badge-status shared-badge">
-                            Compartido · {r.sharingTemplate?.participants ? (r.sharingTemplate.participants.length + (r.sharingTemplate.includePayer ? 1 : 0)) : 1} personas
-                          </span>
-                        )}
-                        {r.active && (
-                          <span className={`badge-status ${cycleStatus.status}`}>
-                            {cycleStatus.status === 'confirmed_for_cycle' && (
-                              <AppIcon name="check" size={11} />
-                            )}
-                            {cycleStatus.label}
-                          </span>
-                        )}
+                  <div className="recurring-top-row" onClick={() => handleOpenEdit(r)}>
+                    <div className="recurring-title-group">
+                      <div
+                        className="category-dot"
+                        style={{ background: category?.color ?? '#bbb' }}
+                      >
+                        <AppIcon name={category?.iconKey || category?.icon || 'refresh-cw'} size={15} color="#fff" />
+                      </div>
+                      <div className="recurring-names">
+                        <strong className="recurring-name-text">{r.name}</strong>
+                        <span className="recurring-sub-text">
+                          {category?.name ?? 'Suscripción'} · {frequencyLabel[r.frequency] ?? 'Mensual'}
+                        </span>
                       </div>
                     </div>
 
-                    <div className="recurring-end-box">
+                    <div className="recurring-amount-box">
                       <strong className="expense-amount">−{money(r.amount)}</strong>
+                    </div>
+                  </div>
+
+                  <div className="recurring-bottom-row">
+                    <div className="recurring-meta-chips" onClick={() => handleOpenEdit(r)}>
+                      <span className="recurring-date-chip">
+                        {humanNextDate}
+                      </span>
+                      {r.isShared && (
+                        <span className="badge-status shared-badge">
+                          {sharedLabel}
+                        </span>
+                      )}
+                      {r.active && cycleStatus.status === 'confirmed_for_cycle' && (
+                        <span className="badge-status confirmed_for_cycle">
+                          <AppIcon name="check" size={11} /> Confirmado
+                        </span>
+                      )}
+                    </div>
+
+                    <div className="recurring-switch-wrapper">
                       <label
                         className="switch mini"
                         onClick={(e) => e.stopPropagation()}

@@ -33,6 +33,7 @@ export function BackupPage({ finance, onBack, onToast }: BackupPageProps) {
   const [isCreatingCloud, setIsCreatingCloud] = useState(false)
   const [isRestoring, setIsRestoring] = useState(false)
   const [isLoadingCloudList, setIsLoadingCloudList] = useState(true)
+  const [hasCloudError, setHasCloudError] = useState(false)
   const [isOnline, setIsOnline] = useState(() => (typeof navigator !== 'undefined' ? navigator.onLine : true))
   const fileInputRef = useRef<HTMLInputElement>(null)
 
@@ -55,9 +56,11 @@ export function BackupPage({ finance, onBack, onToast }: BackupPageProps) {
         const supabase = getSupabase()
         const list = await listCloudBackups(supabase, user.id)
         setCloudBackups(list)
+        setHasCloudError(false)
       }
     } catch (err) {
-      console.warn('[BackupPage] Error cargando backups:', err)
+      console.error('[BackupPage] Error cargando backups:', err)
+      setHasCloudError(true)
     } finally {
       setIsLoadingCloudList(false)
     }
@@ -68,9 +71,12 @@ export function BackupPage({ finance, onBack, onToast }: BackupPageProps) {
   }, [isOnline])
 
   const latestAutoBackup = cloudBackups.find((b) => b.reason === 'auto')
-  const lastAutoDate = latestAutoBackup?.created_at ?? (typeof localStorage !== 'undefined' ? localStorage.getItem(LAST_CLOUD_AUTO_BACKUP_KEY) : null)
+  const lastAutoDate =
+    latestAutoBackup?.created_at ??
+    (typeof localStorage !== 'undefined' ? localStorage.getItem(LAST_CLOUD_AUTO_BACKUP_KEY) : null)
 
   const getProtectionStatus = () => {
+    if (hasCloudError) return { label: 'Error', badgeClass: 'error' }
     if (!isOnline) return { label: 'Sin conexión', badgeClass: 'offline' }
     if (lastAutoDate) return { label: 'Protegido', badgeClass: 'protected' }
     return { label: 'Pendiente', badgeClass: 'pending' }
@@ -116,12 +122,15 @@ export function BackupPage({ finance, onBack, onToast }: BackupPageProps) {
 
       if (record) {
         setCloudBackups((prev) => [record, ...prev])
+        setHasCloudError(false)
         onToast('Copia de seguridad guardada en la nube', 'success')
       } else {
+        setHasCloudError(true)
         onToast('Error al crear copia en la nube', 'error')
       }
     } catch (err) {
       console.error('[Backup] Error guardando copia en la nube:', err)
+      setHasCloudError(true)
       onToast('Error al conectar con la nube', 'error')
     } finally {
       setIsCreatingCloud(false)
@@ -281,9 +290,7 @@ export function BackupPage({ finance, onBack, onToast }: BackupPageProps) {
           <div className="protection-info">
             <div className="protection-title-row">
               <h3>Protección en la nube</h3>
-              <span className={`status-pill ${protection.badgeClass}`}>
-                {protection.label}
-              </span>
+              <span className={`status-pill ${protection.badgeClass}`}>{protection.label}</span>
             </div>
             <p className="protection-subtext">
               Última copia automática:{' '}
@@ -295,11 +302,11 @@ export function BackupPage({ finance, onBack, onToast }: BackupPageProps) {
         <div className="protection-actions-row">
           <button
             type="button"
-            className="btn btn-secondary btn-sm"
+            className="btn btn-secondary btn-block"
             onClick={handleCreateManualCloudBackup}
             disabled={isCreatingCloud || !isOnline}
           >
-            <AppIcon name="cloud" size={15} />
+            <AppIcon name="cloud" size={16} />
             <span>{isCreatingCloud ? 'Guardando...' : 'Crear copia en la nube ahora'}</span>
           </button>
         </div>
@@ -317,7 +324,7 @@ export function BackupPage({ finance, onBack, onToast }: BackupPageProps) {
             </p>
           ) : (
             <div className="backup-items-list">
-              {cloudBackups.slice(0, 10).map((backup) => {
+              {cloudBackups.slice(0, 8).map((backup) => {
                 const badge = getReasonBadge(backup.reason)
                 return (
                   <div
@@ -359,10 +366,10 @@ export function BackupPage({ finance, onBack, onToast }: BackupPageProps) {
           </div>
         </div>
 
-        <div className="button-group-row">
+        <div className="button-group-stack">
           <button
             type="button"
-            className="btn btn-primary"
+            className="btn btn-primary btn-block"
             onClick={handleExportJson}
             disabled={isExporting}
           >
@@ -372,12 +379,12 @@ export function BackupPage({ finance, onBack, onToast }: BackupPageProps) {
 
           <button
             type="button"
-            className="btn btn-secondary"
+            className="btn btn-secondary btn-block"
             onClick={handleSelectFile}
             disabled={isRestoring}
           >
             <AppIcon name="upload" size={16} />
-            <span>Importar y restaurar</span>
+            <span>Importar y restaurar JSON</span>
           </button>
         </div>
 
@@ -423,7 +430,7 @@ export function BackupPage({ finance, onBack, onToast }: BackupPageProps) {
                 onClick={() => setSelectedCloudBackup(null)}
                 aria-label="Cerrar"
               >
-                ×
+                <AppIcon name="x" size={18} />
               </button>
             </div>
 
@@ -435,27 +442,39 @@ export function BackupPage({ finance, onBack, onToast }: BackupPageProps) {
 
               <div className="summary-grid">
                 <div className="summary-item">
-                  <span className="count">{selectedCloudBackup.summary?.transactionCount ?? selectedCloudBackup.payload.transactions?.length ?? 0}</span>
+                  <span className="count">
+                    {selectedCloudBackup.summary?.transactionCount ?? selectedCloudBackup.payload.transactions?.length ?? 0}
+                  </span>
                   <span className="type">Movimientos</span>
                 </div>
                 <div className="summary-item">
-                  <span className="count">{selectedCloudBackup.summary?.accountCount ?? selectedCloudBackup.payload.accounts?.length ?? 0}</span>
+                  <span className="count">
+                    {selectedCloudBackup.summary?.accountCount ?? selectedCloudBackup.payload.accounts?.length ?? 0}
+                  </span>
                   <span className="type">Cuentas</span>
                 </div>
                 <div className="summary-item">
-                  <span className="count">{selectedCloudBackup.summary?.goalCount ?? selectedCloudBackup.payload.goals?.length ?? 0}</span>
+                  <span className="count">
+                    {selectedCloudBackup.summary?.goalCount ?? selectedCloudBackup.payload.goals?.length ?? 0}
+                  </span>
                   <span className="type">Objetivos</span>
                 </div>
                 <div className="summary-item">
-                  <span className="count">{selectedCloudBackup.summary?.reserveCount ?? selectedCloudBackup.payload.reserves?.length ?? 0}</span>
+                  <span className="count">
+                    {selectedCloudBackup.summary?.reserveCount ?? selectedCloudBackup.payload.reserves?.length ?? 0}
+                  </span>
                   <span className="type">Reservas</span>
                 </div>
                 <div className="summary-item">
-                  <span className="count">{selectedCloudBackup.summary?.budgetCount ?? selectedCloudBackup.payload.budgets?.length ?? 0}</span>
+                  <span className="count">
+                    {selectedCloudBackup.summary?.budgetCount ?? selectedCloudBackup.payload.budgets?.length ?? 0}
+                  </span>
                   <span className="type">Presupuestos</span>
                 </div>
                 <div className="summary-item">
-                  <span className="count">{selectedCloudBackup.summary?.recurringCount ?? selectedCloudBackup.payload.recurring?.length ?? 0}</span>
+                  <span className="count">
+                    {selectedCloudBackup.summary?.recurringCount ?? selectedCloudBackup.payload.recurring?.length ?? 0}
+                  </span>
                   <span className="type">Recurrentes</span>
                 </div>
               </div>
@@ -502,14 +521,14 @@ export function BackupPage({ finance, onBack, onToast }: BackupPageProps) {
         <div className="modal-backdrop" onClick={() => setPendingJsonRestore(null)} role="dialog" aria-modal="true">
           <div className="modal backup-confirm-modal" onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
-              <h3>Confirmar restauración de archivo JSON</h3>
+              <h3>Confirmar restauración JSON</h3>
               <button
                 type="button"
                 className="close-btn"
                 onClick={() => setPendingJsonRestore(null)}
                 aria-label="Cerrar"
               >
-                ×
+                <AppIcon name="x" size={18} />
               </button>
             </div>
 

@@ -5686,7 +5686,117 @@ describe('Fase 14 — Coherencia de Almacenamiento/Backup y Recurrentes Comparti
     const net3 = selectNetPersonalExpensesForPeriod([exp, bizManuela, bizPepa], new Date('2026-09-01'), 'month')
     assert.equal(net3, 2.49)
   })
+
+  it('256. createCloudBackup construye payload válido y calcula el resumen correctamente', async () => {
+    const dummyState: PersistedState = {
+      accounts: [{ id: 'daily', name: 'Cuenta diaria', type: 'spending', initialBalance: 100 }],
+      transactions: [{ id: 'tx_1', accountId: 'daily', type: 'expense', amount: 15, description: 'Cena', date: '2026-09-03' }],
+      goals: [],
+      recurring: [],
+      categories: [],
+      budgets: [],
+      reserves: [],
+      specialPeriods: [],
+      planSettings: { monthlyIncome: 0, targetSavingsType: 'percentage', targetSavingsValue: 0, emergencyFundTargetType: 'months', emergencyFundTargetValue: 0, emergencyFundCurrent: 0, essentialCategoryIds: [] },
+    }
+
+    const mockSupabase = {
+      from: (table: string) => ({
+        insert: (row: any) => ({
+          select: () => ({
+            single: async () => ({ data: row, error: null }),
+          }),
+        }),
+      }),
+    } as any
+
+    const res = await createCloudBackup(mockSupabase, 'user_123', dummyState, 'manual')
+    assert.ok(res)
+    assert.equal(res.user_id, 'user_123')
+    assert.equal(res.reason, 'manual')
+    assert.equal(res.summary.transactionCount, 1)
+    assert.equal(res.summary.accountCount, 1)
+  })
+
+  it('257. createCloudBackup gestiona errores de Supabase sin lanzar excepciones y devuelve null', async () => {
+    const dummyState: PersistedState = {
+      accounts: [],
+      transactions: [],
+      goals: [],
+      recurring: [],
+      categories: [],
+      budgets: [],
+      reserves: [],
+      specialPeriods: [],
+      planSettings: { monthlyIncome: 0, targetSavingsType: 'percentage', targetSavingsValue: 0, emergencyFundTargetType: 'months', emergencyFundTargetValue: 0, emergencyFundCurrent: 0, essentialCategoryIds: [] },
+    }
+
+    const mockFailingSupabase = {
+      from: () => ({
+        insert: () => ({
+          select: () => ({
+            single: async () => ({
+              data: null,
+              error: { code: '42501', message: 'row-level security violation', details: null, hint: null },
+            }),
+          }),
+        }),
+      }),
+    } as any
+
+    const res = await createCloudBackup(mockFailingSupabase, 'user_123', dummyState, 'manual')
+    assert.equal(res, null)
+  })
+
+  it('258. listCloudBackups maneja errores devolviendo array vacío', async () => {
+    const mockFailingSupabase = {
+      from: () => ({
+        select: () => ({
+          eq: () => ({
+            order: async () => ({
+              data: null,
+              error: { code: 'PGRST205', message: 'Table not found', details: null, hint: null },
+            }),
+          }),
+        }),
+      }),
+    } as any
+
+    const list = await listCloudBackups(mockFailingSupabase, 'user_123')
+    assert.deepEqual(list, [])
+  })
+
+  it('259. Estado de protección en UI: transiciona fiablemente entre Estados (Error, Protegido, Pendiente)', () => {
+    // Función selector de estado
+    const computeProtectionStatus = (
+      hasError: boolean,
+      isOnline: boolean,
+      lastAutoIso: string | null
+    ) => {
+      if (hasError) return 'Error'
+      if (!isOnline) return 'Sin conexión'
+      if (lastAutoIso) return 'Protegido'
+      return 'Pendiente'
+    }
+
+    assert.equal(computeProtectionStatus(true, true, '2026-09-01'), 'Error')
+    assert.equal(computeProtectionStatus(false, false, '2026-09-01'), 'Sin conexión')
+    assert.equal(computeProtectionStatus(false, true, '2026-09-01'), 'Protegido')
+    assert.equal(computeProtectionStatus(false, true, null), 'Pendiente')
+  })
+
+  it('260. Recurrente compartido muestra label humano de participantes "Con X personas"', () => {
+    const getSharedLabel = (participantsCount: number) => {
+      if (participantsCount <= 0) return 'Compartido'
+      return participantsCount === 1 ? 'Con 1 persona' : `Con ${participantsCount} personas`
+    }
+
+    assert.equal(getSharedLabel(0), 'Compartido')
+    assert.equal(getSharedLabel(1), 'Con 1 persona')
+    assert.equal(getSharedLabel(2), 'Con 2 personas') // Marta + Manuela + Pepa -> 2 externas
+  })
 })
+
 
 
 

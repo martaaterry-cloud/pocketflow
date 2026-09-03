@@ -148,10 +148,10 @@ export function RecurringPaymentModal({
       (c) => c.displayName.toLowerCase() === rawName.toLowerCase()
     )
 
-    setParticipants([
-      ...participants,
+    setParticipants((prev) => [
+      ...prev,
       {
-        name: matchedContact ? matchedContact.displayName : rawName,
+        name: rawName,
         contactId: matchedContact?.id,
         customAmount: 0,
       },
@@ -160,25 +160,21 @@ export function RecurringPaymentModal({
   }
 
   const handleRemoveParticipant = (index: number) => {
-    setParticipants(participants.filter((_, i) => i !== index))
+    setParticipants((prev) => prev.filter((_, i) => i !== index))
   }
 
   const handleCustomAmountChange = (index: number, val: string) => {
     const num = Number(val.replace(',', '.')) || 0
-    setParticipants(
-      participants.map((p, i) => (i === index ? { ...p, customAmount: num } : p))
+    setParticipants((prev) =>
+      prev.map((p, i) => (i === index ? { ...p, customAmount: num } : p))
     )
   }
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
-    if (!name.trim() || isNaN(numericAmount) || numericAmount <= 0) return
+    if (!name.trim() || numericAmount <= 0) return
 
-    // Si es compartido pero no hay participantes, desactivar o conservar
-    const hasExternal = participants.length > 0
-    const finalIsShared = isShared && hasExternal
-
-    const data: CreateRecurringPaymentInput = {
+    const data = {
       name: name.trim(),
       amount: numericAmount,
       categoryId,
@@ -186,11 +182,11 @@ export function RecurringPaymentModal({
       frequency,
       nextDate,
       active,
-      isShared: finalIsShared,
-      sharingTemplate: finalIsShared
+      isShared,
+      sharingTemplate: isShared
         ? {
-            includePayer: selfParticipates,
             splitType,
+            includePayer: selfParticipates,
             participants: computedShares
               .filter((s) => !s.isPayerShare)
               .map((s) => ({
@@ -227,7 +223,7 @@ export function RecurringPaymentModal({
           </button>
         </div>
 
-        <form onSubmit={handleSubmit}>
+        <form onSubmit={handleSubmit} className="modal-form">
           <div className="form-group">
             <label>
               Concepto
@@ -305,27 +301,30 @@ export function RecurringPaymentModal({
             </label>
           </div>
 
-          {/* Sección Gasto Compartido (discreto, OFF por defecto) */}
-          <div className="shared-expense-section" style={{ marginTop: 14 }}>
+          {/* Sección Gasto Compartido */}
+          <div className="shared-expense-section">
             <div className="shared-toggle-row">
               <div className="shared-toggle-text">
                 <strong>Gasto compartido</strong>
                 <span>Plantilla de reparto automático al confirmar cada ciclo</span>
               </div>
-              <label className="switch-label">
+              <label
+                className="switch mini"
+                title={isShared ? 'Desactivar reparto' : 'Activar reparto compartido'}
+              >
                 <input
                   type="checkbox"
                   checked={isShared}
                   onChange={(e) => setIsShared(e.target.checked)}
                 />
-                <span className="switch-slider" />
+                <span className="slider round"></span>
               </label>
             </div>
 
             {isShared && (
               <div className="shared-config-box">
                 {/* Checkbox Yo participo */}
-                <label className="checkbox-row">
+                <label className="checkbox-custom-row">
                   <input
                     type="checkbox"
                     checked={selfParticipates}
@@ -334,101 +333,112 @@ export function RecurringPaymentModal({
                   <span>Yo también participo en este gasto</span>
                 </label>
 
-                {/* Tipo de reparto */}
-                <div className="split-type-selector" style={{ margin: '8px 0' }}>
-                  <label className={`split-pill ${splitType === 'equal' ? 'active' : ''}`}>
-                    <input
-                      type="radio"
-                      name="splitType"
-                      checked={splitType === 'equal'}
-                      onChange={() => setSplitType('equal')}
-                    />
-                    <span>A partes iguales</span>
-                  </label>
-                  <label className={`split-pill ${splitType === 'custom' ? 'active' : ''}`}>
-                    <input
-                      type="radio"
-                      name="splitType"
-                      checked={splitType === 'custom'}
-                      onChange={() => setSplitType('custom')}
-                    />
-                    <span>Personalizado</span>
-                  </label>
+                {/* Segmented Control Tipo de Reparto */}
+                <div className="segmented-control-wrapper">
+                  <div className="segmented-control" role="tablist">
+                    <button
+                      type="button"
+                      role="tab"
+                      aria-selected={splitType === 'equal'}
+                      className={`segmented-btn ${splitType === 'equal' ? 'active' : ''}`}
+                      onClick={() => setSplitType('equal')}
+                    >
+                      A partes iguales
+                    </button>
+                    <button
+                      type="button"
+                      role="tab"
+                      aria-selected={splitType === 'custom'}
+                      className={`segmented-btn ${splitType === 'custom' ? 'active' : ''}`}
+                      onClick={() => setSplitType('custom')}
+                    >
+                      Personalizado
+                    </button>
+                  </div>
                 </div>
 
                 {/* Añadir personas */}
-                <div className="participant-input-row">
-                  <input
-                    type="text"
-                    placeholder="Escribe nombre (ej. Manuela, Pepa)..."
-                    value={newParticipantInput}
-                    onChange={(e) => setNewParticipantInput(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') {
-                        e.preventDefault()
-                        handleAddParticipant()
-                      }
-                    }}
-                    list="shared-recurring-contacts-list"
-                  />
-                  <datalist id="shared-recurring-contacts-list">
-                    {sharedContacts.map((c) => (
-                      <option key={c.id} value={c.displayName} />
-                    ))}
-                  </datalist>
+                <div className="participant-add-container">
+                  <div className="participant-input-wrapper">
+                    <input
+                      type="text"
+                      className="participant-search-input"
+                      placeholder="Escribe nombre (ej. Manuela, Pepa)..."
+                      value={newParticipantInput}
+                      onChange={(e) => setNewParticipantInput(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault()
+                          handleAddParticipant()
+                        }
+                      }}
+                      list="shared-recurring-contacts-list"
+                    />
+                    <datalist id="shared-recurring-contacts-list">
+                      {sharedContacts.map((c) => (
+                        <option key={c.id} value={c.displayName} />
+                      ))}
+                    </datalist>
+                  </div>
                   <button
                     type="button"
-                    className="secondary-button add-participant-btn"
+                    className="btn btn-secondary btn-add-person"
                     onClick={() => handleAddParticipant()}
                   >
-                    + Añadir persona
+                    <AppIcon name="plus" size={14} />
+                    <span>Añadir persona</span>
                   </button>
                 </div>
 
                 {/* Chips / Lista de participantes */}
                 {participants.length > 0 && (
-                  <div className="participant-chips">
+                  <div className="participant-chips-wrap">
                     {participants.map((p, idx) => (
-                      <div className="participant-chip-detailed" key={idx}>
-                        <span className="participant-name">{p.name}</span>
+                      <div className="participant-chip-item" key={idx}>
+                        <span className="participant-name-label">{p.name}</span>
                         {splitType === 'custom' && (
-                          <input
-                            type="text"
-                            inputMode="decimal"
-                            className="participant-custom-input"
-                            value={String(p.customAmount ?? 0).replace('.', ',')}
-                            onChange={(e) => handleCustomAmountChange(idx, e.target.value)}
-                            placeholder="0,00"
-                          />
+                          <div className="participant-custom-field">
+                            <input
+                              type="text"
+                              inputMode="decimal"
+                              className="participant-amount-input"
+                              value={String(p.customAmount ?? 0).replace('.', ',')}
+                              onChange={(e) => handleCustomAmountChange(idx, e.target.value)}
+                              placeholder="0,00"
+                            />
+                            <span className="unit-label">€</span>
+                          </div>
                         )}
                         <button
                           type="button"
-                          className="chip-remove-btn"
+                          className="chip-delete-btn"
                           onClick={() => handleRemoveParticipant(idx)}
                           aria-label={`Quitar ${p.name}`}
                         >
-                          ×
+                          <AppIcon name="x" size={13} />
                         </button>
                       </div>
                     ))}
                   </div>
                 )}
 
-                {/* Previsualización del reparto con céntimos exactos */}
+                {/* Previsualización del reparto exacto */}
                 {computedShares.length > 0 && (
-                  <div className="split-preview">
-                    <span className="split-preview-title">Reparto plantilla exacto:</span>
-                    <div className="split-preview-list">
+                  <div className="split-preview-card">
+                    <span className="split-preview-header">Reparto plantilla exacto</span>
+                    <div className="split-preview-table">
                       {computedShares.map((s, idx) => (
-                        <div className="split-preview-item" key={idx}>
-                          <span>{s.participantName}</span>
-                          <strong>{money(s.amount)}</strong>
+                        <div className="split-preview-row" key={idx}>
+                          <span className="split-person-name">
+                            {s.participantName} {s.isPayerShare ? '(Tú)' : ''}
+                          </span>
+                          <strong className="split-person-amount">{money(s.amount)}</strong>
                         </div>
                       ))}
                     </div>
-                    <small className="muted-text" style={{ marginTop: 6, display: 'block', fontSize: 11 }}>
-                      Nota: Esta plantilla no crea deudas ahora. Las cuotas se generarán en "Por cobrar" cada vez que pulses "Confirmar cobro".
-                    </small>
+                    <p className="split-preview-notice">
+                      Las cuotas se generarán en &quot;Por cobrar&quot; cada vez que pulses &quot;Confirmar cobro&quot;.
+                    </p>
                   </div>
                 )}
               </div>

@@ -111,7 +111,12 @@ export async function createCloudBackup(
       .single()
 
     if (error) {
-      console.warn('[CloudBackup] Error insertando backup en Supabase:', error.message)
+      console.error('[CloudBackup] Error insertando backup en Supabase:', {
+        code: error.code,
+        message: error.message,
+        details: error.details,
+        hint: error.hint,
+      })
       return null
     }
 
@@ -125,7 +130,7 @@ export async function createCloudBackup(
 
     return (data as CloudBackupRecord) || (row as CloudBackupRecord)
   } catch (err) {
-    console.warn('[CloudBackup] Excepción creando backup:', err)
+    console.error('[CloudBackup] Excepción creando backup:', err)
     return null
   }
 }
@@ -145,13 +150,18 @@ export async function listCloudBackups(
       .order('created_at', { ascending: false })
 
     if (error) {
-      console.warn('[CloudBackup] Error listando backups:', error.message)
+      console.error('[CloudBackup] Error listando backups:', {
+        code: error.code,
+        message: error.message,
+        details: error.details,
+        hint: error.hint,
+      })
       return []
     }
 
     return (data as CloudBackupRecord[]) ?? []
   } catch (err) {
-    console.warn('[CloudBackup] Excepción listando backups:', err)
+    console.error('[CloudBackup] Excepción listando backups:', err)
     return []
   }
 }
