@@ -3380,16 +3380,17 @@ input:checked + .slider:before {
   position: absolute;
   top: 0;
   bottom: 0;
-  width: 72px;
+  width: 66px;
   border: none;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 4px;
+  gap: 3px;
   cursor: pointer;
-  font-size: 11px;
+  font-size: 10px;
   font-weight: 600;
+  letter-spacing: -0.1px;
   color: #ffffff;
   padding: 0;
   transition: background 0.15s ease, opacity 0.15s ease;
@@ -3397,20 +3398,20 @@ input:checked + .slider:before {
 
 .swipe-action-button.edit {
   left: 0;
-  background: #2563eb;
+  background: #356bb3;
 }
 
 .swipe-action-button.edit:active {
-  background: #1d4ed8;
+  background: #285491;
 }
 
 .swipe-action-button.delete {
   right: 0;
-  background: #dc2626;
+  background: #c74242;
 }
 
 .swipe-action-button.delete:active {
-  background: #b91c1c;
+  background: #a83232;
 }
 
 .swipeable-content {

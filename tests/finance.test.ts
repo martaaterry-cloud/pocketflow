@@ -6413,12 +6413,12 @@ describe('▶ Fase 17 — Gestos Nativos de Swipe en Movimientos (Editar/Elimina
     assert.equal(res.direction, 'horizontal')
   })
 
-  it('296. pointerup hace snap correcto (>36px -> +72px, <-36px -> -72px, sino 0px)', () => {
+  it('296. pointerup hace snap correcto (>33px -> +66px, <-33px -> -66px, sino 0px)', () => {
     const snapEdit = simulateSwipeGesture({ dx: 40, dy: 0, startTranslate: 0 })
-    assert.equal(snapEdit.finalTranslate, 72)
+    assert.equal(snapEdit.finalTranslate, SWIPE_MAX_REVEAL)
 
     const snapDelete = simulateSwipeGesture({ dx: -40, dy: 0, startTranslate: 0 })
-    assert.equal(snapDelete.finalTranslate, -72)
+    assert.equal(snapDelete.finalTranslate, -SWIPE_MAX_REVEAL)
 
     const snapBack = simulateSwipeGesture({ dx: 25, dy: 0, startTranslate: 0 })
     assert.equal(snapBack.finalTranslate, 0)

@@ -3,8 +3,8 @@ import type { Category, Transaction } from '../models/finance'
 import { money, shortDate } from '../utils/money'
 import { AppIcon } from '../ui/icons'
 
-export const SWIPE_MAX_REVEAL = 72 // Desplazamiento máximo de revelación (±72px)
-export const SWIPE_THRESHOLD = 36  // Umbral de activación para snap abierto (36px)
+export const SWIPE_MAX_REVEAL = 66 // Desplazamiento máximo visual (~64-68px)
+export const SWIPE_THRESHOLD = 33  // Umbral proporcional para snap abierto (~33px)
 
 interface SwipeableTransactionRowProps {
   transaction: Transaction
@@ -73,7 +73,7 @@ export function SwipeableTransactionRow({
     try {
       e.currentTarget.setPointerCapture(e.pointerId)
     } catch {
-      // Ignorar si el navegador no permite setPointerCapture en este contexto
+      // Fallback seguro si pointer capture no está disponible
     }
   }
 
@@ -88,7 +88,7 @@ export function SwipeableTransactionRow({
     // 1. Detección temprana de dirección
     if (directionRef.current === null) {
       if (absY > 6 && absY > absX) {
-        // Intención claramente vertical -> cancelar swipe y permitir scroll fluido nativo
+        // Intención vertical -> cancelar swipe y permitir scroll fluido nativo
         directionRef.current = 'vertical'
         isDraggingRef.current = false
         setIsDragging(false)
@@ -102,7 +102,7 @@ export function SwipeableTransactionRow({
         return
       }
       if (absX > 6 && absX >= absY) {
-        // Intención horizontal confirmada -> bloquear scroll
+        // Intención horizontal confirmada -> fijar dirección
         directionRef.current = 'horizontal'
         hasMovedRef.current = true
       } else {
@@ -110,15 +110,15 @@ export function SwipeableTransactionRow({
       }
     }
 
-    // 2. Seguimiento 1:1 del dedo mientras dragging = true
+    // 2. Seguimiento 1:1 del dedo durante dragging
     if (directionRef.current === 'horizontal') {
       let raw = startTranslateRef.current + dx
 
-      // Si no hay acción disponible en esa dirección, no permitir desplazamiento
+      // Si no hay callback disponible en esa dirección, bloquear
       if (raw > 0 && !onEdit) raw = 0
       if (raw < 0 && !onDelete) raw = 0
 
-      // Clamp estricto 1:1 entre -72px y +72px
+      // Clamp estricto 1:1 entre -SWIPE_MAX_REVEAL y +SWIPE_MAX_REVEAL
       const clamped = Math.max(-SWIPE_MAX_REVEAL, Math.min(SWIPE_MAX_REVEAL, raw))
       currentTranslateRef.current = clamped
       setTranslateX(clamped)
@@ -191,7 +191,7 @@ export function SwipeableTransactionRow({
 
   return (
     <div className="swipeable-row-container">
-      {/* Capa de acciones de fondo (z-index: 0, siempre debajo del foreground) */}
+      {/* Capa de acciones de fondo (z-index: 0, perfectamente contenida debajo) */}
       <div className="swipe-actions-layer">
         {onEdit && (
           <button
@@ -207,7 +207,7 @@ export function SwipeableTransactionRow({
             aria-label={`Editar ${t.description}`}
             tabIndex={translateX > 0 ? 0 : -1}
           >
-            <AppIcon name="pencil" size={18} color="#ffffff" />
+            <AppIcon name="pencil" size={15} color="#ffffff" />
             <span>Editar</span>
           </button>
         )}
@@ -225,13 +225,13 @@ export function SwipeableTransactionRow({
             aria-label={`Eliminar ${t.description}`}
             tabIndex={translateX < 0 ? 0 : -1}
           >
-            <AppIcon name="trash-2" size={18} color="#ffffff" />
+            <AppIcon name="trash-2" size={15} color="#ffffff" />
             <span>Eliminar</span>
           </button>
         )}
       </div>
 
-      {/* Capa de contenido (Foreground, z-index: 1, fondo sólido que oculta acciones a 0px) */}
+      {/* Capa de contenido (Foreground, z-index: 1, fondo sólido opaco que cubre acciones a 0px) */}
       <div
         className={`transaction-row swipeable-content ${onSelect && translateX === 0 ? 'clickable' : ''}`}
         style={{
