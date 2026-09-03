@@ -1,16 +1,23 @@
 import React from 'react'
 import {
+  Activity,
   ArrowDownLeft,
   ArrowLeftRight,
   Baby,
   Calendar,
   Car,
+  ChartPie,
   Check,
   ChevronLeft,
   ChevronRight,
+  Circle,
   CircleAlert,
-  CircleDot,
+  Clock,
+  Cloud,
+  CloudUpload,
+  Copy,
   CreditCard,
+  Download,
   Dumbbell,
   Ellipsis,
   Gift,
@@ -25,11 +32,13 @@ import {
   Pencil,
   PartyPopper,
   PiggyBank,
+  PieChart,
   Plane,
   Plus,
   ReceiptText,
   RefreshCw,
   Search,
+  Settings,
   Shield,
   ShieldCheck,
   Shirt,
@@ -41,9 +50,13 @@ import {
   Ticket,
   Trash2,
   Umbrella,
+  Upload,
   User,
+  Users,
+  Wallet,
   Wrench,
   X,
+  Zap,
 } from 'lucide-react'
 
 // Mapa exhaustivo de iconKey -> componente Lucide
@@ -89,7 +102,7 @@ export const ICON_MAP: Record<string, React.ComponentType<{ size?: number | stri
   wrench: Wrench,
   umbrella: Umbrella,
 
-  // Interfaz
+  // Interfaz y Navegación
   receipt: ReceiptText,
   calendar: Calendar,
   'piggy-bank': PiggyBank,
@@ -99,19 +112,36 @@ export const ICON_MAP: Record<string, React.ComponentType<{ size?: number | stri
   'arrow-left-right': ArrowLeftRight,
   'arrow-down-left': ArrowDownLeft,
   'credit-card': CreditCard,
+  wallet: Wallet,
   landmark: Landmark,
   check: Check,
   x: X,
   trash: Trash2,
+  'trash-2': Trash2,
   info: Info,
   lock: Lock,
   plus: Plus,
   search: Search,
   edit: Pencil,
+  pencil: Pencil,
   sliders: Sliders,
+  settings: Settings,
   user: User,
+  users: Users,
   'shield-check': ShieldCheck,
   'circle-alert': CircleAlert,
+  clock: Clock,
+  activity: Activity,
+  cloud: Cloud,
+  'cloud-upload': CloudUpload,
+  download: Download,
+  upload: Upload,
+  'chart-pie': ChartPie,
+  'pie-chart': PieChart,
+  statistics: ChartPie,
+  circle: Circle,
+  copy: Copy,
+  zap: Zap,
 }
 
 // Mapeo retrocompatible de antiguos símbolos y emojis a iconKey
@@ -147,7 +177,7 @@ export const LEGACY_SYMBOL_TO_KEY: Record<string, string> = {
   '↻': 'refresh-cw',
   '◔': 'target',
   '◎': 'sliders',
-  '⚙': 'sliders',
+  '⚙': 'settings',
   '›': 'chevron-right',
   '‹': 'chevron-left',
   'ℹ️': 'info',
@@ -157,7 +187,7 @@ export const LEGACY_SYMBOL_TO_KEY: Record<string, string> = {
 
 /**
  * Resuelve un string (sea emoji, símbolo o iconKey existente) al iconKey canónico estable.
- * Si es desconocido, devuelve 'target' o 'ellipsis' como fallback seguro.
+ * Si es desconocido, devuelve 'circle' o 'target' como fallback seguro.
  */
 export function resolveIconKey(rawIcon: string | undefined | null, fallback = 'target'): string {
   if (!rawIcon || typeof rawIcon !== 'string') return fallback
@@ -180,14 +210,14 @@ export interface AppIconProps {
 
 export function AppIcon({ name, size = 18, className = '', color }: AppIconProps) {
   const resolvedKey = resolveIconKey(name)
-  const Component = ICON_MAP[resolvedKey] ?? CircleDot
+  const Component = ICON_MAP[resolvedKey] ?? Circle
   return <Component size={size} className={className} color={color} />
 }
 
 // Opciones estándar para el selector visual de iconos en objetivos y reservas
 export const GOAL_RESERVE_ICON_OPTIONS = [
   { key: 'target', label: 'Meta general' },
-  { key: 'shield', label: 'Fondo emergencia' },
+  { key: 'shield-check', label: 'Fondo emergencia' },
   { key: 'plane', label: 'Viaje / Vacaciones' },
   { key: 'house', label: 'Casa / Hogar' },
   { key: 'car', label: 'Coche / Vehículo' },

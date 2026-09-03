@@ -260,12 +260,16 @@ export function HomePage({
         <div className="section-title">
           <h2>Gastos por categoría</h2>
           <span>
-            {money(finance.totals.netMonthExpenses)} este mes
-            {finance.totals.budgetsSummary.totalBudgeted > 0 &&
-              ` · Presupuestos: ${finance.totals.budgetsSummary.overallUsagePercentage}%`}
+            {finance.totals.budgetsSummary.totalBudgeted > 0
+              ? `Presupuestos: ${finance.totals.budgetsSummary.overallUsagePercentage}% consumido`
+              : 'Desglose mensual'}
           </span>
         </div>
-        <DonutChart categoryItems={finance.totals.netCategoryExpenses} />
+        <DonutChart
+          transactions={finance.transactions}
+          categories={finance.categories}
+          netCategoryItems={finance.totals.netCategoryExpenses}
+        />
       </section>
 
       <section className="section">

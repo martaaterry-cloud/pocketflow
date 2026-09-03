@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useCallback } from 'react'
 import type { ReturnTypeFinance } from '../types'
 import { money } from '../utils/money'
 import { AppIcon } from '../ui/icons'
@@ -15,6 +15,7 @@ import { ProfilePage } from './ProfilePage'
 import { VariableEstimatesPage } from './VariableEstimatesPage'
 import { ReceivablesPage } from './ReceivablesPage'
 import { selectPendingDebtors } from '../utils/sharedExpenseSelectors'
+import { useEdgeSwipeBack } from '../hooks/useEdgeSwipeBack'
 
 export type MoreSubView =
   | 'menu'
@@ -48,6 +49,16 @@ export function MorePage({
   onSignOut?: () => void
 }) {
   const [subView, setSubView] = useState<MoreSubView>(initialSubView)
+
+  const handleBackToMenu = useCallback(() => {
+    setSubView('menu')
+  }, [])
+
+  // Hook global de Swipe Back desde el borde izquierdo en todas las subviews de Más
+  useEdgeSwipeBack({
+    onSwipeBack: handleBackToMenu,
+    enabled: subView !== 'menu',
+  })
 
   useEffect(() => {
     if (initialSubView) {
@@ -174,10 +185,10 @@ export function MorePage({
           </b>
         </button>
 
-        {/* Plan Financiero (Nueva Sección) */}
+        {/* Plan Financiero */}
         <button type="button" onClick={() => setSubView('plan')}>
           <span className="menu-icon">
-            <AppIcon name="shield" size={18} />
+            <AppIcon name="shield-check" size={18} />
           </span>
           <div>
             <strong>Plan financiero</strong>
@@ -285,7 +296,7 @@ export function MorePage({
 
         <button type="button" onClick={() => setSubView('statistics')}>
           <span className="menu-icon">
-            <AppIcon name="sliders" size={18} />
+            <AppIcon name="chart-pie" size={18} />
           </span>
           <div>
             <strong>Estadísticas</strong>
@@ -298,11 +309,11 @@ export function MorePage({
 
         <button type="button" onClick={() => setSubView('backup')}>
           <span className="menu-icon">
-            <AppIcon name="shield" size={18} />
+            <AppIcon name="cloud-upload" size={18} />
           </span>
           <div>
             <strong>Copias de seguridad</strong>
-            <small>Exportar, importar y restaurar en JSON seguro</small>
+            <small>Copias en la nube y archivo JSON externo</small>
           </div>
           <b className="chevron">
             <AppIcon name="chevron-right" size={16} />
@@ -324,7 +335,7 @@ export function MorePage({
 
         <button type="button" onClick={() => setSubView('settings')}>
           <span className="menu-icon">
-            <AppIcon name="sliders" size={18} />
+            <AppIcon name="settings" size={18} />
           </span>
           <div>
             <strong>Ajustes</strong>

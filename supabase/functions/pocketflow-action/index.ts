@@ -73,7 +73,6 @@ Deno.serve(async (req: Request) => {
     try {
       body = await req.json()
     } catch {
-      // Body vacío permitido para ciertas acciones
       body = {}
     }
   }

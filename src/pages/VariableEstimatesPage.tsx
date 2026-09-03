@@ -225,9 +225,16 @@ export function VariableEstimatesPage({
                       type="button"
                       onClick={() => finance.toggleVariableExpenseEstimate(est.id)}
                       className="text-button"
-                      style={{ fontSize: '0.8rem', color: est.active ? '#10b981' : 'var(--text-muted, #64748b)' }}
+                      style={{
+                        fontSize: '0.8rem',
+                        color: est.active ? 'var(--accent-green, #10b981)' : 'var(--text-muted, #64748b)',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: 4,
+                      }}
                     >
-                      {est.active ? '● Activa este mes' : '○ En pausa'}
+                      <AppIcon name={est.active ? 'check' : 'clock'} size={12} />
+                      <span>{est.active ? 'Activa este mes' : 'En pausa'}</span>
                     </button>
 
                     <button

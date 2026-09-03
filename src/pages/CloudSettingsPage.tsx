@@ -30,9 +30,11 @@ export function CloudSettingsPage({
   const [newlyCreatedToken, setNewlyCreatedToken] = useState<string | null>(null)
   const [isGeneratingToken, setIsGeneratingToken] = useState(false)
   const [isMigrating, setIsMigrating] = useState(false)
-  const [copiedToken, setCopiedToken] = useState(false)
+  const [copiedKey, setCopiedKey] = useState<string | null>(null)
+  const [activeTab, setActiveTab] = useState<'token' | 'guide'>('token')
 
-  const edgeFunctionUrl = 'https://xcarqzopfaozxugfhslo.supabase.co/functions/v1/add-expense'
+  const actionEndpointUrl = 'https://xcarqzopfaozxugfhslo.supabase.co/functions/v1/pocketflow-action'
+  const legacyEndpointUrl = 'https://xcarqzopfaozxugfhslo.supabase.co/functions/v1/add-expense'
 
   useEffect(() => {
     if (!user) return
@@ -73,11 +75,11 @@ export function CloudSettingsPage({
     }
   }
 
-  const handleCopy = async (text: string) => {
+  const handleCopy = async (text: string, key: string) => {
     try {
       await navigator.clipboard.writeText(text)
-      setCopiedToken(true)
-      setTimeout(() => setCopiedToken(false), 2000)
+      setCopiedKey(key)
+      setTimeout(() => setCopiedKey(null), 2000)
       onToast('Copiado al portapapeles', 'success')
     } catch {
       onToast('No se pudo copiar automáticamente', 'error')
@@ -131,85 +133,156 @@ export function CloudSettingsPage({
         </button>
       </section>
 
-      {/* Sección Atajo de iPhone en segundo plano */}
+      {/* Sección Atajo de iPhone */}
       <section className="card cloud-action-card">
         <div className="card-title-row">
           <div className="action-icon shortcut-icon">
             <AppIcon name="zap" size={20} />
           </div>
           <div>
-            <h3>Atajo de iPhone en segundo plano</h3>
+            <h3>Atajo &quot;Pocketflow&quot; de iPhone</h3>
             <p className="description">
-              Guarda gastos al instante directamente en la nube <strong>sin abrir Safari ni Pocketflow</strong>.
+              Registra gastos, ingresos, Bizums y consulta saldos <strong>sin abrir la app</strong>.
             </p>
           </div>
         </div>
 
-        <div className="code-box">
-          <span className="code-label">URL de la Edge Function (POST)</span>
-          <div className="code-value-row">
-            <code>{edgeFunctionUrl}</code>
-            <button type="button" className="btn btn-icon btn-sm" onClick={() => handleCopy(edgeFunctionUrl)}>
-              <AppIcon name="copy" size={16} />
-            </button>
-          </div>
+        {/* Selector de sub-sección */}
+        <div className="segmented-control" style={{ margin: '14px 0' }}>
+          <button
+            type="button"
+            className={`segmented-btn ${activeTab === 'token' ? 'active' : ''}`}
+            onClick={() => setActiveTab('token')}
+          >
+            Tokens de acceso
+          </button>
+          <button
+            type="button"
+            className={`segmented-btn ${activeTab === 'guide' ? 'active' : ''}`}
+            onClick={() => setActiveTab('guide')}
+          >
+            Guía de acciones
+          </button>
         </div>
 
-        {newlyCreatedToken && (
-          <div className="new-token-banner">
-            <div className="banner-header">
-              <AppIcon name="check" size={16} />
-              <strong>¡Nuevo token generado!</strong>
+        {activeTab === 'token' ? (
+          <>
+            <div className="code-box">
+              <span className="code-label">Endpoint de acciones rápidas (POST)</span>
+              <div className="code-value-row">
+                <code>{actionEndpointUrl}</code>
+                <button
+                  type="button"
+                  className="btn-icon-subtle"
+                  onClick={() => handleCopy(actionEndpointUrl, 'actionUrl')}
+                  aria-label="Copiar URL de acciones"
+                >
+                  <AppIcon name={copiedKey === 'actionUrl' ? 'check' : 'copy'} size={16} />
+                </button>
+              </div>
             </div>
-            <p>Copia este token ahora y pégalo en la cabecera <code>x-shortcut-token</code> de tu Atajo de iOS:</p>
-            <div className="code-value-row">
-              <code>{newlyCreatedToken}</code>
-              <button
-                type="button"
-                className="btn btn-primary btn-sm"
-                onClick={() => handleCopy(newlyCreatedToken)}
-              >
-                <AppIcon name={copiedToken ? 'check' : 'copy'} size={14} />
-                <span>{copiedToken ? 'Copiado' : 'Copiar token'}</span>
-              </button>
-            </div>
-          </div>
-        )}
 
-        <div className="token-list-section">
-          <h4>Tokens activos</h4>
-          {tokens.length === 0 ? (
-            <p className="muted-text">No tienes ningún token activo. Genera uno para tu iPhone.</p>
-          ) : (
-            <div className="tokens-list">
-              {tokens.map((t) => (
-                <div className="token-row" key={t.id}>
-                  <div>
-                    <strong>{t.name}</strong>
-                    <small>Creado el {new Date(t.createdAt).toLocaleDateString()}</small>
-                  </div>
+            {newlyCreatedToken && (
+              <div className="new-token-banner">
+                <div className="banner-header">
+                  <AppIcon name="check" size={16} />
+                  <strong>¡Nuevo token generado!</strong>
+                </div>
+                <p>
+                  Copia este token y pégalo en la cabecera <code>x-shortcut-token</code> de tu Atajo de iOS:
+                </p>
+                <div className="code-value-row">
+                  <code>{newlyCreatedToken}</code>
                   <button
                     type="button"
-                    className="btn btn-outline-danger btn-sm"
-                    onClick={() => handleRevokeToken(t.id)}
+                    className="btn btn-primary btn-sm"
+                    onClick={() => handleCopy(newlyCreatedToken, 'newToken')}
                   >
-                    Revocar
+                    <AppIcon name={copiedKey === 'newToken' ? 'check' : 'copy'} size={14} />
+                    <span>{copiedKey === 'newToken' ? 'Copiado' : 'Copiar token'}</span>
                   </button>
                 </div>
-              ))}
-            </div>
-          )}
-        </div>
+              </div>
+            )}
 
-        <button
-          type="button"
-          className="btn btn-primary btn-block"
-          onClick={handleCreateToken}
-          disabled={isGeneratingToken}
-        >
-          <AppIcon name="plus" size={16} />
-          <span>{isGeneratingToken ? 'Generando...' : 'Generar nuevo token para Atajo'}</span>
-        </button>
+            <div className="token-list-section">
+              <h4>Tokens activos</h4>
+              {tokens.length === 0 ? (
+                <p className="muted-text">No tienes ningún token activo. Genera uno para tu iPhone.</p>
+              ) : (
+                <div className="tokens-list">
+                  {tokens.map((t) => (
+                    <div className="token-row" key={t.id}>
+                      <div>
+                        <strong>{t.name}</strong>
+                        <small>Creado el {new Date(t.createdAt).toLocaleDateString()}</small>
+                      </div>
+                      <button
+                        type="button"
+                        className="btn btn-outline-danger btn-sm"
+                        onClick={() => handleRevokeToken(t.id)}
+                      >
+                        Revocar
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <button
+              type="button"
+              className="btn btn-primary btn-block"
+              onClick={handleCreateToken}
+              disabled={isGeneratingToken}
+            >
+              <AppIcon name="plus" size={16} />
+              <span>{isGeneratingToken ? 'Generando...' : 'Generar nuevo token para Atajo'}</span>
+            </button>
+          </>
+        ) : (
+          <div className="shortcut-guide-box">
+            <h4 style={{ margin: '0 0 10px', fontSize: 13, textTransform: 'uppercase', color: 'var(--text-muted)' }}>
+              Acciones disponibles en el Atajo
+            </h4>
+
+            <div className="guide-actions-list">
+              <div className="guide-action-card">
+                <strong>1. Añadir gasto</strong>
+                <code>POST {actionEndpointUrl}</code>
+                <pre>{JSON.stringify({ action: 'add_expense', amount: 12.50, description: 'Café', category: 'food' }, null, 2)}</pre>
+              </div>
+
+              <div className="guide-action-card">
+                <strong>2. Añadir ingreso</strong>
+                <code>POST {actionEndpointUrl}</code>
+                <pre>{JSON.stringify({ action: 'add_income', amount: 1500.00, description: 'Nómina' }, null, 2)}</pre>
+              </div>
+
+              <div className="guide-action-card">
+                <strong>3. Registrar Bizum / Reembolso</strong>
+                <code>POST {actionEndpointUrl}</code>
+                <pre>{JSON.stringify({ action: 'register_reimbursement', amount: 2.50, description: 'Bizum Crunchyroll', expenseShareId: 'share_id_opcional' }, null, 2)}</pre>
+              </div>
+
+              <div className="guide-action-card">
+                <strong>4. Consultar deudas pendientes (Por cobrar)</strong>
+                <code>POST {actionEndpointUrl}</code>
+                <pre>{JSON.stringify({ action: 'get_pending_receivables' }, null, 2)}</pre>
+              </div>
+
+              <div className="guide-action-card">
+                <strong>5. Consultar resumen de saldo</strong>
+                <code>POST {actionEndpointUrl}</code>
+                <pre>{JSON.stringify({ action: 'balance_summary' }, null, 2)}</pre>
+              </div>
+            </div>
+
+            <p className="muted-text" style={{ fontSize: 11, marginTop: 12 }}>
+              Cabecera obligatoria en todas las peticiones: <code>x-shortcut-token: TU_TOKEN</code>
+            </p>
+          </div>
+        )}
       </section>
 
       {/* Sincronización manual */}

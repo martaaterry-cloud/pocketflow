@@ -1,4 +1,4 @@
-import type { Account, RecurringFrequency, RecurringPayment, SavingsGoal, Transaction } from '../models/finance'
+import type { Account, Category, RecurringFrequency, RecurringPayment, SavingsGoal, Transaction } from '../models/finance'
 
 /**
  * Dinero para gastar = saldo actual de Cuenta diaria.
@@ -274,4 +274,44 @@ export function selectRecurringPaymentCycleStatus(
     label: `Próximo: ${formattedDate}`,
   }
 }
+
+/**
+ * Gasto bruto desglosado por categoría en el mes actual.
+ */
+export function selectCategoryExpenses(
+  transactions: Transaction[],
+  categories: Category[],
+  referenceDate: Date = new Date()
+): { id: string; name: string; amount: number; percentage: number; color: string; iconKey?: string }[] {
+  const currentMonth = referenceDate.getMonth()
+  const currentYear = referenceDate.getFullYear()
+
+  const monthExpenses = transactions.filter((t) => {
+    if (t.type !== 'expense') return false
+    const d = new Date(t.date)
+    return d.getMonth() === currentMonth && d.getFullYear() === currentYear
+  })
+
+  const total = monthExpenses.reduce((sum, t) => sum + t.amount, 0)
+  const categoryMap = new Map<string, number>()
+
+  monthExpenses.forEach((t) => {
+    const catId = t.categoryId || 'other'
+    categoryMap.set(catId, (categoryMap.get(catId) || 0) + t.amount)
+  })
+
+  return categories.map((c) => {
+    const amount = Math.round((categoryMap.get(c.id) || 0) * 100) / 100
+    const percentage = total > 0 ? Math.round((amount / total) * 100) : 0
+    return {
+      id: c.id,
+      name: c.name,
+      amount,
+      percentage,
+      color: c.color,
+      iconKey: c.icon,
+    }
+  })
+}
+
 

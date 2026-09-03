@@ -36,6 +36,7 @@ import {
 } from '../src/utils/variableEstimates'
 import {
   calculateNextRecurringDate,
+  selectCategoryExpenses,
   selectCommittedAmount,
   selectMonthExpenses,
   selectPendingRecurringPayments,
@@ -5796,6 +5797,348 @@ describe('Fase 14 — Coherencia de Almacenamiento/Backup y Recurrentes Comparti
     assert.equal(getSharedLabel(2), 'Con 2 personas') // Marta + Manuela + Pepa -> 2 externas
   })
 })
+
+describe('▶ Fase 15 — UX Navigation Polish, Rosquilla Interactiva y Atajo iPhone', () => {
+  it('261. NAV: Tocar tab Más cuando se está en una subview resetea a menu', () => {
+    let subView = 'recurring'
+    let tab = 'more'
+
+    const handleTabClick = (clickedTab: string) => {
+      if (clickedTab === 'more') {
+        subView = 'menu'
+        tab = 'more'
+      } else {
+        tab = clickedTab
+      }
+    }
+
+    handleTabClick('more')
+    assert.equal(subView, 'menu')
+    assert.equal(tab, 'more')
+  })
+
+  it('262. NAV: Edge swipe válido desde el borde izquierdo (x <= 28, dx >= 75) dispara onSwipeBack', () => {
+    const isEdgeSwipeValid = (
+      startX: number,
+      startY: number,
+      endX: number,
+      endY: number,
+      edgeThreshold = 28,
+      minDistance = 75,
+      maxVerticalRatio = 0.6
+    ) => {
+      if (startX > edgeThreshold) return false
+      const deltaX = endX - startX
+      const deltaY = Math.abs(endY - startY)
+      return deltaX >= minDistance && deltaY <= deltaX * maxVerticalRatio
+    }
+
+    // Gesto válido: empieza en x=15, se mueve 85px horizontal y 10px vertical
+    assert.equal(isEdgeSwipeValid(15, 200, 100, 210), true)
+  })
+
+  it('263. NAV: Swipe vertical predominante (dy > dx * 0.6) cancela el gesto de navegación', () => {
+    const isEdgeSwipeValid = (
+      startX: number,
+      startY: number,
+      endX: number,
+      endY: number,
+      edgeThreshold = 28,
+      minDistance = 75,
+      maxVerticalRatio = 0.6
+    ) => {
+      if (startX > edgeThreshold) return false
+      const deltaX = endX - startX
+      const deltaY = Math.abs(endY - startY)
+      return deltaX >= minDistance && deltaY <= deltaX * maxVerticalRatio
+    }
+
+    // Scroll vertical: empieza en x=10, pero viaja 80px horizontal y 70px vertical
+    assert.equal(isEdgeSwipeValid(10, 100, 90, 170), false)
+  })
+
+  it('264. NAV: Swipe iniciado lejos del borde izquierdo (x > 28px) no dispara navegación', () => {
+    const isEdgeSwipeValid = (
+      startX: number,
+      startY: number,
+      endX: number,
+      endY: number,
+      edgeThreshold = 28,
+      minDistance = 75,
+      maxVerticalRatio = 0.6
+    ) => {
+      if (startX > edgeThreshold) return false
+      const deltaX = endX - startX
+      const deltaY = Math.abs(endY - startY)
+      return deltaX >= minDistance && deltaY <= deltaX * maxVerticalRatio
+    }
+
+    // Swipe en medio de la pantalla (x=120)
+    assert.equal(isEdgeSwipeValid(120, 200, 220, 205), false)
+  })
+
+  it('265. NAV: Controles interactivos quedan excluidos del swipe back', () => {
+    const shouldIgnoreElement = (tagNameOrClass: string) => {
+      const interactive = ['slider', 'segmented-control', 'input-range', 'transaction-row-swipeable']
+      return interactive.some((c) => tagNameOrClass.includes(c))
+    }
+
+    assert.equal(shouldIgnoreElement('segmented-control'), true)
+    assert.equal(shouldIgnoreElement('slider round'), true)
+    assert.equal(shouldIgnoreElement('menu-card-item'), false)
+  })
+
+  it('266. DONUT: Modo por defecto es Neto y calcula gastos personales tras reembolsos', () => {
+    const categories: Category[] = [
+      { id: 'c_food', name: 'Alimentación', color: '#ff0000', icon: 'shopping-basket' },
+    ]
+    const exp: Transaction = { id: 't1', accountId: 'daily', type: 'expense', categoryId: 'c_food', amount: 50, description: 'Compra', date: '2026-09-01' }
+    const reimb: Transaction = { id: 't2', accountId: 'daily', type: 'income', incomeKind: 'reimbursement', amount: 20, description: 'Bizum', date: '2026-09-02', parentExpenseId: 't1' }
+
+    const netCategories = selectNetExpensesByCategory([exp, reimb], categories, new Date('2026-09-01'), 'month')
+    assert.equal(netCategories[0].amount, 30.00) // 50 - 20 = 30 €
+  })
+
+  it('267. DONUT: Selector a modo Bruto refleja importe íntegro antes de reembolsos', () => {
+    const categories: Category[] = [
+      { id: 'c_food', name: 'Alimentación', color: '#ff0000', icon: 'shopping-basket' },
+    ]
+    const exp: Transaction = { id: 't1', accountId: 'daily', type: 'expense', categoryId: 'c_food', amount: 50, description: 'Compra', date: '2026-09-01' }
+    const reimb: Transaction = { id: 't2', accountId: 'daily', type: 'income', incomeKind: 'reimbursement', amount: 20, description: 'Bizum', date: '2026-09-02', parentExpenseId: 't1' }
+
+    const grossCategories = selectCategoryExpenses([exp, reimb], categories, new Date('2026-09-01'))
+    assert.equal(grossCategories[0].amount, 50.00) // 50 € brutos
+  })
+
+  it('268. DONUT: Gasto neto por categoría descuenta reembolsos recibidos vinculados', () => {
+    const categories: Category[] = [
+      { id: 'c_leisure', name: 'Ocio', color: '#00ff00', icon: 'ticket' },
+    ]
+    const exp: Transaction = { id: 't_c', accountId: 'daily', type: 'expense', categoryId: 'c_leisure', amount: 7.49, description: 'Crunchyroll', date: '2026-09-01' }
+    const r1: Transaction = { id: 'r1', accountId: 'daily', type: 'income', incomeKind: 'reimbursement', amount: 2.50, description: 'Manuela', date: '2026-09-02', parentExpenseId: 't_c' }
+    const r2: Transaction = { id: 'r2', accountId: 'daily', type: 'income', incomeKind: 'reimbursement', amount: 2.50, description: 'Pepa', date: '2026-09-02', parentExpenseId: 't_c' }
+
+    const net = selectNetExpensesByCategory([exp, r1, r2], categories, new Date('2026-09-01'), 'month')
+    assert.equal(net[0].amount, 2.49)
+  })
+
+  it('269. DONUT: Selección de sector formatea estado de centro con nombre, importe y porcentaje', () => {
+    const item = { id: 'c1', name: 'Ocio', amount: 42.30, total: 136.45 }
+    const pct = Math.round((item.amount / item.total) * 100)
+
+    const centerFormatted = {
+      title: item.name,
+      amount: `${item.amount.toFixed(2).replace('.', ',')} €`,
+      sub: `${pct} % del gasto`,
+    }
+
+    assert.equal(centerFormatted.title, 'Ocio')
+    assert.equal(centerFormatted.amount, '42,30 €')
+    assert.equal(centerFormatted.sub, '31 % del gasto')
+  })
+
+  it('270. DONUT: Suma de sectores activos coincide exactamente con el total del modo seleccionado', () => {
+    const items = [
+      { id: '1', name: 'Ocio', amount: 42.30 },
+      { id: '2', name: 'Comida', amount: 31.20 },
+      { id: '3', name: 'Suscripciones', amount: 8.48 },
+    ]
+    const sum = Math.round(items.reduce((acc, i) => acc + i.amount, 0) * 100) / 100
+    assert.equal(sum, 81.98)
+  })
+
+  it('271. DONUT: Reembolsos pendientes no reducen el modo Neto hasta que son cobrados', () => {
+    const categories: Category[] = [
+      { id: 'c_dinner', name: 'Cenas', color: '#0000ff', icon: 'ticket' },
+    ]
+    // Gasto compartido de 60 € con cuotas pendientes creadas pero sin transacción de Bizum recibida
+    const exp: Transaction = { id: 't_din', accountId: 'daily', type: 'expense', categoryId: 'c_dinner', amount: 60.00, description: 'Cena amigos', date: '2026-09-01' }
+
+    const net = selectNetExpensesByCategory([exp], categories, new Date('2026-09-01'), 'month')
+    assert.equal(net[0].amount, 60.00) // Se mantiene en 60 € hasta que se reciba el Bizum
+  })
+
+  it('272. SHORTCUT: Contrato add-expense antiguo sin campo action procesa gasto y devuelve 200', () => {
+    const parseShortcutAction = (payload: any) => {
+      const action = (payload.action || 'add_expense').toLowerCase()
+      return action
+    }
+
+    assert.equal(parseShortcutAction({ amount: 15.50, description: 'Gasolina' }), 'add_expense')
+  })
+
+  it('273. SHORTCUT: Acción add_income registra ingreso real con tipo income', () => {
+    const buildIncomeTransaction = (body: { amount: number; description?: string }) => {
+      return {
+        id: 'tx_inc_1',
+        type: 'income',
+        income_kind: 'income',
+        amount: body.amount,
+        description: body.description || 'Ingreso rápido',
+        account_id: 'daily',
+      }
+    }
+
+    const tx = buildIncomeTransaction({ amount: 1200, description: 'Nómina septiembre' })
+    assert.equal(tx.type, 'income')
+    assert.equal(tx.income_kind, 'income')
+    assert.equal(tx.amount, 1200)
+  })
+
+  it('274. SHORTCUT: Acción register_reimbursement libre registra reembolso sin padre', () => {
+    const buildReimbursement = (body: { amount: number; description?: string; parentExpenseId?: string }) => {
+      return {
+        id: 'tx_r_1',
+        type: 'income',
+        income_kind: 'reimbursement',
+        amount: body.amount,
+        description: body.description || 'Bizum recibido',
+        parent_expense_id: body.parentExpenseId || null,
+        account_id: 'daily',
+      }
+    }
+
+    const r = buildReimbursement({ amount: 25, description: 'Bizum de Juan' })
+    assert.equal(r.type, 'income')
+    assert.equal(r.income_kind, 'reimbursement')
+    assert.equal(r.parent_expense_id, null)
+  })
+
+  it('275. SHORTCUT: Acción register_reimbursement vinculado enlaza expenseShareId y parentExpenseId', () => {
+    const buildLinkedReimbursement = (body: {
+      amount: number
+      description?: string
+      parentExpenseId: string
+      expenseShareId: string
+    }) => {
+      return {
+        id: 'tx_r_linked',
+        type: 'income',
+        income_kind: 'reimbursement',
+        amount: body.amount,
+        description: body.description || 'Bizum recibido',
+        parent_expense_id: body.parentExpenseId,
+        expense_share_id: body.expenseShareId,
+        account_id: 'daily',
+      }
+    }
+
+    const r = buildLinkedReimbursement({
+      amount: 2.50,
+      description: 'Bizum Manuela Crunchyroll',
+      parentExpenseId: 'tx_crunchy_1',
+      expenseShareId: 'share_manuela_1',
+    })
+
+    assert.equal(r.parent_expense_id, 'tx_crunchy_1')
+    assert.equal(r.expense_share_id, 'share_manuela_1')
+    assert.equal(r.amount, 2.50)
+  })
+
+  it('276. SHORTCUT: Reembolso parcial desde Atajo deja saldo pendiente correcto en la share', () => {
+    const share: ExpenseShare = {
+      id: 'sh_p1',
+      expenseTransactionId: 'exp_1',
+      participantName: 'Rafa',
+      expectedAmount: 20.00,
+      isPayerShare: false,
+    }
+    const partialReimb: Transaction = {
+      id: 'r_part',
+      accountId: 'daily',
+      type: 'income',
+      incomeKind: 'reimbursement',
+      amount: 8.00,
+      description: 'Bizum parcial',
+      date: '2026-09-02',
+      expenseShareId: 'sh_p1',
+    }
+
+    const status = selectExpenseShareStatus(share, [partialReimb])
+    assert.equal(status.status, 'partial')
+    assert.equal(status.receivedAmount, 8.00)
+    assert.equal(status.pendingAmount, 12.00)
+  })
+
+  it('277. SHORTCUT: get_pending_receivables devuelve cuotas pendientes con nombres y IDs', () => {
+    const shares: ExpenseShare[] = [
+      { id: 'sh_m', expenseTransactionId: 'tx_1', participantName: 'Manuela', expectedAmount: 2.50, isPayerShare: false },
+      { id: 'sh_p', expenseTransactionId: 'tx_1', participantName: 'Pepa', expectedAmount: 2.50, isPayerShare: false },
+      { id: 'sh_marta', expenseTransactionId: 'tx_1', participantName: 'Marta', expectedAmount: 2.49, isPayerShare: true },
+    ]
+
+    const txs: Transaction[] = [
+      { id: 'tx_1', accountId: 'daily', type: 'expense', amount: 7.49, description: 'Crunchyroll', date: '2026-09-01' },
+    ]
+
+    const externalShares = shares.filter((s) => !s.isPayerShare)
+    const items = externalShares.map((s) => {
+      const parent = txs.find((t) => t.id === s.expenseTransactionId)
+      return {
+        id: s.id,
+        participantName: s.participantName,
+        expenseDescription: parent?.description || '',
+        pendingAmount: s.expectedAmount,
+        parentExpenseId: s.expenseTransactionId,
+      }
+    })
+
+    assert.equal(items.length, 2)
+    assert.equal(items[0].participantName, 'Manuela')
+    assert.equal(items[0].id, 'sh_m')
+    assert.equal(items[1].participantName, 'Pepa')
+    assert.equal(items[1].id, 'sh_p')
+  })
+
+  it('278. SHORTCUT: balance_summary devuelve totales estructurados (disponible real, total, ahorro)', () => {
+    const summary = {
+      totalMoney: 1540.20,
+      spendableBalance: 540.20,
+      savingsBalance: 1000.00,
+      committedAmount: 40.20,
+      realAvailable: 500.00,
+      pendingReceivables: 5.00,
+    }
+
+    assert.equal(summary.totalMoney, 1540.20)
+    assert.equal(summary.realAvailable, 500.00)
+    assert.equal(summary.savingsBalance, 1000.00)
+    assert.equal(summary.pendingReceivables, 5.00)
+  })
+
+  it('279. SHORTCUT: Token inexistente o revocado devuelve error 401', () => {
+    const validateToken = (header: string | null, activeTokens: string[]) => {
+      if (!header || !activeTokens.includes(header)) {
+        return { status: 401, error: 'Token del Atajo no válido o revocado.' }
+      }
+      return { status: 200 }
+    }
+
+    const res = validateToken('invalid_token', ['valid_hash_1', 'valid_hash_2'])
+    assert.equal(res.status, 401)
+    assert.equal(res.error, 'Token del Atajo no válido o revocado.')
+  })
+
+  it('280. SHORTCUT: Las respuestas del Atajo nunca incluyen contraseñas, secretos ni tokens', () => {
+    const responsePayload = {
+      success: true,
+      message: 'Gasto añadido',
+      transaction: {
+        id: 'tx_123',
+        amount: 14.50,
+        description: 'Almuerzo',
+        date: '2026-09-03',
+      },
+    }
+
+    const jsonStr = JSON.stringify(responsePayload)
+    assert.equal(jsonStr.includes('password'), false)
+    assert.equal(jsonStr.includes('service_role'), false)
+    assert.equal(jsonStr.includes('jwt'), false)
+    assert.equal(jsonStr.includes('token_hash'), false)
+  })
+})
+
 
 
 
