@@ -1,4 +1,5 @@
 import type { Account, Category, RecurringFrequency, RecurringPayment, SavingsGoal, Transaction } from '../models/finance'
+import { normalizeCategoryAlias } from './categoryNormalization'
 
 /**
  * Dinero para gastar = saldo actual de Cuenta diaria.
@@ -296,16 +297,17 @@ export function selectCategoryExpenses(
   const categoryMap = new Map<string, number>()
 
   monthExpenses.forEach((t) => {
-    const catId = t.categoryId || 'other'
+    const catId = normalizeCategoryAlias(t.categoryId || 'other')
     categoryMap.set(catId, (categoryMap.get(catId) || 0) + t.amount)
   })
 
   return categories.map((c) => {
-    const amount = Math.round((categoryMap.get(c.id) || 0) * 100) / 100
+    const canonicalId = normalizeCategoryAlias(c.id)
+    const amount = Math.round((categoryMap.get(canonicalId) || 0) * 100) / 100
     const percentage = total > 0 ? Math.round((amount / total) * 100) : 0
     return {
-      id: c.id,
-      name: c.name,
+      id: canonicalId,
+      name: canonicalId === 'other' ? 'Otros' : c.name,
       amount,
       percentage,
       color: c.color,

@@ -1,4 +1,5 @@
 import type { Category, ExpenseShare, ExpenseShareStatus, Transaction } from '../models/finance'
+import { normalizeCategoryAlias } from './categoryNormalization'
 
 export interface SplitResult {
   participantName: string
@@ -165,7 +166,7 @@ export function selectNetExpensesByCategory(
   const netByCategory = new Map<string, number>()
 
   periodExpenses.forEach((exp) => {
-    const catId = exp.categoryId || 'other'
+    const catId = normalizeCategoryAlias(exp.categoryId || 'other')
     const linked = selectLinkedReimbursementsForExpense(exp.id, transactions)
     const net = Math.max(0, Math.round((exp.amount - linked) * 100) / 100)
     netByCategory.set(catId, Math.round(((netByCategory.get(catId) ?? 0) + net) * 100) / 100)
@@ -174,33 +175,40 @@ export function selectNetExpensesByCategory(
   const totalNet = Array.from(netByCategory.values()).reduce((sum, v) => sum + v, 0)
 
   const results: NetCategoryExpense[] = []
+  const processedCatIds = new Set<string>()
+
   categories.forEach((cat) => {
-    const amount = netByCategory.get(cat.id) ?? 0
-    if (amount > 0) {
+    const canonicalId = normalizeCategoryAlias(cat.id)
+    const amount = netByCategory.get(canonicalId) ?? 0
+    if (amount > 0 && !processedCatIds.has(canonicalId)) {
       const percentage = totalNet > 0 ? Math.round((amount / totalNet) * 100) : 0
       results.push({
-        id: cat.id,
-        name: cat.name,
-        color: cat.color ?? '#8b8d86',
-        icon: cat.iconKey || cat.icon || 'shopping-basket',
+        id: canonicalId,
+        name: canonicalId === 'other' ? 'Otros' : cat.name,
+        color: cat.color ?? '#B9B9B9',
+        icon: cat.iconKey || cat.icon || 'ellipsis',
         amount,
         percentage,
       })
+      processedCatIds.add(canonicalId)
     }
   })
 
-  const otherAmount = netByCategory.get('other') ?? 0
-  if (otherAmount > 0) {
-    const percentage = totalNet > 0 ? Math.round((otherAmount / totalNet) * 100) : 0
-    results.push({
-      id: 'other',
-      name: 'Otras',
-      color: '#8b8d86',
-      icon: 'shopping-basket',
-      amount: otherAmount,
-      percentage,
-    })
-  }
+  // Para categorías con gastos que no estuvieran explícitamente en el array categories
+  netByCategory.forEach((amount, catId) => {
+    if (!processedCatIds.has(catId) && amount > 0) {
+      const percentage = totalNet > 0 ? Math.round((amount / totalNet) * 100) : 0
+      results.push({
+        id: catId,
+        name: catId === 'other' ? 'Otros' : catId,
+        color: '#B9B9B9',
+        icon: 'ellipsis',
+        amount,
+        percentage,
+      })
+      processedCatIds.add(catId)
+    }
+  })
 
   results.sort((a, b) => b.amount - a.amount)
   return results

@@ -1,4 +1,5 @@
 import type { Category, Transaction } from '../models/finance'
+import { normalizeCategoryAlias } from './categoryNormalization'
 
 export type StatsPeriod = 'day' | 'week' | 'month' | 'year'
 
@@ -157,7 +158,7 @@ export function calculatePeriodStatistics(
       }
     } else if (t.type === 'expense') {
       expenses += t.amount
-      const catId = t.categoryId ?? 'other'
+      const catId = normalizeCategoryAlias(t.categoryId || 'other')
       categoryExpensesMap.set(catId, (categoryExpensesMap.get(catId) ?? 0) + t.amount)
     } else if (t.type === 'transfer') {
       // Transferencias hacia ahorro
@@ -179,13 +180,14 @@ export function calculatePeriodStatistics(
   // Desglose por categoría
   const categoryBreakdown: CategoryExpenseBreakdown[] = []
   categoryExpensesMap.forEach((amount, categoryId) => {
-    const category = categories.find((c) => c.id === categoryId)
+    const canonicalId = normalizeCategoryAlias(categoryId)
+    const category = categories.find((c) => normalizeCategoryAlias(c.id) === canonicalId)
     const percentage = expenses > 0 ? Math.round((amount / expenses) * 100) : 0
     categoryBreakdown.push({
-      categoryId,
-      name: category?.name ?? 'Otras',
-      color: category?.color ?? '#8b8d86',
-      icon: category?.iconKey || category?.icon || 'shopping-basket',
+      categoryId: canonicalId,
+      name: canonicalId === 'other' ? 'Otros' : category?.name ?? 'Otros',
+      color: category?.color ?? '#B9B9B9',
+      icon: category?.iconKey || category?.icon || 'ellipsis',
       amount: Math.round(amount * 100) / 100,
       percentage,
     })

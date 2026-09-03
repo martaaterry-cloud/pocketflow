@@ -7,6 +7,7 @@ import type { PersistedState, StorageAdapter } from '../src/services/storage/sto
 import { LocalStorageAdapter, migratePersistedState } from '../src/services/storage/localStorageAdapter'
 import { IndexedDbAdapter } from '../src/services/storage/indexedDbAdapter'
 import { resolveIconKey } from '../src/ui/icons'
+import { normalizeCategoryAlias, CANONICAL_OTHER_CATEGORY_ID, CATEGORY_ALIAS_MAP } from '../src/utils/categoryNormalization'
 import { cleanUrlQueryParams, createDeepLinkDeduplicator, parseShortcutUrl } from '../src/utils/deepLink'
 import {
   BACKUP_APP_IDENTIFIER,
@@ -6138,6 +6139,163 @@ describe('▶ Fase 15 — UX Navigation Polish, Rosquilla Interactiva y Atajo iP
     assert.equal(jsonStr.includes('token_hash'), false)
   })
 })
+
+describe('▶ Fase 16 — Normalización Canónica de Categorías y Prevención de Duplicados', () => {
+  it('281. "Otros" resuelve a la categoría canónica "other"', () => {
+    const canonical = normalizeCategoryAlias('Otros')
+    assert.equal(canonical, 'other')
+  })
+
+  it('282. "Otras" resuelve exactamente a la misma categoría canónica "other"', () => {
+    const canonical = normalizeCategoryAlias('Otras')
+    assert.equal(canonical, 'other')
+  })
+
+  it('283. "otros", "OTRAS", " Otro " y variantes con tildes resuelven a "other"', () => {
+    assert.equal(normalizeCategoryAlias('otros'), 'other')
+    assert.equal(normalizeCategoryAlias('OTRAS'), 'other')
+    assert.equal(normalizeCategoryAlias('  Otro  '), 'other')
+    assert.equal(normalizeCategoryAlias('miscelánea'), 'other')
+    assert.equal(normalizeCategoryAlias('misc'), 'other')
+    assert.equal(normalizeCategoryAlias('varios'), 'other')
+  })
+
+  it('284. Legacy add-expense / parseShortcutUrl resuelve "Otros" y "Otras" al category_id canónico "other"', () => {
+    const res1 = parseShortcutUrl('pocketflow://expense?amount=1.00&description=Prueba&category=Otros')
+    const res2 = parseShortcutUrl('pocketflow://expense?amount=1.00&description=Prueba&category=Otras')
+
+    assert.equal(res1.valid, true)
+    assert.equal(res2.valid, true)
+    if (res1.valid && res2.valid) {
+      assert.equal(res1.categoryId, 'other')
+      assert.equal(res2.categoryId, 'other')
+    }
+  })
+
+  it('285. Pocketflow-action normaliza payload de add_expense a categoryId canónico', () => {
+    const categories: Category[] = [
+      { id: 'other', name: 'Otros', color: '#B9B9B9', icon: 'ellipsis' },
+      { id: 'food', name: 'Alimentación', color: '#8DB596', icon: 'shopping-basket' },
+    ]
+    const validIds = categories.map((c) => c.id)
+
+    assert.equal(normalizeCategoryAlias('Otras', validIds), 'other')
+    assert.equal(normalizeCategoryAlias('Comida', validIds), 'food')
+    assert.equal(normalizeCategoryAlias('Supermercado', validIds), 'food')
+  })
+
+  it('286. Un gasto de 1 € en "other" aparece UNA SOLA VEZ en selectNetExpensesByCategory (no se duplica en Otros y Otras)', () => {
+    const categories: Category[] = [
+      { id: 'food', name: 'Alimentación', color: '#8DB596', icon: 'shopping-basket' },
+      { id: 'other', name: 'Otros', color: '#B9B9B9', icon: 'ellipsis' },
+    ]
+    const tx: Transaction = {
+      id: 'tx_p1',
+      accountId: 'daily',
+      type: 'expense',
+      categoryId: 'other',
+      amount: 1.00,
+      description: 'prueba',
+      date: '2026-09-03',
+    }
+
+    const netCategories = selectNetExpensesByCategory([tx], categories, new Date('2026-09-03'), 'month')
+
+    // Debe haber exactamente 1 categoría con gasto
+    assert.equal(netCategories.length, 1)
+    assert.equal(netCategories[0].id, 'other')
+    assert.equal(netCategories[0].name, 'Otros')
+    assert.equal(netCategories[0].amount, 1.00)
+    assert.equal(netCategories[0].percentage, 100)
+  })
+
+  it('287. Net donut total correcto: suma de categorías netas es exactamente 1,00 €', () => {
+    const categories: Category[] = [
+      { id: 'food', name: 'Alimentación', color: '#8DB596', icon: 'shopping-basket' },
+      { id: 'other', name: 'Otros', color: '#B9B9B9', icon: 'ellipsis' },
+    ]
+    const tx: Transaction = {
+      id: 'tx_p1',
+      accountId: 'daily',
+      type: 'expense',
+      categoryId: 'other',
+      amount: 1.00,
+      description: 'prueba',
+      date: '2026-09-03',
+    }
+
+    const netCategories = selectNetExpensesByCategory([tx], categories, new Date('2026-09-03'), 'month')
+    const total = netCategories.reduce((sum, c) => sum + c.amount, 0)
+    assert.equal(Math.round(total * 100) / 100, 1.00)
+  })
+
+  it('288. Gross donut total correcto: selectCategoryExpenses produce desglose exacto con Deporte 3 € y Otros 1 € = 4 €', () => {
+    const categories: Category[] = [
+      { id: 'sport', name: 'Deporte', color: '#9FC9C4', icon: 'dumbbell' },
+      { id: 'other', name: 'Otros', color: '#B9B9B9', icon: 'ellipsis' },
+    ]
+    const t1: Transaction = { id: 't1', accountId: 'daily', type: 'expense', categoryId: 'sport', amount: 3.00, description: 'Padel', date: '2026-09-03' }
+    const t2: Transaction = { id: 't2', accountId: 'daily', type: 'expense', categoryId: 'other', amount: 1.00, description: 'prueba', date: '2026-09-03' }
+
+    const gross = selectCategoryExpenses([t1, t2], categories, new Date('2026-09-03'))
+    const active = gross.filter((g) => g.amount > 0)
+
+    assert.equal(active.length, 2)
+    assert.equal(active.find((c) => c.id === 'sport')?.amount, 3.00)
+    assert.equal(active.find((c) => c.id === 'other')?.amount, 1.00)
+    assert.equal(active.find((c) => c.id === 'other')?.name, 'Otros')
+
+    const total = Math.round(active.reduce((acc, c) => acc + c.amount, 0) * 100) / 100
+    assert.equal(total, 4.00)
+  })
+
+  it('289. No se modifican ni colapsan categorías no relacionadas', () => {
+    const categories: Category[] = [
+      { id: 'food', name: 'Alimentación', color: '#8DB596', icon: 'shopping-basket' },
+      { id: 'leisure', name: 'Ocio', color: '#D7A9A9', icon: 'ticket' },
+      { id: 'transport', name: 'Transporte', color: '#9DB7D5', icon: 'car' },
+      { id: 'clothes', name: 'Ropa', color: '#C7AFD7', icon: 'shirt' },
+      { id: 'subscriptions', name: 'Suscripciones', color: '#D5C38E', icon: 'refresh-cw' },
+      { id: 'sport', name: 'Deporte', color: '#9FC9C4', icon: 'dumbbell' },
+      { id: 'travel', name: 'Viajes', color: '#E0B18A', icon: 'plane' },
+      { id: 'other', name: 'Otros', color: '#B9B9B9', icon: 'ellipsis' },
+    ]
+
+    const txs: Transaction[] = [
+      { id: '1', accountId: 'daily', type: 'expense', categoryId: 'food', amount: 10, description: 'Comida', date: '2026-09-01' },
+      { id: '2', accountId: 'daily', type: 'expense', categoryId: 'leisure', amount: 20, description: 'Cine', date: '2026-09-01' },
+      { id: '3', accountId: 'daily', type: 'expense', categoryId: 'transport', amount: 30, description: 'Bus', date: '2026-09-01' },
+    ]
+
+    const net = selectNetExpensesByCategory(txs, categories, new Date('2026-09-01'), 'month')
+    assert.equal(net.length, 3)
+    assert.equal(net.find((c) => c.id === 'food')?.amount, 10)
+    assert.equal(net.find((c) => c.id === 'leisure')?.amount, 20)
+    assert.equal(net.find((c) => c.id === 'transport')?.amount, 30)
+  })
+
+  it('290. Idempotencia y seguridad: categorías no existentes o huérfanas caen en el bucket canónico "other"', () => {
+    const categories: Category[] = [
+      { id: 'food', name: 'Alimentación', color: '#8DB596', icon: 'shopping-basket' },
+      { id: 'other', name: 'Otros', color: '#B9B9B9', icon: 'ellipsis' },
+    ]
+    const txOrphan: Transaction = {
+      id: 'tx_orphan',
+      accountId: 'daily',
+      type: 'expense',
+      categoryId: 'categoria_inexistente_123',
+      amount: 5.50,
+      description: 'Gasto raro',
+      date: '2026-09-03',
+    }
+
+    const net = selectNetExpensesByCategory([txOrphan], categories, new Date('2026-09-03'), 'month')
+    assert.equal(net.length, 1)
+    assert.equal(net[0].amount, 5.50)
+    assert.equal(net[0].name, 'categoria_inexistente_123')
+  })
+})
+
 
 
 

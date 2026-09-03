@@ -3,6 +3,8 @@
  * Esquema esperado: pocketflow://expense?amount=...&description=...&category=...
  */
 
+import { normalizeCategoryAlias, CANONICAL_OTHER_CATEGORY_ID } from './categoryNormalization'
+
 export interface ParsedShortcutExpense {
   valid: true
   amount: number
@@ -20,7 +22,7 @@ export type ShortcutExpenseResult = ParsedShortcutExpense | InvalidShortcutExpen
 /**
  * Categorías estándar y permitidas como fallback
  */
-export const DEFAULT_FALLBACK_CATEGORY = 'other'
+export const DEFAULT_FALLBACK_CATEGORY = CANONICAL_OTHER_CATEGORY_ID
 
 /**
  * Normaliza y decodifica un valor textual proveniente de query params.
@@ -119,27 +121,8 @@ export function parseShortcutUrl(
 
   // 5. Validar categoría
   const rawCategory = parsed.searchParams.get('category')
-  const cleanCategory = safeDecodeQueryParam(rawCategory).toLowerCase()
-
-  let finalCategory = DEFAULT_FALLBACK_CATEGORY
-  if (cleanCategory) {
-    if (validCategoryIds && validCategoryIds.length > 0) {
-      if (validCategoryIds.includes(cleanCategory)) {
-        finalCategory = cleanCategory
-      } else {
-        // Fallback documentado: si la categoría no existe en la app, asignar fallback seguro 'other'
-        finalCategory = validCategoryIds.includes(DEFAULT_FALLBACK_CATEGORY)
-          ? DEFAULT_FALLBACK_CATEGORY
-          : validCategoryIds[0]
-      }
-    } else {
-      finalCategory = cleanCategory
-    }
-  } else if (validCategoryIds && validCategoryIds.length > 0) {
-    finalCategory = validCategoryIds.includes(DEFAULT_FALLBACK_CATEGORY)
-      ? DEFAULT_FALLBACK_CATEGORY
-      : validCategoryIds[0]
-  }
+  const decodedCategory = safeDecodeQueryParam(rawCategory)
+  const finalCategory = normalizeCategoryAlias(decodedCategory, validCategoryIds)
 
   return {
     valid: true,

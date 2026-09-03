@@ -6,6 +6,126 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-shortcut-token',
 }
 
+const CATEGORY_ALIAS_MAP: Record<string, string> = {
+  // Alias de Otros / Genéricos
+  other: 'other',
+  others: 'other',
+  otro: 'other',
+  otros: 'other',
+  otra: 'other',
+  otras: 'other',
+  misc: 'other',
+  miscellaneous: 'other',
+  miscelanea: 'other',
+  miscelaneas: 'other',
+  varios: 'other',
+  varias: 'other',
+  general: 'other',
+  default: 'other',
+
+  // Alias de Alimentación
+  food: 'food',
+  comida: 'food',
+  alimentacion: 'food',
+  supermercado: 'food',
+  super: 'food',
+  restaurante: 'food',
+  restaurantes: 'food',
+  cena: 'food',
+  cenas: 'food',
+  almuerzo: 'food',
+  desayuno: 'food',
+
+  // Alias de Ocio
+  leisure: 'leisure',
+  ocio: 'leisure',
+  entretenimiento: 'leisure',
+  fiesta: 'leisure',
+  cine: 'leisure',
+  eventos: 'leisure',
+  salidas: 'leisure',
+  bares: 'leisure',
+
+  // Alias de Transporte
+  transport: 'transport',
+  transporte: 'transport',
+  coche: 'transport',
+  gasolina: 'transport',
+  combustible: 'transport',
+  diesel: 'transport',
+  metro: 'transport',
+  bus: 'transport',
+  taxi: 'transport',
+  uber: 'transport',
+  cabify: 'transport',
+  parking: 'transport',
+
+  // Alias de Ropa
+  clothes: 'clothes',
+  ropa: 'clothes',
+  vestimenta: 'clothes',
+  calzado: 'clothes',
+  zapatos: 'clothes',
+  moda: 'clothes',
+
+  // Alias de Suscripciones
+  subscriptions: 'subscriptions',
+  suscripciones: 'subscriptions',
+  suscripcion: 'subscriptions',
+  subscription: 'subscriptions',
+  streaming: 'subscriptions',
+  cuotas: 'subscriptions',
+
+  // Alias de Deporte
+  sport: 'sport',
+  deporte: 'sport',
+  gym: 'sport',
+  gimnasio: 'sport',
+  fitness: 'sport',
+
+  // Alias de Viajes
+  travel: 'travel',
+  viajes: 'travel',
+  viaje: 'travel',
+  vuelo: 'travel',
+  vuelos: 'travel',
+  hotel: 'travel',
+  hoteles: 'travel',
+  vacaciones: 'travel',
+
+  // Alias de Salud
+  health: 'health',
+  salud: 'health',
+  farmacia: 'health',
+  medico: 'health',
+  hospital: 'health',
+  dentista: 'health',
+
+  // Alias de Casa
+  house: 'house',
+  home: 'house',
+  casa: 'house',
+  hogar: 'house',
+  vivienda: 'house',
+  alquiler: 'house',
+  mantenimiento: 'house',
+}
+
+function sanitizeCategoryKey(rawKey: string | undefined | null): string {
+  if (!rawKey || typeof rawKey !== 'string') return ''
+  return rawKey
+    .trim()
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+}
+
+function resolveCanonicalCategoryId(rawCat: string | undefined | null): string {
+  const clean = sanitizeCategoryKey(rawCat)
+  if (!clean) return 'other'
+  return CATEGORY_ALIAS_MAP[clean] || clean
+}
+
 async function hashToken(token: string): Promise<string> {
   const encoder = new TextEncoder()
   const data = encoder.encode(token)
@@ -231,15 +351,16 @@ Deno.serve(async (req: Request) => {
     const rawDesc = typeof body.description === 'string' ? body.description.trim() : ''
     const description = rawDesc ? rawDesc.slice(0, 120) : 'Gasto rápido'
 
-    const requestedCat = typeof body.category === 'string' ? body.category.trim().toLowerCase() : ''
+    const rawCategory = typeof body.category === 'string' ? body.category : ''
+    const canonicalCat = resolveCanonicalCategoryId(rawCategory)
     let categoryId = 'other'
 
-    if (requestedCat) {
+    if (canonicalCat) {
       const { data: catRow } = await supabase
         .from('categories')
         .select('id')
         .eq('user_id', userId)
-        .eq('id', requestedCat)
+        .eq('id', canonicalCat)
         .single()
 
       if (catRow) {
@@ -251,7 +372,7 @@ Deno.serve(async (req: Request) => {
           .eq('user_id', userId)
           .eq('id', 'other')
           .single()
-        categoryId = otherCat ? 'other' : ''
+        categoryId = otherCat ? 'other' : 'other'
       }
     }
 
@@ -266,7 +387,7 @@ Deno.serve(async (req: Request) => {
         type: 'expense',
         amount,
         account_id: 'daily',
-        category_id: categoryId || null,
+        category_id: categoryId || 'other',
         description,
         date: nowIso,
         created_at: nowIso,
@@ -276,7 +397,7 @@ Deno.serve(async (req: Request) => {
       .single()
 
     if (insertError) {
-      console.error('[add-expense] Error insertando transacción:', insertError)
+      console.error('[pocketflow-action] Error insertando transacción:', insertError)
       return new Response(
         JSON.stringify({ error: 'Error al registrar el gasto en la base de datos.' }),
         { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
