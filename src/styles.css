@@ -3876,6 +3876,245 @@ input:checked + .slider:before {
   justify-content: center;
 }
 
+/* ==========================================================================
+   Backup Page & Cloud Protection Styles
+   ========================================================================== */
+
+.cloud-protection-card {
+  padding: 18px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.protection-header-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+}
+
+.protection-icon {
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  background: rgba(16, 185, 129, 0.12);
+  color: #10b981;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.protection-info {
+  flex: 1;
+}
+
+.protection-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.protection-title-row h3 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text-main);
+}
+
+.status-pill {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 3px 8px;
+  border-radius: 999px;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+}
+
+.status-pill.protected {
+  background: #d1fae5;
+  color: #065f46;
+}
+
+.status-pill.pending {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.status-pill.offline {
+  background: #f1f5f9;
+  color: #64748b;
+}
+
+.protection-subtext {
+  margin: 4px 0 0;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.protection-actions-row {
+  display: flex;
+  gap: 10px;
+}
+
+.recent-backups-section {
+  border-top: 1px solid var(--border-color, #e2e8f0);
+  padding-top: 14px;
+  margin-top: 4px;
+}
+
+.recent-backups-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  margin: 0 0 10px;
+}
+
+.backup-items-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.backup-item-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 12px;
+  background: var(--bg-hover, #f8fafc);
+  border: 1px solid var(--border-color, #e2e8f0);
+  border-radius: 10px;
+  cursor: pointer;
+  transition: background 0.15s ease, transform 0.1s ease;
+}
+
+.backup-item-row:hover {
+  background: var(--bg-card-hover, #f1f5f9);
+}
+
+.backup-item-row:active {
+  transform: scale(0.99);
+}
+
+.backup-item-left {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.backup-item-left strong {
+  font-size: 13px;
+  color: var(--text-main);
+}
+
+.backup-reason-badge {
+  font-size: 10px;
+  font-weight: 600;
+  padding: 2px 6px;
+  border-radius: 6px;
+  width: fit-content;
+}
+
+.backup-reason-badge.badge-auto {
+  background: #e0f2fe;
+  color: #0369a1;
+}
+
+.backup-reason-badge.badge-manual {
+  background: #f3e8ff;
+  color: #6b21a8;
+}
+
+.backup-reason-badge.badge-prerestore {
+  background: #ffedd5;
+  color: #9a3412;
+}
+
+.backup-item-right {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-muted);
+}
+
+.backup-item-summary-hint {
+  font-size: 12px;
+}
+
+.button-group-row {
+  display: flex;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.button-group-row .btn {
+  flex: 1;
+}
+
+.backup-security-list {
+  margin: 8px 0 0;
+  padding-left: 18px;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text-main);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.info-safety-banner {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 12px;
+  background: #f0fdf4;
+  border: 1px solid #bbf7d0;
+  border-radius: 10px;
+  font-size: 12px;
+  color: #166534;
+  margin: 14px 0 10px;
+}
+
+.badge-status.shared-badge {
+  background: rgba(16, 185, 129, 0.12);
+  color: #059669;
+  font-weight: 600;
+}
+
+.participant-chip-detailed {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: #f1f5f9;
+  border: 1px solid #cbd5e1;
+  padding: 4px 8px;
+  border-radius: 8px;
+  font-size: 12px;
+}
+
+.participant-custom-input {
+  width: 55px;
+  padding: 2px 4px;
+  font-size: 12px;
+  border: 1px solid #94a3b8;
+  border-radius: 4px;
+  text-align: right;
+}
+
+.chip-remove-btn {
+  background: none;
+  border: none;
+  color: #64748b;
+  cursor: pointer;
+  font-size: 14px;
+  padding: 0 2px;
+}
+
+
+
 
 
 

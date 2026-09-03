@@ -19,6 +19,7 @@ import { getSupabase } from './services/supabase/supabaseClient'
 import { createCleanInitialState, fetchRemoteState, uploadStateToSupabase } from './services/supabase/supabaseSync'
 import { flushOfflineQueue, getPendingMutationsCount, subscribeOfflineQueue } from './services/supabase/offlineQueue'
 import { ensureRealtimeConnection, initRealtimeSubscription, unsubscribeRealtime } from './services/supabase/supabaseRealtime'
+import { performAutoBackupIfNeeded } from './services/supabase/cloudBackupService'
 
 type Tab = 'home' | 'movements' | 'calendar' | 'savings' | 'more'
 export type SyncStatus = 'connecting' | 'connected' | 'syncing' | 'up_to_date' | 'synced' | 'offline' | 'error'
@@ -146,6 +147,15 @@ export default function App() {
         isInitialSyncDoneRef.current = true
         // Al completar la reconciliación inicial confirmada, marcar "Al día"
         setSyncStatus('up_to_date')
+
+        // Crear backup automático si corresponde (máx 1 cada 7 días, post-reconciliación)
+        void performAutoBackupIfNeeded(
+          supabase,
+          userId,
+          financeRef.current.getFullState(),
+          typeof navigator !== 'undefined' ? navigator.onLine : true,
+          true
+        )
       } catch (err) {
         console.warn('[Supabase] Error en sincronización inicial:', err)
         setSyncStatus(typeof navigator !== 'undefined' && !navigator.onLine ? 'offline' : 'error')

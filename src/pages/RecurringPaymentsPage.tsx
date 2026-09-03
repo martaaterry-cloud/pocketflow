@@ -128,6 +128,11 @@ export function RecurringPaymentsPage({
                         <small className="recurring-next-date">
                           Próximo: {r.nextDate}
                         </small>
+                        {r.isShared && (
+                          <span className="badge-status shared-badge">
+                            Compartido · {r.sharingTemplate?.participants ? (r.sharingTemplate.participants.length + (r.sharingTemplate.includePayer ? 1 : 0)) : 1} personas
+                          </span>
+                        )}
                         {r.active && (
                           <span className={`badge-status ${cycleStatus.status}`}>
                             {cycleStatus.status === 'confirmed_for_cycle' && (
@@ -211,6 +216,7 @@ export function RecurringPaymentsPage({
         }}
         accounts={finance.accounts}
         categories={finance.categories}
+        sharedContacts={finance.sharedContacts}
         payment={editingPayment}
         onSave={handleSave}
         onDelete={finance.deleteRecurringPayment}

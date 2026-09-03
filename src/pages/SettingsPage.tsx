@@ -102,13 +102,14 @@ export function SettingsPage({
         </section>
 
         <section className="settings-section" style={{ marginTop: 28 }}>
-          <h2>Almacenamiento y Privacidad</h2>
+          <h2>Almacenamiento y Sincronización</h2>
           <div className="privacy-card">
             <p style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
               <AppIcon name="lock" size={16} />
               <span>
-                <strong>Local-first:</strong> Todos tus datos financieros se almacenan
-                únicamente en este dispositivo. No hay servidores externos, rastreadores ni cuentas en la nube.
+                <strong>Sincronización en la nube:</strong> Supabase es la fuente principal de datos.
+                Pocketflow mantiene una copia local en este dispositivo para que puedas seguir utilizándola
+                sin conexión. Los cambios se sincronizan automáticamente al recuperar la red.
               </span>
             </p>
           </div>

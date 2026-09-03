@@ -1,6 +1,6 @@
 # Pocketflow — App de Control Financiero Personal
 
-Pocketflow es una aplicación **local-first** para la gestión integral de gastos diarios, dinero disponible real, presupuestos, ahorro por objetivos, reservas de gastos previstos y planificación financiera personal de medio plazo.
+Pocketflow es una aplicación financiera personal con **sincronización en la nube (Supabase) y funcionamiento offline robusto (IndexedDB)** para la gestión integral de gastos diarios, dinero disponible real, presupuestos, ahorro por objetivos, reservas de gastos previstos y planificación financiera personal de medio plazo.
 
 Funciona como **Progressive Web App (PWA)** instalable en **iPhone y Windows** y cuenta con proyecto nativo **Capacitor 8** preparado para iOS/Xcode.
 

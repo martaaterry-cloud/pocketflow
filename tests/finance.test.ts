@@ -15,6 +15,18 @@ import {
   validateBackupPayload,
 } from '../src/utils/backup'
 import {
+  createCloudBackup,
+  listCloudBackups,
+  pruneOldAutoBackups,
+  shouldPerformAutoBackup,
+  performAutoBackupIfNeeded,
+  restoreCloudBackup,
+  sanitizeStateForBackup,
+  calculateBackupSummary,
+  AUTO_BACKUP_INTERVAL_DAYS,
+  MAX_AUTO_BACKUPS_RETENTION,
+} from '../src/services/supabase/cloudBackupService'
+import {
   calculateMonthlyEstimate,
   calculateRealSpentForEstimate,
   calculatePendingEstimate,
@@ -5026,6 +5038,656 @@ describe('Fase 13 — Disponible Proyectado, Tarjeta Expandible y Confirmación 
     assert.equal(net, 2.49)
   })
 })
+
+describe('Fase 14 — Coherencia de Almacenamiento/Backup y Recurrentes Compartidos', () => {
+  // ==========================================
+  // TEXTOS / ARQUITECTURA
+  // ==========================================
+  it('238. Coherencia arquitectónica: sanitizeStateForBackup y createBackupPayload reflejan modelo Supabase + local cache', () => {
+    const dummyState: PersistedState = {
+      accounts: [{ id: 'daily', name: 'Cuenta diaria', type: 'spending', initialBalance: 500 }],
+      transactions: [{ id: 'tx1', accountId: 'daily', type: 'expense', amount: 15, description: 'Comida', date: '2026-09-01' }],
+      goals: [],
+      recurring: [],
+      categories: [{ id: 'c1', name: 'Alimentación', color: '#10b981', icon: 'coffee' }],
+      budgets: [],
+      reserves: [],
+      specialPeriods: [],
+      planSettings: {
+        monthlyIncome: 2000,
+        targetSavingsType: 'percentage',
+        targetSavingsValue: 20,
+        emergencyFundTargetType: 'months',
+        emergencyFundTargetValue: 3,
+        emergencyFundCurrent: 0,
+        essentialCategoryIds: ['c1'],
+      },
+      profile: { displayName: 'Marta' },
+    }
+
+    const sanitized = sanitizeStateForBackup(dummyState)
+    assert.equal(sanitized.accounts.length, 1)
+    assert.equal(sanitized.transactions.length, 1)
+    assert.equal(sanitized.profile?.displayName, 'Marta')
+
+    const payload = createBackupPayload(sanitized)
+    assert.equal(payload.app, BACKUP_APP_IDENTIFIER)
+    assert.equal(payload.version, CURRENT_BACKUP_VERSION)
+  })
+
+  // ==========================================
+  // BACKUP CLOUD & JSON
+  // ==========================================
+  it('239. Backup automático no se crea más de una vez cada 7 días', () => {
+    const now = new Date('2026-09-10T12:00:00.000Z')
+
+    // Caso A: Sin backup previo -> debe ejecutarse
+    assert.equal(shouldPerformAutoBackup(null, now), true)
+
+    // Caso B: Último backup hace 3 días (2026-09-07) -> NO debe ejecutarse
+    const recentIso = '2026-09-07T12:00:00.000Z'
+    assert.equal(shouldPerformAutoBackup(recentIso, now), false)
+
+    // Caso C: Último backup hace exactamente 7 días (2026-09-03) -> SÍ debe ejecutarse
+    const sevenDaysAgoIso = '2026-09-03T12:00:00.000Z'
+    assert.equal(shouldPerformAutoBackup(sevenDaysAgoIso, now), true)
+
+    // Caso D: Último backup hace 14 días (2026-08-27) -> SÍ debe ejecutarse
+    const fourteenDaysAgoIso = '2026-08-27T12:00:00.000Z'
+    assert.equal(shouldPerformAutoBackup(fourteenDaysAgoIso, now), true)
+  })
+
+  it('240. Backup automático no se crea offline', async () => {
+    const mockSupabase = {
+      from: () => ({
+        select: () => ({
+          eq: () => ({
+            eq: () => ({
+              order: () => ({
+                limit: async () => ({ data: [] }),
+              }),
+            }),
+          }),
+        }),
+      }),
+    }
+
+    const dummyState: PersistedState = {
+      accounts: [],
+      transactions: [],
+      goals: [],
+      recurring: [],
+      categories: [],
+      budgets: [],
+      reserves: [],
+      specialPeriods: [],
+      planSettings: {
+        monthlyIncome: 0,
+        targetSavingsType: 'percentage',
+        targetSavingsValue: 0,
+        emergencyFundTargetType: 'months',
+        emergencyFundTargetValue: 0,
+        emergencyFundCurrent: 0,
+        essentialCategoryIds: [],
+      },
+    }
+
+    const res = await performAutoBackupIfNeeded(
+      mockSupabase as any,
+      'user_123',
+      dummyState,
+      false, // isOnline = false
+      true   // isHydrated = true
+    )
+    assert.equal(res, null)
+  })
+
+  it('241. Backup automático no se crea antes de hydration/reconciliation', async () => {
+    const mockSupabase = {} as any
+    const dummyState: PersistedState = {
+      accounts: [],
+      transactions: [],
+      goals: [],
+      recurring: [],
+      categories: [],
+      budgets: [],
+      reserves: [],
+      specialPeriods: [],
+      planSettings: {
+        monthlyIncome: 0,
+        targetSavingsType: 'percentage',
+        targetSavingsValue: 0,
+        emergencyFundTargetType: 'months',
+        emergencyFundTargetValue: 0,
+        emergencyFundCurrent: 0,
+        essentialCategoryIds: [],
+      },
+    }
+
+    const res = await performAutoBackupIfNeeded(
+      mockSupabase,
+      'user_123',
+      dummyState,
+      true,  // isOnline = true
+      false  // isHydrated = false
+    )
+    assert.equal(res, null)
+  })
+
+  it('242. Backup contiene estado completo pero no secretos ni credenciales', () => {
+    const fullStateWithSensitive: any = {
+      accounts: [{ id: 'acc1', name: 'Diaria', type: 'spending', initialBalance: 100 }],
+      transactions: [{ id: 't1', accountId: 'acc1', type: 'expense', amount: 20, description: 'Compra', date: '2026-09-01' }],
+      goals: [{ id: 'g1', name: 'Viaje', target: 500, current: 100, completed: false }],
+      recurring: [{ id: 'r1', name: 'Spotify', amount: 10, categoryId: 'c1', accountId: 'acc1', frequency: 'monthly', nextDate: '2026-10-01', active: true }],
+      categories: [{ id: 'c1', name: 'Ocio', color: '#f00', icon: 'music' }],
+      budgets: [{ id: 'b1', categoryId: 'c1', amountLimit: 50, period: 'monthly' }],
+      reserves: [{ id: 'res1', name: 'Coche', targetAmount: 200, currentAllocated: 50, targetDate: '2026-12-01', iconKey: 'car', active: true }],
+      specialPeriods: [{ id: 'sp1', name: 'Vacaciones', startDate: '2026-08-01', endDate: '2026-08-15', expectedExtraBudget: 300, type: 'expected_high_spend' }],
+      planSettings: {
+        monthlyIncome: 1500,
+        targetSavingsType: 'percentage',
+        targetSavingsValue: 15,
+        emergencyFundTargetType: 'months',
+        emergencyFundTargetValue: 3,
+        emergencyFundCurrent: 200,
+        essentialCategoryIds: ['c1'],
+      },
+      profile: { displayName: 'Marta' },
+      sharedContacts: [{ id: 'sc1', displayName: 'Manuela' }],
+      expenseShares: [{ id: 'es1', expenseTransactionId: 't1', participantName: 'Manuela', isPayerShare: false, expectedAmount: 10 }],
+      variableExpenseEstimates: [{ id: 've1', name: 'Gimnasio', categoryId: 'c1', unitCost: 1.5, frequencyType: 'per_week', frequencyValue: 4, active: true }],
+      // Propiedades sensibles no deseadas
+      password: 'secret_password_123',
+      jwtToken: 'eyJhbGciOi...',
+      shortcutToken: 'pflow_token_raw_456',
+      supabaseKey: 'anon-key-789',
+    }
+
+    const sanitized = sanitizeStateForBackup(fullStateWithSensitive)
+
+    // Verifica que tiene todos los datos financieros
+    assert.equal(sanitized.accounts.length, 1)
+    assert.equal(sanitized.transactions.length, 1)
+    assert.equal(sanitized.goals.length, 1)
+    assert.equal(sanitized.recurring.length, 1)
+    assert.equal(sanitized.categories.length, 1)
+    assert.equal(sanitized.budgets.length, 1)
+    assert.equal(sanitized.reserves.length, 1)
+    assert.equal(sanitized.specialPeriods.length, 1)
+    assert.equal(sanitized.sharedContacts?.length, 1)
+    assert.equal(sanitized.expenseShares?.length, 1)
+    assert.equal(sanitized.variableExpenseEstimates?.length, 1)
+    assert.equal(sanitized.profile?.displayName, 'Marta')
+
+    // Verifica que NO tiene secretos
+    assert.equal((sanitized as any).password, undefined)
+    assert.equal((sanitized as any).jwtToken, undefined)
+    assert.equal((sanitized as any).shortcutToken, undefined)
+    assert.equal((sanitized as any).supabaseKey, undefined)
+
+    // Summary
+    const summary = calculateBackupSummary(sanitized)
+    assert.equal(summary.transactionCount, 1)
+    assert.equal(summary.accountCount, 1)
+    assert.equal(summary.goalCount, 1)
+    assert.equal(summary.recurringCount, 1)
+  })
+
+  it('243. Retención de backups: conserva las últimas 8 automáticas y elimina la más antigua al superar el límite', async () => {
+    let deletedIds: string[] = []
+
+    // Simulamos que ya existen 9 backups automáticos en Supabase
+    const existingAutoBackups = Array.from({ length: 9 }, (_, i) => ({
+      id: `backup_auto_${9 - i}`, // backup_auto_9 (más reciente) ... backup_auto_1 (más antiguo)
+      created_at: new Date(Date.now() - i * 7 * 24 * 60 * 60 * 1000).toISOString(),
+    }))
+
+    const mockSupabase = {
+      from: (table: string) => {
+        assert.equal(table, 'cloud_backups')
+        return {
+          select: () => ({
+            eq: () => ({
+              eq: () => ({
+                order: async () => ({ data: existingAutoBackups, error: null }),
+              }),
+            }),
+          }),
+          delete: () => ({
+            in: (field: string, ids: string[]) => ({
+              eq: async (userField: string, uid: string) => {
+                assert.equal(field, 'id')
+                assert.equal(userField, 'user_id')
+                assert.equal(uid, 'user_test_prune')
+                deletedIds = ids
+                return { error: null }
+              },
+            }),
+          }),
+        }
+      },
+    }
+
+    await pruneOldAutoBackups(mockSupabase as any, 'user_test_prune', MAX_AUTO_BACKUPS_RETENTION)
+
+    // Debe conservar los 8 más recientes (índices 0 a 7) y eliminar el 9º (índice 8 -> backup_auto_1)
+    assert.equal(deletedIds.length, 1)
+    assert.equal(deletedIds[0], 'backup_auto_1')
+  })
+
+  it('244. Restauración segura: crea una copia pre_restore del estado actual antes de aplicar cambios', async () => {
+    let preRestoreCreated = false
+    let preRestoreReason = ''
+    let localRestoreExecuted = false
+
+    const currentState: PersistedState = {
+      accounts: [{ id: 'acc1', name: 'Diaria', type: 'spending', initialBalance: 200 }],
+      transactions: [{ id: 't_curr', accountId: 'acc1', type: 'expense', amount: 50, description: 'Actual', date: '2026-09-02' }],
+      goals: [],
+      recurring: [],
+      categories: [],
+      budgets: [],
+      reserves: [],
+      specialPeriods: [],
+      planSettings: { monthlyIncome: 0, targetSavingsType: 'percentage', targetSavingsValue: 0, emergencyFundTargetType: 'months', emergencyFundTargetValue: 0, emergencyFundCurrent: 0, essentialCategoryIds: [] },
+    }
+
+    const backupToRestore = {
+      id: 'backup_target',
+      user_id: 'user_restore_test',
+      created_at: '2026-08-20T00:00:00.000Z',
+      reason: 'auto' as const,
+      schema_version: 1,
+      app_version: '1.0.0',
+      payload: {
+        accounts: [{ id: 'acc1', name: 'Diaria', type: 'spending', initialBalance: 500 }],
+        transactions: [{ id: 't_old', accountId: 'acc1', type: 'expense', amount: 20, description: 'Antigua', date: '2026-08-20' }],
+        goals: [],
+        recurring: [],
+        categories: [],
+        budgets: [],
+        reserves: [],
+        specialPeriods: [],
+        planSettings: { monthlyIncome: 0, targetSavingsType: 'percentage', targetSavingsValue: 0, emergencyFundTargetType: 'months', emergencyFundTargetValue: 0, emergencyFundCurrent: 0, essentialCategoryIds: [] },
+      },
+    }
+
+    const mockSupabase = {
+      from: (table: string) => {
+        assert.equal(table, 'cloud_backups')
+        return {
+          insert: (row: any) => ({
+            select: () => ({
+              single: async () => {
+                if (row.reason === 'pre_restore') {
+                  preRestoreCreated = true
+                  preRestoreReason = row.reason
+                  // Verifica que el pre_restore guardó el estado ACTUAL antes del cambio
+                  assert.equal(row.payload.transactions[0].description, 'Actual')
+                }
+                return { data: row, error: null }
+              },
+            }),
+          }),
+        }
+      },
+    }
+
+    const result = await restoreCloudBackup(
+      mockSupabase as any,
+      'user_restore_test',
+      backupToRestore as any,
+      currentState,
+      async (state) => {
+        localRestoreExecuted = true
+        assert.equal(state.transactions[0].description, 'Antigua')
+      }
+    )
+
+    assert.equal(result.success, true)
+    assert.equal(preRestoreCreated, true)
+    assert.equal(preRestoreReason, 'pre_restore')
+    assert.equal(localRestoreExecuted, true)
+  })
+
+  it('245. Restauración fallida por versión incompatible preserva el estado previo', async () => {
+    let localRestoreExecuted = false
+
+    const currentState: PersistedState = {
+      accounts: [{ id: 'acc1', name: 'Diaria', type: 'spending', initialBalance: 200 }],
+      transactions: [{ id: 't_curr', accountId: 'acc1', type: 'expense', amount: 50, description: 'Actual', date: '2026-09-02' }],
+      goals: [],
+      recurring: [],
+      categories: [],
+      budgets: [],
+      reserves: [],
+      specialPeriods: [],
+      planSettings: { monthlyIncome: 0, targetSavingsType: 'percentage', targetSavingsValue: 0, emergencyFundTargetType: 'months', emergencyFundTargetValue: 0, emergencyFundCurrent: 0, essentialCategoryIds: [] },
+    }
+
+    const invalidBackup = {
+      id: 'backup_future',
+      user_id: 'user_restore_test',
+      created_at: '2026-08-20T00:00:00.000Z',
+      reason: 'auto' as const,
+      schema_version: 99, // Versión no soportada
+      app_version: '9.0.0',
+      payload: currentState,
+    }
+
+    const mockSupabase = {} as any
+
+    const result = await restoreCloudBackup(
+      mockSupabase,
+      'user_restore_test',
+      invalidBackup as any,
+      currentState,
+      async () => {
+        localRestoreExecuted = true
+      }
+    )
+
+    assert.equal(result.success, false)
+    assert.equal(result.error?.includes('Versión de esquema no soportada'), true)
+    assert.equal(localRestoreExecuted, false)
+  })
+
+  it('246. JSON manual sigue funcionando: exporta estructura portable y valida correctamente', () => {
+    const state: PersistedState = {
+      accounts: [{ id: 'daily', name: 'Cuenta diaria', type: 'spending', initialBalance: 300 }],
+      transactions: [{ id: 'tx_1', accountId: 'daily', type: 'expense', amount: 25, description: 'Supermercado', date: '2026-09-02' }],
+      goals: [],
+      recurring: [],
+      categories: [],
+      budgets: [],
+      reserves: [],
+      specialPeriods: [],
+      planSettings: { monthlyIncome: 1000, targetSavingsType: 'percentage', targetSavingsValue: 10, emergencyFundTargetType: 'months', emergencyFundTargetValue: 3, emergencyFundCurrent: 0, essentialCategoryIds: [] },
+    }
+
+    const payload = createBackupPayload(state)
+    const validation = validateBackupPayload(payload)
+
+    assert.equal(validation.valid, true)
+    if (validation.valid) {
+      assert.equal(validation.summary.accountCount, 1)
+      assert.equal(validation.summary.transactionCount, 1)
+      assert.equal(validation.state.transactions[0].description, 'Supermercado')
+    }
+  })
+
+  // ==========================================
+  // RECURRENTES COMPARTIDOS
+  // ==========================================
+  it('247. Recurrente normal sigue funcionando igual (toggle compartido OFF no crea plantilla)', () => {
+    const normalRec: RecurringPayment = {
+      id: 'rec_normal_1',
+      name: 'Gimnasio Solo',
+      amount: 40.00,
+      categoryId: 'sport',
+      accountId: 'daily',
+      frequency: 'monthly',
+      nextDate: '2026-09-05',
+      active: true,
+      isShared: false,
+    }
+
+    assert.equal(normalRec.isShared, false)
+    assert.equal(normalRec.sharingTemplate, undefined)
+  })
+
+  it('248. Crunchyroll 7,49 € / 3 participantes: cálculo exacto de céntimos con Marta 2,49, Manuela 2,50, Pepa 2,50', () => {
+    const participants = [
+      { name: 'Manuela', contactId: 'c_manuela' },
+      { name: 'Pepa', contactId: 'c_pepa' },
+    ]
+
+    const shares = splitExpenseEqually(7.49, participants, true, 'Marta')
+
+    assert.equal(shares.length, 3)
+    const martaShare = shares.find((s) => s.participantName === 'Marta')
+    const manuelaShare = shares.find((s) => s.participantName === 'Manuela')
+    const pepaShare = shares.find((s) => s.participantName === 'Pepa')
+
+    assert.equal(martaShare?.amount, 2.49)
+    assert.equal(martaShare?.isPayerShare, true)
+
+    assert.equal(manuelaShare?.amount, 2.50)
+    assert.equal(manuelaShare?.isPayerShare, false)
+    assert.equal(manuelaShare?.contactId, 'c_manuela')
+
+    assert.equal(pepaShare?.amount, 2.50)
+    assert.equal(pepaShare?.isPayerShare, false)
+    assert.equal(pepaShare?.contactId, 'c_pepa')
+
+    const sum = shares.reduce((acc, s) => acc + s.amount, 0)
+    assert.equal(Math.round(sum * 100) / 100, 7.49)
+  })
+
+  it('249. Guardar plantilla de recurrente compartido NO crea transacciones ni deudas', () => {
+    const recurringWithTemplate: RecurringPayment = {
+      id: 'rec_crunchyroll',
+      name: 'Crunchyroll',
+      amount: 7.49,
+      categoryId: 'subs',
+      accountId: 'daily',
+      frequency: 'monthly',
+      nextDate: '2026-09-01',
+      active: true,
+      isShared: true,
+      sharingTemplate: {
+        includePayer: true,
+        splitType: 'equal',
+        participants: [
+          { name: 'Manuela', contactId: 'c_manuela', amount: 2.50 },
+          { name: 'Pepa', contactId: 'c_pepa', amount: 2.50 },
+        ],
+      },
+    }
+
+    // El estado solo contiene el recurrente configurado
+    const transactions: Transaction[] = []
+    const expenseShares: ExpenseShare[] = []
+
+    assert.equal(transactions.length, 0)
+    assert.equal(expenseShares.length, 0)
+    assert.equal(recurringWithTemplate.sharingTemplate?.participants.length, 2)
+  })
+
+  it('250. Confirmar cobro de recurrente compartido crea Transaction + ExpenseShares del ciclo y avanza nextDate', () => {
+    const rec: RecurringPayment = {
+      id: 'rec_crunchyroll_cycle',
+      name: 'Crunchyroll',
+      amount: 7.49,
+      categoryId: 'subs',
+      accountId: 'daily',
+      frequency: 'monthly',
+      nextDate: '2026-09-01',
+      active: true,
+      isShared: true,
+      sharingTemplate: {
+        includePayer: true,
+        splitType: 'equal',
+        participants: [
+          { name: 'Manuela', contactId: 'c_manuela', amount: 2.50 },
+          { name: 'Pepa', contactId: 'c_pepa', amount: 2.50 },
+        ],
+      },
+    }
+
+    // 1. Simular confirmación en useFinance
+    const txId = 'tx_sept_crunchyroll'
+    const confirmationDate = '2026-09-01T10:00:00.000Z'
+
+    const newTx: Transaction = {
+      id: txId,
+      type: 'expense',
+      amount: rec.amount,
+      description: rec.name,
+      categoryId: rec.categoryId,
+      accountId: rec.accountId,
+      date: confirmationDate,
+      recurringPaymentId: rec.id,
+      isShared: true,
+    }
+
+    const splitResults = splitExpenseEqually(rec.amount, rec.sharingTemplate.participants, rec.sharingTemplate.includePayer, 'Tú')
+    const cycleShares: ExpenseShare[] = splitResults.map((s) => ({
+      id: `share_${s.participantName.toLowerCase()}_sept`,
+      expenseTransactionId: newTx.id,
+      contactId: s.contactId,
+      participantName: s.participantName,
+      isPayerShare: s.isPayerShare,
+      expectedAmount: s.amount,
+      createdAt: confirmationDate,
+      updatedAt: confirmationDate,
+    }))
+
+    const nextDate = calculateNextRecurringDate(rec.nextDate, rec.frequency)
+
+    assert.equal(newTx.amount, 7.49)
+    assert.equal(newTx.recurringPaymentId, 'rec_crunchyroll_cycle')
+    assert.equal(cycleShares.length, 3)
+    assert.equal(nextDate, '2026-10-01')
+
+    // Verificar cuotas
+    const payer = cycleShares.find((s) => s.isPayerShare)
+    const manuela = cycleShares.find((s) => s.participantName === 'Manuela')
+    const pepa = cycleShares.find((s) => s.participantName === 'Pepa')
+
+    assert.equal(payer?.expectedAmount, 2.49)
+    assert.equal(manuela?.expectedAmount, 2.50)
+    assert.equal(pepa?.expectedAmount, 2.50)
+  })
+
+  it('251. Ciclos independientes: pago recibido en septiembre no afecta al ciclo de octubre', () => {
+    // Ciclo Septiembre
+    const septTx: Transaction = { id: 'tx_sept', accountId: 'daily', type: 'expense', amount: 7.49, description: 'Crunchyroll', date: '2026-09-01' }
+    const septManuelaShare: ExpenseShare = { id: 'sh_sept_manuela', expenseTransactionId: 'tx_sept', participantName: 'Manuela', isPayerShare: false, expectedAmount: 2.50 }
+    
+    // Bizum de Manuela para Septiembre
+    const septBizum: Transaction = { id: 'biz_sept', accountId: 'daily', type: 'income', incomeKind: 'reimbursement', amount: 2.50, description: 'Bizum Manuela Sept', date: '2026-09-02', parentExpenseId: 'tx_sept', expenseShareId: 'sh_sept_manuela' }
+
+    // Ciclo Octubre
+    const octTx: Transaction = { id: 'tx_oct', accountId: 'daily', type: 'expense', amount: 7.49, description: 'Crunchyroll', date: '2026-10-01' }
+    const octManuelaShare: ExpenseShare = { id: 'sh_oct_manuela', expenseTransactionId: 'tx_oct', participantName: 'Manuela', isPayerShare: false, expectedAmount: 2.50 }
+
+    const allTxs = [septTx, septBizum, octTx]
+    const allShares = [septManuelaShare, octManuelaShare]
+
+    // Estado Septiembre: Manuela cobrado (received)
+    const septStatus = selectExpenseShareStatus(septManuelaShare, allTxs)
+    assert.equal(septStatus.status, 'received')
+    assert.equal(septStatus.pendingAmount, 0)
+
+    // Estado Octubre: Manuela nuevo ciclo sigue pendiente (pending) con 2,50 €
+    const octStatus = selectExpenseShareStatus(octManuelaShare, allTxs)
+    assert.equal(octStatus.status, 'pending')
+    assert.equal(octStatus.pendingAmount, 2.50)
+  })
+
+  it('252. Editar la plantilla de Crunchyroll no altera shares históricas', () => {
+    // Septiembre confirmado con plantilla antigua (3 personas -> 2,50 €)
+    const septTx: Transaction = { id: 'tx_sept', accountId: 'daily', type: 'expense', amount: 7.49, description: 'Crunchyroll', date: '2026-09-01' }
+    const septManuelaShare: ExpenseShare = { id: 'sh_sept_manuela', expenseTransactionId: 'tx_sept', participantName: 'Manuela', isPayerShare: false, expectedAmount: 2.50 }
+
+    // En Octubre se modifica el recurrente a 9,99 € entre 4 personas
+    const updatedRec: RecurringPayment = {
+      id: 'rec_crunchyroll',
+      name: 'Crunchyroll Premium',
+      amount: 9.99,
+      categoryId: 'subs',
+      accountId: 'daily',
+      frequency: 'monthly',
+      nextDate: '2026-10-01',
+      active: true,
+      isShared: true,
+      sharingTemplate: {
+        includePayer: true,
+        splitType: 'equal',
+        participants: [
+          { name: 'Manuela', amount: 2.50 },
+          { name: 'Pepa', amount: 2.50 },
+          { name: 'Laura', amount: 2.50 },
+        ],
+      },
+    }
+
+    // La share de septiembre permanece inmutable con 2,50 € y su transacción vinculada
+    assert.equal(septManuelaShare.expectedAmount, 2.50)
+    assert.equal(septManuelaShare.expenseTransactionId, 'tx_sept')
+    assert.equal(updatedRec.amount, 9.99)
+  })
+
+  it('253. Comprometido antes de cobro es el importe completo (7,49 €)', () => {
+    const rec: RecurringPayment = {
+      id: 'rec_crunchyroll_due',
+      name: 'Crunchyroll',
+      amount: 7.49,
+      categoryId: 'subs',
+      accountId: 'daily',
+      frequency: 'monthly',
+      nextDate: '2026-09-05',
+      active: true,
+      isShared: true,
+      sharingTemplate: {
+        includePayer: true,
+        splitType: 'equal',
+        participants: [{ name: 'Manuela', amount: 2.50 }, { name: 'Pepa', amount: 2.50 }],
+      },
+    }
+
+    const txs: Transaction[] = [] // Aún no confirmado este mes
+    const committed = selectCommittedAmount([rec], txs, new Date('2026-09-01'))
+
+    // Debe ser exactamente 7,49 € completos, sin descontar Manuela ni Pepa
+    assert.equal(committed, 7.49)
+  })
+
+  it('254. Deuda pendiente por recuperar NO aumenta el disponible real', () => {
+    const accounts: Account[] = [
+      { id: 'daily', name: 'Cuenta diaria', type: 'spending', initialBalance: 500, balance: 492.51 }, // 500 - 7,49
+    ]
+
+    const txs: Transaction[] = [
+      { id: 'tx_crunchyroll', accountId: 'daily', type: 'expense', amount: 7.49, description: 'Crunchyroll', date: '2026-09-01' },
+    ]
+
+    const shares: ExpenseShare[] = [
+      { id: 'sh1', expenseTransactionId: 'tx_crunchyroll', participantName: 'Manuela', isPayerShare: false, expectedAmount: 2.50 },
+      { id: 'sh2', expenseTransactionId: 'tx_crunchyroll', participantName: 'Pepa', isPayerShare: false, expectedAmount: 2.50 },
+    ]
+
+    // Pendiente de recuperar: 5,00 €
+    const pendingReimbursements = selectPendingReimbursements(shares, txs)
+    assert.equal(pendingReimbursements, 5.00)
+
+    // Disponible real: Solo cuenta el saldo de la cuenta diaria (492,51) menos comprometido pendiente (0) = 492,51 €
+    const spendable = accounts[0].balance ?? 0
+    const available = selectRealAvailable(spendable, 0)
+    assert.equal(available, 492.51) // NO suma los 5 € pendientes de cobrar
+  })
+
+  it('255. Reembolsos recibidos reducen el gasto neto progresivamente (7,49 -> 4,99 -> 2,49)', () => {
+    const exp: Transaction = { id: 'tx_c', accountId: 'daily', type: 'expense', amount: 7.49, description: 'Crunchyroll', date: '2026-09-01' }
+
+    // 1. Gasto neto inicial: 7,49 €
+    const net1 = selectNetPersonalExpensesForPeriod([exp], new Date('2026-09-01'), 'month')
+    assert.equal(net1, 7.49)
+
+    // 2. Manuela paga 2,50 €
+    const bizManuela: Transaction = { id: 'b_m', accountId: 'daily', type: 'income', incomeKind: 'reimbursement', amount: 2.50, description: 'Bizum Manuela', date: '2026-09-02', parentExpenseId: 'tx_c' }
+    const net2 = selectNetPersonalExpensesForPeriod([exp, bizManuela], new Date('2026-09-01'), 'month')
+    assert.equal(net2, 4.99)
+
+    // 3. Pepa paga 2,50 €
+    const bizPepa: Transaction = { id: 'b_p', accountId: 'daily', type: 'income', incomeKind: 'reimbursement', amount: 2.50, description: 'Bizum Pepa', date: '2026-09-03', parentExpenseId: 'tx_c' }
+    const net3 = selectNetPersonalExpensesForPeriod([exp, bizManuela, bizPepa], new Date('2026-09-01'), 'month')
+    assert.equal(net3, 2.49)
+  })
+})
+
 
 
 

@@ -328,7 +328,7 @@ export function MorePage({
           </span>
           <div>
             <strong>Ajustes</strong>
-            <small>Saldos iniciales y privacidad local</small>
+            <small>Saldos iniciales y almacenamiento</small>
           </div>
           <b className="chevron">
             <AppIcon name="chevron-right" size={16} />
