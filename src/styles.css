@@ -3362,26 +3362,25 @@ input:checked + .slider:before {
   position: relative;
   overflow: hidden;
   width: 100%;
-  border-radius: 0;
+  border-radius: var(--radius-md, 12px);
   touch-action: pan-y;
   background: var(--bg-card, #ffffff);
 }
 
-.swipeable-content {
-  position: relative;
-  z-index: 2;
-  background: var(--bg-card, #ffffff);
-  width: 100%;
-  user-select: none;
-  -webkit-user-select: none;
-  will-change: transform;
+.swipe-actions-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  display: flex;
+  justify-content: space-between;
+  pointer-events: auto;
 }
 
 .swipe-action-button {
   position: absolute;
   top: 0;
   bottom: 0;
-  width: 76px;
+  width: 72px;
   border: none;
   display: flex;
   flex-direction: column;
@@ -3389,10 +3388,10 @@ input:checked + .slider:before {
   justify-content: center;
   gap: 4px;
   cursor: pointer;
-  z-index: 1;
   font-size: 11px;
   font-weight: 600;
   color: #ffffff;
+  padding: 0;
   transition: background 0.15s ease, opacity 0.15s ease;
 }
 
@@ -3412,6 +3411,17 @@ input:checked + .slider:before {
 
 .swipe-action-button.delete:active {
   background: #b91c1c;
+}
+
+.swipeable-content {
+  position: relative;
+  z-index: 1;
+  background: var(--bg-card, #ffffff);
+  width: 100%;
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: pan-y;
+  will-change: transform;
 }
 
 /* ==========================================================================

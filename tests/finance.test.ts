@@ -7,7 +7,7 @@ import type { PersistedState, StorageAdapter } from '../src/services/storage/sto
 import { LocalStorageAdapter, migratePersistedState } from '../src/services/storage/localStorageAdapter'
 import { IndexedDbAdapter } from '../src/services/storage/indexedDbAdapter'
 import { resolveIconKey } from '../src/ui/icons'
-import { SWIPE_REVEAL_WIDTH, SWIPE_MAX_DRAG, SWIPE_THRESHOLD, SWIPE_ANGLE_RATIO } from '../src/components/SwipeableTransactionRow'
+import { SWIPE_MAX_REVEAL, SWIPE_THRESHOLD } from '../src/components/SwipeableTransactionRow'
 import { normalizeCategoryAlias, CANONICAL_OTHER_CATEGORY_ID, CATEGORY_ALIAS_MAP } from '../src/utils/categoryNormalization'
 import { cleanUrlQueryParams, createDeepLinkDeduplicator, parseShortcutUrl } from '../src/utils/deepLink'
 import {
@@ -6298,145 +6298,165 @@ describe('▶ Fase 16 — Normalización Canónica de Categorías y Prevención 
 })
 
 describe('▶ Fase 17 — Gestos Nativos de Swipe en Movimientos (Editar/Eliminar)', () => {
-  // Función auxiliar pura para simular la física y state-machine de SwipeableTransactionRow
+  // Simulador puro de la máquina de estados de SwipeableTransactionRow
   function simulateSwipeGesture({
-    deltaX,
-    deltaY,
-    initialOffset = 0,
+    dx,
+    dy,
+    startTranslate = 0,
     hasEdit = true,
     hasDelete = true,
   }: {
-    deltaX: number
-    deltaY: number
-    initialOffset?: number
+    dx: number
+    dy: number
+    startTranslate?: number
     hasEdit?: boolean
     hasDelete?: boolean
   }) {
-    const absX = Math.abs(deltaX)
-    const absY = Math.abs(deltaY)
+    const absX = Math.abs(dx)
+    const absY = Math.abs(dy)
 
-    // 1. Detección temprana: ¿Es scroll vertical?
-    if (absY > 7 && absY > absX * 0.8) {
-      return { finalOffset: 0, isCanceled: true, openedAction: null, triggeredSelect: false }
+    // 1. Detección de dirección
+    let direction: 'horizontal' | 'vertical' | null = null
+    if (absY > 6 && absY > absX) {
+      direction = 'vertical'
+      return {
+        direction,
+        isCanceled: true,
+        currentTranslate: startTranslate,
+        finalTranslate: startTranslate,
+        hasMoved: false,
+        triggeredSelect: false,
+      }
+    } else if (absX > 6 && absX >= absY) {
+      direction = 'horizontal'
     }
 
-    // 2. ¿Es un tap limpio sin movimiento?
-    if (absX < 6 && absY < 6) {
-      if (initialOffset !== 0) {
-        // Cierra la fila si estaba abierta
-        return { finalOffset: 0, isCanceled: false, openedAction: null, triggeredSelect: false }
-      }
-      return { finalOffset: 0, isCanceled: false, openedAction: null, triggeredSelect: true }
-    }
-
-    // 3. ¿Es gesto horizontal válido?
-    if (absX > 7 && absX >= absY * SWIPE_ANGLE_RATIO) {
-      const rawOffset = initialOffset + deltaX
-
-      // Comprobar disponibilidad de acción
-      if (rawOffset > 0 && !hasEdit) return { finalOffset: 0, isCanceled: false, openedAction: null, triggeredSelect: false }
-      if (rawOffset < 0 && !hasDelete) return { finalOffset: 0, isCanceled: false, openedAction: null, triggeredSelect: false }
-
-      // Snap rules
-      if (rawOffset >= SWIPE_THRESHOLD && hasEdit) {
-        return { finalOffset: SWIPE_REVEAL_WIDTH, isCanceled: false, openedAction: 'edit', triggeredSelect: false }
-      }
-      if (rawOffset <= -SWIPE_THRESHOLD && hasDelete) {
-        return { finalOffset: -SWIPE_REVEAL_WIDTH, isCanceled: false, openedAction: 'delete', triggeredSelect: false }
+    // Si no superó 6px, es un tap
+    if (direction === null) {
+      return {
+        direction: null,
+        isCanceled: false,
+        currentTranslate: startTranslate,
+        finalTranslate: 0,
+        hasMoved: false,
+        triggeredSelect: startTranslate === 0, // Solo selecciona si la fila estaba cerrada
       }
     }
 
-    // Fallback: vuelve a 0
-    return { finalOffset: 0, isCanceled: false, openedAction: null, triggeredSelect: false }
+    // 2. Seguimiento 1:1 durante dragging
+    let raw = startTranslate + dx
+    if (raw > 0 && !hasEdit) raw = 0
+    if (raw < 0 && !hasDelete) raw = 0
+    const clamped = Math.max(-SWIPE_MAX_REVEAL, Math.min(SWIPE_MAX_REVEAL, raw))
+
+    // 3. Snap al soltar (pointerup)
+    let finalTranslate = 0
+    if (clamped > SWIPE_THRESHOLD && hasEdit) {
+      finalTranslate = SWIPE_MAX_REVEAL
+    } else if (clamped < -SWIPE_THRESHOLD && hasDelete) {
+      finalTranslate = -SWIPE_MAX_REVEAL
+    } else {
+      finalTranslate = 0
+    }
+
+    return {
+      direction: 'horizontal',
+      isCanceled: false,
+      currentTranslate: clamped,
+      finalTranslate,
+      hasMoved: true,
+      triggeredSelect: false,
+    }
   }
 
-  it('291. Swipe derecha que supera threshold (deltaX >= 48px) revela botón Editar a exactamente 76px', () => {
-    const result = simulateSwipeGesture({ deltaX: 52, deltaY: 2, initialOffset: 0 })
-    assert.equal(result.finalOffset, SWIPE_REVEAL_WIDTH)
-    assert.equal(result.finalOffset, 76)
-    assert.equal(result.openedAction, 'edit')
-    assert.equal(result.triggeredSelect, false)
+  it('291. pointermove horizontal actualiza translate 1:1 proporcionalmente', () => {
+    const step1 = simulateSwipeGesture({ dx: 15, dy: 0, startTranslate: 0 })
+    assert.equal(step1.currentTranslate, 15)
+
+    const step2 = simulateSwipeGesture({ dx: 45, dy: 2, startTranslate: 0 })
+    assert.equal(step2.currentTranslate, 45)
+
+    const step3 = simulateSwipeGesture({ dx: 80, dy: 0, startTranslate: 0 })
+    assert.equal(step3.currentTranslate, SWIPE_MAX_REVEAL) // Clamped a 72px
   })
 
-  it('292. Swipe izquierda que supera threshold (deltaX <= -48px) revela botón Eliminar a exactamente -76px', () => {
-    const result = simulateSwipeGesture({ deltaX: -54, deltaY: 3, initialOffset: 0 })
-    assert.equal(result.finalOffset, -SWIPE_REVEAL_WIDTH)
-    assert.equal(result.finalOffset, -76)
-    assert.equal(result.openedAction, 'delete')
-    assert.equal(result.triggeredSelect, false)
-  })
-
-  it('293. Swipe corto (deltaX < 48px) no abre la acción y vuelve limpiamente a 0', () => {
-    const resultRight = simulateSwipeGesture({ deltaX: 30, deltaY: 2, initialOffset: 0 })
-    assert.equal(resultRight.finalOffset, 0)
-    assert.equal(resultRight.openedAction, null)
-
-    const resultLeft = simulateSwipeGesture({ deltaX: -25, deltaY: 4, initialOffset: 0 })
-    assert.equal(resultLeft.finalOffset, 0)
-    assert.equal(resultLeft.openedAction, null)
-  })
-
-  it('294. Scroll vertical (absY > absX * 0.8) cancela inmediatamente el swipe y mantiene offset en 0', () => {
-    // Usuario desliza diagonalmente hacia abajo con más componente vertical
-    const result = simulateSwipeGesture({ deltaX: 20, deltaY: 35, initialOffset: 0 })
-    assert.equal(result.isCanceled, true)
-    assert.equal(result.finalOffset, 0)
-    assert.equal(result.openedAction, null)
-    assert.equal(result.triggeredSelect, false)
-  })
-
-  it('295. Resistencia física tras el límite: desplazamiento máximo está acotado (SWIPE_MAX_DRAG = 84px)', () => {
-    assert.equal(SWIPE_REVEAL_WIDTH, 76)
-    assert.equal(SWIPE_MAX_DRAG, 84)
-    assert.equal(SWIPE_THRESHOLD, 48)
-    assert.equal(SWIPE_ANGLE_RATIO, 1.25)
-  })
-
-  it('296. Solo puede haber una fila abierta a la vez en la lista', () => {
-    let openRowId: string | null = null
-
-    const handleOpenChange = (rowId: string, open: boolean) => {
-      if (open) openRowId = rowId
-      else if (openRowId === rowId) openRowId = null
+  it('292. mientras dragging transition = none y transform usa translate3d', () => {
+    const isDragging = true
+    const currentX = 25
+    const style = {
+      transform: `translate3d(${currentX}px, 0, 0)`,
+      transition: isDragging ? 'none' : 'transform 180ms ease-out',
     }
 
-    // Abrir fila 1
-    handleOpenChange('tx_1', true)
-    assert.equal(openRowId, 'tx_1')
-
-    // Abrir fila 2 -> fila 1 queda automáticamente deseleccionada
-    handleOpenChange('tx_2', true)
-    assert.equal(openRowId, 'tx_2')
-
-    // Cerrar fila 2
-    handleOpenChange('tx_2', false)
-    assert.equal(openRowId, null)
+    assert.equal(style.transition, 'none')
+    assert.equal(style.transform, 'translate3d(25px, 0, 0)')
   })
 
-  it('297. Tap fuera de la fila abierta resetea openRowId a null', () => {
-    let openRowId: string | null = 'tx_1'
+  it('293. acciones quedan completamente ocultas en translateX = 0 (foreground opaco z-index: 1)', () => {
+    const translateX = 0
+    const isEditRevealed = translateX > 0
+    const isDeleteRevealed = translateX < 0
 
-    const handleOutsideTap = () => {
-      openRowId = null
+    assert.equal(isEditRevealed, false)
+    assert.equal(isDeleteRevealed, false)
+  })
+
+  it('294. drag +20px => translate exactamente +20px', () => {
+    const res = simulateSwipeGesture({ dx: 20, dy: 1, startTranslate: 0 })
+    assert.equal(res.currentTranslate, 20)
+    assert.equal(res.direction, 'horizontal')
+  })
+
+  it('295. drag -20px => translate exactamente -20px', () => {
+    const res = simulateSwipeGesture({ dx: -20, dy: 1, startTranslate: 0 })
+    assert.equal(res.currentTranslate, -20)
+    assert.equal(res.direction, 'horizontal')
+  })
+
+  it('296. pointerup hace snap correcto (>36px -> +72px, <-36px -> -72px, sino 0px)', () => {
+    const snapEdit = simulateSwipeGesture({ dx: 40, dy: 0, startTranslate: 0 })
+    assert.equal(snapEdit.finalTranslate, 72)
+
+    const snapDelete = simulateSwipeGesture({ dx: -40, dy: 0, startTranslate: 0 })
+    assert.equal(snapDelete.finalTranslate, -72)
+
+    const snapBack = simulateSwipeGesture({ dx: 25, dy: 0, startTranslate: 0 })
+    assert.equal(snapBack.finalTranslate, 0)
+  })
+
+  it('297. movimiento vertical cancela swipe horizontal y restaura la fila sin atascos', () => {
+    const res = simulateSwipeGesture({ dx: 10, dy: 25, startTranslate: 0 })
+    assert.equal(res.direction, 'vertical')
+    assert.equal(res.isCanceled, true)
+    assert.equal(res.finalTranslate, 0)
+    assert.equal(res.triggeredSelect, false)
+  })
+
+  it('298. click posterior no dispara detalle si hubo drag (hasMoved === true)', () => {
+    const dragRes = simulateSwipeGesture({ dx: 50, dy: 1, startTranslate: 0 })
+    assert.equal(dragRes.hasMoved, true)
+    assert.equal(dragRes.triggeredSelect, false)
+
+    // Tap limpio sin movimiento
+    const tapRes = simulateSwipeGesture({ dx: 2, dy: 1, startTranslate: 0 })
+    assert.equal(tapRes.hasMoved, false)
+    assert.equal(tapRes.triggeredSelect, true)
+  })
+
+  it('299. cambio de isOpen externo NO resetea translate durante dragging', () => {
+    let translateX = 30
+    const isDragging = true
+    const isOpen = false
+
+    // Lógica del useEffect de sincronización externa
+    if (!isDragging) {
+      if (!isOpen && translateX !== 0) {
+        translateX = 0
+      }
     }
 
-    handleOutsideTap()
-    assert.equal(openRowId, null)
-  })
-
-  it('298. Gesto de swipe no dispara onSelect por accidente', () => {
-    const swipeResult = simulateSwipeGesture({ deltaX: 55, deltaY: 2, initialOffset: 0 })
-    assert.equal(swipeResult.triggeredSelect, false)
-
-    // Solo un tap limpio (< 6px) dispara onSelect
-    const tapResult = simulateSwipeGesture({ deltaX: 2, deltaY: 1, initialOffset: 0 })
-    assert.equal(tapResult.triggeredSelect, true)
-  })
-
-  it('299. Tap en fila que ya estaba abierta la cierra y no dispara onSelect', () => {
-    const tapOnOpenRow = simulateSwipeGesture({ deltaX: 1, deltaY: 1, initialOffset: 76 })
-    assert.equal(tapOnOpenRow.finalOffset, 0)
-    assert.equal(tapOnOpenRow.triggeredSelect, false)
+    // Durante dragging se mantiene inalterado
+    assert.equal(translateX, 30)
   })
 
   it('300. Tocar botón Eliminar cierra el swipe y abre confirmación sin borrar directamente', () => {

@@ -1,12 +1,10 @@
-import React, { useRef, useState, useEffect, useCallback } from 'react'
+import React, { useRef, useState, useEffect } from 'react'
 import type { Category, Transaction } from '../models/finance'
 import { money, shortDate } from '../utils/money'
 import { AppIcon } from '../ui/icons'
 
-export const SWIPE_REVEAL_WIDTH = 76 // Ancho exacto del botón de acción en px
-export const SWIPE_MAX_DRAG = 84    // Límite máximo de arrastre con resistencia en px
-export const SWIPE_THRESHOLD = 48   // Mínimo desplazamiento horizontal para snap abierto en px
-export const SWIPE_ANGLE_RATIO = 1.25 // Ratio horizontal vs vertical para considerar gesto horizontal
+export const SWIPE_MAX_REVEAL = 72 // Desplazamiento máximo de revelación (±72px)
+export const SWIPE_THRESHOLD = 36  // Umbral de activación para snap abierto (36px)
 
 interface SwipeableTransactionRowProps {
   transaction: Transaction
@@ -31,198 +29,224 @@ export function SwipeableTransactionRow({
   isOpen = false,
   onOpenChange,
 }: SwipeableTransactionRowProps) {
-  const [offsetX, setOffsetX] = useState(0)
+  const [translateX, setTranslateX] = useState(0)
   const [isDragging, setIsDragging] = useState(false)
 
-  const startXRef = useRef<number>(0)
-  const startYRef = useRef<number>(0)
-  const initialOffsetRef = useRef<number>(0)
-  const isIntentDeterminedRef = useRef<boolean>(false)
-  const isCanceledRef = useRef<boolean>(false)
-  const hasMovedRef = useRef<boolean>(false)
-  const rowContainerRef = useRef<HTMLDivElement>(null)
+  const isDraggingRef = useRef(false)
+  const startXRef = useRef(0)
+  const startYRef = useRef(0)
+  const startTranslateRef = useRef(0)
+  const currentTranslateRef = useRef(0)
+  const directionRef = useRef<'horizontal' | 'vertical' | null>(null)
+  const hasMovedRef = useRef(false)
+  const pointerIdRef = useRef<number | null>(null)
 
   const category = categories.find((c) => c.id === t.categoryId)
   const isTransfer = t.type === 'transfer'
   const isIncome = t.type === 'income'
   const isReimbursement = isIncome && t.incomeKind === 'reimbursement'
 
-  // Sincronizar estado abierto/cerrado gobernado por el padre (TransactionList)
+  // Sincronizar SOLO cuando isOpen cambia externamente y NO estamos arrastrando
   useEffect(() => {
-    if (!isOpen && offsetX !== 0) {
-      setOffsetX(0)
+    if (!isDraggingRef.current) {
+      if (!isOpen && translateX !== 0) {
+        setTranslateX(0)
+        currentTranslateRef.current = 0
+      }
     }
-  }, [isOpen, offsetX])
+  }, [isOpen])
 
-  const closeRow = useCallback(() => {
-    setOffsetX(0)
-    onOpenChange?.(false)
-  }, [onOpenChange])
-
-  const handlePointerDown = (e: React.PointerEvent) => {
+  const handlePointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
     // Solo admitir click izquierdo o toque primario
     if (e.button !== 0) return
 
+    isDraggingRef.current = true
+    setIsDragging(true)
     startXRef.current = e.clientX
     startYRef.current = e.clientY
-    initialOffsetRef.current = offsetX
-    isIntentDeterminedRef.current = false
-    isCanceledRef.current = false
+    startTranslateRef.current = translateX
+    currentTranslateRef.current = translateX
+    directionRef.current = null
     hasMovedRef.current = false
-    setIsDragging(true)
+    pointerIdRef.current = e.pointerId
+
+    try {
+      e.currentTarget.setPointerCapture(e.pointerId)
+    } catch {
+      // Ignorar si el navegador no permite setPointerCapture en este contexto
+    }
   }
 
-  const handlePointerMove = (e: React.PointerEvent) => {
-    if (!isDragging || isCanceledRef.current) return
+  const handlePointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (!isDraggingRef.current) return
 
-    const deltaX = e.clientX - startXRef.current
-    const deltaY = e.clientY - startYRef.current
-    const absX = Math.abs(deltaX)
-    const absY = Math.abs(deltaY)
+    const dx = e.clientX - startXRef.current
+    const dy = e.clientY - startYRef.current
+    const absX = Math.abs(dx)
+    const absY = Math.abs(dy)
 
-    // 1. Detección temprana de intención (scroll vertical vs swipe horizontal)
-    if (!isIntentDeterminedRef.current) {
-      // Si el movimiento es vertical, cancelar swipe para permitir scroll fluido nativo
-      if (absY > 7 && absY > absX * 0.8) {
-        isCanceledRef.current = true
+    // 1. Detección temprana de dirección
+    if (directionRef.current === null) {
+      if (absY > 6 && absY > absX) {
+        // Intención claramente vertical -> cancelar swipe y permitir scroll fluido nativo
+        directionRef.current = 'vertical'
+        isDraggingRef.current = false
         setIsDragging(false)
-        setOffsetX(0)
+        setTranslateX(startTranslateRef.current)
+        currentTranslateRef.current = startTranslateRef.current
+        try {
+          if (pointerIdRef.current !== null) {
+            e.currentTarget.releasePointerCapture(pointerIdRef.current)
+          }
+        } catch {}
         return
       }
-
-      // Si el movimiento supera 7px con claro predominio horizontal, fijar intención horizontal
-      if (absX > 7 && absX >= absY * SWIPE_ANGLE_RATIO) {
-        isIntentDeterminedRef.current = true
+      if (absX > 6 && absX >= absY) {
+        // Intención horizontal confirmada -> bloquear scroll
+        directionRef.current = 'horizontal'
         hasMovedRef.current = true
       } else {
         return
       }
     }
 
-    // 2. Calcular desplazamiento con resistencia tras el límite
-    const rawOffset = initialOffsetRef.current + deltaX
+    // 2. Seguimiento 1:1 del dedo mientras dragging = true
+    if (directionRef.current === 'horizontal') {
+      let raw = startTranslateRef.current + dx
 
-    // Si no hay callback de editar o eliminar disponible en esa dirección, bloquear
-    if (rawOffset > 0 && !onEdit) {
-      setOffsetX(0)
-      return
+      // Si no hay acción disponible en esa dirección, no permitir desplazamiento
+      if (raw > 0 && !onEdit) raw = 0
+      if (raw < 0 && !onDelete) raw = 0
+
+      // Clamp estricto 1:1 entre -72px y +72px
+      const clamped = Math.max(-SWIPE_MAX_REVEAL, Math.min(SWIPE_MAX_REVEAL, raw))
+      currentTranslateRef.current = clamped
+      setTranslateX(clamped)
     }
-    if (rawOffset < 0 && !onDelete) {
-      setOffsetX(0)
-      return
-    }
-
-    let nextOffset = rawOffset
-
-    if (rawOffset > SWIPE_REVEAL_WIDTH) {
-      // Resistencia elástica a la derecha
-      const excess = rawOffset - SWIPE_REVEAL_WIDTH
-      nextOffset = Math.min(SWIPE_MAX_DRAG, SWIPE_REVEAL_WIDTH + excess * 0.2)
-    } else if (rawOffset < -SWIPE_REVEAL_WIDTH) {
-      // Resistencia elástica a la izquierda
-      const excess = rawOffset + SWIPE_REVEAL_WIDTH
-      nextOffset = Math.max(-SWIPE_MAX_DRAG, -SWIPE_REVEAL_WIDTH + excess * 0.2)
-    }
-
-    setOffsetX(nextOffset)
   }
 
-  const handlePointerUp = (e: React.PointerEvent) => {
-    if (!isDragging) return
-    setIsDragging(false)
-
-    if (isCanceledRef.current) {
-      setOffsetX(0)
+  const handlePointerUp = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (!isDraggingRef.current && directionRef.current !== 'horizontal') {
       return
     }
 
-    const deltaX = e.clientX - startXRef.current
-    const deltaY = e.clientY - startYRef.current
-    const absX = Math.abs(deltaX)
-    const absY = Math.abs(deltaY)
+    isDraggingRef.current = false
+    setIsDragging(false)
 
-    // 1. Caso: Tap limpio sin desplazamiento
-    if (!hasMovedRef.current || (absX < 6 && absY < 6)) {
-      if (initialOffsetRef.current !== 0) {
-        // Si estaba abierta, el tap simplemente la cierra sin abrir detalle
-        closeRow()
+    try {
+      if (pointerIdRef.current !== null) {
+        e.currentTarget.releasePointerCapture(pointerIdRef.current)
+      }
+    } catch {}
+
+    // Si fue scroll vertical, restaurar posición previa
+    if (directionRef.current === 'vertical') {
+      setTranslateX(startTranslateRef.current)
+      currentTranslateRef.current = startTranslateRef.current
+      return
+    }
+
+    // Si fue un tap limpio sin movimiento
+    if (!hasMovedRef.current) {
+      if (startTranslateRef.current !== 0) {
+        // Si estaba abierta, el tap simplemente la cierra
+        setTranslateX(0)
+        currentTranslateRef.current = 0
+        onOpenChange?.(false)
       } else {
-        // Si estaba cerrada, es un click válido para seleccionar
+        // Si estaba cerrada, abrir detalle de la transacción
         onSelect?.(t)
       }
       return
     }
 
-    // 2. Caso: Gesto horizontal completado -> Snap a estado abierto o cerrado
-    if (offsetX >= SWIPE_THRESHOLD && onEdit) {
-      setOffsetX(SWIPE_REVEAL_WIDTH)
+    // Snap horizontal al soltar el dedo
+    const current = currentTranslateRef.current
+    if (current > SWIPE_THRESHOLD && onEdit) {
+      setTranslateX(SWIPE_MAX_REVEAL)
+      currentTranslateRef.current = SWIPE_MAX_REVEAL
       onOpenChange?.(true)
-    } else if (offsetX <= -SWIPE_THRESHOLD && onDelete) {
-      setOffsetX(-SWIPE_REVEAL_WIDTH)
+    } else if (current < -SWIPE_THRESHOLD && onDelete) {
+      setTranslateX(-SWIPE_MAX_REVEAL)
+      currentTranslateRef.current = -SWIPE_MAX_REVEAL
       onOpenChange?.(true)
     } else {
-      closeRow()
+      setTranslateX(0)
+      currentTranslateRef.current = 0
+      onOpenChange?.(false)
     }
   }
 
-  const handlePointerCancel = () => {
+  const handlePointerCancel = (e: React.PointerEvent<HTMLDivElement>) => {
+    isDraggingRef.current = false
     setIsDragging(false)
-    closeRow()
-  }
-
-  const handleEditTap = (e: React.MouseEvent) => {
-    e.stopPropagation()
-    closeRow()
-    onEdit?.(t)
-  }
-
-  const handleDeleteTap = (e: React.MouseEvent) => {
-    e.stopPropagation()
-    closeRow()
-    onDelete?.(t)
+    try {
+      if (pointerIdRef.current !== null) {
+        e.currentTarget.releasePointerCapture(pointerIdRef.current)
+      }
+    } catch {}
+    setTranslateX(startTranslateRef.current)
+    currentTranslateRef.current = startTranslateRef.current
   }
 
   return (
-    <div className="swipeable-row-container" ref={rowContainerRef}>
-      {/* Botón Editar (Capa de acción izquierda, revelada al deslizar hacia la derecha) */}
-      {onEdit && (
-        <button
-          type="button"
-          className="swipe-action-button edit"
-          onClick={handleEditTap}
-          aria-label={`Editar ${t.description}`}
-          tabIndex={offsetX > 0 ? 0 : -1}
-        >
-          <AppIcon name="pencil" size={18} color="#ffffff" />
-          <span>Editar</span>
-        </button>
-      )}
+    <div className="swipeable-row-container">
+      {/* Capa de acciones de fondo (z-index: 0, siempre debajo del foreground) */}
+      <div className="swipe-actions-layer">
+        {onEdit && (
+          <button
+            type="button"
+            className="swipe-action-button edit"
+            onClick={(e) => {
+              e.stopPropagation()
+              setTranslateX(0)
+              currentTranslateRef.current = 0
+              onOpenChange?.(false)
+              onEdit(t)
+            }}
+            aria-label={`Editar ${t.description}`}
+            tabIndex={translateX > 0 ? 0 : -1}
+          >
+            <AppIcon name="pencil" size={18} color="#ffffff" />
+            <span>Editar</span>
+          </button>
+        )}
+        {onDelete && (
+          <button
+            type="button"
+            className="swipe-action-button delete"
+            onClick={(e) => {
+              e.stopPropagation()
+              setTranslateX(0)
+              currentTranslateRef.current = 0
+              onOpenChange?.(false)
+              onDelete(t)
+            }}
+            aria-label={`Eliminar ${t.description}`}
+            tabIndex={translateX < 0 ? 0 : -1}
+          >
+            <AppIcon name="trash-2" size={18} color="#ffffff" />
+            <span>Eliminar</span>
+          </button>
+        )}
+      </div>
 
-      {/* Botón Eliminar (Capa de acción derecha, revelada al deslizar hacia la izquierda) */}
-      {onDelete && (
-        <button
-          type="button"
-          className="swipe-action-button delete"
-          onClick={handleDeleteTap}
-          aria-label={`Eliminar ${t.description}`}
-          tabIndex={offsetX < 0 ? 0 : -1}
-        >
-          <AppIcon name="trash-2" size={18} color="#ffffff" />
-          <span>Eliminar</span>
-        </button>
-      )}
-
-      {/* Tarjeta de movimiento deslizante */}
+      {/* Capa de contenido (Foreground, z-index: 1, fondo sólido que oculta acciones a 0px) */}
       <div
-        className={`transaction-row swipeable-content ${onSelect && offsetX === 0 ? 'clickable' : ''}`}
+        className={`transaction-row swipeable-content ${onSelect && translateX === 0 ? 'clickable' : ''}`}
         style={{
-          transform: `translateX(${offsetX}px)`,
-          transition: isDragging ? 'none' : 'transform 180ms cubic-bezier(0.2, 0.9, 0.3, 1)',
+          transform: `translate3d(${translateX}px, 0, 0)`,
+          transition: isDragging ? 'none' : 'transform 180ms ease-out',
         }}
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}
         onPointerUp={handlePointerUp}
         onPointerCancel={handlePointerCancel}
+        onClick={(e) => {
+          if (hasMovedRef.current) {
+            e.stopPropagation()
+          }
+        }}
       >
         <div
           className="category-dot"
