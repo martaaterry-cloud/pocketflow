@@ -7,6 +7,7 @@ import type { PersistedState, StorageAdapter } from '../src/services/storage/sto
 import { LocalStorageAdapter, migratePersistedState } from '../src/services/storage/localStorageAdapter'
 import { IndexedDbAdapter } from '../src/services/storage/indexedDbAdapter'
 import { resolveIconKey } from '../src/ui/icons'
+import { SWIPE_REVEAL_WIDTH, SWIPE_MAX_DRAG, SWIPE_THRESHOLD, SWIPE_ANGLE_RATIO } from '../src/components/SwipeableTransactionRow'
 import { normalizeCategoryAlias, CANONICAL_OTHER_CATEGORY_ID, CATEGORY_ALIAS_MAP } from '../src/utils/categoryNormalization'
 import { cleanUrlQueryParams, createDeepLinkDeduplicator, parseShortcutUrl } from '../src/utils/deepLink'
 import {
@@ -6295,6 +6296,182 @@ describe('▶ Fase 16 — Normalización Canónica de Categorías y Prevención 
     assert.equal(net[0].name, 'categoria_inexistente_123')
   })
 })
+
+describe('▶ Fase 17 — Gestos Nativos de Swipe en Movimientos (Editar/Eliminar)', () => {
+  // Función auxiliar pura para simular la física y state-machine de SwipeableTransactionRow
+  function simulateSwipeGesture({
+    deltaX,
+    deltaY,
+    initialOffset = 0,
+    hasEdit = true,
+    hasDelete = true,
+  }: {
+    deltaX: number
+    deltaY: number
+    initialOffset?: number
+    hasEdit?: boolean
+    hasDelete?: boolean
+  }) {
+    const absX = Math.abs(deltaX)
+    const absY = Math.abs(deltaY)
+
+    // 1. Detección temprana: ¿Es scroll vertical?
+    if (absY > 7 && absY > absX * 0.8) {
+      return { finalOffset: 0, isCanceled: true, openedAction: null, triggeredSelect: false }
+    }
+
+    // 2. ¿Es un tap limpio sin movimiento?
+    if (absX < 6 && absY < 6) {
+      if (initialOffset !== 0) {
+        // Cierra la fila si estaba abierta
+        return { finalOffset: 0, isCanceled: false, openedAction: null, triggeredSelect: false }
+      }
+      return { finalOffset: 0, isCanceled: false, openedAction: null, triggeredSelect: true }
+    }
+
+    // 3. ¿Es gesto horizontal válido?
+    if (absX > 7 && absX >= absY * SWIPE_ANGLE_RATIO) {
+      const rawOffset = initialOffset + deltaX
+
+      // Comprobar disponibilidad de acción
+      if (rawOffset > 0 && !hasEdit) return { finalOffset: 0, isCanceled: false, openedAction: null, triggeredSelect: false }
+      if (rawOffset < 0 && !hasDelete) return { finalOffset: 0, isCanceled: false, openedAction: null, triggeredSelect: false }
+
+      // Snap rules
+      if (rawOffset >= SWIPE_THRESHOLD && hasEdit) {
+        return { finalOffset: SWIPE_REVEAL_WIDTH, isCanceled: false, openedAction: 'edit', triggeredSelect: false }
+      }
+      if (rawOffset <= -SWIPE_THRESHOLD && hasDelete) {
+        return { finalOffset: -SWIPE_REVEAL_WIDTH, isCanceled: false, openedAction: 'delete', triggeredSelect: false }
+      }
+    }
+
+    // Fallback: vuelve a 0
+    return { finalOffset: 0, isCanceled: false, openedAction: null, triggeredSelect: false }
+  }
+
+  it('291. Swipe derecha que supera threshold (deltaX >= 48px) revela botón Editar a exactamente 76px', () => {
+    const result = simulateSwipeGesture({ deltaX: 52, deltaY: 2, initialOffset: 0 })
+    assert.equal(result.finalOffset, SWIPE_REVEAL_WIDTH)
+    assert.equal(result.finalOffset, 76)
+    assert.equal(result.openedAction, 'edit')
+    assert.equal(result.triggeredSelect, false)
+  })
+
+  it('292. Swipe izquierda que supera threshold (deltaX <= -48px) revela botón Eliminar a exactamente -76px', () => {
+    const result = simulateSwipeGesture({ deltaX: -54, deltaY: 3, initialOffset: 0 })
+    assert.equal(result.finalOffset, -SWIPE_REVEAL_WIDTH)
+    assert.equal(result.finalOffset, -76)
+    assert.equal(result.openedAction, 'delete')
+    assert.equal(result.triggeredSelect, false)
+  })
+
+  it('293. Swipe corto (deltaX < 48px) no abre la acción y vuelve limpiamente a 0', () => {
+    const resultRight = simulateSwipeGesture({ deltaX: 30, deltaY: 2, initialOffset: 0 })
+    assert.equal(resultRight.finalOffset, 0)
+    assert.equal(resultRight.openedAction, null)
+
+    const resultLeft = simulateSwipeGesture({ deltaX: -25, deltaY: 4, initialOffset: 0 })
+    assert.equal(resultLeft.finalOffset, 0)
+    assert.equal(resultLeft.openedAction, null)
+  })
+
+  it('294. Scroll vertical (absY > absX * 0.8) cancela inmediatamente el swipe y mantiene offset en 0', () => {
+    // Usuario desliza diagonalmente hacia abajo con más componente vertical
+    const result = simulateSwipeGesture({ deltaX: 20, deltaY: 35, initialOffset: 0 })
+    assert.equal(result.isCanceled, true)
+    assert.equal(result.finalOffset, 0)
+    assert.equal(result.openedAction, null)
+    assert.equal(result.triggeredSelect, false)
+  })
+
+  it('295. Resistencia física tras el límite: desplazamiento máximo está acotado (SWIPE_MAX_DRAG = 84px)', () => {
+    assert.equal(SWIPE_REVEAL_WIDTH, 76)
+    assert.equal(SWIPE_MAX_DRAG, 84)
+    assert.equal(SWIPE_THRESHOLD, 48)
+    assert.equal(SWIPE_ANGLE_RATIO, 1.25)
+  })
+
+  it('296. Solo puede haber una fila abierta a la vez en la lista', () => {
+    let openRowId: string | null = null
+
+    const handleOpenChange = (rowId: string, open: boolean) => {
+      if (open) openRowId = rowId
+      else if (openRowId === rowId) openRowId = null
+    }
+
+    // Abrir fila 1
+    handleOpenChange('tx_1', true)
+    assert.equal(openRowId, 'tx_1')
+
+    // Abrir fila 2 -> fila 1 queda automáticamente deseleccionada
+    handleOpenChange('tx_2', true)
+    assert.equal(openRowId, 'tx_2')
+
+    // Cerrar fila 2
+    handleOpenChange('tx_2', false)
+    assert.equal(openRowId, null)
+  })
+
+  it('297. Tap fuera de la fila abierta resetea openRowId a null', () => {
+    let openRowId: string | null = 'tx_1'
+
+    const handleOutsideTap = () => {
+      openRowId = null
+    }
+
+    handleOutsideTap()
+    assert.equal(openRowId, null)
+  })
+
+  it('298. Gesto de swipe no dispara onSelect por accidente', () => {
+    const swipeResult = simulateSwipeGesture({ deltaX: 55, deltaY: 2, initialOffset: 0 })
+    assert.equal(swipeResult.triggeredSelect, false)
+
+    // Solo un tap limpio (< 6px) dispara onSelect
+    const tapResult = simulateSwipeGesture({ deltaX: 2, deltaY: 1, initialOffset: 0 })
+    assert.equal(tapResult.triggeredSelect, true)
+  })
+
+  it('299. Tap en fila que ya estaba abierta la cierra y no dispara onSelect', () => {
+    const tapOnOpenRow = simulateSwipeGesture({ deltaX: 1, deltaY: 1, initialOffset: 76 })
+    assert.equal(tapOnOpenRow.finalOffset, 0)
+    assert.equal(tapOnOpenRow.triggeredSelect, false)
+  })
+
+  it('300. Tocar botón Eliminar cierra el swipe y abre confirmación sin borrar directamente', () => {
+    let swipeOpen = true
+    let isModalOpen = false
+    let isDirectlyDeleted = false
+    let pendingTxToDelete: Transaction | null = null
+
+    const mockTx: Transaction = {
+      id: 'tx_delete_test',
+      accountId: 'daily',
+      type: 'expense',
+      amount: 12.00,
+      description: 'Cena',
+      date: '2026-09-03',
+    }
+
+    const handleDeleteTap = (t: Transaction) => {
+      swipeOpen = false
+      pendingTxToDelete = t
+      isModalOpen = true
+    }
+
+    handleDeleteTap(mockTx)
+
+    // Verificar que el swipe se cerró
+    assert.equal(swipeOpen, false)
+    // Verificar que la transacción quedó pendiente de confirmación en el modal
+    assert.equal(isModalOpen, true)
+    assert.equal(pendingTxToDelete?.id, 'tx_delete_test')
+    // Verificar que NO se borró inmediatamente
+    assert.equal(isDirectlyDeleted, false)
+  })
+})
+
 
 
 

@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import type { Category, ExpenseShare, Transaction } from '../models/finance'
 import { SwipeableTransactionRow } from './SwipeableTransactionRow'
 import { selectExpenseShareStatus } from '../utils/sharedExpenseSelectors'
@@ -23,6 +23,23 @@ export function TransactionList({
   const [openRowId, setOpenRowId] = useState<string | null>(null)
 
   const rows = limit ? transactions.slice(0, limit) : transactions
+
+  // Cerrar fila abierta al hacer tap fuera de cualquier fila deslizable
+  useEffect(() => {
+    if (!openRowId) return
+
+    const handleGlobalPointerDown = (e: PointerEvent) => {
+      const target = e.target as HTMLElement | null
+      if (!target?.closest('.swipeable-row-container')) {
+        setOpenRowId(null)
+      }
+    }
+
+    window.addEventListener('pointerdown', handleGlobalPointerDown)
+    return () => {
+      window.removeEventListener('pointerdown', handleGlobalPointerDown)
+    }
+  }, [openRowId])
 
   // Mapa rápido de deudas pendientes por transacción compartida
   const pendingByTx = useMemo(() => {

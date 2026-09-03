@@ -20,6 +20,7 @@ export function MovementsPage({
   const [filter, setFilter] = useState<FilterType>('all')
   const [incomeSubFilter, setIncomeSubFilter] = useState<IncomeSubFilter>('all')
   const [search, setSearch] = useState('')
+  const [txToDelete, setTxToDelete] = useState<Transaction | null>(null)
 
   const filteredTransactions = useMemo(() => {
     return finance.transactions.filter((tx) => {
@@ -160,9 +161,40 @@ export function MovementsPage({
           expenseShares={finance.expenseShares}
           onSelect={onSelectTransaction}
           onEdit={onSelectTransaction}
-          onDelete={(t) => finance.deleteTransaction(t.id)}
+          onDelete={(t) => setTxToDelete(t)}
         />
       </section>
+
+      {/* Modal de confirmación de eliminación */}
+      {txToDelete && (
+        <div className="modal-backdrop" onClick={() => setTxToDelete(null)}>
+          <div className="modal-card" onClick={(e) => e.stopPropagation()}>
+            <h3 style={{ margin: '0 0 8px', fontSize: '1.1rem' }}>¿Eliminar movimiento?</h3>
+            <p className="description" style={{ margin: '0 0 20px', color: 'var(--text-muted)' }}>
+              ¿Seguro que quieres eliminar <strong>{txToDelete.description}</strong> ({money(txToDelete.amount)})? Esta acción no se puede deshacer.
+            </p>
+            <div className="modal-actions" style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+              <button
+                type="button"
+                className="btn btn-secondary"
+                onClick={() => setTxToDelete(null)}
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                className="btn btn-danger"
+                onClick={() => {
+                  finance.deleteTransaction(txToDelete.id)
+                  setTxToDelete(null)
+                }}
+              >
+                Eliminar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </main>
   )
 }
