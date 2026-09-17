@@ -1,10 +1,12 @@
 import { useState } from 'react'
 import { DonutChart } from '../components/DonutChart'
 import { TransactionList } from '../components/TransactionList'
-import type { Transaction } from '../models/finance'
+import { CategoryDetailModal } from '../components/CategoryDetailModal'
+import type { Category, Transaction } from '../models/finance'
 import type { ReturnTypeFinance } from '../types'
 import { money } from '../utils/money'
 import { selectPendingVariableExpenseEstimate } from '../utils/variableEstimates'
+import { normalizeCategoryAlias } from '../utils/categoryNormalization'
 import { AppIcon } from '../ui/icons'
 
 export function HomePage({
@@ -22,6 +24,7 @@ export function HomePage({
 }) {
   const [isExpanded, setIsExpanded] = useState(false)
   const [txToDelete, setTxToDelete] = useState<Transaction | null>(null)
+  const [selectedCategoryForDetail, setSelectedCategoryForDetail] = useState<Category | null>(null)
   const displayName = finance.profile?.displayName?.trim()
   const greeting = displayName ? `Hola, ${displayName}` : 'Hola'
 
@@ -270,6 +273,16 @@ export function HomePage({
           transactions={finance.transactions}
           categories={finance.categories}
           netCategoryItems={finance.totals.netCategoryExpenses}
+          onSelectCategoryFilter={(catId) => {
+            const canonical = normalizeCategoryAlias(catId)
+            const cat = finance.categories.find((c) => normalizeCategoryAlias(c.id) === canonical) || {
+              id: canonical,
+              name: canonical === 'other' ? 'Otros' : catId,
+              color: '#B9B9B9',
+              icon: 'ellipsis',
+            }
+            setSelectedCategoryForDetail(cat)
+          }}
         />
       </section>
 
@@ -318,6 +331,21 @@ export function HomePage({
           </div>
         </div>
       )}
+
+      {/* Modal de Detalle de Categoría */}
+      <CategoryDetailModal
+        open={Boolean(selectedCategoryForDetail)}
+        onClose={() => setSelectedCategoryForDetail(null)}
+        category={selectedCategoryForDetail}
+        transactions={finance.transactions}
+        categories={finance.categories}
+        expenseShares={finance.expenseShares}
+        mode="net"
+        periodLabel="Mes actual"
+        onSelectTransaction={onSelectTransaction}
+        onEditTransaction={onSelectTransaction}
+        onDeleteTransaction={(t) => setTxToDelete(t)}
+      />
     </main>
   )
 }

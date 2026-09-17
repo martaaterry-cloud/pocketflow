@@ -10,6 +10,8 @@ import type {
   SpecialPeriod,
   Transaction,
   IncomeKind,
+  SpecialMovementType,
+  ExpenseNature,
   SharedContact,
   ExpenseShare,
   RecurringSharingTemplate,
@@ -115,6 +117,8 @@ export function toDbTransaction(tx: Transaction, userId: string) {
     parent_expense_id: tx.parentExpenseId || null,
     expense_share_id: tx.expenseShareId || null,
     is_shared: Boolean(tx.isShared),
+    special_type: tx.specialType || 'normal',
+    expense_nature: tx.expenseNature || null,
   }
 }
 
@@ -134,6 +138,8 @@ export function fromDbTransaction(row: Record<string, unknown>): Transaction {
     parentExpenseId: row.parent_expense_id ? String(row.parent_expense_id) : undefined,
     expenseShareId: row.expense_share_id ? String(row.expense_share_id) : undefined,
     isShared: Boolean(row.is_shared),
+    specialType: (row.special_type as SpecialMovementType) || undefined,
+    expenseNature: (row.expense_nature as ExpenseNature) || undefined,
   }
 }
 
@@ -222,6 +228,8 @@ export function toDbRecurring(r: RecurringPayment, userId: string) {
     active: r.active,
     is_shared: Boolean(r.isShared),
     sharing_template: r.sharingTemplate || null,
+    type: r.type || 'expense',
+    installments_count: r.installmentsCount || null,
   }
 }
 
@@ -237,6 +245,8 @@ export function fromDbRecurring(row: Record<string, unknown>): RecurringPayment 
     active: Boolean(row.active),
     isShared: Boolean(row.is_shared),
     sharingTemplate: (row.sharing_template as RecurringSharingTemplate) || undefined,
+    type: (row.type as 'expense' | 'income') || 'expense',
+    installmentsCount: row.installments_count ? Number(row.installments_count) : undefined,
   }
 }
 

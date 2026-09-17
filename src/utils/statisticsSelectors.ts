@@ -24,6 +24,16 @@ export interface TimeSeriesPoint {
   date: Date
 }
 
+export interface ExpenseNatureBreakdown {
+  fixed: number
+  variable: number
+  extraordinary: number
+  total: number
+  fixedPct: number
+  variablePct: number
+  extraordinaryPct: number
+}
+
 export interface PeriodStatistics {
   period: StatsPeriod
   dateRange: DateRange
@@ -33,12 +43,14 @@ export interface PeriodStatistics {
   expenses: number
   netExpenses: number
   savingsTransferred: number
+  cashWithdrawals: number
   netFlow: number
   transactionCount: number
   averageDailySpend: number
   topCategory: { categoryId: string; name: string; icon: string; amount: number } | null
   categoryBreakdown: CategoryExpenseBreakdown[]
   timeSeries: TimeSeriesPoint[]
+  natureBreakdown: ExpenseNatureBreakdown
 }
 
 export interface PeriodComparison {
@@ -145,6 +157,11 @@ export function calculatePeriodStatistics(
   let reimbursements = 0
   let expenses = 0
   let savingsTransferred = 0
+  let cashWithdrawals = 0
+
+  let fixedExpenses = 0
+  let variableExpenses = 0
+  let extraordinaryExpenses = 0
 
   const categoryExpensesMap = new Map<string, number>()
 
@@ -160,6 +177,19 @@ export function calculatePeriodStatistics(
       expenses += t.amount
       const catId = normalizeCategoryAlias(t.categoryId || 'other')
       categoryExpensesMap.set(catId, (categoryExpensesMap.get(catId) ?? 0) + t.amount)
+
+      if (t.specialType === 'cash_withdrawal') {
+        cashWithdrawals += t.amount
+      }
+
+      const nature = t.expenseNature || 'variable'
+      if (nature === 'fixed') {
+        fixedExpenses += t.amount
+      } else if (nature === 'extraordinary') {
+        extraordinaryExpenses += t.amount
+      } else {
+        variableExpenses += t.amount
+      }
     } else if (t.type === 'transfer') {
       // Transferencias hacia ahorro
       if (t.toAccountId === 'savings' || t.description.toLowerCase().includes('ahorro')) {
@@ -172,10 +202,25 @@ export function calculatePeriodStatistics(
   realIncome = Math.round(realIncome * 100) / 100
   reimbursements = Math.round(reimbursements * 100) / 100
   expenses = Math.round(expenses * 100) / 100
+  cashWithdrawals = Math.round(cashWithdrawals * 100) / 100
+  fixedExpenses = Math.round(fixedExpenses * 100) / 100
+  variableExpenses = Math.round(variableExpenses * 100) / 100
+  extraordinaryExpenses = Math.round(extraordinaryExpenses * 100) / 100
+
   const netExpenses = Math.max(0, Math.round((expenses - reimbursements) * 100) / 100)
   savingsTransferred = Math.round(savingsTransferred * 100) / 100
-  // Balance neto real = Ingresos reales - Gasto neto (o ingresos totales - gastos totales, ambos son numéricamente idénticos porque reimbursements se cancela en la resta)
+  // Balance neto real = Ingresos reales - Gasto neto
   const netFlow = Math.round((realIncome - netExpenses) * 100) / 100
+
+  const natureBreakdown: ExpenseNatureBreakdown = {
+    fixed: fixedExpenses,
+    variable: variableExpenses,
+    extraordinary: extraordinaryExpenses,
+    total: expenses,
+    fixedPct: expenses > 0 ? Math.round((fixedExpenses / expenses) * 100) : 0,
+    variablePct: expenses > 0 ? Math.round((variableExpenses / expenses) * 100) : 0,
+    extraordinaryPct: expenses > 0 ? Math.round((extraordinaryExpenses / expenses) * 100) : 0,
+  }
 
   // Desglose por categoría
   const categoryBreakdown: CategoryExpenseBreakdown[] = []
@@ -222,12 +267,61 @@ export function calculatePeriodStatistics(
     expenses,
     netExpenses,
     savingsTransferred,
+    cashWithdrawals,
     netFlow,
     transactionCount: periodTxs.length,
     averageDailySpend,
     topCategory,
     categoryBreakdown,
     timeSeries,
+    natureBreakdown,
+  }
+}
+
+/**
+ * Calcula el desglose de gastos por naturaleza (fijo, variable, extraordinario)
+ * para un periodo dado.
+ */
+export function selectExpensesByNature(
+  transactions: Transaction[],
+  period: StatsPeriod = 'month',
+  referenceDate: Date = new Date()
+): ExpenseNatureBreakdown {
+  const dateRange = getLocalDateRange(period, referenceDate)
+  const periodTxs = filterTransactionsByRange(transactions, dateRange)
+
+  let fixed = 0
+  let variable = 0
+  let extraordinary = 0
+  let total = 0
+
+  periodTxs.forEach((t) => {
+    if (t.type === 'expense') {
+      total += t.amount
+      const nature = t.expenseNature || 'variable'
+      if (nature === 'fixed') {
+        fixed += t.amount
+      } else if (nature === 'extraordinary') {
+        extraordinary += t.amount
+      } else {
+        variable += t.amount
+      }
+    }
+  })
+
+  total = Math.round(total * 100) / 100
+  fixed = Math.round(fixed * 100) / 100
+  variable = Math.round(variable * 100) / 100
+  extraordinary = Math.round(extraordinary * 100) / 100
+
+  return {
+    fixed,
+    variable,
+    extraordinary,
+    total,
+    fixedPct: total > 0 ? Math.round((fixed / total) * 100) : 0,
+    variablePct: total > 0 ? Math.round((variable / total) * 100) : 0,
+    extraordinaryPct: total > 0 ? Math.round((extraordinary / total) * 100) : 0,
   }
 }
 

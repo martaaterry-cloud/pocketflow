@@ -104,6 +104,7 @@ export function RecurringPaymentsPage({
               const account = finance.accounts.find((a) => a.id === r.accountId)
               const cycleStatus = selectRecurringPaymentCycleStatus(r, finance.transactions)
               const isConfirming = confirmingId === r.id
+              const isIncome = r.type === 'income'
 
               const externalCount = r.sharingTemplate?.participants?.length ?? 0
               const sharedLabel = externalCount > 0
@@ -130,20 +131,26 @@ export function RecurringPaymentsPage({
                     <div className="recurring-title-group">
                       <div
                         className="category-dot"
-                        style={{ background: category?.color ?? '#bbb' }}
+                        style={{ background: isIncome ? '#5d9c74' : (category?.color ?? '#bbb') }}
                       >
-                        <AppIcon name={category?.iconKey || category?.icon || 'refresh-cw'} size={15} color="#fff" />
+                        <AppIcon
+                          name={isIncome ? 'arrow-down-left' : (category?.iconKey || category?.icon || 'refresh-cw')}
+                          size={15}
+                          color="#fff"
+                        />
                       </div>
                       <div className="recurring-names">
                         <strong className="recurring-name-text">{r.name}</strong>
                         <span className="recurring-sub-text">
-                          {category?.name ?? 'Suscripción'} · {frequencyLabel[r.frequency] ?? 'Mensual'}
+                          {isIncome ? 'Ingreso programado' : (category?.name ?? 'Suscripción')} · {frequencyLabel[r.frequency] ?? 'Mensual'}
                         </span>
                       </div>
                     </div>
 
                     <div className="recurring-amount-box">
-                      <strong className="expense-amount">−{money(r.amount)}</strong>
+                      <strong className={isIncome ? 'positive' : 'expense-amount'}>
+                        {isIncome ? '+' : '−'}{money(r.amount)}
+                      </strong>
                     </div>
                   </div>
 

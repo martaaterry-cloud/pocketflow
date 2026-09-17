@@ -274,6 +274,9 @@ export function SwipeableTransactionRow({
         <div className="transaction-main">
           <div className="transaction-title-row">
             <strong>{t.description}</strong>
+            {t.specialType === 'cash_withdrawal' && <span className="pill-withdrawal">Cajero</span>}
+            {t.expenseNature === 'fixed' && <span className="pill-nature fixed">Fijo</span>}
+            {t.expenseNature === 'extraordinary' && <span className="pill-nature extraordinary">Extraordinario</span>}
             {isReimbursement && <span className="pill-reimbursement">Reembolso</span>}
             {isShared && (
               <span className={`pill-shared ${pendingToRecover && pendingToRecover > 0 ? 'pending' : 'completed'}`}>
@@ -284,7 +287,9 @@ export function SwipeableTransactionRow({
             )}
           </div>
           <span>
-            {isTransfer
+            {t.specialType === 'cash_withdrawal'
+              ? `Efectivo / Cajero (${category?.name ?? 'Otros'})`
+              : isTransfer
               ? 'Transferencia interna'
               : isReimbursement
               ? 'Reembolso recibido'

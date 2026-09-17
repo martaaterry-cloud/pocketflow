@@ -4902,3 +4902,341 @@ input:checked + .slider:before {
   color: var(--text-main);
   overflow-x: auto;
 }
+
+/* ==========================================================================
+   Mejoras de Finanzas (Detalle de categoría, Cajero, Naturaleza de Gasto)
+   ========================================================================== */
+
+/* Badges / Pills especiales */
+.pill-withdrawal {
+  font-size: 10px;
+  font-weight: 600;
+  color: #0284c7;
+  background: #e0f2fe;
+  padding: 2px 6px;
+  border-radius: 6px;
+  letter-spacing: -0.2px;
+  display: inline-flex;
+  align-items: center;
+}
+
+.pill-nature {
+  font-size: 10px;
+  font-weight: 600;
+  padding: 2px 6px;
+  border-radius: 6px;
+  letter-spacing: -0.2px;
+  display: inline-flex;
+  align-items: center;
+}
+
+.pill-nature.fixed {
+  color: #d97706;
+  background: #fef3c7;
+}
+
+.pill-nature.extraordinary {
+  color: #db2777;
+  background: #fce7f3;
+}
+
+.pill-nature.variable {
+  color: #64748b;
+  background: #f1f5f9;
+}
+
+/* Selector de Naturaleza de Gasto */
+.field-group-title {
+  display: block;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-muted, #64748b);
+  margin-bottom: 6px;
+}
+
+.nature-segmented-selector {
+  display: flex;
+  gap: 6px;
+  background: var(--bg-card-subtle, #f1f5f9);
+  padding: 4px;
+  border-radius: 10px;
+}
+
+.nature-seg-btn {
+  flex: 1;
+  padding: 6px 8px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-muted, #64748b);
+  background: transparent;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  text-align: center;
+}
+
+.nature-seg-btn.active {
+  background: #ffffff;
+  color: var(--text-main, #0f172a);
+  font-weight: 600;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+}
+
+/* Checkbox Limpio */
+.checkbox-row-clean {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--border-light, #e2e8f0);
+  background: var(--bg-card-light, #f8fafc);
+  cursor: pointer;
+}
+
+.checkbox-row-clean input[type="checkbox"] {
+  margin-top: 3px;
+  cursor: pointer;
+}
+
+.checkbox-label-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.checkbox-label-text strong {
+  font-size: 13px;
+  color: var(--text-main, #0f172a);
+}
+
+.checkbox-label-text small {
+  font-size: 11px;
+  color: var(--text-muted, #64748b);
+}
+
+/* Modal de Detalle de Categoría */
+.modal-category-detail {
+  max-height: 88vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.category-detail-header-info {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.category-detail-header-info h3 {
+  margin: 0;
+  font-size: 1.1rem;
+}
+
+.modal-header-sub {
+  font-size: 11px;
+  color: var(--text-muted, #64748b);
+}
+
+.category-detail-summary-card {
+  background: var(--bg-card-subtle, #f8fafc);
+  border: 1px solid var(--border-light, #e2e8f0);
+  border-radius: var(--radius-md, 14px);
+  padding: 14px 16px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin: 12px 0 16px;
+}
+
+.summary-left {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.summary-tag {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  color: var(--text-muted, #64748b);
+  font-weight: 600;
+}
+
+.summary-amount {
+  font-size: 1.35rem;
+  font-weight: 700;
+  color: var(--text-main, #0f172a);
+}
+
+.summary-right {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+}
+
+.summary-count-badge {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-main, #0f172a);
+  background: rgba(0, 0, 0, 0.05);
+  padding: 4px 8px;
+  border-radius: 8px;
+}
+
+.summary-reimb-note {
+  font-size: 11px;
+  color: #8b5cf6;
+  font-weight: 500;
+}
+
+.category-detail-list-section {
+  flex: 1;
+  overflow-y: auto;
+  max-height: 52vh;
+  margin-top: 4px;
+}
+
+.section-title.mini h4 {
+  margin: 0 0 10px;
+  font-size: 13px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-muted, #64748b);
+}
+
+/* Card de Desglose por Naturaleza */
+.nature-breakdown-card {
+  background: var(--bg-card, #ffffff);
+  border: 1px solid var(--border-light, #e2e8f0);
+  border-radius: var(--radius-md, 14px);
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.nature-progress-bar {
+  height: 10px;
+  background: #f1f5f9;
+  border-radius: 999px;
+  overflow: hidden;
+  display: flex;
+}
+
+.nature-bar-segment.variable {
+  background: #64748b;
+  transition: width 0.3s ease;
+}
+
+.nature-bar-segment.fixed {
+  background: #d97706;
+  transition: width 0.3s ease;
+}
+
+.nature-bar-segment.extraordinary {
+  background: #db2777;
+  transition: width 0.3s ease;
+}
+
+.nature-legend-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+}
+
+.nature-legend-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+}
+
+.nature-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  margin-top: 5px;
+  flex-shrink: 0;
+}
+
+.nature-dot.variable {
+  background: #64748b;
+}
+
+.nature-dot.fixed {
+  background: #d97706;
+}
+
+.nature-dot.extraordinary {
+  background: #db2777;
+}
+
+.nature-legend-text {
+  display: flex;
+  flex-direction: column;
+}
+
+.nature-legend-title {
+  font-size: 11px;
+  color: var(--text-muted, #64748b);
+}
+
+.nature-legend-text strong {
+  font-size: 13px;
+  color: var(--text-main, #0f172a);
+}
+
+.nature-legend-text small {
+  font-size: 10px;
+  color: var(--text-muted, #94a3b8);
+}
+
+.stat-box.highlight-withdrawal {
+  border-color: #bae6fd;
+  background: #f0f9ff;
+}
+
+.stat-box.highlight-withdrawal b {
+  color: #0369a1;
+}
+
+.category-stat-row.clickable {
+  cursor: pointer;
+  transition: background 0.15s ease;
+  border-radius: 10px;
+  padding: 8px 6px;
+}
+
+.category-stat-row.clickable:hover {
+  background: rgba(0, 0, 0, 0.03);
+}
+
+/* Pie de página con Identificador de Versión y Build */
+.app-version-footer {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 24px 16px 36px;
+  gap: 3px;
+  text-align: center;
+  user-select: none;
+}
+
+.app-version-text {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-muted, #64748b);
+  letter-spacing: 0.2px;
+}
+
+.app-build-text {
+  font-size: 11px;
+  color: #94a3b8;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  letter-spacing: 0.3px;
+}
+
+

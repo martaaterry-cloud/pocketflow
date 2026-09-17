@@ -19,6 +19,8 @@ export interface Category {
 }
 
 export type IncomeKind = 'income' | 'reimbursement'
+export type SpecialMovementType = 'normal' | 'cash_withdrawal' | 'reimbursement' | 'transfer'
+export type ExpenseNature = 'fixed' | 'variable' | 'extraordinary'
 
 export interface Transaction {
   id: string
@@ -35,6 +37,8 @@ export interface Transaction {
   parentExpenseId?: string
   expenseShareId?: string
   isShared?: boolean
+  specialType?: SpecialMovementType
+  expenseNature?: ExpenseNature
 }
 
 export type CreateTransactionInput = Omit<Transaction, 'id'>
@@ -105,6 +109,8 @@ export interface RecurringPayment {
   active: boolean
   isShared?: boolean
   sharingTemplate?: RecurringSharingTemplate
+  type?: 'expense' | 'income'
+  installmentsCount?: number
 }
 
 export type CreateRecurringPaymentInput = Omit<RecurringPayment, 'id'>

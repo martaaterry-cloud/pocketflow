@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import type { Account, Budget, Category, FinancialPlanSettings, RecurringPayment, Reserve, SavingsGoal, SpecialPeriod, Transaction, UserProfile, VariableExpenseEstimate, SharedContact, ExpenseShare } from '../src/models/finance'
+import type { Account, Budget, Category, FinancialPlanSettings, RecurringPayment, Reserve, SavingsGoal, SpecialPeriod, Transaction, UserProfile, VariableExpenseEstimate, SharedContact, ExpenseShare, SpecialMovementType, ExpenseNature } from '../src/models/finance'
 import { calculateAccountBalance, reconcileAccounts } from '../src/utils/balance'
 import { money } from '../src/utils/money'
 import type { PersistedState, StorageAdapter } from '../src/services/storage/storageAdapter'
@@ -41,11 +41,24 @@ import {
   selectCategoryExpenses,
   selectCommittedAmount,
   selectMonthExpenses,
+  selectMonthCashWithdrawals,
   selectPendingRecurringPayments,
   selectProjectedAvailable,
   selectRealAvailable,
   selectRecurringPaymentCycleStatus,
 } from '../src/utils/financeSelectors'
+import {
+  calculatePeriodStatistics,
+  selectExpensesByNature,
+} from '../src/utils/statisticsSelectors'
+import {
+  APP_VERSION,
+  APP_BUILD,
+  APP_NAME,
+  getAppVersionString,
+  getAppBuildString,
+  getAppFullVersionLabel,
+} from '../src/version'
 import {
   splitExpenseEqually,
   selectGrossExpenses,
@@ -87,6 +100,8 @@ import {
   fromDbGoal,
   toDbReserve,
   fromDbReserve,
+  toDbRecurring,
+  fromDbRecurring,
   toDbPlanSettings,
   fromDbPlanSettings,
   toDbProfile,
@@ -6491,6 +6506,266 @@ describe('▶ Fase 17 — Gestos Nativos de Swipe en Movimientos (Editar/Elimina
     assert.equal(isDirectlyDeleted, false)
   })
 })
+
+describe('Fase 18 — Mejoras de Finanzas (Detalle por Categoría, Retiradas de Cajero, Clasificación de Gastos e Ingresos Recurrentes)', () => {
+  const mockCategories: Category[] = [
+    { id: 'food', name: 'Alimentación', color: '#8DB596', icon: 'shopping-basket' },
+    { id: 'other', name: 'Otros', color: '#B9B9B9', icon: 'ellipsis' },
+    { id: 'transport', name: 'Transporte', color: '#9DB7D5', icon: 'car' },
+  ]
+
+  it('301. Modal de detalle por categoría: filtra exactamente los movimientos de la categoría seleccionada en el periodo', () => {
+    const txs: Transaction[] = [
+      { id: 't1', accountId: 'daily', type: 'expense', amount: 25.5, categoryId: 'food', description: 'Supermercado', date: '2026-09-10' },
+      { id: 't2', accountId: 'daily', type: 'expense', amount: 15.0, categoryId: 'food', description: 'Panadería', date: '2026-09-12' },
+      { id: 't3', accountId: 'daily', type: 'expense', amount: 50.0, categoryId: 'other', description: 'Cajero', date: '2026-09-11' },
+      { id: 't4', accountId: 'daily', type: 'income', amount: 100.0, description: 'Ingreso', date: '2026-09-10' },
+    ]
+
+    const foodTxs = txs.filter((t) => t.type === 'expense' && normalizeCategoryAlias(t.categoryId || 'other') === 'food')
+    assert.equal(foodTxs.length, 2)
+    assert.equal(foodTxs.reduce((s, t) => s + t.amount, 0), 40.5)
+  })
+
+  it('302. Modal de detalle por categoría: calcula desglose neto descontando reembolsos vinculados del gasto', () => {
+    const txs: Transaction[] = [
+      { id: 'exp1', accountId: 'daily', type: 'expense', amount: 30.0, categoryId: 'other', description: 'Cena amigos', date: '2026-09-10' },
+      { id: 'reimb1', accountId: 'daily', type: 'income', incomeKind: 'reimbursement', amount: 10.0, parentExpenseId: 'exp1', description: 'Bizum amigo', date: '2026-09-11' },
+    ]
+
+    const otherTxs = txs.filter((t) => t.type === 'expense' && normalizeCategoryAlias(t.categoryId || 'other') === 'other')
+    assert.equal(otherTxs.length, 1)
+
+    // Cálculo de bruto y neto
+    let gross = 0
+    let net = 0
+    otherTxs.forEach((t) => {
+      gross += t.amount
+      const linked = txs
+        .filter((r) => r.type === 'income' && r.incomeKind === 'reimbursement' && r.parentExpenseId === t.id)
+        .reduce((s, r) => s + r.amount, 0)
+      net += Math.max(0, t.amount - linked)
+    })
+
+    assert.equal(gross, 30.0)
+    assert.equal(net, 20.0)
+  })
+
+  it('303. Modal de detalle por categoría: soporta cualquier categoría y variantes con alias canónicos', () => {
+    const txs: Transaction[] = [
+      { id: 't1', accountId: 'daily', type: 'expense', amount: 12.0, categoryId: 'Otros', description: 'Varios', date: '2026-09-05' },
+      { id: 't2', accountId: 'daily', type: 'expense', amount: 8.0, categoryId: 'other', description: 'Papelería', date: '2026-09-06' },
+    ]
+
+    const otherTxs = txs.filter((t) => t.type === 'expense' && normalizeCategoryAlias(t.categoryId || 'other') === 'other')
+    assert.equal(otherTxs.length, 2)
+    assert.equal(otherTxs.reduce((s, t) => s + t.amount, 0), 20.0)
+  })
+
+  it('304. Retiradas de cajero: selectMonthCashWithdrawals suma exclusivamente movimientos con specialType === "cash_withdrawal"', () => {
+    const refDate = new Date('2026-09-15T12:00:00Z')
+    const txs: Transaction[] = [
+      { id: 't1', accountId: 'daily', type: 'expense', amount: 50.0, categoryId: 'other', specialType: 'cash_withdrawal', description: 'Cajero Santander', date: '2026-09-02T10:00:00Z' },
+      { id: 't2', accountId: 'daily', type: 'expense', amount: 20.0, categoryId: 'other', specialType: 'cash_withdrawal', description: 'Cajero BBVA', date: '2026-09-10T10:00:00Z' },
+      { id: 't3', accountId: 'daily', type: 'expense', amount: 35.0, categoryId: 'food', description: 'Mercadona normal', date: '2026-09-05T10:00:00Z' },
+      { id: 't4', accountId: 'daily', type: 'expense', amount: 40.0, categoryId: 'other', specialType: 'cash_withdrawal', description: 'Cajero agosto', date: '2026-08-25T10:00:00Z' },
+    ]
+
+    const septCash = selectMonthCashWithdrawals(txs, refDate)
+    assert.equal(septCash, 70.0) // 50 + 20 (excluye t3 y t4 de agosto)
+  })
+
+  it('305. Retiradas de cajero: computan como salida ordinaria de saldo de cuenta diaria sin requerir monedero físico', () => {
+    const accounts: Account[] = [
+      { id: 'daily', name: 'Cuenta diaria', type: 'spending', initialBalance: 500 },
+      { id: 'savings', name: 'Ahorro', type: 'savings', initialBalance: 1000 },
+    ]
+    const txs: Transaction[] = [
+      { id: 't1', accountId: 'daily', type: 'expense', amount: 60.0, specialType: 'cash_withdrawal', description: 'Retirada cajero', date: '2026-09-02' },
+    ]
+
+    const reconciled = reconcileAccounts(accounts, txs)
+    const daily = reconciled.find((a) => a.id === 'daily')
+    assert.equal(daily?.balance, 440) // 500 - 60
+  })
+
+  it('306. Retiradas de cajero: calculatePeriodStatistics incluye cashWithdrawals en las estadísticas del periodo', () => {
+    const refDate = new Date('2026-09-15T12:00:00')
+    const txs: Transaction[] = [
+      { id: 't1', accountId: 'daily', type: 'expense', amount: 50.0, categoryId: 'other', specialType: 'cash_withdrawal', description: 'Cajero', date: '2026-09-02T10:00:00' },
+      { id: 't2', accountId: 'daily', type: 'expense', amount: 30.0, categoryId: 'food', description: 'Comida', date: '2026-09-05T10:00:00' },
+    ]
+
+    const stats = calculatePeriodStatistics(txs, mockCategories, 'month', refDate)
+    assert.equal(stats.expenses, 80.0)
+    assert.equal(stats.cashWithdrawals, 50.0)
+  })
+
+  it('307. Clasificación de naturaleza: selectExpensesByNature desglosa correctamente importes y porcentajes', () => {
+    const refDate = new Date('2026-09-15T12:00:00')
+    const txs: Transaction[] = [
+      { id: 't1', accountId: 'daily', type: 'expense', amount: 40.0, expenseNature: 'fixed', description: 'Gasolina trabajo', date: '2026-09-02T10:00:00' },
+      { id: 't2', accountId: 'daily', type: 'expense', amount: 50.0, expenseNature: 'variable', description: 'Cena ocio', date: '2026-09-04T10:00:00' },
+      { id: 't3', accountId: 'daily', type: 'expense', amount: 10.0, expenseNature: 'extraordinary', description: 'Regalo puntual', date: '2026-09-06T10:00:00' },
+    ]
+
+    const nature = selectExpensesByNature(txs, 'month', refDate)
+    assert.equal(nature.total, 100.0)
+    assert.equal(nature.fixed, 40.0)
+    assert.equal(nature.variable, 50.0)
+    assert.equal(nature.extraordinary, 10.0)
+    assert.equal(nature.fixedPct, 40)
+    assert.equal(nature.variablePct, 50)
+    assert.equal(nature.extraordinaryPct, 10)
+  })
+
+  it('308. Clasificación de naturaleza: gastos sin clasificar adoptan por defecto naturaleza variable', () => {
+    const refDate = new Date('2026-09-15T12:00:00')
+    const txs: Transaction[] = [
+      { id: 't1', accountId: 'daily', type: 'expense', amount: 25.0, description: 'Gasto no clasificado', date: '2026-09-02T10:00:00' },
+    ]
+
+    const nature = selectExpensesByNature(txs, 'month', refDate)
+    assert.equal(nature.variable, 25.0)
+    assert.equal(nature.fixed, 0)
+    assert.equal(nature.extraordinary, 0)
+  })
+
+  it('309. Recurrente de tipo ingreso (nómina): selectPendingRecurringPayments ignora recurrentes con type === "income"', () => {
+    const refDate = new Date('2026-09-15T12:00:00')
+    const recurringList: RecurringPayment[] = [
+      { id: 'r1', name: 'Spotify', amount: 10.99, categoryId: 'other', accountId: 'daily', frequency: 'monthly', nextDate: '2026-09-20', active: true, type: 'expense' },
+      { id: 'r2', name: 'Nómina SYTE Automation', amount: 1800.00, categoryId: 'other', accountId: 'daily', frequency: 'monthly', nextDate: '2026-09-28', active: true, type: 'income' },
+    ]
+    const txs: Transaction[] = []
+
+    const pending = selectPendingRecurringPayments(recurringList, txs, refDate)
+    assert.equal(pending.length, 1)
+    assert.equal(pending[0].id, 'r1')
+    assert.equal(pending[0].name, 'Spotify')
+  })
+
+  it('310. Recurrente de tipo ingreso: no reduce el disponible real ni infla el comprometido', () => {
+    const refDate = new Date('2026-09-15T12:00:00')
+    const recurringList: RecurringPayment[] = [
+      { id: 'r1', name: 'Gimnasio', amount: 35.0, categoryId: 'other', accountId: 'daily', frequency: 'monthly', nextDate: '2026-09-25', active: true, type: 'expense' },
+      { id: 'r2', name: 'Nómina futura', amount: 2000.0, categoryId: 'other', accountId: 'daily', frequency: 'monthly', nextDate: '2026-09-30', active: true, type: 'income' },
+    ]
+    const txs: Transaction[] = []
+
+    const committed = selectCommittedAmount(recurringList, txs, refDate)
+    assert.equal(committed, 35.0) // Solo el gasto recurrente
+
+    const realAvailable = selectRealAvailable(500, committed)
+    assert.equal(realAvailable, 465.0) // 500 - 35
+  })
+
+  it('311. Recurrente de tipo ingreso: se guarda y mapea con type: "income" en toDbRecurring y fromDbRecurring', () => {
+    const mockRec: RecurringPayment = {
+      id: 'rec_nomina',
+      name: 'Nómina SYTE',
+      amount: 1950.5,
+      categoryId: 'other',
+      accountId: 'daily',
+      frequency: 'monthly',
+      nextDate: '2026-10-01',
+      active: true,
+      type: 'income',
+      installmentsCount: 14,
+    }
+
+    const dbRow = toDbRecurring(mockRec, 'user_123')
+    assert.equal(dbRow.type, 'income')
+    assert.equal(dbRow.installments_count, 14)
+
+    const fromDb = fromDbRecurring(dbRow as Record<string, unknown>)
+    assert.equal(fromDb.type, 'income')
+    assert.equal(fromDb.installmentsCount, 14)
+    assert.equal(fromDb.name, 'Nómina SYTE')
+  })
+
+  it('312. Transacción con specialType y expenseNature: serializa y deserializa bidireccionalmente en Supabase sync', () => {
+    const mockTx: Transaction = {
+      id: 'tx_cajero_fijo',
+      accountId: 'daily',
+      type: 'expense',
+      amount: 120.0,
+      description: 'Retirada cajero',
+      date: '2026-09-17T08:00:00.000Z',
+      specialType: 'cash_withdrawal',
+      expenseNature: 'fixed',
+    }
+
+    const dbRow = toDbTransaction(mockTx, 'user_123')
+    assert.equal(dbRow.special_type, 'cash_withdrawal')
+    assert.equal(dbRow.expense_nature, 'fixed')
+
+    const restoredTx = fromDbTransaction(dbRow as Record<string, unknown>)
+    assert.equal(restoredTx.specialType, 'cash_withdrawal')
+    assert.equal(restoredTx.expenseNature, 'fixed')
+  })
+
+  it('313. Backup y migración: preserva specialType y expenseNature tras validateBackupPayload y migratePersistedState', () => {
+    const state: PersistedState = {
+      accounts: [{ id: 'daily', name: 'Cuenta diaria', type: 'spending', initialBalance: 100 }],
+      transactions: [
+        {
+          id: 'tx_backup_test',
+          accountId: 'daily',
+          type: 'expense',
+          amount: 45.0,
+          description: 'Cajero',
+          date: '2026-09-10',
+          specialType: 'cash_withdrawal',
+          expenseNature: 'extraordinary',
+        },
+      ],
+      categories: mockCategories,
+      budgets: [],
+      goals: [],
+      reserves: [],
+      recurring: [],
+      specialPeriods: [],
+      planSettings: {
+        monthlyIncome: 0,
+        targetSavingsType: 'percentage',
+        targetSavingsValue: 0,
+        emergencyFundTargetType: 'months',
+        emergencyFundTargetValue: 0,
+        emergencyFundCurrent: 0,
+        essentialCategoryIds: [],
+      },
+      profile: { displayName: 'Marta' },
+      variableExpenseEstimates: [],
+      sharedContacts: [],
+      expenseShares: [],
+    }
+
+    const payload = createBackupPayload(state)
+    const result = validateBackupPayload(payload)
+    assert.equal(result.valid, true)
+
+    if (result.valid) {
+      const restored = result.state.transactions[0]
+      assert.equal(restored.specialType, 'cash_withdrawal')
+      assert.equal(restored.expenseNature, 'extraordinary')
+    }
+  })
+})
+
+describe('Fase 18 — Identificación Visual de Versión y Build', () => {
+  it('314. Versioning: única fuente de verdad y formato de visualización exacto', () => {
+    assert.equal(APP_NAME, 'PocketFlow')
+    assert.equal(APP_VERSION, '0.18.0')
+    assert.equal(APP_BUILD, '2026.09.17-1')
+
+    assert.equal(getAppVersionString(), 'PocketFlow v0.18.0')
+    assert.equal(getAppBuildString(), 'Build 2026.09.17-1')
+    assert.equal(getAppFullVersionLabel(), 'PocketFlow v0.18.0 · Build 2026.09.17-1')
+  })
+})
+
+
 
 
 

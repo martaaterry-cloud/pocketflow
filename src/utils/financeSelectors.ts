@@ -73,13 +73,16 @@ export function selectPendingRecurringPayments(
   const currentYear = referenceDate.getFullYear()
 
   return recurring.filter((r) => {
-    // 1. Debe estar activo
+    // 1. Debe ser un gasto recurrente (no ingreso como nómina)
+    if (r.type === 'income') return false
+
+    // 2. Debe estar activo
     if (!r.active) return false
 
-    // 2. Debe pertenecer a la cuenta diaria
+    // 3. Debe pertenecer a la cuenta diaria
     if (r.accountId && r.accountId !== spendingAccountId) return false
 
-    // 3. Comprobar si ya fue registrado como gasto en el mes en curso
+    // 4. Comprobar si ya fue registrado como gasto en el mes en curso
     const alreadyRegistered = transactions.some((t) => {
       if (t.type !== 'expense') return false
 
@@ -129,6 +132,27 @@ export function selectCommittedAmount(
  */
 export function selectRealAvailable(spendableBalance: number, committedAmount: number): number {
   return Math.max(0, Math.round((spendableBalance - committedAmount) * 100) / 100)
+}
+
+/**
+ * Total de retiradas de efectivo / cajero en el mes en curso.
+ */
+export function selectMonthCashWithdrawals(
+  transactions: Transaction[],
+  referenceDate: Date = new Date()
+): number {
+  const currentMonth = referenceDate.getMonth()
+  const currentYear = referenceDate.getFullYear()
+
+  const sum = transactions
+    .filter((t) => t.type === 'expense' && t.specialType === 'cash_withdrawal')
+    .filter((t) => {
+      const d = new Date(t.date)
+      return d.getMonth() === currentMonth && d.getFullYear() === currentYear
+    })
+    .reduce((acc, t) => acc + t.amount, 0)
+
+  return Math.round(sum * 100) / 100
 }
 
 /**

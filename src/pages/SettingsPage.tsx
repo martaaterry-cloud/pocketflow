@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import type { ReturnTypeFinance } from '../types'
 import { AppIcon } from '../ui/icons'
+import { getAppVersionString, getAppBuildString } from '../version'
 
 export function SettingsPage({
   finance,
@@ -114,6 +115,12 @@ export function SettingsPage({
             </p>
           </div>
         </section>
+
+        {/* Identificación de Versión y Build */}
+        <footer className="app-version-footer" style={{ marginTop: 20 }}>
+          <span className="app-version-text">{getAppVersionString()}</span>
+          <small className="app-build-text">{getAppBuildString()}</small>
+        </footer>
       </form>
     </main>
   )

@@ -16,6 +16,9 @@ import { VariableEstimatesPage } from './VariableEstimatesPage'
 import { ReceivablesPage } from './ReceivablesPage'
 import { selectPendingDebtors } from '../utils/sharedExpenseSelectors'
 import { useEdgeSwipeBack } from '../hooks/useEdgeSwipeBack'
+import { getAppVersionString, getAppBuildString } from '../version'
+
+import type { Transaction } from '../models/finance'
 
 export type MoreSubView =
   | 'menu'
@@ -37,6 +40,7 @@ export function MorePage({
   initialSubView = 'menu',
   onNavigateToSavings,
   onRecordReimbursement,
+  onSelectTransaction,
   onToast,
   onSignOut,
 }: {
@@ -45,6 +49,7 @@ export function MorePage({
   initialSubView?: MoreSubView
   onNavigateToSavings?: () => void
   onRecordReimbursement?: (shareId: string) => void
+  onSelectTransaction?: (tx: Transaction) => void
   onToast?: (message: string, type?: 'success' | 'error') => void
   onSignOut?: () => void
 }) {
@@ -130,7 +135,13 @@ export function MorePage({
   }
 
   if (subView === 'statistics') {
-    return <StatisticsPage finance={finance} onBack={() => setSubView('menu')} />
+    return (
+      <StatisticsPage
+        finance={finance}
+        onBack={() => setSubView('menu')}
+        onSelectTransaction={onSelectTransaction}
+      />
+    )
   }
 
   if (subView === 'plan') {
@@ -346,6 +357,12 @@ export function MorePage({
           </b>
         </button>
       </section>
+
+      {/* Identificación de Versión y Build */}
+      <footer className="app-version-footer">
+        <span className="app-version-text">{getAppVersionString()}</span>
+        <small className="app-build-text">{getAppBuildString()}</small>
+      </footer>
     </main>
   )
 }

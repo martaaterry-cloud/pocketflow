@@ -1,4 +1,4 @@
-const CACHE_NAME = 'pocketflow-v1'
+const CACHE_NAME = 'pocketflow-v0.18.0-2026.09.17-1'
 
 // Recursos estáticos iniciales a cachear
 const PRECACHE_URLS = [
@@ -10,6 +10,12 @@ const PRECACHE_URLS = [
   './pwa-192x192.png',
   './pwa-512x512.png',
 ]
+
+self.addEventListener('message', (event) => {
+  if (event.data && event.data.type === 'SKIP_WAITING') {
+    self.skipWaiting()
+  }
+})
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
@@ -44,7 +50,7 @@ self.addEventListener('fetch', (event) => {
   // Navegación (HTML): Network first con fallback a cache
   if (request.mode === 'navigate') {
     event.respondWith(
-      fetch(request)
+      fetch(request, { cache: 'no-cache' })
         .then((networkResponse) => {
           const cloned = networkResponse.clone()
           caches.open(CACHE_NAME).then((cache) => cache.put(request, cloned))

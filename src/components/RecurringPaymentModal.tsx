@@ -39,6 +39,7 @@ export function RecurringPaymentModal({
   onSave,
   onDelete,
 }: RecurringPaymentModalProps) {
+  const [type, setType] = useState<'expense' | 'income'>('expense')
   const [name, setName] = useState('')
   const [amount, setAmount] = useState('')
   const [categoryId, setCategoryId] = useState('')
@@ -59,6 +60,7 @@ export function RecurringPaymentModal({
 
   useEffect(() => {
     if (payment) {
+      setType(payment.type || 'expense')
       setName(payment.name)
       setAmount(String(payment.amount).replace('.', ','))
       setCategoryId(payment.categoryId)
@@ -79,6 +81,7 @@ export function RecurringPaymentModal({
       setNewParticipantInput('')
       setConfirmDelete(false)
     } else {
+      setType('expense')
       setName('')
       setAmount('')
       setCategoryId(categories[0]?.id ?? '')
@@ -174,7 +177,8 @@ export function RecurringPaymentModal({
     e.preventDefault()
     if (!name.trim() || numericAmount <= 0) return
 
-    const data = {
+    const data: CreateRecurringPaymentInput = {
+      type,
       name: name.trim(),
       amount: numericAmount,
       categoryId,
@@ -182,8 +186,8 @@ export function RecurringPaymentModal({
       frequency,
       nextDate,
       active,
-      isShared,
-      sharingTemplate: isShared
+      isShared: type === 'expense' && isShared,
+      sharingTemplate: type === 'expense' && isShared
         ? {
             splitType,
             includePayer: selfParticipates,
@@ -217,9 +221,38 @@ export function RecurringPaymentModal({
     <div className="modal-backdrop" onClick={onClose} role="dialog" aria-modal="true">
       <div className="modal" onClick={(e) => e.stopPropagation()}>
         <div className="modal-header">
-          <h3>{isEditing ? 'Editar pago recurrente' : 'Nuevo pago recurrente'}</h3>
+          <h3>
+            {isEditing
+              ? type === 'income'
+                ? 'Editar ingreso recurrente'
+                : 'Editar pago recurrente'
+              : type === 'income'
+              ? 'Nuevo ingreso recurrente'
+              : 'Nuevo pago recurrente'}
+          </h3>
           <button type="button" className="close-btn" onClick={onClose} aria-label="Cerrar">
             <AppIcon name="x" size={18} />
+          </button>
+        </div>
+
+        {/* Selector de Tipo: Gasto vs Ingreso recurrente */}
+        <div className="segmented" style={{ marginBottom: 16 }}>
+          <button
+            type="button"
+            className={type === 'expense' ? 'active' : ''}
+            onClick={() => setType('expense')}
+          >
+            Gasto recurrente
+          </button>
+          <button
+            type="button"
+            className={type === 'income' ? 'active' : ''}
+            onClick={() => {
+              setType('income')
+              setIsShared(false)
+            }}
+          >
+            Ingreso recurrente (Nómina)
           </button>
         </div>
 
@@ -229,7 +262,11 @@ export function RecurringPaymentModal({
               Concepto
               <input
                 type="text"
-                placeholder="Spotify, Gimnasio, Crunchyroll..."
+                placeholder={
+                  type === 'income'
+                    ? 'Nómina SYTE Automation, pensión...'
+                    : 'Spotify, Gimnasio, Crunchyroll...'
+                }
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 autoFocus

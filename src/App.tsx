@@ -504,6 +504,7 @@ export default function App() {
             setReimbursementShareId(shareId)
             setIsReimbursementModalOpen(true)
           }}
+          onSelectTransaction={handleSelectTransaction}
           onToast={showToast}
           onSignOut={() => setUser(null)}
         />

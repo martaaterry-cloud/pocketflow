@@ -3,8 +3,10 @@ import type {
   Account,
   Category,
   CreateTransactionInput,
+  ExpenseNature,
   IncomeKind,
   SharedContact,
+  SpecialMovementType,
   Transaction,
 } from '../models/finance'
 import { money } from '../utils/money'
@@ -61,6 +63,10 @@ export function AddTransactionModal({
   const [note, setNote] = useState('')
   const [confirmDelete, setConfirmDelete] = useState(false)
 
+  // Estados para Tipo Especial y Naturaleza
+  const [isCashWithdrawal, setIsCashWithdrawal] = useState(false)
+  const [expenseNature, setExpenseNature] = useState<ExpenseNature>('variable')
+
   // Estados para Gasto Compartido
   const [isShared, setIsShared] = useState(false)
   const [selfParticipates, setSelfParticipates] = useState(true)
@@ -80,6 +86,8 @@ export function AddTransactionModal({
       setDate(initialTransaction.date.slice(0, 10))
       setNote(initialTransaction.note ?? '')
       setIsShared(Boolean(initialTransaction.isShared))
+      setIsCashWithdrawal(initialTransaction.specialType === 'cash_withdrawal')
+      setExpenseNature(initialTransaction.expenseNature || 'variable')
       setConfirmDelete(false)
     } else {
       setType(defaultType)
@@ -91,6 +99,8 @@ export function AddTransactionModal({
       setToAccountId(accounts.find((a) => a.type === 'savings')?.id ?? accounts[1]?.id ?? '')
       setDate(new Date().toISOString().slice(0, 10))
       setNote('')
+      setIsCashWithdrawal(false)
+      setExpenseNature('variable')
       setIsShared(false)
       setSelfParticipates(true)
       setSplitType('equal')
@@ -185,6 +195,8 @@ export function AddTransactionModal({
       toAccountId: type === 'transfer' ? toAccountId : undefined,
       incomeKind: type === 'income' ? incomeKind : undefined,
       isShared: type === 'expense' && isShared,
+      specialType: type === 'expense' ? (isCashWithdrawal ? 'cash_withdrawal' : 'normal') : undefined,
+      expenseNature: type === 'expense' ? expenseNature : undefined,
     }
 
     if (isEditing && initialTransaction && onUpdate) {
@@ -293,7 +305,7 @@ export function AddTransactionModal({
               onChange={(e) => setDescription(e.target.value)}
               placeholder={
                 type === 'expense'
-                  ? 'Mercadona, cena...'
+                  ? 'Mercadona, cena, cajero...'
                   : type === 'income'
                   ? incomeKind === 'reimbursement'
                     ? 'Bizum Manuela cena...'
@@ -322,6 +334,58 @@ export function AddTransactionModal({
                   </option>
                 ))}
               </select>
+            </label>
+          </div>
+        )}
+
+        {/* Clasificación de Naturaleza del Gasto (Fijo / Variable / Extraordinario) */}
+        {type === 'expense' && (
+          <div className="form-group">
+            <span className="field-group-title">Tipo de gasto</span>
+            <div className="nature-segmented-selector" role="group" aria-label="Tipo de gasto">
+              <button
+                type="button"
+                className={`nature-seg-btn ${expenseNature === 'variable' ? 'active' : ''}`}
+                onClick={() => setExpenseNature('variable')}
+              >
+                Variable
+              </button>
+              <button
+                type="button"
+                className={`nature-seg-btn ${expenseNature === 'fixed' ? 'active' : ''}`}
+                onClick={() => setExpenseNature('fixed')}
+              >
+                Fijo / Comprometido
+              </button>
+              <button
+                type="button"
+                className={`nature-seg-btn ${expenseNature === 'extraordinary' ? 'active' : ''}`}
+                onClick={() => setExpenseNature('extraordinary')}
+              >
+                Extraordinario
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Opción Retirada de Cajero / Efectivo */}
+        {type === 'expense' && (
+          <div className="form-group">
+            <label className="checkbox-row-clean">
+              <input
+                type="checkbox"
+                checked={isCashWithdrawal}
+                onChange={(e) => {
+                  setIsCashWithdrawal(e.target.checked)
+                  if (e.target.checked && (!description || description === 'Mercadona' || description === 'Cena')) {
+                    setDescription('Retirada cajero')
+                  }
+                }}
+              />
+              <span className="checkbox-label-text">
+                <strong>Retirada de efectivo / Cajero</strong>
+                <small>Registra la salida en cuenta sin obligar a anotar cada gasto en metálico</small>
+              </span>
             </label>
           </div>
         )}

@@ -173,11 +173,18 @@ export function DonutChart({
           title="Toca para deseleccionar"
         >
           <div
-            className={`donut-center-interactive ${selectedItem ? 'highlighted' : ''}`}
+            className={`donut-center-interactive ${selectedItem ? 'highlighted clickable' : ''}`}
             onClick={(e) => {
               e.stopPropagation()
-              setSelectedCategoryId(null)
+              if (selectedItem && onSelectCategoryFilter) {
+                onSelectCategoryFilter(selectedItem.id)
+              } else {
+                setSelectedCategoryId(null)
+              }
             }}
+            role={selectedItem && onSelectCategoryFilter ? 'button' : undefined}
+            tabIndex={selectedItem && onSelectCategoryFilter ? 0 : undefined}
+            title={selectedItem && onSelectCategoryFilter ? `Ver movimientos de ${selectedItem.name}` : undefined}
           >
             {selectedItem ? (
               <>
@@ -185,7 +192,9 @@ export function DonutChart({
                   {selectedItem.name}
                 </span>
                 <strong className="donut-center-amount">{money(selectedItem.amount)}</strong>
-                <span className="donut-center-sub">{selectedItem.percentage} % del gasto</span>
+                <span className="donut-center-sub">
+                  {selectedItem.percentage} % · {onSelectCategoryFilter ? 'Toca para ver detalle' : 'del gasto'}
+                </span>
               </>
             ) : (
               <>
@@ -208,10 +217,15 @@ export function DonutChart({
                 <div
                   key={item.id}
                   className={`donut-legend-row ${isSelected ? 'selected' : ''}`}
-                  onClick={() => handleToggleCategory(item.id)}
+                  onClick={() => {
+                    handleToggleCategory(item.id)
+                    if (onSelectCategoryFilter) {
+                      onSelectCategoryFilter(item.id)
+                    }
+                  }}
                   role="button"
                   tabIndex={0}
-                  aria-label={`${item.name}: ${money(item.amount)}, ${item.percentage}% del gasto`}
+                  aria-label={`${item.name}: ${money(item.amount)}, ${item.percentage}% del gasto. Toca para ver movimientos.`}
                 >
                   <div className="donut-legend-left">
                     <span className="donut-legend-dot" style={{ background: item.color }} />
