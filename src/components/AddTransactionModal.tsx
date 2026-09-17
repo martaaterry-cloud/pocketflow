@@ -375,7 +375,7 @@ export function AddTransactionModal({
                 <input
                   type="text"
                   list="gift-recipients-list"
-                  placeholder="Ej. Sergi, Mamá, Papá..."
+                  placeholder="Nombre del destinatario..."
                   value={giftRecipient}
                   onChange={(e) => setGiftRecipient(e.target.value)}
                 />
