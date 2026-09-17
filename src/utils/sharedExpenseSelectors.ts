@@ -475,3 +475,124 @@ export function selectSettledReimbursements(
 
   return settledList.sort((a, b) => new Date(b.settledDate).getTime() - new Date(a.settledDate).getTime())
 }
+
+export interface DayNetStats {
+  netExpenses: number
+  grossExpenses: number
+  realIncome: number
+  reimbursements: number
+  netBalance: number
+}
+
+/**
+ * Calcula estadísticas financieras netas de un día específico,
+ * descontando reembolsos vinculados de cada gasto del día y excluyendo transferencias.
+ */
+export function selectDayNetFinanceStats(
+  transactions: Transaction[],
+  year: number,
+  month: number,
+  day: number
+): DayNetStats {
+  let grossExpenses = 0
+  let netExpenses = 0
+  let realIncome = 0
+  let reimbursements = 0
+
+  transactions.forEach((t) => {
+    const d = new Date(t.date)
+    if (d.getFullYear() === year && d.getMonth() === month && d.getDate() === day) {
+      if (t.type === 'expense') {
+        grossExpenses += t.amount
+        const linked = selectLinkedReimbursementsForExpense(t.id, transactions)
+        const net = Math.max(0, Math.round((t.amount - linked) * 100) / 100)
+        netExpenses += net
+      } else if (t.type === 'income') {
+        if (t.incomeKind === 'reimbursement') {
+          reimbursements += t.amount
+        } else {
+          realIncome += t.amount
+        }
+      }
+    }
+  })
+
+  grossExpenses = Math.round(grossExpenses * 100) / 100
+  netExpenses = Math.round(netExpenses * 100) / 100
+  realIncome = Math.round(realIncome * 100) / 100
+  reimbursements = Math.round(reimbursements * 100) / 100
+  const netBalance = Math.round((realIncome - netExpenses) * 100) / 100
+
+  return {
+    netExpenses,
+    grossExpenses,
+    realIncome,
+    reimbursements,
+    netBalance,
+  }
+}
+
+/**
+ * Genera el mapa diario de estadísticas netas para cada día del mes.
+ */
+export function selectMonthDailyNetStats(
+  transactions: Transaction[],
+  year: number,
+  month: number
+): Map<number, DayNetStats> {
+  const map = new Map<number, DayNetStats>()
+  const daysInMonth = new Date(year, month + 1, 0).getDate()
+
+  const txsByDay = new Map<number, Transaction[]>()
+  transactions.forEach((t) => {
+    const d = new Date(t.date)
+    if (d.getFullYear() === year && d.getMonth() === month) {
+      const day = d.getDate()
+      const list = txsByDay.get(day) ?? []
+      list.push(t)
+      txsByDay.set(day, list)
+    }
+  })
+
+  for (let day = 1; day <= daysInMonth; day++) {
+    const dayTxs = txsByDay.get(day) ?? []
+    let grossExpenses = 0
+    let netExpenses = 0
+    let realIncome = 0
+    let reimbursements = 0
+
+    dayTxs.forEach((t) => {
+      if (t.type === 'expense') {
+        grossExpenses += t.amount
+        const linked = selectLinkedReimbursementsForExpense(t.id, transactions)
+        const net = Math.max(0, Math.round((t.amount - linked) * 100) / 100)
+        netExpenses += net
+      } else if (t.type === 'income') {
+        if (t.incomeKind === 'reimbursement') {
+          reimbursements += t.amount
+        } else {
+          realIncome += t.amount
+        }
+      }
+    })
+
+    if (grossExpenses > 0 || realIncome > 0 || reimbursements > 0) {
+      grossExpenses = Math.round(grossExpenses * 100) / 100
+      netExpenses = Math.round(netExpenses * 100) / 100
+      realIncome = Math.round(realIncome * 100) / 100
+      reimbursements = Math.round(reimbursements * 100) / 100
+      const netBalance = Math.round((realIncome - netExpenses) * 100) / 100
+
+      map.set(day, {
+        netExpenses,
+        grossExpenses,
+        realIncome,
+        reimbursements,
+        netBalance,
+      })
+    }
+  }
+
+  return map
+}
+

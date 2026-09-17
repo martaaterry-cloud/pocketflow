@@ -74,6 +74,8 @@ import {
   selectPendingDebtors,
   selectPendingReimbursementsByContact,
   selectSettledReimbursements,
+  selectDayNetFinanceStats,
+  selectMonthDailyNetStats,
   selectExpenseShareDetails,
 } from '../src/utils/sharedExpenseSelectors'
 import { spentByCategoryThisMonth } from '../src/utils/budgetSelectors'
@@ -6757,13 +6759,124 @@ describe('Fase 18 — Identificación Visual de Versión y Build', () => {
   it('314. Versioning: única fuente de verdad y formato de visualización exacto', () => {
     assert.equal(APP_NAME, 'PocketFlow')
     assert.equal(APP_VERSION, '0.18.0')
-    assert.equal(APP_BUILD, '2026.09.17-3')
+    assert.equal(APP_BUILD, '2026.09.17-4')
 
     assert.equal(getAppVersionString(), 'PocketFlow v0.18.0')
-    assert.equal(getAppBuildString(), 'Build 2026.09.17-3')
-    assert.equal(getAppFullVersionLabel(), 'PocketFlow v0.18.0 · Build 2026.09.17-3')
+    assert.equal(getAppBuildString(), 'Build 2026.09.17-4')
+    assert.equal(getAppFullVersionLabel(), 'PocketFlow v0.18.0 · Build 2026.09.17-4')
   })
 })
+
+describe('Fase 19 — Calendario Financiero con Gasto Neto y Consistencia Total', () => {
+  it('315. Día con gasto normal: refleja el importe del gasto y el balance negativo correcto', () => {
+    const txs: Transaction[] = [
+      { id: 't1', type: 'expense', amount: 45.5, accountId: 'daily', description: 'Supermercado', date: '2026-09-10T12:00:00' },
+    ]
+    const stats = selectDayNetFinanceStats(txs, 2026, 8, 10) // Mes 8 = Septiembre
+    assert.equal(stats.grossExpenses, 45.5)
+    assert.equal(stats.netExpenses, 45.5)
+    assert.equal(stats.realIncome, 0)
+    assert.equal(stats.reimbursements, 0)
+    assert.equal(stats.netBalance, -45.5)
+  })
+
+  it('316. Día con gasto compartido + reembolso: descuenta el reembolso vinculado (50 € - 20 € = 30 € neto)', () => {
+    const txs: Transaction[] = [
+      { id: 't_dinner', type: 'expense', amount: 50.0, accountId: 'daily', description: 'Cena amigos', date: '2026-09-12T21:00:00', isShared: true },
+      { id: 't_bizum', type: 'income', incomeKind: 'reimbursement', amount: 20.0, accountId: 'daily', description: 'Bizum cena Juan', date: '2026-09-14T10:00:00', parentExpenseId: 't_dinner' },
+    ]
+
+    // Día 12 (día de la cena): gasto neto es 30 € (50 - 20 de Bizum)
+    const day12Stats = selectDayNetFinanceStats(txs, 2026, 8, 12)
+    assert.equal(day12Stats.grossExpenses, 50.0)
+    assert.equal(day12Stats.netExpenses, 30.0)
+    assert.equal(day12Stats.realIncome, 0)
+    assert.equal(day12Stats.netBalance, -30.0)
+
+    // Día 14 (día del cobro del Bizum): ingreso por reembolso recibido
+    const day14Stats = selectDayNetFinanceStats(txs, 2026, 8, 14)
+    assert.equal(day14Stats.grossExpenses, 0)
+    assert.equal(day14Stats.netExpenses, 0)
+    assert.equal(day14Stats.reimbursements, 20.0)
+  })
+
+  it('317. Mes con varios reembolsos: selectNetPersonalExpensesForPeriod suma de forma exacta y coherente los netos de todos los días', () => {
+    const txs: Transaction[] = [
+      // Día 5: Gasto 60 €, reembolsado 40 €
+      { id: 't_exp1', type: 'expense', amount: 60.0, accountId: 'daily', description: 'Regalo compartido', date: '2026-09-05T10:00:00' },
+      { id: 't_reimb1', type: 'income', incomeKind: 'reimbursement', amount: 40.0, accountId: 'daily', description: 'Bizum regalo', date: '2026-09-06T12:00:00', parentExpenseId: 't_exp1' },
+      // Día 15: Gasto 80 €, reembolsado 30 €
+      { id: 't_exp2', type: 'expense', amount: 80.0, accountId: 'daily', description: 'Gasolina viaje', date: '2026-09-15T15:00:00' },
+      { id: 't_reimb2', type: 'income', incomeKind: 'reimbursement', amount: 30.0, accountId: 'daily', description: 'Bizum gasolina', date: '2026-09-16T18:00:00', parentExpenseId: 't_exp2' },
+      // Día 20: Gasto personal individual de 25 €
+      { id: 't_exp3', type: 'expense', amount: 25.0, accountId: 'daily', description: 'Farmacia', date: '2026-09-20T09:00:00' },
+    ]
+
+    const refDate = new Date(2026, 8, 15)
+    const monthTotalNet = selectNetPersonalExpensesForPeriod(txs, refDate, 'month')
+    // Netos: (60 - 40) + (80 - 30) + 25 = 20 + 50 + 25 = 95 €
+    assert.equal(monthTotalNet, 95.0)
+
+    const dailyMap = selectMonthDailyNetStats(txs, 2026, 8)
+    assert.equal(dailyMap.get(5)?.netExpenses, 20.0)
+    assert.equal(dailyMap.get(15)?.netExpenses, 50.0)
+    assert.equal(dailyMap.get(20)?.netExpenses, 25.0)
+
+    // Suma de netos diarios coincide al 100% con el total del mes
+    let sumOfDays = 0
+    dailyMap.forEach((dayData) => {
+      sumOfDays += dayData.netExpenses
+    })
+    assert.equal(Math.round(sumOfDays * 100) / 100, monthTotalNet)
+  })
+
+  it('318. Transferencias excluidas: las transferencias entre cuentas nunca computan como gasto diario ni mensual', () => {
+    const txs: Transaction[] = [
+      { id: 't_trans', type: 'transfer', amount: 500.0, accountId: 'daily', toAccountId: 'savings', description: 'Traspaso a ahorro', date: '2026-09-01T10:00:00' },
+      { id: 't_exp', type: 'expense', amount: 15.0, accountId: 'daily', description: 'Café', date: '2026-09-01T11:00:00' },
+    ]
+
+    const statsDay1 = selectDayNetFinanceStats(txs, 2026, 8, 1)
+    assert.equal(statsDay1.grossExpenses, 15.0)
+    assert.equal(statsDay1.netExpenses, 15.0)
+    assert.equal(statsDay1.netBalance, -15.0)
+
+    const monthTotal = selectNetPersonalExpensesForPeriod(txs, new Date(2026, 8, 1), 'month')
+    assert.equal(monthTotal, 15.0)
+  })
+
+  it('319. Ingresos normales excluidos del gasto: se reflejan en el balance diario en positivo sin inflar gastos', () => {
+    const txs: Transaction[] = [
+      { id: 't_salary', type: 'income', amount: 1800.0, accountId: 'daily', description: 'Nómina', date: '2026-09-01T08:00:00' },
+      { id: 't_rent', type: 'expense', amount: 700.0, accountId: 'daily', description: 'Alquiler', date: '2026-09-01T09:00:00' },
+    ]
+
+    const stats = selectDayNetFinanceStats(txs, 2026, 8, 1)
+    assert.equal(stats.grossExpenses, 700.0)
+    assert.equal(stats.netExpenses, 700.0)
+    assert.equal(stats.realIncome, 1800.0)
+    assert.equal(stats.reimbursements, 0)
+    assert.equal(stats.netBalance, 1100.0) // 1800 - 700
+  })
+
+  it('320. Balance diario: coherente con ingresos reales y gastos netos tras reembolsos (realIncome - netExpenses)', () => {
+    const txs: Transaction[] = [
+      { id: 't_freelance', type: 'income', amount: 250.0, accountId: 'daily', description: 'Trabajo extra', date: '2026-09-18T14:00:00' },
+      { id: 't_dinner', type: 'expense', amount: 100.0, accountId: 'daily', description: 'Cena 4 personas', date: '2026-09-18T21:00:00' },
+      { id: 't_biz1', type: 'income', incomeKind: 'reimbursement', amount: 25.0, accountId: 'daily', description: 'Bizum 1', date: '2026-09-19T10:00:00', parentExpenseId: 't_dinner' },
+      { id: 't_biz2', type: 'income', incomeKind: 'reimbursement', amount: 25.0, accountId: 'daily', description: 'Bizum 2', date: '2026-09-19T11:00:00', parentExpenseId: 't_dinner' },
+      { id: 't_biz3', type: 'income', incomeKind: 'reimbursement', amount: 25.0, accountId: 'daily', description: 'Bizum 3', date: '2026-09-19T12:00:00', parentExpenseId: 't_dinner' },
+    ]
+
+    // Gasto cena: 100 € - 75 € reembolsos vinculados = 25 € gasto neto
+    const statsDay18 = selectDayNetFinanceStats(txs, 2026, 8, 18)
+    assert.equal(statsDay18.grossExpenses, 100.0)
+    assert.equal(statsDay18.netExpenses, 25.0)
+    assert.equal(statsDay18.realIncome, 250.0)
+    assert.equal(statsDay18.netBalance, 225.0) // 250 - 25 = 225 €
+  })
+})
+
 
 
 

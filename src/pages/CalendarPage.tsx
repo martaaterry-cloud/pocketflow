@@ -3,6 +3,11 @@ import type { Transaction } from '../models/finance'
 import type { ReturnTypeFinance } from '../types'
 import { money } from '../utils/money'
 import { AppIcon } from '../ui/icons'
+import {
+  selectNetPersonalExpensesForPeriod,
+  selectMonthDailyNetStats,
+  selectDayNetFinanceStats,
+} from '../utils/sharedExpenseSelectors'
 
 const weekdays = ['L', 'M', 'X', 'J', 'V', 'S', 'D']
 
@@ -39,26 +44,7 @@ export function CalendarPage({
   }
 
   const monthDataByDay = useMemo(() => {
-    const map = new Map<number, { expenses: number; realIncomes: number; reimbursements: number }>()
-
-    finance.transactions.forEach((t) => {
-      const d = new Date(t.date)
-      if (d.getFullYear() === year && d.getMonth() === month) {
-        const day = d.getDate()
-        const prev = map.get(day) ?? { expenses: 0, realIncomes: 0, reimbursements: 0 }
-        if (t.type === 'expense') {
-          prev.expenses = Math.round((prev.expenses + t.amount) * 100) / 100
-        } else if (t.type === 'income') {
-          if (t.incomeKind === 'reimbursement') {
-            prev.reimbursements = Math.round((prev.reimbursements + t.amount) * 100) / 100
-          } else {
-            prev.realIncomes = Math.round((prev.realIncomes + t.amount) * 100) / 100
-          }
-        }
-        map.set(day, prev)
-      }
-    })
-    return map
+    return selectMonthDailyNetStats(finance.transactions, year, month)
   }, [finance.transactions, month, year])
 
   const selectedRows = useMemo(() => {
@@ -73,18 +59,12 @@ export function CalendarPage({
   }, [finance.transactions, year, month, selectedDay])
 
   const monthTotalExpenses = useMemo(() => {
-    let total = 0
-    monthDataByDay.forEach((data) => {
-      total += data.expenses
-    })
-    return Math.round(total * 100) / 100
-  }, [monthDataByDay])
+    return selectNetPersonalExpensesForPeriod(finance.transactions, currentDate, 'month')
+  }, [finance.transactions, currentDate])
 
   const selectedDayStats = useMemo(() => {
-    const data = monthDataByDay.get(selectedDay) ?? { expenses: 0, realIncomes: 0, reimbursements: 0 }
-    const net = Math.round((data.realIncomes + data.reimbursements - data.expenses) * 100) / 100
-    return { ...data, net }
-  }, [monthDataByDay, selectedDay])
+    return selectDayNetFinanceStats(finance.transactions, year, month, selectedDay)
+  }, [finance.transactions, year, month, selectedDay])
 
   const monthLabel = new Intl.DateTimeFormat('es-ES', { month: 'long', year: 'numeric' }).format(currentDate)
 
@@ -125,8 +105,8 @@ export function CalendarPage({
 
           {Array.from({ length: daysInMonth }, (_, i) => i + 1).map((day) => {
             const data = monthDataByDay.get(day)
-            const hasExpense = data && data.expenses > 0
-            const hasIncome = data && (data.realIncomes > 0 || data.reimbursements > 0)
+            const hasExpense = data && data.netExpenses > 0
+            const hasIncome = data && (data.realIncome > 0 || data.reimbursements > 0)
             const isSelected = selectedDay === day
 
             return (
@@ -137,7 +117,7 @@ export function CalendarPage({
                 onClick={() => setSelectedDay(day)}
               >
                 <b>{day}</b>
-                {hasExpense && <small>{money(data!.expenses)}</small>}
+                {hasExpense && <small>{money(data!.netExpenses)}</small>}
                 {hasIncome && (
                   <span
                     className="calendar-income-indicator"
@@ -153,16 +133,25 @@ export function CalendarPage({
       <section className="section">
         <div className="section-title">
           <h2>Día {selectedDay} de {new Intl.DateTimeFormat('es-ES', { month: 'short' }).format(currentDate)}</h2>
-          <span className={selectedDayStats.net >= 0 ? 'positive' : ''}>
-            Balance: {selectedDayStats.net >= 0 ? '+' : ''}{money(selectedDayStats.net)}
+          <span className={selectedDayStats.netBalance >= 0 ? 'positive' : ''}>
+            Balance: {selectedDayStats.netBalance >= 0 ? '+' : ''}{money(selectedDayStats.netBalance)}
           </span>
         </div>
 
         {/* Resumen del día */}
-        {(selectedDayStats.expenses > 0 || selectedDayStats.realIncomes > 0 || selectedDayStats.reimbursements > 0) && (
+        {(selectedDayStats.netExpenses > 0 || selectedDayStats.realIncome > 0 || selectedDayStats.reimbursements > 0) && (
           <div className="day-breakdown-row">
-            {selectedDayStats.expenses > 0 && <span>Gastos: <strong>−{money(selectedDayStats.expenses)}</strong></span>}
-            {selectedDayStats.realIncomes > 0 && <span className="positive">Ingresos: <strong>+{money(selectedDayStats.realIncomes)}</strong></span>}
+            {selectedDayStats.netExpenses > 0 && (
+              <span>
+                Gastos: <strong>−{money(selectedDayStats.netExpenses)}</strong>
+                {selectedDayStats.grossExpenses > selectedDayStats.netExpenses && (
+                  <small style={{ color: 'var(--text-muted)', marginLeft: 4 }}>
+                    (Bruto: {money(selectedDayStats.grossExpenses)})
+                  </small>
+                )}
+              </span>
+            )}
+            {selectedDayStats.realIncome > 0 && <span className="positive">Ingresos: <strong>+{money(selectedDayStats.realIncome)}</strong></span>}
             {selectedDayStats.reimbursements > 0 && <span style={{ color: '#8b5cf6' }}>Reembolsos: <strong>+{money(selectedDayStats.reimbursements)}</strong></span>}
           </div>
         )}
