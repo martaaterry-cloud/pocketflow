@@ -119,6 +119,7 @@ export function toDbTransaction(tx: Transaction, userId: string) {
     is_shared: Boolean(tx.isShared),
     special_type: tx.specialType || 'normal',
     expense_nature: tx.expenseNature || null,
+    gift_recipient: tx.giftRecipient || null,
   }
 }
 
@@ -140,6 +141,7 @@ export function fromDbTransaction(row: Record<string, unknown>): Transaction {
     isShared: Boolean(row.is_shared),
     specialType: (row.special_type as SpecialMovementType) || undefined,
     expenseNature: (row.expense_nature as ExpenseNature) || undefined,
+    giftRecipient: row.gift_recipient ? String(row.gift_recipient) : undefined,
   }
 }
 

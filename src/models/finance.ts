@@ -39,6 +39,7 @@ export interface Transaction {
   isShared?: boolean
   specialType?: SpecialMovementType
   expenseNature?: ExpenseNature
+  giftRecipient?: string
 }
 
 export type CreateTransactionInput = Omit<Transaction, 'id'>

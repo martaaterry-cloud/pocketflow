@@ -180,6 +180,8 @@ export function CalendarPage({
                         ? 'Reembolso recibido'
                         : isIncome
                         ? 'Ingreso'
+                        : t.giftRecipient
+                        ? `Regalo · ${t.giftRecipient}`
                         : 'Gasto'}
                     </span>
                   </div>

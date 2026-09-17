@@ -66,6 +66,7 @@ export function AddTransactionModal({
   // Estados para Tipo Especial y Naturaleza
   const [isCashWithdrawal, setIsCashWithdrawal] = useState(false)
   const [expenseNature, setExpenseNature] = useState<ExpenseNature>('variable')
+  const [giftRecipient, setGiftRecipient] = useState('')
 
   // Estados para Gasto Compartido
   const [isShared, setIsShared] = useState(false)
@@ -88,6 +89,7 @@ export function AddTransactionModal({
       setIsShared(Boolean(initialTransaction.isShared))
       setIsCashWithdrawal(initialTransaction.specialType === 'cash_withdrawal')
       setExpenseNature(initialTransaction.expenseNature || 'variable')
+      setGiftRecipient(initialTransaction.giftRecipient ?? '')
       setConfirmDelete(false)
     } else {
       setType(defaultType)
@@ -101,6 +103,7 @@ export function AddTransactionModal({
       setNote('')
       setIsCashWithdrawal(false)
       setExpenseNature('variable')
+      setGiftRecipient('')
       setIsShared(false)
       setSelfParticipates(true)
       setSplitType('equal')
@@ -184,6 +187,8 @@ export function AddTransactionModal({
     if (!accountId) return
     if (type === 'transfer' && (!toAccountId || toAccountId === accountId)) return
 
+    const isGiftsCategory = type === 'expense' && (categoryId === 'gifts' || categories.find((c) => c.id === categoryId)?.name.toLowerCase().includes('regalo'))
+
     const payload: CreateTransactionInput = {
       type,
       amount: numericAmount,
@@ -197,6 +202,7 @@ export function AddTransactionModal({
       isShared: type === 'expense' && isShared,
       specialType: type === 'expense' ? (isCashWithdrawal ? 'cash_withdrawal' : 'normal') : undefined,
       expenseNature: type === 'expense' ? expenseNature : undefined,
+      giftRecipient: isGiftsCategory && giftRecipient.trim() ? giftRecipient.trim() : undefined,
     }
 
     if (isEditing && initialTransaction && onUpdate) {
@@ -337,6 +343,55 @@ export function AddTransactionModal({
             </label>
           </div>
         )}
+
+        {/* Campo contextual Para quién (solo para categoría Regalos) */}
+        {type === 'expense' &&
+          (categoryId === 'gifts' ||
+            categories.find((c) => c.id === categoryId)?.name.toLowerCase().includes('regalo')) && (
+            <div className="form-group">
+              <label>
+                Para quién (opcional)
+                <input
+                  type="text"
+                  list="gift-recipients-list"
+                  placeholder="Pareja, Madre, Marta, Amigo/a..."
+                  value={giftRecipient}
+                  onChange={(e) => setGiftRecipient(e.target.value)}
+                />
+                <datalist id="gift-recipients-list">
+                  <option value="Pareja" />
+                  <option value="Madre" />
+                  <option value="Padre" />
+                  <option value="Familia" />
+                  <option value="Amigo/a" />
+                </datalist>
+              </label>
+              <div
+                className="gift-suggestion-pills"
+                style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 6 }}
+              >
+                {['Pareja', 'Madre', 'Padre', 'Familia', 'Amigo/a'].map((sug) => (
+                  <button
+                    key={sug}
+                    type="button"
+                    className={`chip-button mini ${giftRecipient === sug ? 'active' : ''}`}
+                    style={{
+                      fontSize: 12,
+                      padding: '3px 10px',
+                      borderRadius: 14,
+                      border: '1px solid var(--border, #e2e8f0)',
+                      background: giftRecipient === sug ? 'var(--primary, #1e293b)' : 'var(--card-bg, #fff)',
+                      color: giftRecipient === sug ? '#fff' : 'inherit',
+                      cursor: 'pointer',
+                    }}
+                    onClick={() => setGiftRecipient(giftRecipient === sug ? '' : sug)}
+                  >
+                    {sug}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
 
         {/* Clasificación de Naturaleza del Gasto (Fijo / Variable / Extraordinario) */}
         {type === 'expense' && (

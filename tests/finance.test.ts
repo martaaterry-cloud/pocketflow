@@ -3240,14 +3240,18 @@ describe('Fase 10 — Reset Financiero Real y Prevención de Resurrección Demo'
     assert.equal(greeting, 'Hola, Marta')
   })
 
-  it('163. Categorías base se conservan tras reset: exactamente 8 categorías útiles', () => {
-    assert.equal(baseCategories.length, 8)
+  it('163. Categorías base se conservan tras reset: exactamente 12 categorías útiles', () => {
+    assert.equal(baseCategories.length, 12)
     const categoryIds = baseCategories.map((c) => c.id).sort()
     assert.deepEqual(categoryIds, [
       'clothes',
       'food',
+      'gifts',
+      'health',
+      'home',
       'leisure',
       'other',
+      'personal_care',
       'sport',
       'subscriptions',
       'transport',
@@ -6760,11 +6764,11 @@ describe('Fase 18 — Identificación Visual de Versión y Build', () => {
   it('314. Versioning: única fuente de verdad y formato de visualización exacto', () => {
     assert.equal(APP_NAME, 'PocketFlow')
     assert.equal(APP_VERSION, '0.18.0')
-    assert.equal(APP_BUILD, '2026.09.17-6')
+    assert.equal(APP_BUILD, '2026.09.17-7')
 
     assert.equal(getAppVersionString(), 'PocketFlow v0.18.0')
-    assert.equal(getAppBuildString(), 'Build 2026.09.17-6')
-    assert.equal(getAppFullVersionLabel(), 'PocketFlow v0.18.0 · Build 2026.09.17-6')
+    assert.equal(getAppBuildString(), 'Build 2026.09.17-7')
+    assert.equal(getAppFullVersionLabel(), 'PocketFlow v0.18.0 · Build 2026.09.17-7')
   })
 })
 
@@ -7119,6 +7123,144 @@ describe('Fase 20 — Ingresos Recurrentes como Previsión y Compatibilidad Tota
     assert.equal(available, 1200.0)
   })
 })
+
+describe('Fase 21 — Categorías Cotidianas y Soporte Contextual para Regalos', () => {
+  it('332. Nuevas categorías disponibles: Regalos, Cuidado personal, Hogar, Salud / Farmacia y Viajes en catálogo', () => {
+    const defaultCats: Category[] = [
+      { id: 'food', name: 'Alimentación', color: '#8DB596', icon: 'shopping-basket', iconKey: 'shopping-basket' },
+      { id: 'leisure', name: 'Ocio', color: '#D7A9A9', icon: 'ticket', iconKey: 'ticket' },
+      { id: 'gifts', name: 'Regalos', color: '#E879F9', icon: 'gift', iconKey: 'gift' },
+      { id: 'personal_care', name: 'Cuidado personal', color: '#F472B6', icon: 'sparkles', iconKey: 'sparkles' },
+      { id: 'home', name: 'Hogar', color: '#EAB308', icon: 'house', iconKey: 'house' },
+      { id: 'health', name: 'Salud / Farmacia', color: '#14B8A6', icon: 'shield', iconKey: 'shield' },
+      { id: 'travel', name: 'Viajes', color: '#E0B18A', icon: 'plane', iconKey: 'plane' },
+      { id: 'other', name: 'Otros', color: '#B9B9B9', icon: 'ellipsis', iconKey: 'ellipsis' },
+    ]
+
+    const giftCat = defaultCats.find((c) => c.id === 'gifts')
+    const careCat = defaultCats.find((c) => c.id === 'personal_care')
+    const homeCat = defaultCats.find((c) => c.id === 'home')
+    const healthCat = defaultCats.find((c) => c.id === 'health')
+    const travelCat = defaultCats.find((c) => c.id === 'travel')
+    const otherCat = defaultCats.find((c) => c.id === 'other')
+
+    assert.ok(giftCat && giftCat.name === 'Regalos')
+    assert.ok(careCat && careCat.name === 'Cuidado personal')
+    assert.ok(homeCat && homeCat.name === 'Hogar')
+    assert.ok(healthCat && healthCat.name === 'Salud / Farmacia')
+    assert.ok(travelCat && travelCat.name === 'Viajes')
+    assert.ok(otherCat && otherCat.name === 'Otros')
+  })
+
+  it('333. Gasto de Regalos con giftRecipient: almacena el destinatario y serializa bidireccionalmente', () => {
+    const txGift: Transaction = {
+      id: 'tx_gift_1',
+      type: 'expense',
+      amount: 45.0,
+      accountId: 'daily',
+      categoryId: 'gifts',
+      description: 'Perfume cumpleaños',
+      giftRecipient: 'Madre',
+      date: '2026-09-17T12:00:00Z',
+    }
+
+    assert.equal(txGift.categoryId, 'gifts')
+    assert.equal(txGift.giftRecipient, 'Madre')
+
+    // Serialización Supabase
+    const dbRow = toDbTransaction(txGift, 'user_123')
+    assert.equal(dbRow.gift_recipient, 'Madre')
+    assert.equal(dbRow.category_id, 'gifts')
+
+    // Deserialización Supabase
+    const restored = fromDbTransaction(dbRow as unknown as Record<string, unknown>)
+    assert.equal(restored.giftRecipient, 'Madre')
+    assert.equal(restored.categoryId, 'gifts')
+  })
+
+  it('334. Gasto no-Regalo: no requiere giftRecipient y funciona con total normalidad', () => {
+    const txFood: Transaction = {
+      id: 'tx_food_1',
+      type: 'expense',
+      amount: 22.5,
+      accountId: 'daily',
+      categoryId: 'food',
+      description: 'Compra supermercado',
+      date: '2026-09-17T10:00:00Z',
+    }
+
+    assert.equal(txFood.giftRecipient, undefined)
+    const dbRow = toDbTransaction(txFood, 'user_123')
+    assert.equal(dbRow.gift_recipient, null)
+
+    const restored = fromDbTransaction(dbRow as unknown as Record<string, unknown>)
+    assert.equal(restored.giftRecipient, undefined)
+  })
+
+  it('335. Compatibilidad retrospectiva: movimientos antiguos sin giftRecipient operan de forma transparente', () => {
+    const legacyDbRow = {
+      id: 'tx_legacy_99',
+      user_id: 'user_123',
+      type: 'expense',
+      amount: 60.0,
+      account_id: 'daily',
+      category_id: 'leisure',
+      description: 'Cena antigua',
+      date: '2026-08-15T21:00:00Z',
+      is_shared: false,
+    }
+
+    const tx = fromDbTransaction(legacyDbRow)
+    assert.equal(tx.giftRecipient, undefined)
+    assert.equal(tx.amount, 60.0)
+    assert.equal(tx.description, 'Cena antigua')
+  })
+
+  it('336. Normalización de alias: resuelve variantes de las nuevas categorías a sus IDs canónicos', () => {
+    assert.equal(normalizeCategoryAlias('regalos'), 'gifts')
+    assert.equal(normalizeCategoryAlias('Regalo'), 'gifts')
+    assert.equal(normalizeCategoryAlias('Detalle'), 'gifts')
+
+    assert.equal(normalizeCategoryAlias('cuidado personal'), 'personal_care')
+    assert.equal(normalizeCategoryAlias('Peluqueria'), 'personal_care')
+    assert.equal(normalizeCategoryAlias('Cosmetica'), 'personal_care')
+    assert.equal(normalizeCategoryAlias('Skincare'), 'personal_care')
+
+    assert.equal(normalizeCategoryAlias('salud / farmacia'), 'health')
+    assert.equal(normalizeCategoryAlias('Farmacia'), 'health')
+    assert.equal(normalizeCategoryAlias('Medicamentos'), 'health')
+    assert.equal(normalizeCategoryAlias('Dentista'), 'health')
+
+    assert.equal(normalizeCategoryAlias('hogar'), 'home')
+    assert.equal(normalizeCategoryAlias('Decoracion'), 'home')
+    assert.equal(normalizeCategoryAlias('Casa'), 'home')
+
+    assert.equal(normalizeCategoryAlias('viajes'), 'travel')
+    assert.equal(normalizeCategoryAlias('Vacaciones'), 'travel')
+    assert.equal(normalizeCategoryAlias('Escapada'), 'travel')
+  })
+
+  it('337. Desglose de Regalos por destinatario: agrupa correctamente los importes por cada persona', () => {
+    const giftsTransactions: Transaction[] = [
+      { id: 'g1', type: 'expense', amount: 50.0, categoryId: 'gifts', description: 'Cena aniversario', giftRecipient: 'Pareja', date: '2026-09-02T20:00:00Z' },
+      { id: 'g2', type: 'expense', amount: 30.0, categoryId: 'gifts', description: 'Flores', giftRecipient: 'Madre', date: '2026-09-05T12:00:00Z' },
+      { id: 'g3', type: 'expense', amount: 25.0, categoryId: 'gifts', description: 'Libro', giftRecipient: 'Pareja', date: '2026-09-10T16:00:00Z' },
+      { id: 'g4', type: 'expense', amount: 15.0, categoryId: 'gifts', description: 'Chocolates', giftRecipient: 'Familia', date: '2026-09-14T18:00:00Z' },
+    ]
+
+    const recipientMap = new Map<string, number>()
+    giftsTransactions.forEach((t) => {
+      const rec = t.giftRecipient || 'Sin especificar'
+      recipientMap.set(rec, (recipientMap.get(rec) || 0) + t.amount)
+    })
+
+    assert.equal(recipientMap.get('Pareja'), 75.0)  // 50 + 25
+    assert.equal(recipientMap.get('Madre'), 30.0)   // 30
+    assert.equal(recipientMap.get('Familia'), 15.0) // 15
+    assert.equal(recipientMap.get('Amigo/a'), undefined)
+  })
+})
+
 
 
 

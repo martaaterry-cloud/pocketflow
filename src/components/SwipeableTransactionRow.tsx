@@ -295,6 +295,8 @@ export function SwipeableTransactionRow({
               ? 'Reembolso recibido'
               : isIncome
               ? 'Ingreso'
+              : t.giftRecipient
+              ? `Regalo · ${t.giftRecipient}`
               : category?.name ?? 'Otros'}{' '}
             · {shortDate(t.date)}
           </span>

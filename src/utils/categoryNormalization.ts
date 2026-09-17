@@ -93,23 +93,53 @@ export const CATEGORY_ALIAS_MAP: Record<string, string> = {
   hotel: 'travel',
   hoteles: 'travel',
   vacaciones: 'travel',
+  escapada: 'travel',
+  escapadas: 'travel',
 
-  // Alias de Salud
+  // Alias de Regalos
+  gifts: 'gifts',
+  gift: 'gifts',
+  regalos: 'gifts',
+  regalo: 'gifts',
+  detalle: 'gifts',
+  detalles: 'gifts',
+
+  // Alias de Cuidado personal
+  personal_care: 'personal_care',
+  cuidadopersonal: 'personal_care',
+  'cuidado personal': 'personal_care',
+  cuidado: 'personal_care',
+  belleza: 'personal_care',
+  estetica: 'personal_care',
+  peluqueria: 'personal_care',
+  maquillaje: 'personal_care',
+  cosmetica: 'personal_care',
+  skincare: 'personal_care',
+  higiene: 'personal_care',
+
+  // Alias de Salud / Farmacia
   health: 'health',
   salud: 'health',
   farmacia: 'health',
+  'salud / farmacia': 'health',
   medico: 'health',
   hospital: 'health',
   dentista: 'health',
+  medicamento: 'health',
+  medicamentos: 'health',
+  consulta: 'health',
+  consultas: 'health',
 
-  // Alias de Casa
-  house: 'house',
-  home: 'house',
-  casa: 'house',
-  hogar: 'house',
-  vivienda: 'house',
-  alquiler: 'house',
-  mantenimiento: 'house',
+  // Alias de Hogar
+  home: 'home',
+  house: 'home',
+  casa: 'home',
+  hogar: 'home',
+  vivienda: 'home',
+  muebles: 'home',
+  decoracion: 'home',
+  menaje: 'home',
+  mantenimiento: 'home',
 }
 
 /**

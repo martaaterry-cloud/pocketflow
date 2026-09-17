@@ -70,6 +70,27 @@ export function CategoryDetailModal({
 
   const displayedAmount = mode === 'net' ? netTotal : grossTotal
 
+  // Desglose por destinatario para Regalos
+  const isGiftsCategory =
+    canonicalCategoryId === 'gifts' || category.name.toLowerCase().includes('regalo')
+
+  const recipientsBreakdown = useMemo(() => {
+    if (!isGiftsCategory) return []
+    const map = new Map<string, number>()
+    categoryTransactions.forEach((t) => {
+      const recipient = t.giftRecipient?.trim() || 'Sin especificar'
+      const linked = selectLinkedReimbursementsForExpense(t.id, transactions)
+      const amt = mode === 'net' ? Math.max(0, t.amount - linked) : t.amount
+      map.set(recipient, (map.get(recipient) || 0) + amt)
+    })
+    return Array.from(map.entries())
+      .map(([recipient, amount]) => ({
+        recipient,
+        amount: Math.round(amount * 100) / 100,
+      }))
+      .sort((a, b) => b.amount - a.amount)
+  }, [isGiftsCategory, categoryTransactions, transactions, mode])
+
   return (
     <div className="modal-backdrop" onClick={onClose} role="dialog" aria-modal="true">
       <div
@@ -119,6 +140,48 @@ export function CategoryDetailModal({
             )}
           </div>
         </div>
+
+        {/* Resumen por destinatario para Regalos */}
+        {isGiftsCategory && recipientsBreakdown.length > 0 && (
+          <div
+            className="gift-recipients-summary"
+            style={{
+              margin: '12px 0',
+              padding: '12px 14px',
+              background: 'var(--card-bg, #f8fafc)',
+              borderRadius: 12,
+              border: '1px solid var(--border, #e2e8f0)',
+            }}
+          >
+            <span
+              style={{
+                fontSize: 11,
+                fontWeight: 600,
+                color: 'var(--text-muted, #64748b)',
+                textTransform: 'uppercase',
+                letterSpacing: '0.04em',
+              }}
+            >
+              Por destinatario
+            </span>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 8 }}>
+              {recipientsBreakdown.map((item) => (
+                <div
+                  key={item.recipient}
+                  style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    fontSize: 13,
+                  }}
+                >
+                  <span style={{ color: 'var(--text-primary, #0f172a)' }}>{item.recipient}</span>
+                  <strong>{money(item.amount)}</strong>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* Lista de Movimientos */}
         <div className="category-detail-list-section">

@@ -1,6 +1,7 @@
 import { resolveIconKey } from '../../ui/icons'
 import {
   cleanPlanSettings,
+  categories as defaultCategories,
 } from '../../data/seed'
 import type { PersistedState, StorageAdapter } from './storageAdapter'
 
@@ -8,7 +9,11 @@ const STORAGE_KEY = 'pocketflow:v1'
 
 export function migratePersistedState(parsed: Partial<PersistedState>): PersistedState {
   // Migración de iconos de categorías y metas
-  const categories = (parsed.categories ?? []).map((c) => ({
+  const rawCategories = parsed.categories ?? []
+  const existingCategoryIds = new Set(rawCategories.map((c) => c.id))
+  const missingDefaults = defaultCategories.filter((dc) => !existingCategoryIds.has(dc.id))
+
+  const categories = [...rawCategories, ...missingDefaults].map((c) => ({
     ...c,
     iconKey: c.iconKey || resolveIconKey(c.icon, 'shopping-basket'),
     icon: resolveIconKey(c.icon, 'shopping-basket'),

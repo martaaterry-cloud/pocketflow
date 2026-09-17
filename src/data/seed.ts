@@ -21,11 +21,15 @@ export const initialProfile: UserProfile = {
 export const categories: Category[] = [
   { id: 'food', name: 'Alimentación', color: '#8DB596', icon: 'shopping-basket', iconKey: 'shopping-basket' },
   { id: 'leisure', name: 'Ocio', color: '#D7A9A9', icon: 'ticket', iconKey: 'ticket' },
+  { id: 'gifts', name: 'Regalos', color: '#E879F9', icon: 'gift', iconKey: 'gift' },
+  { id: 'personal_care', name: 'Cuidado personal', color: '#F472B6', icon: 'sparkles', iconKey: 'sparkles' },
+  { id: 'home', name: 'Hogar', color: '#EAB308', icon: 'house', iconKey: 'house' },
+  { id: 'health', name: 'Salud / Farmacia', color: '#14B8A6', icon: 'shield', iconKey: 'shield' },
+  { id: 'travel', name: 'Viajes', color: '#E0B18A', icon: 'plane', iconKey: 'plane' },
   { id: 'transport', name: 'Transporte', color: '#9DB7D5', icon: 'car', iconKey: 'car' },
   { id: 'clothes', name: 'Ropa', color: '#C7AFD7', icon: 'shirt', iconKey: 'shirt' },
   { id: 'subscriptions', name: 'Suscripciones', color: '#D5C38E', icon: 'refresh-cw', iconKey: 'refresh-cw' },
   { id: 'sport', name: 'Deporte', color: '#9FC9C4', icon: 'dumbbell', iconKey: 'dumbbell' },
-  { id: 'travel', name: 'Viajes', color: '#E0B18A', icon: 'plane', iconKey: 'plane' },
   { id: 'other', name: 'Otros', color: '#B9B9B9', icon: 'ellipsis', iconKey: 'ellipsis' },
 ]
 
