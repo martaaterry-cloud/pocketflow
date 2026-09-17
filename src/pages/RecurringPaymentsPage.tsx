@@ -20,6 +20,7 @@ export function RecurringPaymentsPage({
   const [modalOpen, setModalOpen] = useState(false)
   const [editingPayment, setEditingPayment] = useState<RecurringPayment | null>(null)
   const [confirmingId, setConfirmingId] = useState<string | null>(null)
+  const [filter, setFilter] = useState<'all' | 'expense' | 'income'>('all')
 
   const handleConfirm = async (paymentId: string) => {
     if (confirmingId) return
@@ -58,6 +59,15 @@ export function RecurringPaymentsPage({
     yearly: 'Anual',
   }
 
+  const expensesCount = finance.recurring.filter((r) => r.type !== 'income').length
+  const incomesCount = finance.recurring.filter((r) => r.type === 'income').length
+
+  const filteredRecurring = finance.recurring.filter((r) => {
+    if (filter === 'expense') return r.type !== 'income'
+    if (filter === 'income') return r.type === 'income'
+    return true
+  })
+
   return (
     <main className="page">
       <header className="simple-header">
@@ -71,35 +81,75 @@ export function RecurringPaymentsPage({
       </header>
 
       {/* Banner de Comprometido */}
-      <section className="hero-card light" style={{ marginBottom: 20 }}>
+      <section className="hero-card light" style={{ marginBottom: 16 }}>
         <span>Dinero comprometido pendiente</span>
         <strong>{money(finance.totals.committedAmount)}</strong>
         <div className="hero-meta">
-          <span>{finance.totals.pendingRecurring?.length ?? 0} pagos pendientes este mes</span>
+          <span>{finance.totals.pendingRecurring?.length ?? 0} gastos pendientes este mes</span>
+          {incomesCount > 0 && (
+            <span>· {incomesCount} {incomesCount === 1 ? 'ingreso previsto' : 'ingresos previstos'}</span>
+          )}
         </div>
       </section>
 
-      {/* Lista de Gastos Recurrentes */}
+      {/* Filtro de tipo: Todos / Gastos / Ingresos previstos */}
+      <div className="filter-pills" style={{ marginBottom: 16 }}>
+        <button
+          type="button"
+          className={filter === 'all' ? 'active' : ''}
+          onClick={() => setFilter('all')}
+        >
+          Todos ({finance.recurring.length})
+        </button>
+        <button
+          type="button"
+          className={filter === 'expense' ? 'active' : ''}
+          onClick={() => setFilter('expense')}
+        >
+          Gastos ({expensesCount})
+        </button>
+        <button
+          type="button"
+          className={filter === 'income' ? 'active' : ''}
+          onClick={() => setFilter('income')}
+        >
+          Ingresos previstos ({incomesCount})
+        </button>
+      </div>
+
+      {/* Lista de Movimientos Recurrentes */}
       <section className="section">
         <div className="section-title">
-          <h2>Suscripciones y pagos programados</h2>
+          <h2>
+            {filter === 'income'
+              ? 'Ingresos previstos'
+              : filter === 'expense'
+              ? 'Suscripciones y gastos programados'
+              : 'Movimientos programados'}
+          </h2>
         </div>
 
-        {finance.recurring.length === 0 ? (
+        {filteredRecurring.length === 0 ? (
           <div className="transaction-list empty">
-            <p className="muted">No tienes ningún pago recurrente registrado.</p>
+            <p className="muted">
+              {filter === 'income'
+                ? 'No tienes ningún ingreso recurrente previsto.'
+                : filter === 'expense'
+                ? 'No tienes ningún gasto recurrente registrado.'
+                : 'No tienes ningún movimiento recurrente registrado.'}
+            </p>
             <button
               type="button"
               className="primary-button"
-              style={{ marginTop: 14, maxWidth: 220 }}
+              style={{ marginTop: 14, maxWidth: 240 }}
               onClick={handleOpenCreate}
             >
-              Añadir primer recurrente
+              {filter === 'income' ? 'Añadir previsión de ingreso' : 'Añadir primer recurrente'}
             </button>
           </div>
         ) : (
           <div className="recurring-list">
-            {finance.recurring.map((r) => {
+            {filteredRecurring.map((r) => {
               const category = finance.categories.find((c) => c.id === r.categoryId)
               const account = finance.accounts.find((a) => a.id === r.accountId)
               const cycleStatus = selectRecurringPaymentCycleStatus(r, finance.transactions)
@@ -157,14 +207,19 @@ export function RecurringPaymentsPage({
                   <div className="recurring-bottom-row">
                     <div className="recurring-meta-chips" onClick={() => handleOpenEdit(r)}>
                       <span className="recurring-date-chip">
-                        {humanNextDate}
+                        {isIncome ? `Cobro aprox.: ${humanNextDate}` : humanNextDate}
                       </span>
-                      {r.isShared && (
+                      {isIncome && (
+                        <span className="badge-status income-badge">
+                          <AppIcon name="arrow-down-left" size={11} /> Ingreso previsto
+                        </span>
+                      )}
+                      {!isIncome && r.isShared && (
                         <span className="badge-status shared-badge">
                           {sharedLabel}
                         </span>
                       )}
-                      {r.active && cycleStatus.status === 'confirmed_for_cycle' && (
+                      {!isIncome && r.active && cycleStatus.status === 'confirmed_for_cycle' && (
                         <span className="badge-status confirmed_for_cycle">
                           <AppIcon name="check" size={11} /> Confirmado
                         </span>
@@ -187,8 +242,8 @@ export function RecurringPaymentsPage({
                     </div>
                   </div>
 
-                  {/* Acciones para pagos previstos o pendientes de confirmar */}
-                  {r.active && cycleStatus.status === 'due' && (
+                  {/* Acciones solo para gastos pendientes de confirmar en el mes */}
+                  {!isIncome && r.active && cycleStatus.status === 'due' && (
                     <div className="recurring-action-footer">
                       <button
                         type="button"
@@ -226,9 +281,9 @@ export function RecurringPaymentsPage({
           <p style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
             <AppIcon name="info" size={16} />
             <span>
-              <strong>Cálculo sin duplicados:</strong> Solo los pagos recurrentes activos de tu
-              Cuenta diaria que aún <strong>no</strong> hayan sido registrados como gasto en el mes en
-              curso se descuentan de tu <em>Disponible real</em>.
+              <strong>Previsiones y comprometido:</strong> Los gastos recurrentes activos pendientes
+              se descuentan de tu <em>Disponible real</em>. Los ingresos recurrentes sirven como previsión
+              y no alteran tu saldo hasta que registres el ingreso real.
             </span>
           </p>
         </div>

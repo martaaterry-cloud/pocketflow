@@ -6759,11 +6759,11 @@ describe('Fase 18 — Identificación Visual de Versión y Build', () => {
   it('314. Versioning: única fuente de verdad y formato de visualización exacto', () => {
     assert.equal(APP_NAME, 'PocketFlow')
     assert.equal(APP_VERSION, '0.18.0')
-    assert.equal(APP_BUILD, '2026.09.17-4')
+    assert.equal(APP_BUILD, '2026.09.17-5')
 
     assert.equal(getAppVersionString(), 'PocketFlow v0.18.0')
-    assert.equal(getAppBuildString(), 'Build 2026.09.17-4')
-    assert.equal(getAppFullVersionLabel(), 'PocketFlow v0.18.0 · Build 2026.09.17-4')
+    assert.equal(getAppBuildString(), 'Build 2026.09.17-5')
+    assert.equal(getAppFullVersionLabel(), 'PocketFlow v0.18.0 · Build 2026.09.17-5')
   })
 })
 
@@ -6876,6 +6876,153 @@ describe('Fase 19 — Calendario Financiero con Gasto Neto y Consistencia Total'
     assert.equal(statsDay18.netBalance, 225.0) // 250 - 25 = 225 €
   })
 })
+
+describe('Fase 20 — Ingresos Recurrentes como Previsión y Compatibilidad Total', () => {
+  it('321. Crear recurrente tipo income: almacena los campos de previsión correctamente', () => {
+    const recurringIncome: RecurringPayment = {
+      id: 'rec_inc_1',
+      type: 'income',
+      name: 'Nómina SYTE Automation',
+      amount: 2100.0,
+      categoryId: 'income_salary',
+      accountId: 'daily',
+      frequency: 'monthly',
+      nextDate: '2026-09-30',
+      active: true,
+    }
+
+    assert.equal(recurringIncome.type, 'income')
+    assert.equal(recurringIncome.name, 'Nómina SYTE Automation')
+    assert.equal(recurringIncome.amount, 2100.0)
+    assert.equal(recurringIncome.frequency, 'monthly')
+    assert.equal(recurringIncome.nextDate, '2026-09-30')
+    assert.equal(recurringIncome.active, true)
+  })
+
+  it('322. Recurrente income NO afecta committedAmount ni selectPendingRecurringPayments', () => {
+    const recurringList: RecurringPayment[] = [
+      {
+        id: 'rec_gym',
+        type: 'expense',
+        name: 'Gimnasio',
+        amount: 40.0,
+        categoryId: 'sport',
+        accountId: 'daily',
+        frequency: 'monthly',
+        nextDate: '2026-09-15',
+        active: true,
+      },
+      {
+        id: 'rec_salary',
+        type: 'income',
+        name: 'Nómina SYTE Automation',
+        amount: 2100.0,
+        categoryId: 'income_salary',
+        accountId: 'daily',
+        frequency: 'monthly',
+        nextDate: '2026-09-30',
+        active: true,
+      },
+    ]
+
+    const transactions: Transaction[] = []
+    const pending = selectPendingRecurringPayments(recurringList, transactions, new Date(2026, 8, 1))
+
+    // Solo el gimnasio (40 €) debe estar pendiente y comprometido; la nómina NO entra
+    assert.equal(pending.length, 1)
+    assert.equal(pending[0].id, 'rec_gym')
+
+    const committed = selectCommittedAmount(recurringList, transactions, new Date(2026, 8, 1))
+    assert.equal(committed, 40.0)
+  })
+
+  it('323. Recurrente income NO crea Transaction real y NO altera saldo real ni Disponible Real', () => {
+    const accounts: Account[] = [
+      { id: 'daily', name: 'Cuenta diaria', type: 'spending', initialBalance: 500.0 },
+    ]
+    const transactions: Transaction[] = []
+    const recurringList: RecurringPayment[] = [
+      {
+        id: 'rec_salary',
+        type: 'income',
+        name: 'Nómina SYTE Automation',
+        amount: 2100.0,
+        categoryId: 'income_salary',
+        accountId: 'daily',
+        frequency: 'monthly',
+        nextDate: '2026-09-30',
+        active: true,
+      },
+    ]
+
+    const reconciled = reconcileAccounts(accounts, transactions)
+    const dailyBal = reconciled[0].balance ?? 500.0
+    assert.equal(dailyBal, 500.0) // Sigue siendo 500 €, no 2600 €
+
+    const committed = selectCommittedAmount(recurringList, transactions, new Date(2026, 8, 1))
+    assert.equal(committed, 0)
+
+    const available = selectRealAvailable(dailyBal, committed)
+    assert.equal(available, 500.0) // Disponible real intacto
+  })
+
+  it('324. Filtros de lista de recurrentes: clasifica correctamente Todos / Gastos / Ingresos', () => {
+    const recurringList: RecurringPayment[] = [
+      { id: 'r1', type: 'expense', name: 'Spotify', amount: 10.99, categoryId: 'leisure', accountId: 'daily', frequency: 'monthly', nextDate: '2026-09-10', active: true },
+      { id: 'r2', type: 'income', name: 'Nómina', amount: 2000.0, categoryId: 'salary', accountId: 'daily', frequency: 'monthly', nextDate: '2026-09-30', active: true },
+      { id: 'r3', name: 'Gimnasio', amount: 35.0, categoryId: 'sport', accountId: 'daily', frequency: 'monthly', nextDate: '2026-09-15', active: true }, // sin type (legado)
+    ]
+
+    const allItems = recurringList
+    const expensesOnly = recurringList.filter((r) => r.type !== 'income')
+    const incomesOnly = recurringList.filter((r) => r.type === 'income')
+
+    assert.equal(allItems.length, 3)
+    assert.equal(expensesOnly.length, 2) // Spotify y Gimnasio (legado)
+    assert.equal(incomesOnly.length, 1)  // Nómina
+    assert.equal(incomesOnly[0].name, 'Nómina')
+  })
+
+  it('325. Compatibilidad hacia atrás: recurrentes antiguos sin type se tratan siempre como gastos', () => {
+    const legacyPayment: RecurringPayment = {
+      id: 'legacy_1',
+      name: 'Internet Fibra',
+      amount: 30.0,
+      categoryId: 'bills',
+      accountId: 'daily',
+      frequency: 'monthly',
+      nextDate: '2026-09-05',
+      active: true,
+      // sin campo type
+    }
+
+    const pending = selectPendingRecurringPayments([legacyPayment], [], new Date(2026, 8, 1))
+    assert.equal(pending.length, 1)
+    assert.equal(pending[0].amount, 30.0)
+
+    const committed = selectCommittedAmount([legacyPayment], [], new Date(2026, 8, 1))
+    assert.equal(committed, 30.0)
+  })
+
+  it('326. Ciclo de recurrente income: no genera estado due para evitar confirmaciones accidentales de gasto', () => {
+    const recurringIncome: RecurringPayment = {
+      id: 'rec_inc',
+      type: 'income',
+      name: 'Pensión / Nómina',
+      amount: 1500.0,
+      categoryId: 'salary',
+      accountId: 'daily',
+      frequency: 'monthly',
+      nextDate: '2026-09-01',
+      active: true,
+    }
+
+    // Comprobamos que selectPendingRecurringPayments lo excluye categóricamente aunque la fecha haya pasado
+    const pending = selectPendingRecurringPayments([recurringIncome], [], new Date(2026, 8, 10))
+    assert.equal(pending.length, 0)
+  })
+})
+
 
 
 

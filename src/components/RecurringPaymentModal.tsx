@@ -259,13 +259,13 @@ export function RecurringPaymentModal({
         <form onSubmit={handleSubmit} className="modal-form">
           <div className="form-group">
             <label>
-              Concepto
+              {type === 'income' ? 'Nombre o concepto del ingreso' : 'Concepto'}
               <input
                 type="text"
                 placeholder={
                   type === 'income'
-                    ? 'Nómina SYTE Automation, pensión...'
-                    : 'Spotify, Gimnasio, Crunchyroll...'
+                    ? 'Nómina SYTE Automation, pensión, alquiler...'
+                    : 'Spotify, Gimnasio, Alquiler...'
                 }
                 value={name}
                 onChange={(e) => setName(e.target.value)}
@@ -276,7 +276,7 @@ export function RecurringPaymentModal({
 
           <div className="form-group">
             <label>
-              Importe total (€)
+              {type === 'income' ? 'Importe previsto (€)' : 'Importe total (€)'}
               <input
                 type="text"
                 inputMode="decimal"
@@ -303,7 +303,7 @@ export function RecurringPaymentModal({
 
           <div className="form-group">
             <label>
-              Próxima fecha de cobro
+              {type === 'income' ? 'Fecha aproximada de cobro' : 'Próxima fecha de cobro'}
               <input
                 type="date"
                 value={nextDate}
@@ -327,7 +327,7 @@ export function RecurringPaymentModal({
 
           <div className="form-group">
             <label>
-              Cuenta donde se cobra
+              {type === 'income' ? 'Cuenta de destino' : 'Cuenta donde se cobra'}
               <select value={accountId} onChange={(e) => setAccountId(e.target.value)}>
                 {accounts.map((a) => (
                   <option key={a.id} value={a.id}>
@@ -338,149 +338,164 @@ export function RecurringPaymentModal({
             </label>
           </div>
 
-          {/* Sección Gasto Compartido */}
-          <div className="shared-expense-section">
-            <div className="shared-toggle-row">
-              <div className="shared-toggle-text">
-                <strong>Gasto compartido</strong>
-                <span>Plantilla de reparto automático al confirmar cada ciclo</span>
-              </div>
-              <label
-                className="switch mini"
-                title={isShared ? 'Desactivar reparto' : 'Activar reparto compartido'}
-              >
-                <input
-                  type="checkbox"
-                  checked={isShared}
-                  onChange={(e) => setIsShared(e.target.checked)}
-                />
-                <span className="slider round"></span>
-              </label>
-            </div>
-
-            {isShared && (
-              <div className="shared-config-box">
-                {/* Checkbox Yo participo */}
-                <label className="checkbox-custom-row">
+          {/* Sección Gasto Compartido (solo para gastos) */}
+          {type === 'expense' && (
+            <div className="shared-expense-section">
+              <div className="shared-toggle-row">
+                <div className="shared-toggle-text">
+                  <strong>Gasto compartido</strong>
+                  <span>Plantilla de reparto automático al confirmar cada ciclo</span>
+                </div>
+                <label
+                  className="switch mini"
+                  title={isShared ? 'Desactivar reparto' : 'Activar reparto compartido'}
+                >
                   <input
                     type="checkbox"
-                    checked={selfParticipates}
-                    onChange={(e) => setSelfParticipates(e.target.checked)}
+                    checked={isShared}
+                    onChange={(e) => setIsShared(e.target.checked)}
                   />
-                  <span>Yo también participo en este gasto</span>
+                  <span className="slider round"></span>
                 </label>
+              </div>
 
-                {/* Segmented Control Tipo de Reparto */}
-                <div className="segmented-control-wrapper">
-                  <div className="segmented-control" role="tablist">
-                    <button
-                      type="button"
-                      role="tab"
-                      aria-selected={splitType === 'equal'}
-                      className={`segmented-btn ${splitType === 'equal' ? 'active' : ''}`}
-                      onClick={() => setSplitType('equal')}
-                    >
-                      A partes iguales
-                    </button>
-                    <button
-                      type="button"
-                      role="tab"
-                      aria-selected={splitType === 'custom'}
-                      className={`segmented-btn ${splitType === 'custom' ? 'active' : ''}`}
-                      onClick={() => setSplitType('custom')}
-                    >
-                      Personalizado
-                    </button>
-                  </div>
-                </div>
-
-                {/* Añadir personas */}
-                <div className="participant-add-container">
-                  <div className="participant-input-wrapper">
+              {isShared && (
+                <div className="shared-config-box">
+                  {/* Checkbox Yo participo */}
+                  <label className="checkbox-custom-row">
                     <input
-                      type="text"
-                      className="participant-search-input"
-                      placeholder="Escribe nombre (ej. Manuela, Pepa)..."
-                      value={newParticipantInput}
-                      onChange={(e) => setNewParticipantInput(e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter') {
-                          e.preventDefault()
-                          handleAddParticipant()
-                        }
-                      }}
-                      list="shared-recurring-contacts-list"
+                      type="checkbox"
+                      checked={selfParticipates}
+                      onChange={(e) => setSelfParticipates(e.target.checked)}
                     />
-                    <datalist id="shared-recurring-contacts-list">
-                      {sharedContacts.map((c) => (
-                        <option key={c.id} value={c.displayName} />
-                      ))}
-                    </datalist>
-                  </div>
-                  <button
-                    type="button"
-                    className="btn btn-secondary btn-add-person"
-                    onClick={() => handleAddParticipant()}
-                  >
-                    <AppIcon name="plus" size={14} />
-                    <span>Añadir persona</span>
-                  </button>
-                </div>
+                    <span>Yo también participo en este gasto</span>
+                  </label>
 
-                {/* Chips / Lista de participantes */}
-                {participants.length > 0 && (
-                  <div className="participant-chips-wrap">
-                    {participants.map((p, idx) => (
-                      <div className="participant-chip-item" key={idx}>
-                        <span className="participant-name-label">{p.name}</span>
-                        {splitType === 'custom' && (
-                          <div className="participant-custom-field">
-                            <input
-                              type="text"
-                              inputMode="decimal"
-                              className="participant-amount-input"
-                              value={String(p.customAmount ?? 0).replace('.', ',')}
-                              onChange={(e) => handleCustomAmountChange(idx, e.target.value)}
-                              placeholder="0,00"
-                            />
-                            <span className="unit-label">€</span>
-                          </div>
-                        )}
-                        <button
-                          type="button"
-                          className="chip-delete-btn"
-                          onClick={() => handleRemoveParticipant(idx)}
-                          aria-label={`Quitar ${p.name}`}
-                        >
-                          <AppIcon name="x" size={13} />
-                        </button>
-                      </div>
-                    ))}
+                  {/* Segmented Control Tipo de Reparto */}
+                  <div className="segmented-control-wrapper">
+                    <div className="segmented-control" role="tablist">
+                      <button
+                        type="button"
+                        role="tab"
+                        aria-selected={splitType === 'equal'}
+                        className={`segmented-btn ${splitType === 'equal' ? 'active' : ''}`}
+                        onClick={() => setSplitType('equal')}
+                      >
+                        A partes iguales
+                      </button>
+                      <button
+                        type="button"
+                        role="tab"
+                        aria-selected={splitType === 'custom'}
+                        className={`segmented-btn ${splitType === 'custom' ? 'active' : ''}`}
+                        onClick={() => setSplitType('custom')}
+                      >
+                        Personalizado
+                      </button>
+                    </div>
                   </div>
-                )}
 
-                {/* Previsualización del reparto exacto */}
-                {computedShares.length > 0 && (
-                  <div className="split-preview-card">
-                    <span className="split-preview-header">Reparto plantilla exacto</span>
-                    <div className="split-preview-table">
-                      {computedShares.map((s, idx) => (
-                        <div className="split-preview-row" key={idx}>
-                          <span className="split-person-name">
-                            {s.participantName} {s.isPayerShare ? '(Tú)' : ''}
-                          </span>
-                          <strong className="split-person-amount">{money(s.amount)}</strong>
+                  {/* Añadir personas */}
+                  <div className="participant-add-container">
+                    <div className="participant-input-wrapper">
+                      <input
+                        type="text"
+                        className="participant-search-input"
+                        placeholder="Escribe nombre (ej. Manuela, Pepa)..."
+                        value={newParticipantInput}
+                        onChange={(e) => setNewParticipantInput(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            e.preventDefault()
+                            handleAddParticipant()
+                          }
+                        }}
+                        list="shared-recurring-contacts-list"
+                      />
+                      <datalist id="shared-recurring-contacts-list">
+                        {sharedContacts.map((c) => (
+                          <option key={c.id} value={c.displayName} />
+                        ))}
+                      </datalist>
+                    </div>
+                    <button
+                      type="button"
+                      className="btn btn-secondary btn-add-person"
+                      onClick={() => handleAddParticipant()}
+                    >
+                      <AppIcon name="plus" size={14} />
+                      <span>Añadir persona</span>
+                    </button>
+                  </div>
+
+                  {/* Chips / Lista de participantes */}
+                  {participants.length > 0 && (
+                    <div className="participant-chips-wrap">
+                      {participants.map((p, idx) => (
+                        <div className="participant-chip-item" key={idx}>
+                          <span className="participant-name-label">{p.name}</span>
+                          {splitType === 'custom' && (
+                            <div className="participant-custom-field">
+                              <input
+                                type="text"
+                                inputMode="decimal"
+                                className="participant-amount-input"
+                                value={String(p.customAmount ?? 0).replace('.', ',')}
+                                onChange={(e) => handleCustomAmountChange(idx, e.target.value)}
+                                placeholder="0,00"
+                              />
+                              <span className="unit-label">€</span>
+                            </div>
+                          )}
+                          <button
+                            type="button"
+                            className="chip-delete-btn"
+                            onClick={() => handleRemoveParticipant(idx)}
+                            aria-label={`Quitar ${p.name}`}
+                          >
+                            <AppIcon name="x" size={13} />
+                          </button>
                         </div>
                       ))}
                     </div>
-                    <p className="split-preview-notice">
-                      Las cuotas se generarán en &quot;Por cobrar&quot; cada vez que pulses &quot;Confirmar cobro&quot;.
-                    </p>
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
+                  )}
+
+                  {/* Previsualización del reparto exacto */}
+                  {computedShares.length > 0 && (
+                    <div className="split-preview-card">
+                      <span className="split-preview-header">Reparto plantilla exacto</span>
+                      <div className="split-preview-table">
+                        {computedShares.map((s, idx) => (
+                          <div className="split-preview-row" key={idx}>
+                            <span className="split-person-name">
+                              {s.participantName} {s.isPayerShare ? '(Tú)' : ''}
+                            </span>
+                            <strong className="split-person-amount">{money(s.amount)}</strong>
+                          </div>
+                        ))}
+                      </div>
+                      <p className="split-preview-notice">
+                        Las cuotas se generarán en &quot;Por cobrar&quot; cada vez que pulses &quot;Confirmar cobro&quot;.
+                      </p>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Aviso informativo para ingresos recurrentes */}
+          {type === 'income' && (
+            <div className="info-callout" style={{ marginTop: 12 }}>
+              <p style={{ display: 'flex', alignItems: 'center', gap: 6, margin: 0, fontSize: 12 }}>
+                <AppIcon name="info" size={15} />
+                <span>
+                  <strong>Previsión sin dinero real:</strong> Este ingreso sirve únicamente para planificación.
+                  No altera tu saldo ni crea transacciones automáticas.
+                </span>
+              </p>
+            </div>
+          )}
 
           <div className="toggle-row" style={{ marginTop: 16 }}>
             <span>Estado activo</span>
@@ -496,7 +511,11 @@ export function RecurringPaymentModal({
 
           <div className="modal-actions" style={{ marginTop: 20 }}>
             <button type="submit" className="primary-button">
-              {isEditing ? 'Guardar cambios' : 'Crear pago recurrente'}
+              {isEditing
+                ? 'Guardar cambios'
+                : type === 'income'
+                ? 'Crear previsión de ingreso'
+                : 'Crear pago recurrente'}
             </button>
 
             {isEditing && onDelete && (
@@ -507,11 +526,15 @@ export function RecurringPaymentModal({
                     className="danger-outline-button"
                     onClick={() => setConfirmDelete(true)}
                   >
-                    Eliminar pago recurrente
+                    {type === 'income' ? 'Eliminar ingreso recurrente' : 'Eliminar pago recurrente'}
                   </button>
                 ) : (
                   <div className="confirm-delete-box">
-                    <p>¿Seguro que deseas eliminar este gasto recurrente?</p>
+                    <p>
+                      {type === 'income'
+                        ? '¿Seguro que deseas eliminar este ingreso recurrente previsto?'
+                        : '¿Seguro que deseas eliminar este gasto recurrente?'}
+                    </p>
                     <div className="confirm-delete-actions">
                       <button
                         type="button"

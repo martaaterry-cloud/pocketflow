@@ -4425,6 +4425,19 @@ input:checked + .slider:before {
   white-space: nowrap;
 }
 
+.badge-status.income-badge {
+  background: #dcfce7;
+  color: #166534;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 3px 8px;
+  border-radius: var(--radius-pill);
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  white-space: nowrap;
+}
+
 .badge-status.confirmed_for_cycle {
   font-size: 11px;
   font-weight: 600;
