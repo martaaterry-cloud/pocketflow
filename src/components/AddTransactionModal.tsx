@@ -354,12 +354,12 @@ export function AddTransactionModal({
                 <input
                   type="text"
                   list="gift-recipients-list"
-                  placeholder="Pareja, Madre, Marta, Amigo/a..."
+                  placeholder="Sergi, Madre, Marta, Amigo/a..."
                   value={giftRecipient}
                   onChange={(e) => setGiftRecipient(e.target.value)}
                 />
                 <datalist id="gift-recipients-list">
-                  <option value="Pareja" />
+                  <option value="Sergi" />
                   <option value="Madre" />
                   <option value="Padre" />
                   <option value="Familia" />
@@ -370,7 +370,7 @@ export function AddTransactionModal({
                 className="gift-suggestion-pills"
                 style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 6 }}
               >
-                {['Pareja', 'Madre', 'Padre', 'Familia', 'Amigo/a'].map((sug) => (
+                {['Sergi', 'Madre', 'Padre', 'Familia', 'Amigo/a'].map((sug) => (
                   <button
                     key={sug}
                     type="button"
