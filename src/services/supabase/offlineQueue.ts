@@ -1,5 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import {
+  safeUpsertRecurring,
+  safeUpsertTransaction,
   toDbAccount,
   toDbBudget,
   toDbGoal,
@@ -166,8 +168,7 @@ export async function flushOfflineQueue(
           if (error) throw error
         } else {
           const dbRow = toDbTransaction(item.data as Transaction, userId)
-          const { error } = await supabase.from('transactions').upsert(dbRow)
-          if (error) throw error
+          await safeUpsertTransaction(supabase, dbRow)
         }
       } else if (item.entity === 'account') {
         const dbRow = toDbAccount(item.data as Account, userId)
@@ -218,8 +219,7 @@ export async function flushOfflineQueue(
           if (error) throw error
         } else {
           const dbRow = toDbRecurring(item.data as RecurringPayment, userId)
-          const { error } = await supabase.from('recurring_payments').upsert(dbRow)
-          if (error) throw error
+          await safeUpsertRecurring(supabase, dbRow)
         }
       } else if (item.entity === 'specialPeriod') {
         if (item.action === 'delete') {

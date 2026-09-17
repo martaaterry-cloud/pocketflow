@@ -6764,11 +6764,11 @@ describe('Fase 18 — Identificación Visual de Versión y Build', () => {
   it('314. Versioning: única fuente de verdad y formato de visualización exacto', () => {
     assert.equal(APP_NAME, 'PocketFlow')
     assert.equal(APP_VERSION, '0.18.0')
-    assert.equal(APP_BUILD, '2026.09.17-10')
+    assert.equal(APP_BUILD, '2026.09.17-11')
 
     assert.equal(getAppVersionString(), 'PocketFlow v0.18.0')
-    assert.equal(getAppBuildString(), 'Build 2026.09.17-10')
-    assert.equal(getAppFullVersionLabel(), 'PocketFlow v0.18.0 · Build 2026.09.17-10')
+    assert.equal(getAppBuildString(), 'Build 2026.09.17-11')
+    assert.equal(getAppFullVersionLabel(), 'PocketFlow v0.18.0 · Build 2026.09.17-11')
   })
 })
 
@@ -7191,7 +7191,7 @@ describe('Fase 21 — Categorías Cotidianas y Soporte Contextual para Regalos',
 
     assert.equal(txFood.giftRecipient, undefined)
     const dbRow = toDbTransaction(txFood, 'user_123')
-    assert.equal(dbRow.gift_recipient, null)
+    assert.equal(dbRow.gift_recipient, undefined)
 
     const restored = fromDbTransaction(dbRow as unknown as Record<string, unknown>)
     assert.equal(restored.giftRecipient, undefined)

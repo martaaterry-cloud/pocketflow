@@ -101,7 +101,7 @@ export function fromDbCategory(row: Record<string, unknown>): Category {
 }
 
 export function toDbTransaction(tx: Transaction, userId: string) {
-  return {
+  const row: Record<string, unknown> = {
     id: tx.id,
     user_id: userId,
     type: tx.type,
@@ -119,8 +119,11 @@ export function toDbTransaction(tx: Transaction, userId: string) {
     is_shared: Boolean(tx.isShared),
     special_type: tx.specialType || 'normal',
     expense_nature: tx.expenseNature || null,
-    gift_recipient: tx.giftRecipient || null,
   }
+  if (tx.giftRecipient) {
+    row.gift_recipient = tx.giftRecipient
+  }
+  return row
 }
 
 export function fromDbTransaction(row: Record<string, unknown>): Transaction {
@@ -218,7 +221,7 @@ export function fromDbReserve(row: Record<string, unknown>): Reserve {
 }
 
 export function toDbRecurring(r: RecurringPayment, userId: string) {
-  return {
+  const row: Record<string, unknown> = {
     id: r.id,
     user_id: userId,
     name: r.name,
@@ -231,9 +234,12 @@ export function toDbRecurring(r: RecurringPayment, userId: string) {
     is_shared: Boolean(r.isShared),
     sharing_template: r.sharingTemplate || null,
     type: r.type || 'expense',
-    income_source_type: r.incomeSourceType || null,
     installments_count: r.installmentsCount || null,
   }
+  if (r.incomeSourceType) {
+    row.income_source_type = r.incomeSourceType
+  }
+  return row
 }
 
 export function fromDbRecurring(row: Record<string, unknown>): RecurringPayment {
@@ -474,9 +480,82 @@ export async function fetchRemoteState(
   return migratePersistedState(rawState)
 }
 
-// ==========================================================================
-// Mutaciones granulares directas (CRUD)
-// ==========================================================================
+export function cleanMissingColumns(row: Record<string, unknown>, errorMessage?: string): Record<string, unknown> {
+  const clean = { ...row }
+  const msg = (errorMessage || '').toLowerCase()
+  if (msg.includes('gift_recipient') || !errorMessage) delete clean.gift_recipient
+  if (msg.includes('income_source_type') || !errorMessage) delete clean.income_source_type
+  if (msg.includes('installments_count') || !errorMessage) delete clean.installments_count
+  if (msg.includes('special_type')) delete clean.special_type
+  if (msg.includes('expense_nature')) delete clean.expense_nature
+  return clean
+}
+
+export async function safeInsertTransaction(
+  supabase: SupabaseClient,
+  row: Record<string, unknown>
+): Promise<void> {
+  const { error } = await supabase.from('transactions').insert(row)
+  if (error) {
+    if (error.code === 'PGRST204' || error.code === '42703' || error.message.toLowerCase().includes('column')) {
+      const clean = cleanMissingColumns(row, error.message)
+      const { error: retryError } = await supabase.from('transactions').insert(clean)
+      if (retryError) throw retryError
+      return
+    }
+    throw error
+  }
+}
+
+export async function safeUpdateTransaction(
+  supabase: SupabaseClient,
+  row: Record<string, unknown>,
+  txId: string,
+  userId: string
+): Promise<void> {
+  const { error } = await supabase.from('transactions').update(row).eq('id', txId).eq('user_id', userId)
+  if (error) {
+    if (error.code === 'PGRST204' || error.code === '42703' || error.message.toLowerCase().includes('column')) {
+      const clean = cleanMissingColumns(row, error.message)
+      const { error: retryError } = await supabase.from('transactions').update(clean).eq('id', txId).eq('user_id', userId)
+      if (retryError) throw retryError
+      return
+    }
+    throw error
+  }
+}
+
+export async function safeUpsertTransaction(
+  supabase: SupabaseClient,
+  row: Record<string, unknown>
+): Promise<void> {
+  const { error } = await supabase.from('transactions').upsert(row)
+  if (error) {
+    if (error.code === 'PGRST204' || error.code === '42703' || error.message.toLowerCase().includes('column')) {
+      const clean = cleanMissingColumns(row, error.message)
+      const { error: retryError } = await supabase.from('transactions').upsert(clean)
+      if (retryError) throw retryError
+      return
+    }
+    throw error
+  }
+}
+
+export async function safeUpsertRecurring(
+  supabase: SupabaseClient,
+  row: Record<string, unknown>
+): Promise<void> {
+  const { error } = await supabase.from('recurring_payments').upsert(row)
+  if (error) {
+    if (error.code === 'PGRST204' || error.code === '42703' || error.message.toLowerCase().includes('column')) {
+      const clean = cleanMissingColumns(row, error.message)
+      const { error: retryError } = await supabase.from('recurring_payments').upsert(clean)
+      if (retryError) throw retryError
+      return
+    }
+    throw error
+  }
+}
 
 export async function syncInsertTransaction(
   supabase: SupabaseClient,
@@ -484,8 +563,7 @@ export async function syncInsertTransaction(
   tx: Transaction
 ): Promise<void> {
   const row = toDbTransaction(tx, userId)
-  const { error } = await supabase.from('transactions').insert(row)
-  if (error) throw error
+  await safeInsertTransaction(supabase, row)
 }
 
 export async function syncUpdateTransaction(
@@ -494,8 +572,7 @@ export async function syncUpdateTransaction(
   tx: Transaction
 ): Promise<void> {
   const row = toDbTransaction(tx, userId)
-  const { error } = await supabase.from('transactions').update(row).eq('id', tx.id).eq('user_id', userId)
-  if (error) throw error
+  await safeUpdateTransaction(supabase, row, tx.id, userId)
 }
 
 export async function syncDeleteTransaction(
