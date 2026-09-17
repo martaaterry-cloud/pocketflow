@@ -480,6 +480,38 @@ export async function fetchRemoteState(
   return migratePersistedState(rawState)
 }
 
+export async function ensureCategoryExistsInRemote(
+  supabase: SupabaseClient,
+  userId: string,
+  categoryId?: unknown
+): Promise<void> {
+  if (!categoryId || typeof categoryId !== 'string' || !userId) return
+  const seedCat = seedCategories.find((c) => c.id === categoryId)
+  if (seedCat && typeof supabase?.from === 'function') {
+    const table = supabase.from('categories')
+    if (table && typeof table.upsert === 'function') {
+      const dbCat = toDbCategory(seedCat, userId)
+      const { error } = await table.upsert(dbCat)
+      if (error) {
+        console.warn('[Supabase] Aviso al provisionar categoría base en remoto:', categoryId, error.message)
+      }
+    }
+  }
+}
+
+export async function syncMissingDefaultCategories(
+  supabase: SupabaseClient,
+  userId: string,
+  categories: Category[]
+): Promise<void> {
+  if (!categories || categories.length === 0 || !userId) return
+  const dbCats = categories.map((c) => toDbCategory(c, userId))
+  const { error } = await supabase.from('categories').upsert(dbCats)
+  if (error) {
+    console.warn('[Supabase] Error sincronizando categorías base:', error.message)
+  }
+}
+
 export function cleanMissingColumns(row: Record<string, unknown>, errorMessage?: string): Record<string, unknown> {
   const clean = { ...row }
   const msg = (errorMessage || '').toLowerCase()
@@ -493,10 +525,29 @@ export function cleanMissingColumns(row: Record<string, unknown>, errorMessage?:
 
 export async function safeInsertTransaction(
   supabase: SupabaseClient,
-  row: Record<string, unknown>
+  row: Record<string, unknown>,
+  userId?: string
 ): Promise<void> {
+  const effectiveUserId = (userId || row.user_id) as string | undefined
+  if (row.category_id && effectiveUserId) {
+    await ensureCategoryExistsInRemote(supabase, effectiveUserId, row.category_id)
+  }
   const { error } = await supabase.from('transactions').insert(row)
   if (error) {
+    console.error('[Supabase Real Error - Insert Transaction]', {
+      code: error.code,
+      message: error.message,
+      details: error.details,
+      hint: error.hint,
+      row,
+    })
+    // 23503: Foreign Key violation (la categoría no existía en categories)
+    if (error.code === '23503' && effectiveUserId) {
+      await ensureCategoryExistsInRemote(supabase, effectiveUserId, row.category_id)
+      const { error: retryError } = await supabase.from('transactions').insert(row)
+      if (!retryError) return
+    }
+    // Column missing in database schema
     if (error.code === 'PGRST204' || error.code === '42703' || error.message.toLowerCase().includes('column')) {
       const clean = cleanMissingColumns(row, error.message)
       const { error: retryError } = await supabase.from('transactions').insert(clean)
@@ -513,8 +564,26 @@ export async function safeUpdateTransaction(
   txId: string,
   userId: string
 ): Promise<void> {
+  if (row.category_id && userId) {
+    await ensureCategoryExistsInRemote(supabase, userId, row.category_id)
+  }
   const { error } = await supabase.from('transactions').update(row).eq('id', txId).eq('user_id', userId)
   if (error) {
+    console.error('[Supabase Real Error - Update Transaction]', {
+      code: error.code,
+      message: error.message,
+      details: error.details,
+      hint: error.hint,
+      txId,
+      row,
+    })
+    // 23503: Foreign Key violation (la categoría no existía en categories)
+    if (error.code === '23503' && userId) {
+      await ensureCategoryExistsInRemote(supabase, userId, row.category_id)
+      const { error: retryError } = await supabase.from('transactions').update(row).eq('id', txId).eq('user_id', userId)
+      if (!retryError) return
+    }
+    // Column missing in database schema
     if (error.code === 'PGRST204' || error.code === '42703' || error.message.toLowerCase().includes('column')) {
       const clean = cleanMissingColumns(row, error.message)
       const { error: retryError } = await supabase.from('transactions').update(clean).eq('id', txId).eq('user_id', userId)
@@ -527,10 +596,29 @@ export async function safeUpdateTransaction(
 
 export async function safeUpsertTransaction(
   supabase: SupabaseClient,
-  row: Record<string, unknown>
+  row: Record<string, unknown>,
+  userId?: string
 ): Promise<void> {
+  const effectiveUserId = (userId || row.user_id) as string | undefined
+  if (row.category_id && effectiveUserId) {
+    await ensureCategoryExistsInRemote(supabase, effectiveUserId, row.category_id)
+  }
   const { error } = await supabase.from('transactions').upsert(row)
   if (error) {
+    console.error('[Supabase Real Error - Upsert Transaction]', {
+      code: error.code,
+      message: error.message,
+      details: error.details,
+      hint: error.hint,
+      row,
+    })
+    // 23503: Foreign Key violation (la categoría no existía en categories)
+    if (error.code === '23503' && effectiveUserId) {
+      await ensureCategoryExistsInRemote(supabase, effectiveUserId, row.category_id)
+      const { error: retryError } = await supabase.from('transactions').upsert(row)
+      if (!retryError) return
+    }
+    // Column missing in database schema
     if (error.code === 'PGRST204' || error.code === '42703' || error.message.toLowerCase().includes('column')) {
       const clean = cleanMissingColumns(row, error.message)
       const { error: retryError } = await supabase.from('transactions').upsert(clean)
@@ -543,10 +631,27 @@ export async function safeUpsertTransaction(
 
 export async function safeUpsertRecurring(
   supabase: SupabaseClient,
-  row: Record<string, unknown>
+  row: Record<string, unknown>,
+  userId?: string
 ): Promise<void> {
+  const effectiveUserId = (userId || row.user_id) as string | undefined
+  if (row.category_id && effectiveUserId) {
+    await ensureCategoryExistsInRemote(supabase, effectiveUserId, row.category_id)
+  }
   const { error } = await supabase.from('recurring_payments').upsert(row)
   if (error) {
+    console.error('[Supabase Real Error - Upsert Recurring]', {
+      code: error.code,
+      message: error.message,
+      details: error.details,
+      hint: error.hint,
+      row,
+    })
+    if (error.code === '23503' && effectiveUserId) {
+      await ensureCategoryExistsInRemote(supabase, effectiveUserId, row.category_id)
+      const { error: retryError } = await supabase.from('recurring_payments').upsert(row)
+      if (!retryError) return
+    }
     if (error.code === 'PGRST204' || error.code === '42703' || error.message.toLowerCase().includes('column')) {
       const clean = cleanMissingColumns(row, error.message)
       const { error: retryError } = await supabase.from('recurring_payments').upsert(clean)
@@ -563,7 +668,7 @@ export async function syncInsertTransaction(
   tx: Transaction
 ): Promise<void> {
   const row = toDbTransaction(tx, userId)
-  await safeInsertTransaction(supabase, row)
+  await safeInsertTransaction(supabase, row, userId)
 }
 
 export async function syncUpdateTransaction(

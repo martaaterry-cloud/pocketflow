@@ -113,6 +113,7 @@ import {
   fromDbVariableExpenseEstimate,
   createCleanInitialState,
   fetchRemoteState,
+  cleanMissingColumns,
   syncInsertTransaction,
   syncUpdateTransaction,
   syncDeleteTransaction,
@@ -6764,11 +6765,11 @@ describe('Fase 18 — Identificación Visual de Versión y Build', () => {
   it('314. Versioning: única fuente de verdad y formato de visualización exacto', () => {
     assert.equal(APP_NAME, 'PocketFlow')
     assert.equal(APP_VERSION, '0.18.0')
-    assert.equal(APP_BUILD, '2026.09.17-11')
+    assert.equal(APP_BUILD, '2026.09.17-12')
 
     assert.equal(getAppVersionString(), 'PocketFlow v0.18.0')
-    assert.equal(getAppBuildString(), 'Build 2026.09.17-11')
-    assert.equal(getAppFullVersionLabel(), 'PocketFlow v0.18.0 · Build 2026.09.17-11')
+    assert.equal(getAppBuildString(), 'Build 2026.09.17-12')
+    assert.equal(getAppFullVersionLabel(), 'PocketFlow v0.18.0 · Build 2026.09.17-12')
   })
 })
 
@@ -7284,6 +7285,50 @@ describe('Fase 21 — Categorías Cotidianas y Soporte Contextual para Regalos',
     }
 
     assert.deepEqual(result, ['Sergi', 'Mamá', 'Papá'])
+  })
+
+  it('339. cleanMissingColumns: elimina de forma segura columnas no presentes en el esquema SQL', () => {
+    const rawRow = {
+      id: 'tx_123',
+      user_id: 'user_abc',
+      amount: 45,
+      description: 'LEGO Nueva Condomina',
+      category_id: 'gifts',
+      gift_recipient: 'Sergi',
+      special_type: 'normal',
+      expense_nature: 'variable',
+    }
+    const cleaned = cleanMissingColumns(rawRow, 'column "gift_recipient" of relation "transactions" does not exist')
+    assert.equal(cleaned.gift_recipient, undefined)
+    assert.equal(cleaned.description, 'LEGO Nueva Condomina')
+    assert.equal(cleaned.category_id, 'gifts')
+  })
+
+  it('340. Edición de movimientos existentes: preserva y mapea cambios de categoría (personal_care, gifts) fielmente', () => {
+    const originalTx: Transaction = {
+      id: 'tx_zara_1',
+      type: 'expense',
+      amount: 19.95,
+      accountId: 'daily',
+      categoryId: 'clothes',
+      description: 'Colonia Zara',
+      date: '2026-09-17T10:00:00Z',
+    }
+
+    const updatedTx: Transaction = {
+      ...originalTx,
+      categoryId: 'personal_care',
+      expenseNature: 'variable',
+    }
+
+    const dbRow = toDbTransaction(updatedTx, 'user_123')
+    assert.equal(dbRow.category_id, 'personal_care')
+    assert.equal(dbRow.description, 'Colonia Zara')
+    assert.equal(dbRow.expense_nature, 'variable')
+
+    const rehydrated = fromDbTransaction(dbRow as Record<string, unknown>)
+    assert.equal(rehydrated.categoryId, 'personal_care')
+    assert.equal(rehydrated.expenseNature, 'variable')
   })
 })
 

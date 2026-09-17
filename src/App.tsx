@@ -16,7 +16,7 @@ import { AppIcon } from './ui/icons'
 import { useFinance } from './store/useFinance'
 import { cleanUrlQueryParams, createDeepLinkDeduplicator, parseShortcutUrl } from './utils/deepLink'
 import { getSupabase } from './services/supabase/supabaseClient'
-import { createCleanInitialState, fetchRemoteState, uploadStateToSupabase } from './services/supabase/supabaseSync'
+import { createCleanInitialState, fetchRemoteState, syncMissingDefaultCategories, uploadStateToSupabase } from './services/supabase/supabaseSync'
 import { flushOfflineQueue, getPendingMutationsCount, subscribeOfflineQueue } from './services/supabase/offlineQueue'
 import { ensureRealtimeConnection, initRealtimeSubscription, unsubscribeRealtime } from './services/supabase/supabaseRealtime'
 import { performAutoBackupIfNeeded } from './services/supabase/cloudBackupService'
@@ -125,6 +125,10 @@ export default function App() {
         const remoteState = await fetchRemoteState(supabase, userId)
 
         if (remoteState) {
+          // Asegurar que las categorías (incluyendo las nuevas como regalos o cuidado personal) existan en Supabase
+          if (remoteState.categories?.length) {
+            await syncMissingDefaultCategories(supabase, userId, remoteState.categories)
+          }
           // La nube ya tiene datos de este usuario -> Fuente de verdad principal
           await financeRef.current.restoreState(remoteState)
         } else {

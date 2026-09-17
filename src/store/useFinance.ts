@@ -264,9 +264,19 @@ export function useFinance(storage: StorageAdapter = defaultAppStorage) {
             onSyncStatusChangeRef.current?.('up_to_date')
           })
           .catch((err) => {
-            console.warn(`[Sync] Fallo en ${action} ${entity}, encolando offline:`, err)
+            console.error(`[Supabase Real Error] Fallo en ${action} ${entity} (id: ${id}):`, {
+              code: err?.code,
+              message: err?.message,
+              details: err?.details,
+              hint: err?.hint,
+              error: err,
+            })
             enqueueOfflineMutation({ entity, action, data })
-            onSyncStatusChangeRef.current?.('offline')
+            if (typeof navigator !== 'undefined' && !navigator.onLine) {
+              onSyncStatusChangeRef.current?.('offline')
+            } else {
+              onSyncStatusChangeRef.current?.('error')
+            }
           })
       } else {
         enqueueOfflineMutation({ entity, action, data })
