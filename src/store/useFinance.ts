@@ -124,6 +124,7 @@ import {
   selectEssentialMonthlyExpenses,
   selectFreeSavingsWithReserves,
   selectMonthlyIncome,
+  selectMonthlyPlanCardSummary,
   selectTargetMonthlySavings,
   selectTotalAllocatedToReserves,
   selectVariableMonthlyExpenses,
@@ -1494,6 +1495,15 @@ export function useFinance(storage: StorageAdapter = defaultAppStorage) {
     const realMonthIncome = selectRealIncome(state.transactions, now)
     const pendingReimbursements = selectPendingReimbursements(state.expenseShares ?? [], state.transactions)
 
+    const monthlyPlanSummary = selectMonthlyPlanCardSummary(
+      state.planSettings,
+      essentialExpenses,
+      variableExpenses,
+      state.specialPeriods,
+      state.reserves,
+      now
+    )
+
     return {
       // Compatibilidad y concepto neto principal
       daily: spendable,
@@ -1542,7 +1552,9 @@ export function useFinance(storage: StorageAdapter = defaultAppStorage) {
         emergencyFundMonthsCovered,
         estimatedMonthlyMargin,
         adjustedSpending,
+        monthlyPlanSummary,
       },
+      monthlyPlanSummary,
     }
   }, [
     reconciledAccounts,

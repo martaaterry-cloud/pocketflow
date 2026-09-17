@@ -482,6 +482,10 @@ export default function App() {
             setMoreSubView('receivables')
             setTab('more')
           }}
+          onNavigateToPlan={() => {
+            setMoreSubView('plan')
+            setTab('more')
+          }}
         />
       )}
       {tab === 'movements' && (

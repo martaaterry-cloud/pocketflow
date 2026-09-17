@@ -15,12 +15,14 @@ export function HomePage({
   onSelectTransaction,
   onNavigateToVariableEstimates,
   onNavigateToReceivables,
+  onNavigateToPlan,
 }: {
   finance: ReturnTypeFinance
   onAdd: () => void
   onSelectTransaction?: (tx: Transaction) => void
   onNavigateToVariableEstimates?: () => void
   onNavigateToReceivables?: () => void
+  onNavigateToPlan?: () => void
 }) {
   const [isExpanded, setIsExpanded] = useState(false)
   const [txToDelete, setTxToDelete] = useState<Transaction | null>(null)
@@ -259,6 +261,57 @@ export function HomePage({
           </div>
         </button>
       )}
+
+      {/* Tarjeta compacta: Plan del mes */}
+      <div
+        className="plan-month-home-card"
+        onClick={onNavigateToPlan}
+        role="button"
+        tabIndex={0}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault()
+            onNavigateToPlan?.()
+          }
+        }}
+        aria-label="Ver plan del mes"
+      >
+        <div className="plan-month-card-header">
+          <span className="plan-month-card-badge">Plan del mes</span>
+          <button
+            type="button"
+            className="plan-month-card-action"
+            onClick={(e) => {
+              e.stopPropagation()
+              onNavigateToPlan?.()
+            }}
+          >
+            Ver plan <AppIcon name="chevron-right" size={14} />
+          </button>
+        </div>
+
+        {finance.totals.monthlyPlanSummary.hasConfiguredPlan ? (
+          <div className="plan-month-card-body">
+            <div className="plan-month-card-metric-row">
+              <span className="plan-month-card-metric-label">Libre para gastar</span>
+              <strong
+                className={`plan-month-card-metric-value ${
+                  finance.totals.monthlyPlanSummary.freeToSpend < 0 ? 'negative' : ''
+                }`}
+              >
+                {money(finance.totals.monthlyPlanSummary.freeToSpend)}
+              </strong>
+            </div>
+            <p className="plan-month-card-subtext">Tras ahorro y gastos comprometidos</p>
+          </div>
+        ) : (
+          <div className="plan-month-card-body incomplete">
+            <p className="plan-month-card-prompt">
+              Configura ingresos y ahorro para calcular tu margen
+            </p>
+          </div>
+        )}
+      </div>
 
       <section className="section">
         <div className="section-title">

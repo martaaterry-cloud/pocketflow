@@ -339,3 +339,70 @@ export function selectAnnualForecast12Months(
 
   return items
 }
+
+export interface MonthlyPlanCardSummary {
+  hasConfiguredPlan: boolean
+  monthlyIncome: number
+  targetSavings: number
+  essentialExpenses: number
+  variableExpenses: number
+  expectedExtraExpenses: number
+  reservesNeeded: number
+  freeToSpend: number
+}
+
+/**
+ * Selector canónico para la tarjeta compacta "Plan del mes" en Inicio.
+ * Invariante: Si no se han configurado ingresos (monthlyIncome <= 0), se marca hasConfiguredPlan = false.
+ * Libre para gastar = ingresos previstos - ahorro objetivo - gastos esenciales - gastos variables - extraordinarios previstos - reservas.
+ */
+export function selectMonthlyPlanCardSummary(
+  settings: FinancialPlanSettings,
+  essentialMonthlyExpenses: number,
+  variableMonthlyExpenses: number,
+  specialPeriods: SpecialPeriod[] = [],
+  reserves: Reserve[] = [],
+  referenceDate: Date = new Date()
+): MonthlyPlanCardSummary {
+  const monthlyIncome = selectMonthlyIncome(settings)
+  const hasConfiguredPlan = monthlyIncome > 0
+
+  if (!hasConfiguredPlan) {
+    return {
+      hasConfiguredPlan: false,
+      monthlyIncome: 0,
+      targetSavings: 0,
+      essentialExpenses: essentialMonthlyExpenses,
+      variableExpenses: variableMonthlyExpenses,
+      expectedExtraExpenses: 0,
+      reservesNeeded: 0,
+      freeToSpend: 0,
+    }
+  }
+
+  const targetSavings = selectTargetMonthlySavings(settings)
+  const expectedExtraExpenses = selectExpectedExtraSpendingForMonth(specialPeriods, referenceDate)
+
+  let reservesNeeded = 0
+  for (const r of reserves) {
+    if (!r.active) continue
+    reservesNeeded += selectMonthlyReserveNeeded(r, referenceDate)
+  }
+  reservesNeeded = Math.round(reservesNeeded * 100) / 100
+
+  const totalCommittedAndPlanned =
+    essentialMonthlyExpenses + variableMonthlyExpenses + targetSavings + expectedExtraExpenses + reservesNeeded
+  const freeToSpend = Math.round((monthlyIncome - totalCommittedAndPlanned) * 100) / 100
+
+  return {
+    hasConfiguredPlan: true,
+    monthlyIncome,
+    targetSavings,
+    essentialExpenses: essentialMonthlyExpenses,
+    variableExpenses: variableMonthlyExpenses,
+    expectedExtraExpenses,
+    reservesNeeded,
+    freeToSpend,
+  }
+}
+

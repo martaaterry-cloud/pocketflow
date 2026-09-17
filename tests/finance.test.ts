@@ -188,6 +188,7 @@ import {
   selectExpectedExtraSpendingForMonth,
   selectFreeSavingsWithReserves,
   selectMonthlyIncome,
+  selectMonthlyPlanCardSummary,
   selectMonthlyReserveNeeded,
   selectTargetMonthlySavings,
   selectTotalAllocatedToGoals,
@@ -6765,11 +6766,11 @@ describe('Fase 18 — Identificación Visual de Versión y Build', () => {
   it('314. Versioning: única fuente de verdad y formato de visualización exacto', () => {
     assert.equal(APP_NAME, 'PocketFlow')
     assert.equal(APP_VERSION, '0.18.0')
-    assert.equal(APP_BUILD, '2026.09.17-12')
+    assert.equal(APP_BUILD, '2026.09.17-13')
 
     assert.equal(getAppVersionString(), 'PocketFlow v0.18.0')
-    assert.equal(getAppBuildString(), 'Build 2026.09.17-12')
-    assert.equal(getAppFullVersionLabel(), 'PocketFlow v0.18.0 · Build 2026.09.17-12')
+    assert.equal(getAppBuildString(), 'Build 2026.09.17-13')
+    assert.equal(getAppFullVersionLabel(), 'PocketFlow v0.18.0 · Build 2026.09.17-13')
   })
 })
 
@@ -7329,6 +7330,157 @@ describe('Fase 21 — Categorías Cotidianas y Soporte Contextual para Regalos',
     const rehydrated = fromDbTransaction(dbRow as Record<string, unknown>)
     assert.equal(rehydrated.categoryId, 'personal_care')
     assert.equal(rehydrated.expenseNature, 'variable')
+  })
+})
+
+describe('Fase 25 — Tarjeta compacta "Plan del mes" en Inicio', () => {
+  const refDate = new Date('2026-09-17T12:00:00Z')
+
+  it('341. Cálculo de Libre para gastar con todos los datos configurados', () => {
+    const settings: FinancialPlanSettings = {
+      monthlyIncome: 2500,
+      targetSavingsType: 'percentage',
+      targetSavingsValue: 20, // 500 €
+      emergencyFundTargetType: 'months',
+      emergencyFundTargetValue: 6,
+      emergencyFundCurrent: 3000,
+      essentialCategoryIds: ['food', 'housing'],
+    }
+
+    const specialPeriods: SpecialPeriod[] = [
+      {
+        id: 'sp1',
+        name: 'Viaje Septiembre',
+        startDate: '2026-09-10',
+        endDate: '2026-09-20',
+        expectedExtraBudget: 200,
+      },
+    ]
+
+    const reserves: Reserve[] = [
+      {
+        id: 'r1',
+        name: 'Seguro Coche',
+        targetAmount: 600,
+        currentAllocated: 300,
+        targetDate: '2026-12-01', // faltan 3 meses -> 100 €/mes
+        active: true,
+      },
+    ]
+
+    // essential: 600 €, variable: 300 €, targetSavings: 500 €, extra: 200 €, reserves: 100 €
+    // total = 1700 € -> libre para gastar = 2500 - 1700 = 800 €
+    const summary = selectMonthlyPlanCardSummary(
+      settings,
+      600,
+      300,
+      specialPeriods,
+      reserves,
+      refDate
+    )
+
+    assert.equal(summary.hasConfiguredPlan, true)
+    assert.equal(summary.monthlyIncome, 2500)
+    assert.equal(summary.targetSavings, 500)
+    assert.equal(summary.essentialExpenses, 600)
+    assert.equal(summary.variableExpenses, 300)
+    assert.equal(summary.expectedExtraExpenses, 200)
+    assert.equal(summary.reservesNeeded, 100)
+    assert.equal(summary.freeToSpend, 800)
+  })
+
+  it('342. Estado incompleto cuando faltan ingresos previstos (monthlyIncome <= 0 o ausente)', () => {
+    const unconfiguredSettings: FinancialPlanSettings = {
+      monthlyIncome: 0,
+      targetSavingsType: 'fixed',
+      targetSavingsValue: 0,
+      emergencyFundTargetType: 'months',
+      emergencyFundTargetValue: 3,
+      emergencyFundCurrent: 0,
+    }
+
+    const summary = selectMonthlyPlanCardSummary(
+      unconfiguredSettings,
+      400,
+      250,
+      [],
+      [],
+      refDate
+    )
+
+    assert.equal(summary.hasConfiguredPlan, false)
+    assert.equal(summary.freeToSpend, 0)
+    assert.equal(summary.monthlyIncome, 0)
+  })
+
+  it('343. Invarianza contable: la tarjeta y el selector no modifican saldos reales, disponible real ni transacciones', () => {
+    const accounts: Account[] = [
+      { id: 'daily', name: 'Cuenta diaria', type: 'spending', initialBalance: 1200 },
+      { id: 'savings', name: 'Ahorro', type: 'savings', initialBalance: 3000 },
+    ]
+    const transactions: Transaction[] = [
+      { id: 't1', type: 'expense', amount: 50, accountId: 'daily', date: '2026-09-05' },
+    ]
+
+    const initialSpendable = calculateAccountBalance(accounts[0], transactions)
+    assert.equal(initialSpendable, 1150)
+
+    const settings: FinancialPlanSettings = {
+      monthlyIncome: 3000,
+      targetSavingsType: 'fixed',
+      targetSavingsValue: 400,
+      emergencyFundTargetType: 'months',
+      emergencyFundTargetValue: 6,
+      emergencyFundCurrent: 3000,
+    }
+
+    const summary = selectMonthlyPlanCardSummary(settings, 500, 300, [], [], refDate)
+    assert.equal(summary.freeToSpend, 1800)
+
+    // Verificar que el saldo y los movimientos siguen inalterados
+    const postSpendable = calculateAccountBalance(accounts[0], transactions)
+    assert.equal(postSpendable, initialSpendable)
+    assert.equal(transactions.length, 1)
+  })
+
+  it('344. Compatibilidad con usuarios sin reservas, sin periodos especiales y con ahorro fijo', () => {
+    const settings: FinancialPlanSettings = {
+      monthlyIncome: 2000,
+      targetSavingsType: 'fixed',
+      targetSavingsValue: 300,
+      emergencyFundTargetType: 'months',
+      emergencyFundTargetValue: 3,
+      emergencyFundCurrent: 1000,
+    }
+
+    const summary = selectMonthlyPlanCardSummary(settings, 700, 400, [], [], refDate)
+
+    assert.equal(summary.hasConfiguredPlan, true)
+    assert.equal(summary.monthlyIncome, 2000)
+    assert.equal(summary.targetSavings, 300)
+    assert.equal(summary.essentialExpenses, 700)
+    assert.equal(summary.variableExpenses, 400)
+    assert.equal(summary.expectedExtraExpenses, 0)
+    assert.equal(summary.reservesNeeded, 0)
+    // 2000 - (700 + 400 + 300) = 600 €
+    assert.equal(summary.freeToSpend, 600)
+  })
+
+  it('345. Margen libre negativo cuando los gastos y compromisos previstos superan los ingresos', () => {
+    const settings: FinancialPlanSettings = {
+      monthlyIncome: 1500,
+      targetSavingsType: 'fixed',
+      targetSavingsValue: 400,
+      emergencyFundTargetType: 'months',
+      emergencyFundTargetValue: 3,
+      emergencyFundCurrent: 500,
+    }
+
+    const summary = selectMonthlyPlanCardSummary(settings, 900, 500, [], [], refDate)
+
+    assert.equal(summary.hasConfiguredPlan, true)
+    // 1500 - (900 + 500 + 400) = -300 €
+    assert.equal(summary.freeToSpend, -300)
   })
 })
 
