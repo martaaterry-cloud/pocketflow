@@ -18,6 +18,7 @@ interface AddTransactionModalProps {
   onClose: () => void
   accounts: Account[]
   categories: Category[]
+  transactions?: Transaction[]
   sharedContacts?: SharedContact[]
   defaultType?: 'expense' | 'income' | 'transfer'
   initialTransaction?: Transaction | null
@@ -42,6 +43,7 @@ export function AddTransactionModal({
   onClose,
   accounts,
   categories,
+  transactions = [],
   sharedContacts = [],
   defaultType = 'expense',
   initialTransaction,
@@ -67,6 +69,25 @@ export function AddTransactionModal({
   const [isCashWithdrawal, setIsCashWithdrawal] = useState(false)
   const [expenseNature, setExpenseNature] = useState<ExpenseNature>('variable')
   const [giftRecipient, setGiftRecipient] = useState('')
+
+  // Destinatarios usados previamente en transacciones de regalos
+  const previousRecipients = useMemo(() => {
+    if (!transactions || transactions.length === 0) return []
+    const seen = new Set<string>()
+    const result: string[] = []
+    const sorted = [...transactions]
+      .filter((t) => t.type === 'expense' && t.giftRecipient && t.giftRecipient.trim().length > 0)
+      .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+
+    for (const t of sorted) {
+      const recipient = t.giftRecipient?.trim()
+      if (recipient && !seen.has(recipient.toLowerCase())) {
+        seen.add(recipient.toLowerCase())
+        result.push(recipient)
+      }
+    }
+    return result
+  }, [transactions])
 
   // Estados para Gasto Compartido
   const [isShared, setIsShared] = useState(false)
@@ -354,42 +375,44 @@ export function AddTransactionModal({
                 <input
                   type="text"
                   list="gift-recipients-list"
-                  placeholder="Sergi, Madre, Marta, Amigo/a..."
+                  placeholder="Ej. Sergi, Mamá, Papá..."
                   value={giftRecipient}
                   onChange={(e) => setGiftRecipient(e.target.value)}
                 />
-                <datalist id="gift-recipients-list">
-                  <option value="Sergi" />
-                  <option value="Madre" />
-                  <option value="Padre" />
-                  <option value="Familia" />
-                  <option value="Amigo/a" />
-                </datalist>
+                {previousRecipients.length > 0 && (
+                  <datalist id="gift-recipients-list">
+                    {previousRecipients.map((r) => (
+                      <option key={r} value={r} />
+                    ))}
+                  </datalist>
+                )}
               </label>
-              <div
-                className="gift-suggestion-pills"
-                style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 6 }}
-              >
-                {['Sergi', 'Madre', 'Padre', 'Familia', 'Amigo/a'].map((sug) => (
-                  <button
-                    key={sug}
-                    type="button"
-                    className={`chip-button mini ${giftRecipient === sug ? 'active' : ''}`}
-                    style={{
-                      fontSize: 12,
-                      padding: '3px 10px',
-                      borderRadius: 14,
-                      border: '1px solid var(--border, #e2e8f0)',
-                      background: giftRecipient === sug ? 'var(--primary, #1e293b)' : 'var(--card-bg, #fff)',
-                      color: giftRecipient === sug ? '#fff' : 'inherit',
-                      cursor: 'pointer',
-                    }}
-                    onClick={() => setGiftRecipient(giftRecipient === sug ? '' : sug)}
-                  >
-                    {sug}
-                  </button>
-                ))}
-              </div>
+              {previousRecipients.length > 0 && (
+                <div
+                  className="gift-suggestion-pills"
+                  style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 6 }}
+                >
+                  {previousRecipients.slice(0, 8).map((sug) => (
+                    <button
+                      key={sug}
+                      type="button"
+                      className={`chip-button mini ${giftRecipient === sug ? 'active' : ''}`}
+                      style={{
+                        fontSize: 12,
+                        padding: '3px 10px',
+                        borderRadius: 14,
+                        border: '1px solid var(--border, #e2e8f0)',
+                        background: giftRecipient === sug ? 'var(--primary, #1e293b)' : 'var(--card-bg, #fff)',
+                        color: giftRecipient === sug ? '#fff' : 'inherit',
+                        cursor: 'pointer',
+                      }}
+                      onClick={() => setGiftRecipient(giftRecipient === sug ? '' : sug)}
+                    >
+                      {sug}
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
           )}
 

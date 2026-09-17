@@ -624,6 +624,7 @@ export default function App() {
         onClose={handleCloseModal}
         accounts={finance.accounts}
         categories={finance.categories}
+        transactions={finance.transactions}
         sharedContacts={finance.sharedContacts}
         defaultType={modalDefaultType}
         initialTransaction={selectedTx}

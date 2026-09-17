@@ -6764,11 +6764,11 @@ describe('Fase 18 — Identificación Visual de Versión y Build', () => {
   it('314. Versioning: única fuente de verdad y formato de visualización exacto', () => {
     assert.equal(APP_NAME, 'PocketFlow')
     assert.equal(APP_VERSION, '0.18.0')
-    assert.equal(APP_BUILD, '2026.09.17-8')
+    assert.equal(APP_BUILD, '2026.09.17-9')
 
     assert.equal(getAppVersionString(), 'PocketFlow v0.18.0')
-    assert.equal(getAppBuildString(), 'Build 2026.09.17-8')
-    assert.equal(getAppFullVersionLabel(), 'PocketFlow v0.18.0 · Build 2026.09.17-8')
+    assert.equal(getAppBuildString(), 'Build 2026.09.17-9')
+    assert.equal(getAppFullVersionLabel(), 'PocketFlow v0.18.0 · Build 2026.09.17-9')
   })
 })
 
@@ -7258,6 +7258,32 @@ describe('Fase 21 — Categorías Cotidianas y Soporte Contextual para Regalos',
     assert.equal(recipientMap.get('Madre'), 30.0)   // 30
     assert.equal(recipientMap.get('Familia'), 15.0) // 15
     assert.equal(recipientMap.get('Amigo/a'), undefined)
+  })
+
+  it('338. Destinatarios previos dinámicos: extrae nombres únicos ordenados por uso reciente sin valores fijos forzados', () => {
+    const txs: Transaction[] = [
+      { id: 't1', type: 'expense', amount: 20, categoryId: 'gifts', description: 'Libro', giftRecipient: 'Sergi', date: '2026-09-01T10:00:00Z' },
+      { id: 't2', type: 'expense', amount: 40, categoryId: 'gifts', description: 'Perfume', giftRecipient: 'Mamá', date: '2026-09-10T10:00:00Z' },
+      { id: 't3', type: 'expense', amount: 15, categoryId: 'gifts', description: 'Camiseta', giftRecipient: 'Sergi', date: '2026-09-12T10:00:00Z' },
+      { id: 't4', type: 'expense', amount: 30, categoryId: 'gifts', description: 'Taza', giftRecipient: 'Papá', date: '2026-09-05T10:00:00Z' },
+      { id: 't5', type: 'expense', amount: 50, categoryId: 'food', description: 'Super', date: '2026-09-15T10:00:00Z' },
+    ]
+
+    const seen = new Set<string>()
+    const result: string[] = []
+    const sorted = [...txs]
+      .filter((t) => t.type === 'expense' && t.giftRecipient && t.giftRecipient.trim().length > 0)
+      .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+
+    for (const t of sorted) {
+      const rec = t.giftRecipient?.trim()
+      if (rec && !seen.has(rec.toLowerCase())) {
+        seen.add(rec.toLowerCase())
+        result.push(rec)
+      }
+    }
+
+    assert.deepEqual(result, ['Sergi', 'Mamá', 'Papá'])
   })
 })
 
