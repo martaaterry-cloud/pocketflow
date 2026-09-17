@@ -98,6 +98,16 @@ export type CreateSavingsGoalInput = Omit<SavingsGoal, 'id' | 'current'> & {
 }
 export type UpdateSavingsGoalInput = Partial<Omit<SavingsGoal, 'id'>>
 
+export type RecurringIncomeSourceType = 'salary' | 'pension' | 'rental' | 'benefit' | 'other'
+
+export const RECURRING_INCOME_SOURCE_LABELS: Record<RecurringIncomeSourceType, string> = {
+  salary: 'Nómina',
+  pension: 'Pensión',
+  rental: 'Alquiler',
+  benefit: 'Prestación / ayuda',
+  other: 'Otros ingresos',
+}
+
 export interface RecurringPayment {
   id: string
   name: string
@@ -110,6 +120,7 @@ export interface RecurringPayment {
   isShared?: boolean
   sharingTemplate?: RecurringSharingTemplate
   type?: 'expense' | 'income'
+  incomeSourceType?: RecurringIncomeSourceType | string
   installmentsCount?: number
 }
 

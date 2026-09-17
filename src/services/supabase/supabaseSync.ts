@@ -229,6 +229,7 @@ export function toDbRecurring(r: RecurringPayment, userId: string) {
     is_shared: Boolean(r.isShared),
     sharing_template: r.sharingTemplate || null,
     type: r.type || 'expense',
+    income_source_type: r.incomeSourceType || null,
     installments_count: r.installmentsCount || null,
   }
 }
@@ -246,6 +247,7 @@ export function fromDbRecurring(row: Record<string, unknown>): RecurringPayment 
     isShared: Boolean(row.is_shared),
     sharingTemplate: (row.sharing_template as RecurringSharingTemplate) || undefined,
     type: (row.type as 'expense' | 'income') || 'expense',
+    incomeSourceType: row.income_source_type ? String(row.income_source_type) : undefined,
     installmentsCount: row.installments_count ? Number(row.installments_count) : undefined,
   }
 }

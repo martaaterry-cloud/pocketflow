@@ -1,6 +1,7 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import type { Account, Budget, Category, FinancialPlanSettings, RecurringPayment, Reserve, SavingsGoal, SpecialPeriod, Transaction, UserProfile, VariableExpenseEstimate, SharedContact, ExpenseShare, SpecialMovementType, ExpenseNature } from '../src/models/finance'
+import type { Account, Budget, Category, FinancialPlanSettings, RecurringIncomeSourceType, RecurringPayment, Reserve, SavingsGoal, SpecialPeriod, Transaction, UserProfile, VariableExpenseEstimate, SharedContact, ExpenseShare, SpecialMovementType, ExpenseNature } from '../src/models/finance'
+import { RECURRING_INCOME_SOURCE_LABELS } from '../src/models/finance'
 import { calculateAccountBalance, reconcileAccounts } from '../src/utils/balance'
 import { money } from '../src/utils/money'
 import type { PersistedState, StorageAdapter } from '../src/services/storage/storageAdapter'
@@ -6759,11 +6760,11 @@ describe('Fase 18 — Identificación Visual de Versión y Build', () => {
   it('314. Versioning: única fuente de verdad y formato de visualización exacto', () => {
     assert.equal(APP_NAME, 'PocketFlow')
     assert.equal(APP_VERSION, '0.18.0')
-    assert.equal(APP_BUILD, '2026.09.17-5')
+    assert.equal(APP_BUILD, '2026.09.17-6')
 
     assert.equal(getAppVersionString(), 'PocketFlow v0.18.0')
-    assert.equal(getAppBuildString(), 'Build 2026.09.17-5')
-    assert.equal(getAppFullVersionLabel(), 'PocketFlow v0.18.0 · Build 2026.09.17-5')
+    assert.equal(getAppBuildString(), 'Build 2026.09.17-6')
+    assert.equal(getAppFullVersionLabel(), 'PocketFlow v0.18.0 · Build 2026.09.17-6')
   })
 })
 
@@ -6885,6 +6886,7 @@ describe('Fase 20 — Ingresos Recurrentes como Previsión y Compatibilidad Tota
       name: 'Nómina SYTE Automation',
       amount: 2100.0,
       categoryId: 'income_salary',
+      incomeSourceType: 'salary',
       accountId: 'daily',
       frequency: 'monthly',
       nextDate: '2026-09-30',
@@ -6892,6 +6894,7 @@ describe('Fase 20 — Ingresos Recurrentes como Previsión y Compatibilidad Tota
     }
 
     assert.equal(recurringIncome.type, 'income')
+    assert.equal(recurringIncome.incomeSourceType, 'salary')
     assert.equal(recurringIncome.name, 'Nómina SYTE Automation')
     assert.equal(recurringIncome.amount, 2100.0)
     assert.equal(recurringIncome.frequency, 'monthly')
@@ -6915,6 +6918,7 @@ describe('Fase 20 — Ingresos Recurrentes como Previsión y Compatibilidad Tota
       {
         id: 'rec_salary',
         type: 'income',
+        incomeSourceType: 'salary',
         name: 'Nómina SYTE Automation',
         amount: 2100.0,
         categoryId: 'income_salary',
@@ -6945,6 +6949,7 @@ describe('Fase 20 — Ingresos Recurrentes como Previsión y Compatibilidad Tota
       {
         id: 'rec_salary',
         type: 'income',
+        incomeSourceType: 'salary',
         name: 'Nómina SYTE Automation',
         amount: 2100.0,
         categoryId: 'income_salary',
@@ -6969,7 +6974,7 @@ describe('Fase 20 — Ingresos Recurrentes como Previsión y Compatibilidad Tota
   it('324. Filtros de lista de recurrentes: clasifica correctamente Todos / Gastos / Ingresos', () => {
     const recurringList: RecurringPayment[] = [
       { id: 'r1', type: 'expense', name: 'Spotify', amount: 10.99, categoryId: 'leisure', accountId: 'daily', frequency: 'monthly', nextDate: '2026-09-10', active: true },
-      { id: 'r2', type: 'income', name: 'Nómina', amount: 2000.0, categoryId: 'salary', accountId: 'daily', frequency: 'monthly', nextDate: '2026-09-30', active: true },
+      { id: 'r2', type: 'income', incomeSourceType: 'salary', name: 'Nómina', amount: 2000.0, categoryId: 'salary', accountId: 'daily', frequency: 'monthly', nextDate: '2026-09-30', active: true },
       { id: 'r3', name: 'Gimnasio', amount: 35.0, categoryId: 'sport', accountId: 'daily', frequency: 'monthly', nextDate: '2026-09-15', active: true }, // sin type (legado)
     ]
 
@@ -7008,7 +7013,8 @@ describe('Fase 20 — Ingresos Recurrentes como Previsión y Compatibilidad Tota
     const recurringIncome: RecurringPayment = {
       id: 'rec_inc',
       type: 'income',
-      name: 'Pensión / Nómina',
+      incomeSourceType: 'pension',
+      name: 'Pensión',
       amount: 1500.0,
       categoryId: 'salary',
       accountId: 'daily',
@@ -7021,7 +7027,99 @@ describe('Fase 20 — Ingresos Recurrentes como Previsión y Compatibilidad Tota
     const pending = selectPendingRecurringPayments([recurringIncome], [], new Date(2026, 8, 10))
     assert.equal(pending.length, 0)
   })
+
+  it('327. Catálogo de tipos de ingreso: mapea fielmente las etiquetas amigables de previsión', () => {
+    assert.equal(RECURRING_INCOME_SOURCE_LABELS.salary, 'Nómina')
+    assert.equal(RECURRING_INCOME_SOURCE_LABELS.pension, 'Pensión')
+    assert.equal(RECURRING_INCOME_SOURCE_LABELS.rental, 'Alquiler')
+    assert.equal(RECURRING_INCOME_SOURCE_LABELS.benefit, 'Prestación / ayuda')
+    assert.equal(RECURRING_INCOME_SOURCE_LABELS.other, 'Otros ingresos')
+  })
+
+  it('328. Formulario de ingreso recurrente: permite seleccionar Nómina u otros tipos sin categorías de gasto', () => {
+    const recurringIncome: RecurringPayment = {
+      id: 'rec_syte_1',
+      type: 'income',
+      incomeSourceType: 'salary',
+      name: 'Nómina SYTE Automation',
+      amount: 2250.0,
+      categoryId: 'income',
+      accountId: 'daily',
+      frequency: 'monthly',
+      nextDate: '2026-09-30',
+      active: true,
+    }
+
+    assert.equal(recurringIncome.incomeSourceType, 'salary')
+    assert.equal(RECURRING_INCOME_SOURCE_LABELS[recurringIncome.incomeSourceType as RecurringIncomeSourceType], 'Nómina')
+  })
+
+  it('329. Gasto recurrente: conserva su categoría normal de gasto y no tiene incomeSourceType', () => {
+    const recurringExpense: RecurringPayment = {
+      id: 'rec_netflix',
+      type: 'expense',
+      name: 'Netflix',
+      amount: 17.99,
+      categoryId: 'subscriptions',
+      accountId: 'daily',
+      frequency: 'monthly',
+      nextDate: '2026-09-22',
+      active: true,
+    }
+
+    assert.equal(recurringExpense.type, 'expense')
+    assert.equal(recurringExpense.categoryId, 'subscriptions')
+    assert.equal(recurringExpense.incomeSourceType, undefined)
+  })
+
+  it('330. Datos antiguos sin incomeSourceType: se leen con fallback seguro sin errores', () => {
+    const legacyIncome: RecurringPayment = {
+      id: 'rec_legacy_inc',
+      type: 'income',
+      name: 'Ingreso antiguo sin tipo específico',
+      amount: 800.0,
+      categoryId: 'income',
+      accountId: 'daily',
+      frequency: 'monthly',
+      nextDate: '2026-09-28',
+      active: true,
+    }
+
+    assert.equal(legacyIncome.incomeSourceType, undefined)
+    const label = legacyIncome.incomeSourceType && RECURRING_INCOME_SOURCE_LABELS[legacyIncome.incomeSourceType as RecurringIncomeSourceType]
+      ? RECURRING_INCOME_SOURCE_LABELS[legacyIncome.incomeSourceType as RecurringIncomeSourceType]
+      : 'Ingreso programado'
+    assert.equal(label, 'Ingreso programado')
+  })
+
+  it('331. incomeSourceType descriptivo no altera saldo ni comprometido', () => {
+    const accounts: Account[] = [
+      { id: 'daily', name: 'Cuenta diaria', type: 'spending', initialBalance: 1200.0 },
+    ]
+    const recurringIncome: RecurringPayment = {
+      id: 'rec_pension',
+      type: 'income',
+      incomeSourceType: 'pension',
+      name: 'Pensión Jubilación',
+      amount: 1400.0,
+      categoryId: 'income',
+      accountId: 'daily',
+      frequency: 'monthly',
+      nextDate: '2026-09-25',
+      active: true,
+    }
+
+    const reconciled = reconcileAccounts(accounts, [])
+    assert.equal(reconciled[0].balance, 1200.0)
+
+    const committed = selectCommittedAmount([recurringIncome], [], new Date(2026, 8, 1))
+    assert.equal(committed, 0.0)
+
+    const available = selectRealAvailable(reconciled[0].balance!, committed)
+    assert.equal(available, 1200.0)
+  })
 })
+
 
 
 

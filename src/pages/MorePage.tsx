@@ -250,9 +250,9 @@ export function MorePage({
             <AppIcon name="refresh-cw" size={18} />
           </span>
           <div>
-            <strong>Gastos recurrentes</strong>
+            <strong>Recurrentes</strong>
             <small>
-              {finance.recurring.length} suscripciones y pagos programados
+              Pagos e ingresos programados
             </small>
           </div>
           <b className="chevron">

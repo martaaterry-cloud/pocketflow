@@ -2,9 +2,11 @@ import { useState } from 'react'
 import { RecurringPaymentModal } from '../components/RecurringPaymentModal'
 import type {
   CreateRecurringPaymentInput,
+  RecurringIncomeSourceType,
   RecurringPayment,
   UpdateRecurringPaymentInput,
 } from '../models/finance'
+import { RECURRING_INCOME_SOURCE_LABELS } from '../models/finance'
 import type { ReturnTypeFinance } from '../types'
 import { money } from '../utils/money'
 import { selectRecurringPaymentCycleStatus } from '../utils/financeSelectors'
@@ -192,7 +194,11 @@ export function RecurringPaymentsPage({
                       <div className="recurring-names">
                         <strong className="recurring-name-text">{r.name}</strong>
                         <span className="recurring-sub-text">
-                          {isIncome ? 'Ingreso programado' : (category?.name ?? 'Suscripción')} · {frequencyLabel[r.frequency] ?? 'Mensual'}
+                          {isIncome
+                            ? (r.incomeSourceType && RECURRING_INCOME_SOURCE_LABELS[r.incomeSourceType as RecurringIncomeSourceType]
+                                ? RECURRING_INCOME_SOURCE_LABELS[r.incomeSourceType as RecurringIncomeSourceType]
+                                : 'Ingreso programado')
+                            : (category?.name ?? 'Suscripción')} · {frequencyLabel[r.frequency] ?? 'Mensual'}
                         </span>
                       </div>
                     </div>

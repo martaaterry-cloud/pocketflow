@@ -4,6 +4,7 @@ import type {
   Category,
   CreateRecurringPaymentInput,
   RecurringFrequency,
+  RecurringIncomeSourceType,
   RecurringPayment,
   SharedContact,
   UpdateRecurringPaymentInput,
@@ -43,6 +44,7 @@ export function RecurringPaymentModal({
   const [name, setName] = useState('')
   const [amount, setAmount] = useState('')
   const [categoryId, setCategoryId] = useState('')
+  const [incomeSourceType, setIncomeSourceType] = useState<RecurringIncomeSourceType>('salary')
   const [accountId, setAccountId] = useState('')
   const [frequency, setFrequency] = useState<RecurringFrequency>('monthly')
   const [nextDate, setNextDate] = useState(() => new Date().toISOString().slice(0, 10))
@@ -64,6 +66,7 @@ export function RecurringPaymentModal({
       setName(payment.name)
       setAmount(String(payment.amount).replace('.', ','))
       setCategoryId(payment.categoryId)
+      setIncomeSourceType((payment.incomeSourceType as RecurringIncomeSourceType) || 'salary')
       setAccountId(payment.accountId)
       setFrequency(payment.frequency)
       setNextDate(payment.nextDate)
@@ -85,6 +88,7 @@ export function RecurringPaymentModal({
       setName('')
       setAmount('')
       setCategoryId(categories[0]?.id ?? '')
+      setIncomeSourceType('salary')
       setAccountId(accounts.find((a) => a.type === 'spending')?.id ?? accounts[0]?.id ?? '')
       setFrequency('monthly')
       setNextDate(new Date().toISOString().slice(0, 10))
@@ -181,7 +185,8 @@ export function RecurringPaymentModal({
       type,
       name: name.trim(),
       amount: numericAmount,
-      categoryId,
+      categoryId: type === 'income' ? (categories.find((c) => c.id === 'income')?.id || 'income') : categoryId,
+      incomeSourceType: type === 'income' ? incomeSourceType : undefined,
       accountId,
       frequency,
       nextDate,
@@ -312,18 +317,37 @@ export function RecurringPaymentModal({
             </label>
           </div>
 
-          <div className="form-group">
-            <label>
-              Categoría
-              <select value={categoryId} onChange={(e) => setCategoryId(e.target.value)}>
-                {categories.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.name}
-                  </option>
-                ))}
-              </select>
-            </label>
-          </div>
+          {/* Selector condicional: Categoría para gastos, Tipo de ingreso para ingresos */}
+          {type === 'expense' ? (
+            <div className="form-group">
+              <label>
+                Categoría
+                <select value={categoryId} onChange={(e) => setCategoryId(e.target.value)}>
+                  {categories.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
+          ) : (
+            <div className="form-group">
+              <label>
+                Tipo de ingreso
+                <select
+                  value={incomeSourceType}
+                  onChange={(e) => setIncomeSourceType(e.target.value as RecurringIncomeSourceType)}
+                >
+                  <option value="salary">Nómina</option>
+                  <option value="pension">Pensión</option>
+                  <option value="rental">Alquiler</option>
+                  <option value="benefit">Prestación / ayuda</option>
+                  <option value="other">Otros ingresos</option>
+                </select>
+              </label>
+            </div>
+          )}
 
           <div className="form-group">
             <label>
