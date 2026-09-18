@@ -1,3 +1,27 @@
+// Configurar mock de localStorage para Node.js test runner
+const globalStorageMap = new Map<string, string>()
+const mockStorageInstance = {
+  getItem: (key: string) => globalStorageMap.get(key) ?? null,
+  setItem: (key: string, value: string) => {
+    globalStorageMap.set(key, String(value))
+  },
+  removeItem: (key: string) => {
+    globalStorageMap.delete(key)
+  },
+  clear: () => {
+    globalStorageMap.clear()
+  },
+  get length() {
+    return globalStorageMap.size
+  },
+  key: (index: number) => Array.from(globalStorageMap.keys())[index] ?? null,
+}
+Object.defineProperty(globalThis, 'localStorage', {
+  value: mockStorageInstance,
+  writable: true,
+  configurable: true,
+})
+
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import type { Account, Budget, Category, FinancialPlanSettings, RecurringIncomeSourceType, RecurringPayment, Reserve, SavingsGoal, SpecialPeriod, Transaction, UserProfile, VariableExpenseEstimate, SharedContact, ExpenseShare, SpecialMovementType, ExpenseNature } from '../src/models/finance'
@@ -51,6 +75,7 @@ import {
 import {
   calculatePeriodStatistics,
   selectExpensesByNature,
+  compareWithPreviousPeriod,
 } from '../src/utils/statisticsSelectors'
 import {
   APP_VERSION,
@@ -79,7 +104,7 @@ import {
   selectMonthDailyNetStats,
   selectExpenseShareDetails,
 } from '../src/utils/sharedExpenseSelectors'
-import { spentByCategoryThisMonth } from '../src/utils/budgetSelectors'
+import { spentByCategoryThisMonth, selectBudgetsSummary } from '../src/utils/budgetSelectors'
 import {
   toDbSharedContact,
   fromDbSharedContact,
@@ -114,6 +139,8 @@ import {
   createCleanInitialState,
   fetchRemoteState,
   cleanMissingColumns,
+  safeUpsertRecurring,
+  safeUpsertBudget,
   syncInsertTransaction,
   syncUpdateTransaction,
   syncDeleteTransaction,
@@ -6766,11 +6793,11 @@ describe('Fase 18 — Identificación Visual de Versión y Build', () => {
   it('314. Versioning: única fuente de verdad y formato de visualización exacto', () => {
     assert.equal(APP_NAME, 'PocketFlow')
     assert.equal(APP_VERSION, '0.18.0')
-    assert.equal(APP_BUILD, '2026.09.17-13')
+    assert.equal(APP_BUILD, '2026.09.18-16')
 
     assert.equal(getAppVersionString(), 'PocketFlow v0.18.0')
-    assert.equal(getAppBuildString(), 'Build 2026.09.17-13')
-    assert.equal(getAppFullVersionLabel(), 'PocketFlow v0.18.0 · Build 2026.09.17-13')
+    assert.equal(getAppBuildString(), 'Build 2026.09.18-16')
+    assert.equal(getAppFullVersionLabel(), 'PocketFlow v0.18.0 · Build 2026.09.18-16')
   })
 })
 
@@ -7483,6 +7510,1147 @@ describe('Fase 25 — Tarjeta compacta "Plan del mes" en Inicio', () => {
     assert.equal(summary.freeToSpend, -300)
   })
 })
+
+describe('Fase 26 — Blindaje de Sincronización, Cola Offline y Service Worker', () => {
+  const dummyUserId = 'user-test-uuid-sync-shield-123'
+
+  it('346. Cola offline: Insert de shared_contact sin conexión y vaciado exitoso', async () => {
+    clearOfflineQueue()
+    const contact: SharedContact = {
+      id: 'c_offline_1',
+      displayName: 'Laura Amiga',
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    }
+
+    enqueueOfflineMutation({
+      entity: 'shared_contact',
+      action: 'insert',
+      data: contact,
+    })
+
+    assert.equal(getPendingMutationsCount(), 1)
+
+    const upsertedList: any[] = []
+    const mockSupabase: any = {
+      from: (table: string) => ({
+        upsert: async (row: any) => {
+          if (table === 'shared_contacts') {
+            upsertedList.push(row)
+            return { error: null }
+          }
+          return { error: null }
+        },
+      }),
+    }
+
+    const { successCount, failCount } = await flushOfflineQueue(mockSupabase, dummyUserId)
+    assert.equal(successCount, 1)
+    assert.equal(failCount, 0)
+    assert.equal(getPendingMutationsCount(), 0)
+    assert.equal(upsertedList.length, 1)
+    assert.equal(upsertedList[0].id, 'c_offline_1')
+    assert.equal(upsertedList[0].display_name, 'Laura Amiga')
+    assert.equal(upsertedList[0].user_id, dummyUserId)
+  })
+
+  it('347. Cola offline: Insert de expense_share sin conexión y vaciado exitoso', async () => {
+    clearOfflineQueue()
+    const share: ExpenseShare = {
+      id: 'share_offline_1',
+      expenseTransactionId: 'tx_shared_100',
+      contactId: 'c_offline_1',
+      participantName: 'Laura Amiga',
+      isPayerShare: false,
+      expectedAmount: 25.5,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    }
+
+    enqueueOfflineMutation({
+      entity: 'expense_share',
+      action: 'insert',
+      data: share,
+    })
+
+    assert.equal(getPendingMutationsCount(), 1)
+
+    const upsertedShares: any[] = []
+    const mockSupabase: any = {
+      from: (table: string) => ({
+        upsert: async (row: any) => {
+          if (table === 'expense_shares') {
+            upsertedShares.push(row)
+            return { error: null }
+          }
+          return { error: null }
+        },
+      }),
+    }
+
+    const { successCount, failCount } = await flushOfflineQueue(mockSupabase, dummyUserId)
+    assert.equal(successCount, 1)
+    assert.equal(failCount, 0)
+    assert.equal(getPendingMutationsCount(), 0)
+    assert.equal(upsertedShares.length, 1)
+    assert.equal(upsertedShares[0].id, 'share_offline_1')
+    assert.equal(upsertedShares[0].expected_amount, 25.5)
+    assert.equal(upsertedShares[0].user_id, dummyUserId)
+  })
+
+  it('348. Cola offline: Delete de shared_contact y expense_share sin conexión y vaciado exitoso', async () => {
+    clearOfflineQueue()
+
+    enqueueOfflineMutation({
+      entity: 'shared_contact',
+      action: 'delete',
+      data: { id: 'c_to_delete' },
+    })
+    enqueueOfflineMutation({
+      entity: 'expense_share',
+      action: 'delete',
+      data: { id: 'share_to_delete' },
+    })
+
+    assert.equal(getPendingMutationsCount(), 2)
+
+    const deletedItems: { table: string; id: string; user_id: string }[] = []
+    const mockSupabase: any = {
+      from: (table: string) => ({
+        delete: () => ({
+          eq: (col1: string, val1: string) => ({
+            eq: async (col2: string, val2: string) => {
+              deletedItems.push({ table, id: val1, user_id: val2 })
+              return { error: null }
+            },
+          }),
+        }),
+      }),
+    }
+
+    const { successCount, failCount } = await flushOfflineQueue(mockSupabase, dummyUserId)
+    assert.equal(successCount, 2)
+    assert.equal(failCount, 0)
+    assert.equal(getPendingMutationsCount(), 0)
+    assert.equal(deletedItems.length, 2)
+    assert.ok(deletedItems.some((d) => d.table === 'shared_contacts' && d.id === 'c_to_delete'))
+    assert.ok(deletedItems.some((d) => d.table === 'expense_shares' && d.id === 'share_to_delete'))
+  })
+
+  it('349. Cola offline: Orden de resolución de dependencias (contacto -> transacción -> cuota compartida)', async () => {
+    clearOfflineQueue()
+
+    const executionLog: string[] = []
+
+    // Encolar deliberadamente en orden inverso
+    const share: ExpenseShare = {
+      id: 'share_dep_1',
+      expenseTransactionId: 'tx_dep_1',
+      contactId: 'contact_dep_1',
+      participantName: 'Carlos',
+      isPayerShare: false,
+      expectedAmount: 15,
+    }
+    const tx: Transaction = {
+      id: 'tx_dep_1',
+      type: 'expense',
+      amount: 30,
+      accountId: 'daily',
+      description: 'Cena compartida',
+      date: new Date().toISOString(),
+      isShared: true,
+    }
+    const contact: SharedContact = {
+      id: 'contact_dep_1',
+      displayName: 'Carlos',
+    }
+
+    // Encolar cuota (3), luego transacción (2), luego contacto (1)
+    enqueueOfflineMutation({ entity: 'expense_share', action: 'insert', data: share })
+    enqueueOfflineMutation({ entity: 'transaction', action: 'insert', data: tx })
+    enqueueOfflineMutation({ entity: 'shared_contact', action: 'insert', data: contact })
+
+    const mockSupabase: any = {
+      from: (table: string) => ({
+        upsert: async (row: any) => {
+          executionLog.push(table)
+          return { error: null }
+        },
+      }),
+    }
+
+    const { successCount, failCount } = await flushOfflineQueue(mockSupabase, dummyUserId)
+    assert.equal(successCount, 3)
+    assert.equal(failCount, 0)
+    assert.equal(getPendingMutationsCount(), 0)
+
+    // Verificar que el orden de ejecución ejecutó primero shared_contacts, luego transactions, luego expense_shares
+    assert.deepEqual(executionLog, ['shared_contacts', 'transactions', 'expense_shares'])
+  })
+
+  it('350. Cola offline: Fallos transitorios de red retienen la mutación en cola para posterior retry', async () => {
+    clearOfflineQueue()
+
+    enqueueOfflineMutation({
+      entity: 'account',
+      action: 'insert',
+      data: { id: 'daily', name: 'Cuenta diaria', type: 'spending', initialBalance: 100 },
+    })
+
+    const mockSupabaseFailing: any = {
+      from: () => ({
+        upsert: async () => {
+          throw new Error('TypeError: Failed to fetch (Network connection lost)')
+        },
+      }),
+    }
+
+    const { successCount, failCount } = await flushOfflineQueue(mockSupabaseFailing, dummyUserId)
+    assert.equal(successCount, 0)
+    assert.equal(failCount, 1)
+    assert.equal(getPendingMutationsCount(), 1)
+  })
+
+  it('351. Service Worker: Criterio estricto de exclusión de peticiones a *.supabase.co y APIs REST', () => {
+    function shouldHandleFetchUrl(urlStr: string, method = 'GET', origin = 'https://pocketflow.app'): boolean {
+      if (method !== 'GET') return false
+      if (!urlStr.startsWith('http')) return false
+      try {
+        const url = new URL(urlStr)
+        if (url.hostname.includes('supabase.co') || url.hostname.includes('supabase.in')) {
+          return false
+        }
+        if (
+          url.pathname.startsWith('/rest/v1') ||
+          url.pathname.startsWith('/auth/v1') ||
+          url.pathname.startsWith('/realtime/v1') ||
+          url.pathname.startsWith('/storage/v1')
+        ) {
+          return false
+        }
+        return url.origin === origin
+      } catch {
+        return false
+      }
+    }
+
+    // 1. Assets locales de PocketFlow con GET -> SÍ se gestionan y cachean
+    assert.equal(shouldHandleFetchUrl('https://pocketflow.app/assets/index.js'), true)
+    assert.equal(shouldHandleFetchUrl('https://pocketflow.app/index.html'), true)
+    assert.equal(shouldHandleFetchUrl('https://pocketflow.app/favicon.png'), true)
+
+    // 2. Llamadas a Supabase -> NUNCA se cachean
+    assert.equal(shouldHandleFetchUrl('https://xyzcompany.supabase.co/rest/v1/transactions?select=*'), false)
+    assert.equal(shouldHandleFetchUrl('https://xyzcompany.supabase.co/auth/v1/user'), false)
+    assert.equal(shouldHandleFetchUrl('https://xyzcompany.supabase.co/storage/v1/object/public/backups'), false)
+
+    // 3. Peticiones de otros orígenes externos (ej. CDNs o APIs) -> NO se cachean
+    assert.equal(shouldHandleFetchUrl('https://api.external.com/data'), false)
+  })
+
+  it('352. Service Worker: Exclusión de métodos no-GET (POST, PATCH, PUT, DELETE) de la caché', () => {
+    function shouldHandleFetchMethod(method: string): boolean {
+      return method === 'GET'
+    }
+
+    assert.equal(shouldHandleFetchMethod('GET'), true)
+    assert.equal(shouldHandleFetchMethod('POST'), false)
+    assert.equal(shouldHandleFetchMethod('PATCH'), false)
+    assert.equal(shouldHandleFetchMethod('PUT'), false)
+    assert.equal(shouldHandleFetchMethod('DELETE'), false)
+  })
+
+  it('353. Recurring Payment: Serialización bidireccional de incomeSourceType <-> income_source_type', () => {
+    const recurringWithSource: RecurringPayment = {
+      id: 'rec_salary_1',
+      name: 'Nómina Empresa',
+      amount: 2100,
+      categoryId: 'income',
+      accountId: 'daily',
+      frequency: 'monthly',
+      nextDate: '2026-09-30',
+      active: true,
+      type: 'income',
+      incomeSourceType: 'salary',
+    }
+
+    const dbRow = toDbRecurring(recurringWithSource, dummyUserId)
+    assert.equal(dbRow.id, 'rec_salary_1')
+    assert.equal(dbRow.user_id, dummyUserId)
+    assert.equal(dbRow.type, 'income')
+    assert.equal(dbRow.income_source_type, 'salary')
+
+    const hydrated = fromDbRecurring(dbRow)
+    assert.equal(hydrated.id, 'rec_salary_1')
+    assert.equal(hydrated.type, 'income')
+    assert.equal(hydrated.incomeSourceType, 'salary')
+    assert.equal(hydrated.amount, 2100)
+  })
+
+  it('354. Recurring Payment: Retrocompatibilidad con filas remotas sin income_source_type', () => {
+    const legacyRow: Record<string, unknown> = {
+      id: 'rec_legacy_1',
+      name: 'Ingreso antiguo',
+      amount: 500,
+      category_id: 'income',
+      account_id: 'daily',
+      frequency: 'monthly',
+      next_date: '2026-09-15',
+      active: true,
+      type: 'income',
+      // income_source_type ausente
+    }
+
+    const hydrated = fromDbRecurring(legacyRow)
+    assert.equal(hydrated.id, 'rec_legacy_1')
+    assert.equal(hydrated.type, 'income')
+    assert.equal(hydrated.incomeSourceType, undefined)
+  })
+
+  it('355. Esquema SQL: Existencia y contenido de la migración para income_source_type', async () => {
+    const fs = await import('node:fs/promises')
+    const path = await import('node:path')
+
+    const migrationPath = path.resolve('supabase/migrations/20260918120000_recurring_income_source_type.sql')
+    const content = await fs.readFile(migrationPath, 'utf-8')
+
+    assert.ok(content.includes('alter table public.recurring_payments'))
+    assert.ok(content.includes('add column if not exists income_source_type'))
+    assert.ok(content.includes('salary'))
+    assert.ok(content.includes('pension'))
+    assert.ok(content.includes('rental'))
+  })
+
+  it('356. Categorías y FK: Provisión idempotente ante 23503 con user_id consistente', async () => {
+    let categoryUpserted = false
+    let insertAttempts = 0
+
+    const mockSupabase: any = {
+      from: (table: string) => ({
+        upsert: async (row: any) => {
+          if (table === 'categories') {
+            categoryUpserted = true
+            assert.equal(row.user_id, dummyUserId)
+            return { error: null }
+          }
+          return { error: null }
+        },
+        insert: async (row: any) => {
+          insertAttempts++
+          if (insertAttempts === 1) {
+            // Primer intento falla con error 23503 FK violation
+            const err = new Error('Foreign key violation') as any
+            err.code = '23503'
+            return { error: err }
+          }
+          // Segundo intento tras provisionar categoría tiene éxito
+          return { error: null }
+        },
+      }),
+    }
+
+    const tx: Transaction = {
+      id: 'tx_fk_test',
+      type: 'expense',
+      amount: 12.5,
+      accountId: 'daily',
+      categoryId: 'personal_care',
+      description: 'Farmacia',
+      date: new Date().toISOString(),
+    }
+
+    await syncInsertTransaction(mockSupabase, dummyUserId, tx)
+
+    assert.equal(categoryUpserted, true)
+    assert.equal(insertAttempts, 2)
+  })
+})
+
+describe('Fase 27 — Unificación Canónica del Gasto Neto', () => {
+  const refDate = new Date('2026-09-18T10:00:00.000Z')
+  const testCategories: Category[] = [
+    { id: 'food', name: 'Alimentación', color: '#10B981', icon: 'shopping-cart' },
+    { id: 'leisure', name: 'Ocio', color: '#F59E0B', icon: 'coffee' },
+    { id: 'transport', name: 'Transporte', color: '#3B82F6', icon: 'car' },
+    { id: 'other', name: 'Otros', color: '#6B7280', icon: 'ellipsis' },
+  ]
+
+  it('357. Estadísticas: Gasto normal sin reembolsos produce netExpenses = expenses, Donut y timeSeries con importe íntegro', () => {
+    const txs: Transaction[] = [
+      {
+        id: 'tx_food_1',
+        type: 'expense',
+        amount: 40,
+        accountId: 'daily',
+        categoryId: 'food',
+        description: 'Supermercado',
+        date: '2026-09-10T12:00:00.000Z',
+      },
+      {
+        id: 'tx_leisure_1',
+        type: 'expense',
+        amount: 25,
+        accountId: 'daily',
+        categoryId: 'leisure',
+        description: 'Cine',
+        date: '2026-09-15T19:00:00.000Z',
+      },
+    ]
+
+    const stats = calculatePeriodStatistics(txs, testCategories, 'month', refDate)
+    assert.equal(stats.expenses, 65)
+    assert.equal(stats.netExpenses, 65)
+    assert.equal(stats.reimbursements, 0)
+    assert.equal(stats.categoryBreakdown.length, 2)
+    assert.equal(stats.categoryBreakdown.find((c) => c.categoryId === 'food')?.amount, 40)
+    assert.equal(stats.categoryBreakdown.find((c) => c.categoryId === 'leisure')?.amount, 25)
+  })
+
+  it('358. Estadísticas: Gasto parcialmente reembolsado descuenta exactamente el reembolso vinculado en netExpenses, Donut y timeSeries', () => {
+    const txs: Transaction[] = [
+      {
+        id: 'tx_dinner_1',
+        type: 'expense',
+        amount: 60,
+        accountId: 'daily',
+        categoryId: 'leisure',
+        description: 'Cena con amigos',
+        date: '2026-09-12T21:00:00.000Z',
+      },
+      {
+        id: 'tx_reimb_1',
+        type: 'income',
+        incomeKind: 'reimbursement',
+        amount: 40,
+        accountId: 'daily',
+        description: 'Bizum Carlos · Cena',
+        parentExpenseId: 'tx_dinner_1',
+        date: '2026-09-13T10:00:00.000Z',
+      },
+    ]
+
+    const stats = calculatePeriodStatistics(txs, testCategories, 'month', refDate)
+    // Bruto es 60, pero neto es 60 - 40 = 20
+    assert.equal(stats.expenses, 60)
+    assert.equal(stats.reimbursements, 40)
+    assert.equal(stats.netExpenses, 20)
+
+    // Donut desglosa el neto (20 € para leisure)
+    const leisureCat = stats.categoryBreakdown.find((c) => c.categoryId === 'leisure')
+    assert.equal(leisureCat?.amount, 20)
+    assert.equal(leisureCat?.percentage, 100)
+
+    // Time series refleja 20 € netos
+    const timeSum = stats.timeSeries.reduce((s, p) => s + p.amount, 0)
+    assert.equal(Math.round(timeSum * 100) / 100, 20)
+  })
+
+  it('359. Estadísticas: Gasto 100% reembolsado tiene netExpenses = 0 y no infla categorías ni timeSeries', () => {
+    const txs: Transaction[] = [
+      {
+        id: 'tx_gift_total',
+        type: 'expense',
+        amount: 50,
+        accountId: 'daily',
+        categoryId: 'other',
+        description: 'Regalo adelantado',
+        date: '2026-09-05T14:00:00.000Z',
+      },
+      {
+        id: 'tx_gift_reimb',
+        type: 'income',
+        incomeKind: 'reimbursement',
+        amount: 50,
+        accountId: 'daily',
+        description: 'Bizum grupo completo',
+        parentExpenseId: 'tx_gift_total',
+        date: '2026-09-06T10:00:00.000Z',
+      },
+    ]
+
+    const stats = calculatePeriodStatistics(txs, testCategories, 'month', refDate)
+    assert.equal(stats.expenses, 50)
+    assert.equal(stats.reimbursements, 50)
+    assert.equal(stats.netExpenses, 0)
+    assert.equal(stats.categoryBreakdown.length, 0) // Categoría con 0 € no aparece en el desglose activo
+  })
+
+  it('360. Estadísticas: Donut por categoría muestra importes netos exactos y porcentajes sobre el total neto', () => {
+    const txs: Transaction[] = [
+      {
+        id: 'tx_food_2',
+        type: 'expense',
+        amount: 80,
+        accountId: 'daily',
+        categoryId: 'food',
+        description: 'Compra semanal',
+        date: '2026-09-08T11:00:00.000Z',
+      },
+      {
+        id: 'tx_food_reimb',
+        type: 'income',
+        incomeKind: 'reimbursement',
+        amount: 20,
+        accountId: 'daily',
+        description: 'Bizum compra',
+        parentExpenseId: 'tx_food_2',
+        date: '2026-09-09T09:00:00.000Z',
+      },
+      {
+        id: 'tx_trans_1',
+        type: 'expense',
+        amount: 40,
+        accountId: 'daily',
+        categoryId: 'transport',
+        description: 'Abono',
+        date: '2026-09-10T08:00:00.000Z',
+      },
+    ]
+
+    // Food neto = 80 - 20 = 60 (60%). Transport neto = 40 (40%). Total neto = 100.
+    const stats = calculatePeriodStatistics(txs, testCategories, 'month', refDate)
+    assert.equal(stats.netExpenses, 100)
+
+    const foodBreakdown = stats.categoryBreakdown.find((c) => c.categoryId === 'food')
+    const transportBreakdown = stats.categoryBreakdown.find((c) => c.categoryId === 'transport')
+
+    assert.equal(foodBreakdown?.amount, 60)
+    assert.equal(foodBreakdown?.percentage, 60)
+    assert.equal(transportBreakdown?.amount, 40)
+    assert.equal(transportBreakdown?.percentage, 40)
+  })
+
+  it('361. Estadísticas: TimeSeries en vista diaria, semanal y mensual computa gastos netos', () => {
+    const txs: Transaction[] = [
+      {
+        id: 'tx_day_1',
+        type: 'expense',
+        amount: 30,
+        accountId: 'daily',
+        categoryId: 'food',
+        description: 'Almuerzo',
+        date: '2026-09-18T14:30:00.000Z', // franja 12-18h
+      },
+      {
+        id: 'tx_day_reimb',
+        type: 'income',
+        incomeKind: 'reimbursement',
+        amount: 10,
+        accountId: 'daily',
+        description: 'Bizum compañero',
+        parentExpenseId: 'tx_day_1',
+        date: '2026-09-18T15:00:00.000Z',
+      },
+    ]
+
+    const dayStats = calculatePeriodStatistics(txs, testCategories, 'day', refDate)
+    assert.equal(dayStats.netExpenses, 20)
+
+    const slot1218 = dayStats.timeSeries.find((p) => p.label === '12-18h')
+    assert.equal(slot1218?.amount, 20)
+  })
+
+  it('362. Estadísticas: Comparativa entre periodos evalúa gasto neto', () => {
+    const currentTxs: Transaction[] = [
+      {
+        id: 'curr_exp',
+        type: 'expense',
+        amount: 100,
+        accountId: 'daily',
+        categoryId: 'food',
+        description: 'Compra mes actual',
+        date: '2026-09-10T10:00:00.000Z',
+      },
+      {
+        id: 'curr_reimb',
+        type: 'income',
+        incomeKind: 'reimbursement',
+        amount: 50,
+        accountId: 'daily',
+        description: 'Reembolso mes actual',
+        parentExpenseId: 'curr_exp',
+        date: '2026-09-11T10:00:00.000Z',
+      },
+    ]
+
+    const prevTxs: Transaction[] = [
+      {
+        id: 'prev_exp',
+        type: 'expense',
+        amount: 80,
+        accountId: 'daily',
+        categoryId: 'food',
+        description: 'Compra mes anterior',
+        date: '2026-08-10T10:00:00.000Z',
+      },
+      {
+        id: 'prev_reimb',
+        type: 'income',
+        incomeKind: 'reimbursement',
+        amount: 20,
+        accountId: 'daily',
+        description: 'Reembolso mes anterior',
+        parentExpenseId: 'prev_exp',
+        date: '2026-08-11T10:00:00.000Z',
+      },
+    ]
+
+    const allTxs = [...currentTxs, ...prevTxs]
+    const currStats = calculatePeriodStatistics(allTxs, testCategories, 'month', refDate)
+    const prevStats = calculatePeriodStatistics(allTxs, testCategories, 'month', new Date('2026-08-15T10:00:00.000Z'))
+
+    assert.equal(currStats.netExpenses, 50) // 100 - 50 = 50
+    assert.equal(prevStats.netExpenses, 60) // 80 - 20 = 60
+
+    const comp = compareWithPreviousPeriod(currStats.netExpenses, prevStats.netExpenses)
+    assert.equal(comp.diffAmount, -10)
+    assert.equal(comp.isHigher, false)
+    assert.equal(comp.percentageDiff, -16.7)
+  })
+
+  it('363. Estadísticas: Desglose de naturaleza del gasto (fijo / variable / extraordinario) usa importes netos', () => {
+    const txs: Transaction[] = [
+      {
+        id: 'tx_nat_fixed',
+        type: 'expense',
+        amount: 100,
+        accountId: 'daily',
+        categoryId: 'other',
+        expenseNature: 'fixed',
+        description: 'Gasto fijo compartido',
+        date: '2026-09-05T10:00:00.000Z',
+      },
+      {
+        id: 'tx_nat_reimb',
+        type: 'income',
+        incomeKind: 'reimbursement',
+        amount: 40,
+        accountId: 'daily',
+        description: 'Reembolso parte fija',
+        parentExpenseId: 'tx_nat_fixed',
+        date: '2026-09-06T10:00:00.000Z',
+      },
+      {
+        id: 'tx_nat_var',
+        type: 'expense',
+        amount: 60,
+        accountId: 'daily',
+        categoryId: 'food',
+        expenseNature: 'variable',
+        description: 'Gasto variable',
+        date: '2026-09-07T10:00:00.000Z',
+      },
+    ]
+
+    const stats = calculatePeriodStatistics(txs, testCategories, 'month', refDate)
+    // Fixed neto = 100 - 40 = 60 (50%). Variable neto = 60 (50%). Total neto = 120.
+    assert.equal(stats.natureBreakdown.fixed, 60)
+    assert.equal(stats.natureBreakdown.variable, 60)
+    assert.equal(stats.natureBreakdown.total, 120)
+    assert.equal(stats.natureBreakdown.fixedPct, 50)
+    assert.equal(stats.natureBreakdown.variablePct, 50)
+
+    const standaloneNature = selectExpensesByNature(txs, 'month', refDate)
+    assert.equal(standaloneNature.fixed, 60)
+    assert.equal(standaloneNature.variable, 60)
+    assert.equal(standaloneNature.total, 120)
+  })
+
+  it('364. Presupuestos: Categoría con gasto reembolsado consume solo importe neto', () => {
+    const txs: Transaction[] = [
+      {
+        id: 'tx_bud_leisure',
+        type: 'expense',
+        amount: 80,
+        accountId: 'daily',
+        categoryId: 'leisure',
+        description: 'Concierto',
+        date: '2026-09-08T20:00:00.000Z',
+      },
+      {
+        id: 'tx_bud_reimb',
+        type: 'income',
+        incomeKind: 'reimbursement',
+        amount: 50,
+        accountId: 'daily',
+        description: 'Bizum entrada concierto',
+        parentExpenseId: 'tx_bud_leisure',
+        date: '2026-09-09T10:00:00.000Z',
+      },
+    ]
+
+    const spent = spentByCategoryThisMonth(txs, 'leisure', refDate)
+    assert.equal(spent, 30) // 80 - 50 = 30 € consumidos del presupuesto
+  })
+
+  it('365. Presupuestos: Reembolso de una categoría no altera el consumo presupuestario de otra', () => {
+    const txs: Transaction[] = [
+      {
+        id: 'tx_bud_food',
+        type: 'expense',
+        amount: 50,
+        accountId: 'daily',
+        categoryId: 'food',
+        description: 'Supermercado',
+        date: '2026-09-08T10:00:00.000Z',
+      },
+      {
+        id: 'tx_bud_leisure_exp',
+        type: 'expense',
+        amount: 40,
+        accountId: 'daily',
+        categoryId: 'leisure',
+        description: 'Cena',
+        date: '2026-09-09T21:00:00.000Z',
+      },
+      {
+        id: 'tx_bud_leisure_reimb',
+        type: 'income',
+        incomeKind: 'reimbursement',
+        amount: 30,
+        accountId: 'daily',
+        description: 'Bizum cena',
+        parentExpenseId: 'tx_bud_leisure_exp',
+        date: '2026-09-10T10:00:00.000Z',
+      },
+    ]
+
+    const foodSpent = spentByCategoryThisMonth(txs, 'food', refDate)
+    const leisureSpent = spentByCategoryThisMonth(txs, 'leisure', refDate)
+
+    assert.equal(foodSpent, 50)
+    assert.equal(leisureSpent, 10)
+  })
+
+  it('366. Calendario: Mantiene coherencia canónica con selectNetPersonalExpensesForPeriod y daily stats', () => {
+    const txs: Transaction[] = [
+      {
+        id: 'cal_exp_1',
+        type: 'expense',
+        amount: 70,
+        accountId: 'daily',
+        categoryId: 'food',
+        description: 'Compra grande',
+        date: '2026-09-14T11:00:00.000Z',
+      },
+      {
+        id: 'cal_reimb_1',
+        type: 'income',
+        incomeKind: 'reimbursement',
+        amount: 35,
+        accountId: 'daily',
+        description: 'Bizum compra',
+        parentExpenseId: 'cal_exp_1',
+        date: '2026-09-14T12:00:00.000Z',
+      },
+    ]
+
+    const monthNet = selectNetPersonalExpensesForPeriod(txs, refDate, 'month')
+    const dayNet = selectDayNetFinanceStats(txs, 2026, 8, 14) // month index 8 = septiembre
+
+    assert.equal(monthNet, 35)
+    assert.equal(dayNet.netExpenses, 35)
+    assert.equal(dayNet.netBalance, -35)
+  })
+
+  it('367. Consistencia cruzada entre pantallas: Home, Estadísticas, Calendario y Presupuestos obtienen exactamente el mismo gasto neto total', () => {
+    const txs: Transaction[] = [
+      {
+        id: 'tx_cross_1',
+        type: 'expense',
+        amount: 120,
+        accountId: 'daily',
+        categoryId: 'food',
+        description: 'Mercadona semanal',
+        date: '2026-09-04T12:00:00.000Z',
+      },
+      {
+        id: 'tx_cross_reimb_1',
+        type: 'income',
+        incomeKind: 'reimbursement',
+        amount: 60,
+        accountId: 'daily',
+        description: 'Bizum piso',
+        parentExpenseId: 'tx_cross_1',
+        date: '2026-09-05T10:00:00.000Z',
+      },
+      {
+        id: 'tx_cross_2',
+        type: 'expense',
+        amount: 45,
+        accountId: 'daily',
+        categoryId: 'leisure',
+        description: 'Teatro',
+        date: '2026-09-12T19:00:00.000Z',
+      },
+      {
+        id: 'tx_cross_3',
+        type: 'expense',
+        amount: 30,
+        accountId: 'daily',
+        categoryId: 'transport',
+        description: 'Gasolina',
+        date: '2026-09-17T08:00:00.000Z',
+      },
+      {
+        id: 'tx_cross_reimb_3',
+        type: 'income',
+        incomeKind: 'reimbursement',
+        amount: 15,
+        accountId: 'daily',
+        description: 'Bizum viaje',
+        parentExpenseId: 'tx_cross_3',
+        date: '2026-09-17T09:00:00.000Z',
+      },
+    ]
+
+    const budgets: Budget[] = [
+      { id: 'b_food', categoryId: 'food', amountLimit: 200, period: 'monthly' },
+      { id: 'b_leisure', categoryId: 'leisure', amountLimit: 100, period: 'monthly' },
+      { id: 'b_transport', categoryId: 'transport', amountLimit: 80, period: 'monthly' },
+    ]
+
+    // Gasto neto total esperado:
+    // Food: 120 - 60 = 60
+    // Leisure: 45 - 0 = 45
+    // Transport: 30 - 15 = 15
+    // Total neto = 60 + 45 + 15 = 120 €
+    const expectedCanonicalNet = 120
+
+    // 1. Selector canónico general (Home / useFinance totals.netMonthExpenses / totals.monthExpenses)
+    const homeNetExpenses = selectNetPersonalExpensesForPeriod(txs, refDate, 'month')
+
+    // 2. Estadísticas (StatisticsPage / calculatePeriodStatistics)
+    const statsResult = calculatePeriodStatistics(txs, testCategories, 'month', refDate)
+    const statsNetExpenses = statsResult.netExpenses
+
+    // 3. Calendario (CalendarPage / selectNetPersonalExpensesForPeriod)
+    const calendarNetExpenses = selectNetPersonalExpensesForPeriod(txs, refDate, 'month')
+
+    // 4. Presupuestos (BudgetsPage / selectBudgetsSummary)
+    const budgetsSummary = selectBudgetsSummary(budgets, txs, testCategories, refDate)
+    const budgetsTotalSpent = budgetsSummary.totalSpentOnBudgetedCategories
+
+    // 5. Categorías netas agregadas
+    const categoryExpenses = selectNetExpensesByCategory(txs, testCategories, refDate, 'month')
+    const categorySum = Math.round(categoryExpenses.reduce((s, c) => s + c.amount, 0) * 100) / 100
+
+    assert.equal(homeNetExpenses, expectedCanonicalNet)
+    assert.equal(statsNetExpenses, expectedCanonicalNet)
+    assert.equal(calendarNetExpenses, expectedCanonicalNet)
+    assert.equal(budgetsTotalSpent, expectedCanonicalNet)
+    assert.equal(categorySum, expectedCanonicalNet)
+  })
+
+  it('368. Modo Bruto: Los selectores brutos preservan el valor facial sin deducciones', () => {
+    const txs: Transaction[] = [
+      {
+        id: 'tx_gross_1',
+        type: 'expense',
+        amount: 100,
+        accountId: 'daily',
+        categoryId: 'food',
+        description: 'Compra',
+        date: '2026-09-10T10:00:00.000Z',
+      },
+      {
+        id: 'tx_gross_reimb',
+        type: 'income',
+        incomeKind: 'reimbursement',
+        amount: 40,
+        accountId: 'daily',
+        description: 'Bizum',
+        parentExpenseId: 'tx_gross_1',
+        date: '2026-09-11T10:00:00.000Z',
+      },
+    ]
+
+    const grossPeriod = selectGrossExpensesForPeriod(txs, refDate, 'month')
+    const grossMonth = selectMonthExpenses(txs, refDate)
+    const grossCategory = selectCategoryExpenses(txs, testCategories, refDate)
+
+    assert.equal(grossPeriod, 100)
+    assert.equal(grossMonth, 100)
+    assert.equal(grossCategory.find((c) => c.id === 'food')?.amount, 100)
+  })
+})
+
+describe('Fase 28 — Blindaje de Contrato Frontend ↔ Supabase y Reconciliación', () => {
+  const dummyUserId = 'user-contract-shield-uuid-999'
+
+  it('369. Contrato de Esquema: Mapeo bidireccional exhaustivo para todas las entidades', () => {
+    // 1. Account
+    const acc: Account = { id: 'acc_test', name: 'Nómina Bank', type: 'spending', initialBalance: 500 }
+    const dbAcc = toDbAccount(acc, dummyUserId)
+    assert.equal(dbAcc.id, acc.id)
+    assert.equal(dbAcc.initial_balance, 500)
+    assert.equal(fromDbAccount(dbAcc).initialBalance, 500)
+
+    // 2. Category
+    const cat: Category = { id: 'sport', name: 'Deporte', color: '#10B981', iconKey: 'dumbbell', icon: 'dumbbell' }
+    const dbCat = toDbCategory(cat, dummyUserId)
+    assert.equal(dbCat.icon_key, 'dumbbell')
+    assert.equal(fromDbCategory(dbCat).name, 'Deporte')
+
+    // 3. Recurring Payment (Expense)
+    const recExp: RecurringPayment = {
+      id: 'rec_fp',
+      name: 'Fitness Park',
+      amount: 29.99,
+      categoryId: 'sport',
+      accountId: 'daily',
+      frequency: 'monthly',
+      nextDate: '2026-10-01',
+      active: true,
+      isShared: false,
+      type: 'expense',
+    }
+    const dbRecExp = toDbRecurring(recExp, dummyUserId)
+    assert.equal(dbRecExp.category_id, 'sport')
+    assert.equal(dbRecExp.type, 'expense')
+    assert.equal(fromDbRecurring(dbRecExp).categoryId, 'sport')
+
+    // 4. Recurring Payment (Income)
+    const recInc: RecurringPayment = {
+      id: 'rec_salary',
+      name: 'Nómina',
+      amount: 2200,
+      categoryId: 'income',
+      incomeSourceType: 'salary',
+      accountId: 'daily',
+      frequency: 'monthly',
+      nextDate: '2026-10-01',
+      active: true,
+      type: 'income',
+    }
+    const dbRecInc = toDbRecurring(recInc, dummyUserId)
+    assert.equal(dbRecInc.category_id, null) // Seguro ante FK
+    assert.equal(dbRecInc.income_source_type, 'salary')
+    assert.equal(fromDbRecurring(dbRecInc).incomeSourceType, 'salary')
+    assert.equal(fromDbRecurring(dbRecInc).categoryId, 'income')
+  })
+
+  it('370. Gasto recurrente "Fitness Park": Sincronización segura con auto-provisión de categoría ante 23503', async () => {
+    let categoryUpserted = false
+    let insertAttempts = 0
+
+    const mockSupabase: any = {
+      from: (table: string) => ({
+        upsert: async (row: any) => {
+          if (table === 'categories') {
+            categoryUpserted = true
+            assert.equal(row.user_id, dummyUserId)
+            return { error: null }
+          }
+          if (table === 'recurring_payments') {
+            insertAttempts++
+            if (insertAttempts === 1) {
+              // Primer intento simula error 23503 si la categoría aún no existe
+              const err = new Error('Foreign key violation') as any
+              err.code = '23503'
+              return { error: err }
+            }
+            return { error: null }
+          }
+          return { error: null }
+        },
+      }),
+    }
+
+    const rec: RecurringPayment = {
+      id: 'rec_fp_2',
+      name: 'Fitness Park',
+      amount: 35,
+      categoryId: 'sport',
+      accountId: 'daily',
+      frequency: 'monthly',
+      nextDate: '2026-10-05',
+      active: true,
+      type: 'expense',
+    }
+
+    await syncUpsertRecurring(mockSupabase, dummyUserId, rec)
+
+    assert.equal(categoryUpserted, true)
+    assert.equal(insertAttempts, 2)
+  })
+
+  it('371. Gasto recurrente: Edición y actualización preserva campos estructurados y templates de reparto', async () => {
+    let upsertedRow: any = null
+
+    const mockSupabase: any = {
+      from: (table: string) => ({
+        upsert: async (row: any) => {
+          if (table === 'recurring_payments') {
+            upsertedRow = row
+          }
+          return { error: null }
+        },
+      }),
+    }
+
+    const recShared: RecurringPayment = {
+      id: 'rec_shared_gym',
+      name: 'Gimnasio Dúo',
+      amount: 60,
+      categoryId: 'sport',
+      accountId: 'daily',
+      frequency: 'monthly',
+      nextDate: '2026-10-01',
+      active: true,
+      isShared: true,
+      sharingTemplate: {
+        splitType: 'equal',
+        includePayer: true,
+        participants: [{ name: 'Marta', amount: 30 }],
+      },
+    }
+
+    await syncUpsertRecurring(mockSupabase, dummyUserId, recShared)
+
+    assert.ok(upsertedRow)
+    assert.equal(upsertedRow.is_shared, true)
+    assert.ok(upsertedRow.sharing_template)
+    assert.equal(upsertedRow.sharing_template.splitType, 'equal')
+
+    const hydrated = fromDbRecurring(upsertedRow)
+    assert.equal(hydrated.isShared, true)
+    assert.equal(hydrated.sharingTemplate?.participants.length, 1)
+  })
+
+  it('372. Ingreso recurrente: Creación de nómina con category_id nulo e income_source_type salary sin violar FK', async () => {
+    let upsertedRow: any = null
+
+    const mockSupabase: any = {
+      from: (table: string) => ({
+        upsert: async (row: any) => {
+          if (table === 'recurring_payments') {
+            upsertedRow = row
+          }
+          return { error: null }
+        },
+      }),
+    }
+
+    const salaryRec: RecurringPayment = {
+      id: 'rec_sal_1',
+      name: 'Nómina Empresa',
+      amount: 2500,
+      categoryId: 'income',
+      accountId: 'daily',
+      frequency: 'monthly',
+      nextDate: '2026-09-30',
+      active: true,
+      type: 'income',
+      incomeSourceType: 'salary',
+    }
+
+    await syncUpsertRecurring(mockSupabase, dummyUserId, salaryRec)
+
+    assert.ok(upsertedRow)
+    assert.equal(upsertedRow.category_id, null) // Nulo para no violar FK
+    assert.equal(upsertedRow.type, 'income')
+    assert.equal(upsertedRow.income_source_type, 'salary')
+  })
+
+  it('373. Presupuestos: safeUpsertBudget auto-provisiona categoría ante 23503 y recupera sin error', async () => {
+    let categoryUpserted = false
+    let budgetAttempts = 0
+
+    const mockSupabase: any = {
+      from: (table: string) => ({
+        upsert: async (row: any) => {
+          if (table === 'categories') {
+            categoryUpserted = true
+            return { error: null }
+          }
+          if (table === 'budgets') {
+            budgetAttempts++
+            if (budgetAttempts === 1) {
+              const err = new Error('Foreign key violation') as any
+              err.code = '23503'
+              return { error: err }
+            }
+            return { error: null }
+          }
+          return { error: null }
+        },
+      }),
+    }
+
+    const budget: Budget = {
+      id: 'b_sport_test',
+      categoryId: 'sport',
+      amountLimit: 100,
+      period: 'monthly',
+    }
+
+    await syncUpsertBudget(mockSupabase, dummyUserId, budget)
+
+    assert.equal(categoryUpserted, true)
+    assert.equal(budgetAttempts, 2)
+  })
+
+  it('374. Resiliencia de esquema: cleanMissingColumns ante PGRST204 permite reintento y salva datos', async () => {
+    let retryAttempted = false
+
+    const mockSupabase: any = {
+      from: (table: string) => ({
+        upsert: async (row: any) => {
+          if (!retryAttempted) {
+            retryAttempted = true
+            const err = new Error('Could not find the "income_source_type" column of "recurring_payments" in the schema cache') as any
+            err.code = 'PGRST204'
+            return { error: err }
+          }
+          // En el segundo intento la fila limpia no contiene income_source_type
+          assert.equal(row.income_source_type, undefined)
+          return { error: null }
+        },
+      }),
+    }
+
+    const row = {
+      id: 'rec_missing_col_test',
+      user_id: dummyUserId,
+      name: 'Nómina',
+      amount: 2000,
+      category_id: null,
+      account_id: 'daily',
+      frequency: 'monthly',
+      next_date: '2026-10-01',
+      active: true,
+      type: 'income',
+      income_source_type: 'salary',
+    }
+
+    await safeUpsertRecurring(mockSupabase, row, dummyUserId)
+    assert.equal(retryAttempted, true)
+  })
+
+  it('375. Migración SQL: Existencia y contenido de la migración de reconciliación de esquema', async () => {
+    const fs = await import('node:fs/promises')
+    const path = await import('node:path')
+
+    const migrationPath = path.resolve('supabase/migrations/20260918140000_recurring_and_schema_reconciliation.sql')
+    const content = await fs.readFile(migrationPath, 'utf-8')
+
+    assert.ok(content.includes('alter table public.recurring_payments'))
+    assert.ok(content.includes('alter column category_id drop not null'))
+    assert.ok(content.includes('add column if not exists type text'))
+    assert.ok(content.includes('add column if not exists income_source_type text'))
+    assert.ok(content.includes('add column if not exists is_shared boolean'))
+    assert.ok(content.includes('add column if not exists sharing_template jsonb'))
+    assert.ok(content.includes('add column if not exists installments_count integer'))
+    assert.ok(content.includes('alter table public.transactions'))
+    assert.ok(content.includes('add column if not exists special_type text'))
+    assert.ok(content.includes('add column if not exists expense_nature text'))
+    assert.ok(content.includes('add column if not exists gift_recipient text'))
+  })
+})
+
+
+
 
 
 

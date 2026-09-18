@@ -1,14 +1,21 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import {
+  safeUpsertBudget,
   safeUpsertRecurring,
   safeUpsertTransaction,
+  syncDeleteExpenseShare,
+  syncDeleteSharedContact,
+  syncUpsertExpenseShare,
+  syncUpsertSharedContact,
   toDbAccount,
   toDbBudget,
+  toDbExpenseShare,
   toDbGoal,
   toDbPlanSettings,
   toDbProfile,
   toDbRecurring,
   toDbReserve,
+  toDbSharedContact,
   toDbSpecialPeriod,
   toDbTransaction,
   toDbVariableExpenseEstimate,
@@ -16,40 +23,64 @@ import {
 import type {
   Account,
   Budget,
+  ExpenseShare,
   FinancialPlanSettings,
   RecurringPayment,
   Reserve,
   SavingsGoal,
+  SharedContact,
   SpecialPeriod,
   Transaction,
   UserProfile,
   VariableExpenseEstimate,
 } from '../../models/finance'
 
+export type OfflineEntity =
+  | 'transaction'
+  | 'account'
+  | 'budget'
+  | 'goal'
+  | 'reserve'
+  | 'recurring'
+  | 'specialPeriod'
+  | 'planSettings'
+  | 'profile'
+  | 'variable_expense_estimate'
+  | 'shared_contact'
+  | 'expense_share'
+
 export interface OfflineMutation {
   id: string
-  entity:
-    | 'transaction'
-    | 'account'
-    | 'budget'
-    | 'goal'
-    | 'reserve'
-    | 'recurring'
-    | 'specialPeriod'
-    | 'planSettings'
-    | 'profile'
-    | 'variable_expense_estimate'
+  entity: OfflineEntity
   action: 'insert' | 'update' | 'delete'
   data: unknown
   timestamp: number
 }
 
 const QUEUE_STORAGE_KEY = 'pocketflow_offline_queue'
+const memoryStorage = new Map<string, string>()
+
+function getStorage(): { getItem(k: string): string | null; setItem(k: string, v: string): void; removeItem(k: string): void } {
+  try {
+    if (typeof window !== 'undefined' && window.localStorage) return window.localStorage
+    if (typeof globalThis !== 'undefined' && (globalThis as any).localStorage) return (globalThis as any).localStorage
+  } catch {}
+  return {
+    getItem: (k: string) => memoryStorage.get(k) ?? null,
+    setItem: (k: string, v: string) => {
+      memoryStorage.set(k, v)
+    },
+    removeItem: (k: string) => {
+      memoryStorage.delete(k)
+    },
+  }
+}
 
 export function getOfflineQueue(): OfflineMutation[] {
-  if (typeof localStorage === 'undefined') return []
+  const storage = getStorage()
+  if (!storage) return []
   try {
-    const raw = localStorage.getItem(QUEUE_STORAGE_KEY)
+    const raw = storage.getItem(QUEUE_STORAGE_KEY)
     if (!raw) return []
     const parsed = JSON.parse(raw)
     return Array.isArray(parsed) ? parsed : []
@@ -80,9 +111,10 @@ function notifyQueueChanged(): void {
 }
 
 export function saveOfflineQueue(queue: OfflineMutation[]): void {
-  if (typeof localStorage === 'undefined') return
+  const storage = getStorage()
+  if (!storage) return
   try {
-    localStorage.setItem(QUEUE_STORAGE_KEY, JSON.stringify(queue))
+    storage.setItem(QUEUE_STORAGE_KEY, JSON.stringify(queue))
     notifyQueueChanged()
   } catch (err) {
     console.warn('[OfflineQueue] Error guardando cola offline:', err)
@@ -138,6 +170,28 @@ export function isDemoMutation(item: OfflineMutation): boolean {
   return false
 }
 
+/**
+ * Prioridad de entidades para asegurar que las dependencias foráneas
+ * se inserten en el orden correcto:
+ * 1. Contactos y cuentas (no dependen de nadie)
+ * 2. Transacciones y modelos estándar
+ * 3. Partes de gastos compartidos (dependen de transactions y shared_contacts)
+ */
+function getEntityPriority(entity: OfflineEntity, action: 'insert' | 'update' | 'delete'): number {
+  if (action === 'delete') {
+    // Al borrar, primero borrar cuotas dependientes, luego transacciones, luego contactos
+    if (entity === 'expense_share') return 10
+    if (entity === 'transaction') return 20
+    if (entity === 'shared_contact') return 30
+    return 20
+  }
+  // Al insertar o actualizar:
+  if (entity === 'shared_contact' || entity === 'account') return 10
+  if (entity === 'transaction') return 20
+  if (entity === 'expense_share') return 30
+  return 20
+}
+
 export async function flushOfflineQueue(
   supabase: SupabaseClient,
   userId: string
@@ -145,11 +199,19 @@ export async function flushOfflineQueue(
   const queue = getOfflineQueue()
   if (queue.length === 0) return { successCount: 0, failCount: 0 }
 
+  // Ordenar mutaciones por prioridad de dependencias respetando el orden temporal relativo
+  const sortedQueue = [...queue].sort((a, b) => {
+    const prioA = getEntityPriority(a.entity, a.action)
+    const prioB = getEntityPriority(b.entity, b.action)
+    if (prioA !== prioB) return prioA - prioB
+    return a.timestamp - b.timestamp
+  })
+
   let successCount = 0
   let failCount = 0
   const remaining: OfflineMutation[] = []
 
-  for (const item of queue) {
+  for (const item of sortedQueue) {
     if (isDemoMutation(item)) {
       // Descartar silenciosamente cualquier mutación de datos demo/antiguos
       successCount++
@@ -157,7 +219,14 @@ export async function flushOfflineQueue(
     }
 
     try {
-      if (item.entity === 'transaction') {
+      if (item.entity === 'shared_contact') {
+        if (item.action === 'delete') {
+          const id = (item.data as { id: string }).id
+          await syncDeleteSharedContact(supabase, userId, id)
+        } else {
+          await syncUpsertSharedContact(supabase, userId, item.data as SharedContact)
+        }
+      } else if (item.entity === 'transaction') {
         if (item.action === 'delete') {
           const id = (item.data as { id: string }).id
           const { error } = await supabase
@@ -168,7 +237,14 @@ export async function flushOfflineQueue(
           if (error) throw error
         } else {
           const dbRow = toDbTransaction(item.data as Transaction, userId)
-          await safeUpsertTransaction(supabase, dbRow)
+          await safeUpsertTransaction(supabase, dbRow, userId)
+        }
+      } else if (item.entity === 'expense_share') {
+        if (item.action === 'delete') {
+          const id = (item.data as { id: string }).id
+          await syncDeleteExpenseShare(supabase, userId, id)
+        } else {
+          await syncUpsertExpenseShare(supabase, userId, item.data as ExpenseShare)
         }
       } else if (item.entity === 'account') {
         const dbRow = toDbAccount(item.data as Account, userId)
@@ -181,8 +257,7 @@ export async function flushOfflineQueue(
           if (error) throw error
         } else {
           const dbRow = toDbBudget(item.data as Budget, userId)
-          const { error } = await supabase.from('budgets').upsert(dbRow)
-          if (error) throw error
+          await safeUpsertBudget(supabase, dbRow, userId)
         }
       } else if (item.entity === 'goal') {
         if (item.action === 'delete') {
@@ -219,7 +294,7 @@ export async function flushOfflineQueue(
           if (error) throw error
         } else {
           const dbRow = toDbRecurring(item.data as RecurringPayment, userId)
-          await safeUpsertRecurring(supabase, dbRow)
+          await safeUpsertRecurring(supabase, dbRow, userId)
         }
       } else if (item.entity === 'specialPeriod') {
         if (item.action === 'delete') {
@@ -259,7 +334,7 @@ export async function flushOfflineQueue(
         }
       }
       successCount++
-    } catch (err) {
+    } catch (err: any) {
       console.warn('[OfflineQueue] Error sincronizando elemento:', item, err)
       remaining.push(item)
       failCount++
@@ -277,4 +352,3 @@ export function getPendingMutationsCount(): number {
 export function clearOfflineQueue(): void {
   saveOfflineQueue([])
 }
-

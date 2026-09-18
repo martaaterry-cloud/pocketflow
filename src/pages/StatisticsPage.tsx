@@ -51,8 +51,8 @@ export function StatisticsPage({
       prevRange.start
     )
 
-    return compareWithPreviousPeriod(stats.expenses, prevStats.expenses)
-  }, [finance.transactions, finance.categories, period, now, stats.expenses])
+    return compareWithPreviousPeriod(stats.netExpenses, prevStats.netExpenses)
+  }, [finance.transactions, finance.categories, period, now, stats.netExpenses])
 
   const periodLabels: Record<StatsPeriod, string> = {
     day: 'Día',
@@ -212,12 +212,20 @@ export function StatisticsPage({
       <section className="section">
         <div className="section-title">
           <h2>Distribución por categorías</h2>
-          <span>{money(stats.expenses)} total</span>
+          <span>{money(stats.netExpenses)} total</span>
         </div>
 
-        {stats.expenses > 0 ? (
+        {stats.netExpenses > 0 ? (
           <>
             <DonutChart
+              netCategoryItems={stats.categoryBreakdown.map((cat) => ({
+                id: cat.categoryId,
+                name: cat.name,
+                amount: cat.amount,
+                percentage: cat.percentage,
+                color: cat.color,
+                icon: cat.icon,
+              }))}
               transactions={periodTransactions}
               categories={finance.categories}
               onSelectCategoryFilter={handleOpenCategoryDetail}
@@ -256,7 +264,7 @@ export function StatisticsPage({
       </section>
 
       {/* Sección 3: Clasificación por Naturaleza (Fijo / Variable / Extraordinario) */}
-      {stats.expenses > 0 && (
+      {stats.netExpenses > 0 && (
         <section className="section">
           <div className="section-title">
             <h2>Naturaleza del gasto</h2>

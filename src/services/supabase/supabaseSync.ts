@@ -221,12 +221,14 @@ export function fromDbReserve(row: Record<string, unknown>): Reserve {
 }
 
 export function toDbRecurring(r: RecurringPayment, userId: string) {
+  const isIncome = r.type === 'income'
+  const categoryId = isIncome && r.categoryId === 'income' ? null : (r.categoryId || null)
   const row: Record<string, unknown> = {
     id: r.id,
     user_id: userId,
     name: r.name,
     amount: r.amount,
-    category_id: r.categoryId,
+    category_id: categoryId,
     account_id: r.accountId,
     frequency: r.frequency,
     next_date: r.nextDate,
@@ -243,18 +245,20 @@ export function toDbRecurring(r: RecurringPayment, userId: string) {
 }
 
 export function fromDbRecurring(row: Record<string, unknown>): RecurringPayment {
+  const isIncome = (row.type as string) === 'income'
+  const categoryId = row.category_id ? String(row.category_id) : (isIncome ? 'income' : 'other')
   return {
     id: String(row.id),
     name: String(row.name),
     amount: Number(row.amount),
-    categoryId: String(row.category_id),
+    categoryId,
     accountId: String(row.account_id),
     frequency: row.frequency as 'weekly' | 'monthly' | 'yearly',
     nextDate: String(row.next_date),
     active: Boolean(row.active),
     isShared: Boolean(row.is_shared),
     sharingTemplate: (row.sharing_template as RecurringSharingTemplate) || undefined,
-    type: (row.type as 'expense' | 'income') || 'expense',
+    type: isIncome ? 'income' : 'expense',
     incomeSourceType: row.income_source_type ? String(row.income_source_type) : undefined,
     installmentsCount: row.installments_count ? Number(row.installments_count) : undefined,
   }
@@ -635,7 +639,7 @@ export async function safeUpsertRecurring(
   userId?: string
 ): Promise<void> {
   const effectiveUserId = (userId || row.user_id) as string | undefined
-  if (row.category_id && effectiveUserId) {
+  if (row.category_id && effectiveUserId && row.category_id !== 'income') {
     await ensureCategoryExistsInRemote(supabase, effectiveUserId, row.category_id)
   }
   const { error } = await supabase.from('recurring_payments').upsert(row)
@@ -647,16 +651,49 @@ export async function safeUpsertRecurring(
       hint: error.hint,
       row,
     })
+    // 23503: Foreign Key violation (la categoría no existía en categories)
     if (error.code === '23503' && effectiveUserId) {
-      await ensureCategoryExistsInRemote(supabase, effectiveUserId, row.category_id)
+      if (row.category_id && row.category_id !== 'income') {
+        await ensureCategoryExistsInRemote(supabase, effectiveUserId, row.category_id)
+      } else {
+        row.category_id = null
+      }
       const { error: retryError } = await supabase.from('recurring_payments').upsert(row)
       if (!retryError) return
     }
+    // Column missing in database schema
     if (error.code === 'PGRST204' || error.code === '42703' || error.message.toLowerCase().includes('column')) {
       const clean = cleanMissingColumns(row, error.message)
       const { error: retryError } = await supabase.from('recurring_payments').upsert(clean)
       if (retryError) throw retryError
       return
+    }
+    throw error
+  }
+}
+
+export async function safeUpsertBudget(
+  supabase: SupabaseClient,
+  row: Record<string, unknown>,
+  userId?: string
+): Promise<void> {
+  const effectiveUserId = (userId || row.user_id) as string | undefined
+  if (row.category_id && effectiveUserId) {
+    await ensureCategoryExistsInRemote(supabase, effectiveUserId, row.category_id)
+  }
+  const { error } = await supabase.from('budgets').upsert(row)
+  if (error) {
+    console.error('[Supabase Real Error - Upsert Budget]', {
+      code: error.code,
+      message: error.message,
+      details: error.details,
+      hint: error.hint,
+      row,
+    })
+    if (error.code === '23503' && effectiveUserId) {
+      await ensureCategoryExistsInRemote(supabase, effectiveUserId, row.category_id)
+      const { error: retryError } = await supabase.from('budgets').upsert(row)
+      if (!retryError) return
     }
     throw error
   }
@@ -705,8 +742,7 @@ export async function syncUpsertBudget(
   b: Budget
 ): Promise<void> {
   const row = toDbBudget(b, userId)
-  const { error } = await supabase.from('budgets').upsert(row)
-  if (error) throw error
+  await safeUpsertBudget(supabase, row, userId)
 }
 
 export async function syncDeleteBudget(
@@ -762,8 +798,7 @@ export async function syncUpsertRecurring(
   r: RecurringPayment
 ): Promise<void> {
   const row = toDbRecurring(r, userId)
-  const { error } = await supabase.from('recurring_payments').upsert(row)
-  if (error) throw error
+  await safeUpsertRecurring(supabase, row, userId)
 }
 
 export async function syncDeleteRecurring(

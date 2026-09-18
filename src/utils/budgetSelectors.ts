@@ -1,4 +1,5 @@
 import type { Budget, Category, Transaction } from '../models/finance'
+import { normalizeCategoryAlias } from './categoryNormalization'
 import { selectLinkedReimbursementsForExpense } from './sharedExpenseSelectors'
 
 export interface BudgetStatusItem {
@@ -35,9 +36,10 @@ export function spentByCategoryThisMonth(
 ): number {
   const currentMonth = referenceDate.getMonth()
   const currentYear = referenceDate.getFullYear()
+  const canonicalTargetId = normalizeCategoryAlias(categoryId)
 
   const expenses = transactions
-    .filter((t) => t.type === 'expense' && t.categoryId === categoryId)
+    .filter((t) => t.type === 'expense' && normalizeCategoryAlias(t.categoryId || 'other') === canonicalTargetId)
     .filter((t) => {
       const d = new Date(t.date)
       return d.getMonth() === currentMonth && d.getFullYear() === currentYear

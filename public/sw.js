@@ -1,4 +1,4 @@
-const CACHE_NAME = 'pocketflow-v0.18.0-2026.09.17-13'
+const CACHE_NAME = 'pocketflow-v0.18.0-2026.09.18-16'
 
 // Recursos estáticos iniciales a cachear
 const PRECACHE_URLS = [
@@ -41,11 +41,46 @@ self.addEventListener('activate', (event) => {
   )
 })
 
+/**
+ * Determina si una petición es apta para ser gestionada y cacheada por el Service Worker.
+ * Solo se cachean assets locales (mismo origen) con método GET.
+ * Las peticiones a Supabase (*.supabase.co, API REST, Auth, Realtime, Storage) quedan estrictamente excluidas.
+ */
+function shouldHandleFetch(request) {
+  if (request.method !== 'GET') return false
+  if (!request.url.startsWith('http')) return false
+
+  try {
+    const url = new URL(request.url)
+
+    // Excluir de forma estricta cualquier llamada a Supabase o APIs externas
+    if (url.hostname.includes('supabase.co') || url.hostname.includes('supabase.in')) {
+      return false
+    }
+
+    // Excluir endpoints típicos de API y backend
+    if (
+      url.pathname.startsWith('/rest/v1') ||
+      url.pathname.startsWith('/auth/v1') ||
+      url.pathname.startsWith('/realtime/v1') ||
+      url.pathname.startsWith('/storage/v1')
+    ) {
+      return false
+    }
+
+    // Solo gestionar peticiones del mismo origen (App Shell y Assets estáticos propios)
+    return url.origin === self.location.origin
+  } catch {
+    return false
+  }
+}
+
 self.addEventListener('fetch', (event) => {
   const { request } = event
 
-  // No interceptar peticiones ajenas o esquemas no http/https
-  if (!request.url.startsWith('http')) return
+  if (!shouldHandleFetch(request)) {
+    return // Dejar pasar directamente a la red sin interceptar ni cachear
+  }
 
   // Navegación (HTML): Network first con fallback a cache
   if (request.mode === 'navigate') {
@@ -61,7 +96,7 @@ self.addEventListener('fetch', (event) => {
     return
   }
 
-  // Assets estáticos (JS, CSS, imágenes): Cache first con actualización en segundo plano
+  // Assets estáticos locales (JS, CSS, imágenes): Cache first con actualización en segundo plano
   event.respondWith(
     caches.match(request).then((cached) => {
       if (cached) {

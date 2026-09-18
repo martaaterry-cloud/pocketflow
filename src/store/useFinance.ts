@@ -265,7 +265,16 @@ export function useFinance(storage: StorageAdapter = defaultAppStorage) {
             onSyncStatusChangeRef.current?.('up_to_date')
           })
           .catch((err) => {
-            console.error(`[Supabase Real Error] Fallo en ${action} ${entity} (id: ${id}):`, {
+            const isNetworkError =
+              !navigator.onLine ||
+              (err instanceof TypeError && err.message.toLowerCase().includes('fetch')) ||
+              (typeof err?.message === 'string' && (
+                err.message.toLowerCase().includes('network') ||
+                err.message.toLowerCase().includes('failed to fetch') ||
+                err.message.toLowerCase().includes('connection')
+              ))
+
+            console.error(`[Supabase Sync Error] Fallo en ${action} ${entity} (id: ${id}):`, {
               code: err?.code,
               message: err?.message,
               details: err?.details,
@@ -273,7 +282,7 @@ export function useFinance(storage: StorageAdapter = defaultAppStorage) {
               error: err,
             })
             enqueueOfflineMutation({ entity, action, data })
-            if (typeof navigator !== 'undefined' && !navigator.onLine) {
+            if (isNetworkError) {
               onSyncStatusChangeRef.current?.('offline')
             } else {
               onSyncStatusChangeRef.current?.('error')
@@ -405,12 +414,12 @@ export function useFinance(storage: StorageAdapter = defaultAppStorage) {
         syncInsertTransaction(sb, uid, newTx)
       )
       createdShares.forEach((share) => {
-        dispatchSync('expense_share' as any, 'insert', share.id, share, (sb, uid) =>
+        dispatchSync('expense_share', 'insert', share.id, share, (sb, uid) =>
           syncUpsertExpenseShare(sb, uid, share)
         )
       })
       newContacts.forEach((c) => {
-        dispatchSync('shared_contact' as any, 'insert', c.id, c, (sb, uid) =>
+        dispatchSync('shared_contact', 'insert', c.id, c, (sb, uid) =>
           syncUpsertSharedContact(sb, uid, c)
         )
       })
@@ -490,7 +499,7 @@ export function useFinance(storage: StorageAdapter = defaultAppStorage) {
         ...state,
         sharedContacts: [newContact, ...(state.sharedContacts ?? [])],
       })
-      dispatchSync('shared_contact' as any, 'insert', newContact.id, newContact, (sb, uid) =>
+      dispatchSync('shared_contact', 'insert', newContact.id, newContact, (sb, uid) =>
         syncUpsertSharedContact(sb, uid, newContact)
       )
       return newContact
@@ -504,7 +513,7 @@ export function useFinance(storage: StorageAdapter = defaultAppStorage) {
         ...state,
         sharedContacts: (state.sharedContacts ?? []).filter((c) => c.id !== id),
       })
-      dispatchSync('shared_contact' as any, 'delete', id, { id }, (sb, uid) =>
+      dispatchSync('shared_contact', 'delete', id, { id }, (sb, uid) =>
         syncDeleteSharedContact(sb, uid, id)
       )
     },
@@ -919,7 +928,7 @@ export function useFinance(storage: StorageAdapter = defaultAppStorage) {
         syncInsertTransaction(sb, uid, newTx)
       )
       cycleShares.forEach((share) => {
-        dispatchSync('expense_share' as any, 'insert', share.id, share, (sb, uid) =>
+        dispatchSync('expense_share', 'insert', share.id, share, (sb, uid) =>
           syncUpsertExpenseShare(sb, uid, share)
         )
       })

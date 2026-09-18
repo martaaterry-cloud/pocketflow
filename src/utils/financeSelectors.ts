@@ -156,8 +156,9 @@ export function selectMonthCashWithdrawals(
 }
 
 /**
- * Gastado este mes = suma de transacciones de tipo 'expense' en el mes en curso.
- * Las transferencias internas quedan estrictamente excluidas.
+ * Gasto bruto facial de este mes = suma simple de transacciones de tipo 'expense'.
+ * @deprecated Para KPIs de coste real y consumo financiero usar la fuente canónica:
+ * {@link selectNetPersonalExpensesForPeriod} de `sharedExpenseSelectors.ts`.
  */
 export function selectMonthExpenses(
   transactions: Transaction[],
@@ -301,7 +302,9 @@ export function selectRecurringPaymentCycleStatus(
 }
 
 /**
- * Gasto bruto desglosado por categoría en el mes actual.
+ * Gasto bruto desglosado por categoría en el mes actual (suma facial de transacciones).
+ * @deprecated Para visualización de consumo real y gráficos de categoría usar la fuente canónica:
+ * {@link selectNetExpensesByCategory} de `sharedExpenseSelectors.ts`.
  */
 export function selectCategoryExpenses(
   transactions: Transaction[],
