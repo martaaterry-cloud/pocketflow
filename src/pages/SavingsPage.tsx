@@ -96,6 +96,9 @@ export function SavingsPage({ finance }: { finance: ReturnTypeFinance }) {
     setAllocateReserveOpen(true)
   }
 
+  const hasGoals = (finance.goals || []).length > 0
+  const hasReserves = (finance.reserves || []).length > 0
+
   return (
     <main className="page">
       <header className="simple-header">
@@ -103,10 +106,10 @@ export function SavingsPage({ finance }: { finance: ReturnTypeFinance }) {
       </header>
 
       {/* 1. Resumen Central de Ahorro y Distribución */}
-      <section className="hero-card light" style={{ marginBottom: 20 }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+      <section className="hero-card light" style={{ marginBottom: 24 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0 2px' }}>
           <span className="hero-tag">Ahorro total</span>
-          <span style={{ fontSize: 13, color: '#64748b' }}>
+          <span style={{ fontSize: 13, color: '#64748b', fontWeight: 500 }}>
             Asignado: <b>{money(totalAssignedSavings)}</b>
           </span>
         </div>
@@ -118,12 +121,12 @@ export function SavingsPage({ finance }: { finance: ReturnTypeFinance }) {
             <strong style={{ color: finance.totals.freeSavings > 0 ? '#10b981' : undefined }}>
               {money(finance.totals.freeSavings)}
             </strong>
-            <small>Dinero ahorrado todavía sin asignar</small>
+            <small>Sin asignar</small>
           </div>
           <div className="hero-kpi-item">
             <span>Fondo emergencia</span>
             <strong>{money(finance.totals.emergencyAllocated ?? 0)}</strong>
-            <small>Colchón para imprevistos</small>
+            <small>Imprevistos</small>
           </div>
           <div className="hero-kpi-item">
             <span>En objetivos</span>
@@ -133,29 +136,22 @@ export function SavingsPage({ finance }: { finance: ReturnTypeFinance }) {
           <div className="hero-kpi-item">
             <span>En reservas</span>
             <strong>{money(finance.totals.reservesAllocated ?? 0)}</strong>
-            <small>Gastos futuros previstos</small>
+            <small>Gastos previstos</small>
           </div>
         </div>
       </section>
 
       {/* 2. Sección A: Fondo de Emergencia */}
-      <section className="section">
+      <section className="section" style={{ marginBottom: 28 }}>
         <div className="section-title">
           <h2>Fondo de emergencia</h2>
-          <button
-            type="button"
-            className="text-button"
-            onClick={() => setEmergencyModalOpen(true)}
-          >
-            Asignar / Liberar
-          </button>
         </div>
         <p className="section-subtitle">
           Dinero reservado para imprevistos y tranquilidad financiera ante contingencias.
         </p>
 
-        <div className="account-card" style={{ marginTop: 10 }}>
-          <div className="account-header">
+        <div className="account-card" style={{ marginTop: 12 }}>
+          <div className="account-header" style={{ flexWrap: 'wrap', gap: 8 }}>
             <div className="account-title">
               <span className="account-icon savings">
                 <AppIcon name="shield" size={18} />
@@ -195,35 +191,61 @@ export function SavingsPage({ finance }: { finance: ReturnTypeFinance }) {
               </span>
             </div>
           </div>
+
+          <div style={{ marginTop: 16, display: 'flex', justifyContent: 'center' }}>
+            <button
+              type="button"
+              className="goal-action-btn primary"
+              style={{ maxWidth: 220, width: '100%', padding: '8px 16px', fontSize: 13 }}
+              onClick={() => setEmergencyModalOpen(true)}
+            >
+              Asignar / Liberar
+            </button>
+          </div>
         </div>
       </section>
 
       {/* 3. Sección B: Objetivos de Ahorro */}
-      <section className="section" style={{ marginTop: 26 }}>
+      <section className="section" style={{ marginBottom: 28 }}>
         <div className="section-title">
           <h2>Objetivos de ahorro</h2>
-          <button type="button" className="text-button" onClick={handleOpenCreateGoal}>
-            <AppIcon name="plus" size={15} /> Nuevo objetivo
-          </button>
+          {hasGoals && (
+            <button type="button" className="text-button" onClick={handleOpenCreateGoal}>
+              <AppIcon name="plus" size={15} /> Nuevo objetivo
+            </button>
+          )}
         </div>
         <p className="section-subtitle">
           Meta voluntaria que quieres alcanzar (ej. vacaciones, compras grandes, caprichos).
         </p>
 
-        {finance.goals.length === 0 ? (
-          <div className="transaction-list empty" style={{ marginTop: 10 }}>
-            <p className="muted">No tienes objetivos de ahorro todavía.</p>
+        {!hasGoals ? (
+          <div
+            className="transaction-list empty"
+            style={{
+              marginTop: 12,
+              padding: '24px 16px',
+              textAlign: 'center',
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              justifyContent: 'center',
+            }}
+          >
+            <p className="muted" style={{ margin: 0, fontSize: 14 }}>
+              No tienes objetivos de ahorro todavía.
+            </p>
             <button
               type="button"
               className="primary-button"
-              style={{ marginTop: 14, maxWidth: 220 }}
+              style={{ marginTop: 14, maxWidth: 220, width: '100%', alignSelf: 'center' }}
               onClick={handleOpenCreateGoal}
             >
               Crear primer objetivo
             </button>
           </div>
         ) : (
-          <div className="goals-grid" style={{ marginTop: 10 }}>
+          <div className="goals-grid" style={{ marginTop: 12 }}>
             {finance.goals.map((goal) => {
               const { percentage, isCompleted } = selectGoalProgress(goal.current, goal.target)
 
@@ -283,31 +305,46 @@ export function SavingsPage({ finance }: { finance: ReturnTypeFinance }) {
       </section>
 
       {/* 4. Sección C: Reservas de Gastos Previstos */}
-      <section className="section" style={{ marginTop: 26, marginBottom: 30 }}>
+      <section className="section" style={{ marginBottom: 32 }}>
         <div className="section-title">
           <h2>Reservas de gastos previstos</h2>
-          <button type="button" className="text-button" onClick={handleOpenCreateReserve}>
-            <AppIcon name="plus" size={15} /> Nueva reserva
-          </button>
+          {hasReserves && (
+            <button type="button" className="text-button" onClick={handleOpenCreateReserve}>
+              <AppIcon name="plus" size={15} /> Nueva reserva
+            </button>
+          )}
         </div>
         <p className="section-subtitle">
           Dinero apartado para un gasto futuro previsto (ej. seguro anual, Navidad, matrícula, ITV).
         </p>
 
-        {!finance.reserves?.length ? (
-          <div className="transaction-list empty" style={{ marginTop: 10 }}>
-            <p className="muted">No has creado ninguna reserva todavía.</p>
+        {!hasReserves ? (
+          <div
+            className="transaction-list empty"
+            style={{
+              marginTop: 12,
+              padding: '24px 16px',
+              textAlign: 'center',
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              justifyContent: 'center',
+            }}
+          >
+            <p className="muted" style={{ margin: 0, fontSize: 14 }}>
+              No has creado ninguna reserva todavía.
+            </p>
             <button
               type="button"
               className="primary-button"
-              style={{ marginTop: 14, maxWidth: 220 }}
+              style={{ marginTop: 14, maxWidth: 220, width: '100%', alignSelf: 'center' }}
               onClick={handleOpenCreateReserve}
             >
               Crear primera reserva
             </button>
           </div>
         ) : (
-          <div className="goals-grid" style={{ marginTop: 10 }}>
+          <div className="goals-grid" style={{ marginTop: 12 }}>
             {finance.reserves.map((reserve) => {
               const monthlyNeeded = selectMonthlyReserveNeeded(reserve, now)
               const pct =
