@@ -150,6 +150,7 @@ export function MorePage({
         finance={finance}
         onBack={() => setSubView('menu')}
         onNavigateToRecurring={() => setSubView('recurring')}
+        onNavigateToSavings={onNavigateToSavings}
       />
     )
   }
@@ -241,9 +242,9 @@ export function MorePage({
             <AppIcon name="piggy-bank" size={18} />
           </span>
           <div>
-            <strong>Objetivos de ahorro</strong>
+            <strong>Ahorro</strong>
             <small>
-              {finance.goals.length} metas · {money(finance.totals.assignedSavings)} asignados
+              Fondo de emergencia, metas y reservas · {money(finance.totals.savingsBalance)}
             </small>
           </div>
           <b className="chevron">

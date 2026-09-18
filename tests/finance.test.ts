@@ -6802,11 +6802,11 @@ describe('Fase 18 — Identificación Visual de Versión y Build', () => {
   it('314. Versioning: única fuente de verdad y formato de visualización exacto', () => {
     assert.equal(APP_NAME, 'PocketFlow')
     assert.equal(APP_VERSION, '0.18.0')
-    assert.equal(APP_BUILD, '2026.09.18-18')
+    assert.equal(APP_BUILD, '2026.09.18-19')
 
     assert.equal(getAppVersionString(), 'PocketFlow v0.18.0')
-    assert.equal(getAppBuildString(), 'Build 2026.09.18-18')
-    assert.equal(getAppFullVersionLabel(), 'PocketFlow v0.18.0 · Build 2026.09.18-18')
+    assert.equal(getAppBuildString(), 'Build 2026.09.18-19')
+    assert.equal(getAppFullVersionLabel(), 'PocketFlow v0.18.0 · Build 2026.09.18-19')
   })
 })
 
@@ -9027,6 +9027,127 @@ describe('Fase 29 — Unificación de Ingresos y Simplificación del Plan Financ
     assert.equal(legacyCallSummary.monthlyIncome, 1800)
     // 1800 - 300 (ahorro) - 500 (esenciales) - 300 (variables) = 700 €
     assert.equal(legacyCallSummary.freeToSpend, 700)
+  })
+})
+
+describe('Fase 30 — Consolidación del Ahorro y Limpieza de UX', () => {
+  // A. Ahorro
+  it('386. Ahorro: saldo total, suma de asignados y ahorro libre exactos', () => {
+    const savingsBalance = 5000
+    const emergencyAllocated = 1500
+    const goalsAllocated = 1200
+    const reservesAllocated = 800
+
+    const freeSavings = selectFreeSavingsWithReserves(
+      savingsBalance,
+      emergencyAllocated,
+      goalsAllocated,
+      reservesAllocated
+    )
+
+    // 5000 - (1500 + 1200 + 800) = 1500 € libres
+    assert.equal(freeSavings, 1500)
+    const totalAssigned = emergencyAllocated + goalsAllocated + reservesAllocated
+    assert.equal(totalAssigned, 3500)
+    assert.equal(totalAssigned + freeSavings, savingsBalance)
+  })
+
+  it('387. Ahorro: selectFreeSavingsWithReserves preserva la invariante contable', () => {
+    const goals: SavingsGoal[] = [
+      { id: 'g1', name: 'Viaje Japón', target: 3000, current: 1500, active: true },
+      { id: 'g2', name: 'MacBook Pro', target: 2000, current: 800, active: true },
+    ]
+    const reserves: Reserve[] = [
+      { id: 'r1', name: 'Seguro Coche', targetAmount: 600, currentAllocated: 300, targetDate: '2026-12-01', active: true },
+      { id: 'r2', name: 'Navidad', targetAmount: 400, currentAllocated: 200, targetDate: '2026-12-25', active: true },
+    ]
+
+    const totalGoals = selectTotalAllocatedToGoals(goals)
+    const totalReserves = selectTotalAllocatedToReserves(reserves)
+    const emergencyAllocated = 2000
+    const savingsBalance = 6000
+
+    assert.equal(totalGoals, 2300)
+    assert.equal(totalReserves, 500)
+
+    const free = selectFreeSavingsWithReserves(savingsBalance, emergencyAllocated, totalGoals, totalReserves)
+    // 6000 - (2000 + 2300 + 500) = 1200 €
+    assert.equal(free, 1200)
+  })
+
+  it('388. Ahorro: límites seguros, freeSavings nunca devuelve valor negativo ante sobreasignación', () => {
+    const savingsBalance = 1000
+    const emergencyAllocated = 800
+    const goalsAllocated = 500
+    const reservesAllocated = 200
+
+    // 1000 - 1500 = -500 -> Math.max(0, ...) -> 0
+    const free = selectFreeSavingsWithReserves(savingsBalance, emergencyAllocated, goalsAllocated, reservesAllocated)
+    assert.equal(free, 0)
+  })
+
+  // B. Fondo de Emergencia y Reservas
+  it('389. Fondo de Emergencia: cálculo de meses cubiertos sin división por cero ni NaN', () => {
+    assert.equal(selectEmergencyFundMonthsCovered(3000, 1000), 3)
+    assert.equal(selectEmergencyFundMonthsCovered(4500, 1500), 3)
+    assert.equal(selectEmergencyFundMonthsCovered(0, 1000), 0)
+    assert.equal(selectEmergencyFundMonthsCovered(3000, 0), 0)
+  })
+
+  it('390. Reservas: cuota mensual sugerida calcula la división entre los meses restantes hasta la meta', () => {
+    const refDate = new Date(2026, 8, 1) // Septiembre 2026
+    const reserve: Reserve = {
+      id: 'r_seguro',
+      name: 'Seguro Hogar',
+      targetAmount: 600,
+      currentAllocated: 200, // Pendiente: 400 €
+      targetDate: '2026-12-01', // Diciembre 2026 -> 3 meses (Sep->Oct->Nov->Dic)
+      active: true,
+    }
+
+    const cuota = selectMonthlyReserveNeeded(reserve, refDate)
+    // 400 € / 3 meses = 133.33 €/mes
+    assert.equal(cuota, 133.33)
+
+    // Si ya está totalmente cubierta:
+    const coveredReserve: Reserve = {
+      ...reserve,
+      currentAllocated: 600,
+    }
+    assert.equal(selectMonthlyReserveNeeded(coveredReserve, refDate), 0)
+  })
+
+  // C. Plan y Retrocompatibilidad
+  it('391. Plan Financiero: consume fondo de emergencia y reservas como resumen sin romper integridad', () => {
+    const settings: FinancialPlanSettings = {
+      monthlyIncome: 2000,
+      targetSavingsType: 'percentage',
+      targetSavingsValue: 10,
+      emergencyFundTargetType: 'months',
+      emergencyFundTargetValue: 3,
+      emergencyFundCurrent: 1500,
+      essentialCategoryIds: [],
+    }
+
+    const targetEmergency = selectEmergencyFundTarget(settings, 1000)
+    assert.equal(targetEmergency, 3000)
+    assert.equal(settings.emergencyFundCurrent, 1500)
+  })
+
+  it('392. Retrocompatibilidad: estructuras existentes de SavingsGoal y Reserve persisten todas sus propiedades', () => {
+    const goal: SavingsGoal = {
+      id: 'g_legacy',
+      name: 'Entrada Coche',
+      target: 5000,
+      current: 2500,
+      targetDate: '2027-01-01',
+      iconKey: 'car',
+      completed: false,
+    }
+
+    const { percentage, isCompleted } = selectGoalProgress(goal.current, goal.target)
+    assert.equal(percentage, 50)
+    assert.equal(isCompleted, false)
   })
 })
 

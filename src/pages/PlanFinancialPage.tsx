@@ -1,11 +1,8 @@
 import { useMemo, useState } from 'react'
 import type {
-  CreateReserveInput,
   CreateSpecialPeriodInput,
-  Reserve,
   SpecialPeriod,
   UpdatePlanSettingsInput,
-  UpdateReserveInput,
   UpdateSpecialPeriodInput,
 } from '../models/finance'
 import type { ReturnTypeFinance } from '../types'
@@ -16,30 +13,21 @@ import {
   selectMonthlyReserveNeeded,
   selectUpcomingSpecialPeriods,
 } from '../utils/planSelectors'
-import { AllocateEmergencyModal } from '../components/AllocateEmergencyModal'
-import { AllocateReserveModal } from '../components/AllocateReserveModal'
 import { PlanSettingsModal } from '../components/PlanSettingsModal'
-import { ReserveModal } from '../components/ReserveModal'
 import { SpecialPeriodModal } from '../components/SpecialPeriodModal'
 
 export function PlanFinancialPage({
   finance,
   onBack,
   onNavigateToRecurring,
+  onNavigateToSavings,
 }: {
   finance: ReturnTypeFinance
   onBack: () => void
   onNavigateToRecurring?: () => void
+  onNavigateToSavings?: () => void
 }) {
   const [settingsOpen, setSettingsOpen] = useState(false)
-  const [emergencyModalOpen, setEmergencyModalOpen] = useState(false)
-
-  const [reserveModalOpen, setReserveModalOpen] = useState(false)
-  const [editingReserve, setEditingReserve] = useState<Reserve | null>(null)
-
-  const [allocateReserveOpen, setAllocateReserveOpen] = useState(false)
-  const [targetReserveForAlloc, setTargetReserveForAlloc] = useState<Reserve | null>(null)
-
   const [specialPeriodModalOpen, setSpecialPeriodModalOpen] = useState(false)
   const [editingPeriod, setEditingPeriod] = useState<SpecialPeriod | null>(null)
 
@@ -72,30 +60,6 @@ export function PlanFinancialPage({
   const scenario6Months = useMemo(() => {
     return Math.round(6 * emergencyBase * 100) / 100
   }, [emergencyBase])
-
-  // Handlers para reservas
-  const handleOpenCreateReserve = () => {
-    setEditingReserve(null)
-    setReserveModalOpen(true)
-  }
-
-  const handleOpenEditReserve = (r: Reserve) => {
-    setEditingReserve(r)
-    setReserveModalOpen(true)
-  }
-
-  const handleSaveReserve = (data: CreateReserveInput | UpdateReserveInput, id?: string) => {
-    if (id) {
-      finance.updateReserve(id, data)
-    } else {
-      finance.addReserve(data as CreateReserveInput)
-    }
-  }
-
-  const handleOpenAllocateReserve = (r: Reserve) => {
-    setTargetReserveForAlloc(r)
-    setAllocateReserveOpen(true)
-  }
 
   // Handlers para periodos especiales
   const handleOpenCreatePeriod = () => {
@@ -193,20 +157,25 @@ export function PlanFinancialPage({
         </div>
       </section>
 
-      {/* 2. Fondo de Emergencia */}
+      {/* 2. Fondo de Emergencia (Resumen Analítico) */}
       <section className="section">
         <div className="section-title">
           <h2>Fondo de emergencia</h2>
-          <button
-            type="button"
-            className="text-button"
-            onClick={() => setEmergencyModalOpen(true)}
-          >
-            Asignar / Liberar
-          </button>
+          {onNavigateToSavings && (
+            <button
+              type="button"
+              className="text-button"
+              onClick={onNavigateToSavings}
+            >
+              Gestionar en Ahorro <AppIcon name="chevron-right" size={14} />
+            </button>
+          )}
         </div>
+        <p className="section-subtitle">
+          Dinero reservado para imprevistos (estimado sobre tus gastos fijos/comprometidos).
+        </p>
 
-        <div className="account-card">
+        <div className="account-card" style={{ marginTop: 10 }}>
           <div className="account-header">
             <div className="account-title">
               <span className="account-icon savings">
@@ -215,7 +184,7 @@ export function PlanFinancialPage({
               <div>
                 <strong>Colchón para imprevistos</strong>
                 <span className="account-subtitle">
-                  {plan.emergencyFundMonthsCovered} meses de gastos fijos cubiertos
+                  {plan.emergencyFundMonthsCovered} meses de gastos cubiertos
                 </span>
               </div>
             </div>
@@ -263,33 +232,37 @@ export function PlanFinancialPage({
         </div>
       </section>
 
-      {/* 3. Reservas (Gastos Previstos de Medio Plazo) */}
+      {/* 3. Reservas (Resumen de Gastos Previstos de Medio Plazo) */}
       <section className="section" style={{ marginTop: 24 }}>
         <div className="section-title">
           <h2>Reservas de gastos previstos</h2>
-          <button type="button" className="text-button" onClick={handleOpenCreateReserve}>
-            <AppIcon name="plus" size={14} /> Nueva reserva
-          </button>
+          {onNavigateToSavings && (
+            <button type="button" className="text-button" onClick={onNavigateToSavings}>
+              Gestionar en Ahorro <AppIcon name="chevron-right" size={14} />
+            </button>
+          )}
         </div>
 
         <p className="section-subtitle">
-          Dinero separado para gastos que sabemos que van a ocurrir (Navidad, seguros, vacaciones).
+          Dinero apartado para gastos que sabemos que van a ocurrir (Navidad, seguros, vacaciones).
         </p>
 
         {!finance.reserves?.length ? (
-          <div className="transaction-list empty">
-            <p className="muted">No has creado ninguna reserva todavía.</p>
-            <button
-              type="button"
-              className="primary-button"
-              style={{ marginTop: 12, maxWidth: 220 }}
-              onClick={handleOpenCreateReserve}
-            >
-              Crear primera reserva
-            </button>
+          <div className="transaction-list empty" style={{ marginTop: 10 }}>
+            <p className="muted">No tienes reservas creadas todavía.</p>
+            {onNavigateToSavings && (
+              <button
+                type="button"
+                className="primary-button"
+                style={{ marginTop: 12, maxWidth: 220 }}
+                onClick={onNavigateToSavings}
+              >
+                Ir a Ahorro
+              </button>
+            )}
           </div>
         ) : (
-          <div className="goals-grid">
+          <div className="goals-grid" style={{ marginTop: 10 }}>
             {finance.reserves.map((reserve) => {
               const monthlyNeeded = selectMonthlyReserveNeeded(reserve, now)
               const pct = reserve.targetAmount > 0
@@ -336,23 +309,6 @@ export function PlanFinancialPage({
                       <span>Cuota sugerida: <b>{money(monthlyNeeded)}/mes</b></span>
                     )}
                   </div>
-
-                  <div className="goal-actions-row">
-                    <button
-                      type="button"
-                      className="goal-action-btn primary"
-                      onClick={() => handleOpenAllocateReserve(reserve)}
-                    >
-                      Asignar / Retirar
-                    </button>
-                    <button
-                      type="button"
-                      className="goal-action-btn secondary"
-                      onClick={() => handleOpenEditReserve(reserve)}
-                    >
-                      Editar
-                    </button>
-                  </div>
                 </div>
               )
             })}
@@ -374,11 +330,11 @@ export function PlanFinancialPage({
         </p>
 
         {!upcomingPeriods.length ? (
-          <div className="transaction-list empty">
+          <div className="transaction-list empty" style={{ marginTop: 10 }}>
             <p className="muted">No tienes periodos especiales configurados.</p>
           </div>
         ) : (
-          <div className="special-periods-list">
+          <div className="special-periods-list" style={{ marginTop: 10 }}>
             {upcomingPeriods.map((period) => (
               <div
                 className="special-period-card clickable"
@@ -474,39 +430,6 @@ export function PlanFinancialPage({
         recurring={finance.recurring}
         onSave={handleSaveSettings}
         onNavigateToRecurring={onNavigateToRecurring}
-      />
-
-      <AllocateEmergencyModal
-        open={emergencyModalOpen}
-        onClose={() => setEmergencyModalOpen(false)}
-        freeSavings={finance.totals.freeSavings}
-        currentEmergency={finance.totals.emergencyAllocated ?? 0}
-        targetEmergency={plan.emergencyFundTarget}
-        onAllocate={finance.allocateEmergencyFund}
-        onDeallocate={finance.deallocateEmergencyFund}
-      />
-
-      <ReserveModal
-        open={reserveModalOpen}
-        onClose={() => {
-          setReserveModalOpen(false)
-          setEditingReserve(null)
-        }}
-        reserve={editingReserve}
-        onSave={handleSaveReserve}
-        onDelete={finance.deleteReserve}
-      />
-
-      <AllocateReserveModal
-        open={allocateReserveOpen}
-        onClose={() => {
-          setAllocateReserveOpen(false)
-          setTargetReserveForAlloc(null)
-        }}
-        reserve={targetReserveForAlloc}
-        freeSavings={finance.totals.freeSavings}
-        onAllocate={finance.allocateToReserve}
-        onDeallocate={finance.deallocateFromReserve}
       />
 
       <SpecialPeriodModal
