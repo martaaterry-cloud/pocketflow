@@ -172,16 +172,16 @@ export function PlanFinancialPage({
             </small>
           </div>
           <div className="hero-kpi-item">
-            <span>Gasto comprometido</span>
+            <span>Comprometido previsto</span>
             <strong>{money(plan.expectedCommittedExpenses)}/mes</strong>
             <small>Suscripciones y fijos</small>
           </div>
           <div className="hero-kpi-item">
-            <span>Gasto variable</span>
+            <span>Variable gastado neto este mes</span>
             <strong>{money(plan.actualVariableExpenses)}</strong>
             <small>
               {plan.expectedVariableExpenses !== null
-                ? `Previsto: ${money(plan.expectedVariableExpenses)}`
+                ? `Variable previsto pendiente: ${money(plan.expectedVariableExpenses)}`
                 : 'Gasto neto real'}
             </small>
           </div>
@@ -435,11 +435,12 @@ export function PlanFinancialPage({
                   <b>{money(item.expectedIncome)}</b>
                 </div>
                 <div>
-                  <span>Gasto estimado</span>
+                  <span>Gasto mensual previsto</span>
                   <b>{money(item.normalExpenses + item.expectedExtraExpenses)}</b>
-                  {item.expectedExtraExpenses > 0 && (
-                    <small>+{money(item.expectedExtraExpenses)} extra</small>
-                  )}
+                  <small>
+                    Comprometido + variable previsto
+                    {item.expectedExtraExpenses > 0 && ` (+${money(item.expectedExtraExpenses)} extra)`}
+                  </small>
                 </div>
                 <div>
                   <span>Reservas previstas</span>
