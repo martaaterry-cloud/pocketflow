@@ -335,29 +335,50 @@ export function PlanFinancialPage({
           </div>
         ) : (
           <div className="special-periods-list" style={{ marginTop: 10 }}>
-            {upcomingPeriods.map((period) => (
-              <div
-                className="special-period-card clickable"
-                key={period.id}
-                onClick={() => handleOpenEditPeriod(period)}
-              >
-                <div className="special-period-header">
-                  <div>
-                    <strong>{period.name}</strong>
-                    <span>
-                      {period.startDate} al {period.endDate}
-                    </span>
+            {upcomingPeriods.map((period) => {
+              const hasAmount =
+                typeof period.expectedExtraBudget === 'number' && !isNaN(period.expectedExtraBudget)
+              const hasPositiveAmount = hasAmount && period.expectedExtraBudget! > 0
+              const isZeroAmount = hasAmount && period.expectedExtraBudget === 0
+
+              return (
+                <div
+                  className="special-period-card clickable"
+                  key={period.id}
+                  onClick={() => handleOpenEditPeriod(period)}
+                >
+                  <div className="special-period-header">
+                    <div>
+                      <strong>{period.name}</strong>
+                      <span>
+                        {period.startDate} al {period.endDate}
+                      </span>
+                    </div>
+                    {hasPositiveAmount ? (
+                      <span className="badge-status pending">
+                        +{money(period.expectedExtraBudget!)} previsto
+                      </span>
+                    ) : isZeroAmount ? (
+                      <span className="badge-status">
+                        0,00 € previsto
+                      </span>
+                    ) : (
+                      <span className="badge-status muted">
+                        Sin estimación
+                      </span>
+                    )}
                   </div>
-                  <span className="badge-status pending">
-                    +{money(period.expectedExtraBudget)} previsto
-                  </span>
+                  <p className="special-period-context">
+                    {hasPositiveAmount
+                      ? `Este periodo contempla ${money(period.expectedExtraBudget!)} de gasto extraordinario planificado.`
+                      : isZeroAmount
+                      ? 'Este periodo contempla 0,00 € de gasto extraordinario planificado.'
+                      : 'Periodo especial sin estimación económica definida.'}
+                    {period.note ? ` (${period.note})` : ''}
+                  </p>
                 </div>
-                <p className="special-period-context">
-                  Este periodo contempla {money(period.expectedExtraBudget)} de gasto extraordinario planificado.
-                  {period.note ? ` (${period.note})` : ''}
-                </p>
-              </div>
-            ))}
+              )
+            })}
           </div>
         )}
       </section>
@@ -373,44 +394,62 @@ export function PlanFinancialPage({
         </p>
 
         <div className="forecast-scroll-container">
-          {annualForecast.map((item) => (
-            <div
-              className={`forecast-card ${item.isHighSpend ? 'high-spend' : ''}`}
-              key={item.monthKey}
-            >
-              <div className="forecast-card-header">
-                <strong>{item.monthName} {item.year}</strong>
-                {item.isHighSpend && (
-                  <span className="forecast-tag high">Gasto alto previsto</span>
-                )}
-              </div>
+          {annualForecast.map((item) => {
+            const unestimatedPeriods = (item.specialPeriodsInMonth || []).filter(
+              (p) => p.expectedExtraBudget === undefined || p.expectedExtraBudget === null
+            )
 
-              <div className="forecast-kpis">
-                <div>
-                  <span>Ingresos previstos</span>
-                  <b>{money(item.expectedIncome)}</b>
+            return (
+              <div
+                className={`forecast-card ${item.isHighSpend ? 'high-spend' : ''}`}
+                key={item.monthKey}
+              >
+                <div className="forecast-card-header">
+                  <strong>{item.monthName} {item.year}</strong>
+                  {item.isHighSpend ? (
+                    <span className="forecast-tag high">Gasto alto previsto</span>
+                  ) : unestimatedPeriods.length > 0 ? (
+                    <span
+                      className="forecast-tag special"
+                      title={unestimatedPeriods.map((p) => p.name).join(', ')}
+                    >
+                      Periodo especial
+                    </span>
+                  ) : null}
                 </div>
-                <div>
-                  <span>Gasto mensual previsto</span>
-                  <b>{money(item.normalExpenses + item.expectedExtraExpenses)}</b>
-                  <small>
-                    Comprometido + variable previsto
-                    {item.expectedExtraExpenses > 0 && ` (+${money(item.expectedExtraExpenses)} extra)`}
-                  </small>
-                </div>
-                <div>
-                  <span>Reservas previstas</span>
-                  <b>{money(item.expectedReserves)}</b>
-                </div>
-                <div>
-                  <span>Margen estimado</span>
-                  <b className={item.estimatedMargin >= 0 ? 'positive' : 'negative'}>
-                    {money(item.estimatedMargin)}
-                  </b>
+
+                <div className="forecast-kpis">
+                  <div>
+                    <span>Ingresos previstos</span>
+                    <b>{money(item.expectedIncome)}</b>
+                  </div>
+                  <div>
+                    <span>Gasto mensual previsto</span>
+                    <b>{money(item.normalExpenses + item.expectedExtraExpenses)}</b>
+                    <small>
+                      Comprometido + variable previsto
+                      {item.expectedExtraExpenses > 0 && ` (+${money(item.expectedExtraExpenses)} extra)`}
+                    </small>
+                    {unestimatedPeriods.length > 0 && (
+                      <small style={{ color: '#64748b', display: 'block', marginTop: 2 }}>
+                        {unestimatedPeriods.map((p) => p.name).join(', ')}: sin estimación
+                      </small>
+                    )}
+                  </div>
+                  <div>
+                    <span>Reservas previstas</span>
+                    <b>{money(item.expectedReserves)}</b>
+                  </div>
+                  <div>
+                    <span>Margen estimado</span>
+                    <b className={item.estimatedMargin >= 0 ? 'positive' : 'negative'}>
+                      {money(item.estimatedMargin)}
+                    </b>
+                  </div>
                 </div>
               </div>
-            </div>
-          ))}
+            )
+          })}
         </div>
       </section>
 

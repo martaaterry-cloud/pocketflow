@@ -1275,10 +1275,16 @@ export function useFinance(storage: StorageAdapter = defaultAppStorage) {
 
   const addSpecialPeriod = useCallback(
     (input: CreateSpecialPeriodInput) => {
+      const rawBudget = input.expectedExtraBudget
+      const parsedBudget =
+        rawBudget === undefined || rawBudget === null || (typeof rawBudget === 'string' && (rawBudget as string).trim() === '')
+          ? undefined
+          : Number(rawBudget)
+
       const newPeriod: SpecialPeriod = {
         ...input,
         id: crypto.randomUUID(),
-        expectedExtraBudget: Number(input.expectedExtraBudget),
+        expectedExtraBudget: parsedBudget !== undefined && !isNaN(parsedBudget) ? parsedBudget : undefined,
       }
       commit({
         ...state,
@@ -1295,13 +1301,22 @@ export function useFinance(storage: StorageAdapter = defaultAppStorage) {
     (id: string, updates: UpdateSpecialPeriodInput) => {
       const nextPeriods = state.specialPeriods.map((p) => {
         if (p.id !== id) return p
+        let expectedExtraBudget = p.expectedExtraBudget
+        if (updates.expectedExtraBudget !== undefined) {
+          if (
+            updates.expectedExtraBudget === null ||
+            (typeof updates.expectedExtraBudget === 'string' && (updates.expectedExtraBudget as string).trim() === '')
+          ) {
+            expectedExtraBudget = undefined
+          } else {
+            const num = Number(updates.expectedExtraBudget)
+            expectedExtraBudget = !isNaN(num) ? num : undefined
+          }
+        }
         return {
           ...p,
           ...updates,
-          expectedExtraBudget:
-            updates.expectedExtraBudget !== undefined
-              ? Number(updates.expectedExtraBudget)
-              : p.expectedExtraBudget,
+          expectedExtraBudget,
         }
       })
       commit({

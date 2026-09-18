@@ -271,7 +271,10 @@ export function toDbSpecialPeriod(sp: SpecialPeriod, userId: string) {
     name: sp.name,
     start_date: sp.startDate,
     end_date: sp.endDate,
-    expected_extra_budget: sp.expectedExtraBudget,
+    expected_extra_budget:
+      sp.expectedExtraBudget !== undefined && sp.expectedExtraBudget !== null
+        ? sp.expectedExtraBudget
+        : null,
     type: sp.type,
     note: sp.note || null,
   }
@@ -283,7 +286,10 @@ export function fromDbSpecialPeriod(row: Record<string, unknown>): SpecialPeriod
     name: String(row.name),
     startDate: String(row.start_date),
     endDate: String(row.end_date),
-    expectedExtraBudget: Number(row.expected_extra_budget ?? 0),
+    expectedExtraBudget:
+      row.expected_extra_budget !== null && row.expected_extra_budget !== undefined
+        ? Number(row.expected_extra_budget)
+        : undefined,
     type: row.type as 'normal' | 'expected_high_spend' | 'expected_low_spend',
     note: row.note ? String(row.note) : undefined,
   }

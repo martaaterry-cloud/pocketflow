@@ -26,7 +26,11 @@ export function SpecialPeriodModal({ open, onClose, period, onSave, onDelete }: 
       setName(period.name)
       setStartDate(period.startDate)
       setEndDate(period.endDate)
-      setExpectedExtraBudget(String(period.expectedExtraBudget).replace('.', ','))
+      setExpectedExtraBudget(
+        period.expectedExtraBudget !== undefined && period.expectedExtraBudget !== null
+          ? String(period.expectedExtraBudget).replace('.', ',')
+          : ''
+      )
       setType(period.type)
       setNote(period.note ?? '')
       setConfirmDelete(false)
@@ -45,8 +49,15 @@ export function SpecialPeriodModal({ open, onClose, period, onSave, onDelete }: 
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
-    const numericExtra = Number(expectedExtraBudget.replace(',', '.'))
-    if (!name.trim() || isNaN(numericExtra) || numericExtra < 0 || !startDate || !endDate) return
+    if (!name.trim() || !startDate || !endDate) return
+
+    const trimmedExtra = expectedExtraBudget.trim()
+    let numericExtra: number | undefined = undefined
+    if (trimmedExtra !== '') {
+      const parsed = Number(trimmedExtra.replace(',', '.'))
+      if (isNaN(parsed) || parsed < 0) return
+      numericExtra = parsed
+    }
 
     if (isEditing && period) {
       onSave(
@@ -128,15 +139,18 @@ export function SpecialPeriodModal({ open, onClose, period, onSave, onDelete }: 
 
           <div className="form-group">
             <label>
-              Gasto extraordinario previsto (€)
+              Importe extra estimado (€)
               <input
                 type="text"
                 inputMode="decimal"
-                placeholder="400,00"
+                placeholder="Ej. 200 (opcional)"
                 value={expectedExtraBudget}
                 onChange={(e) => setExpectedExtraBudget(e.target.value)}
               />
             </label>
+            <span className="form-help-text" style={{ fontSize: 12, color: '#64748b', marginTop: 4, display: 'block' }}>
+              Déjalo vacío si todavía no sabes cuánto gastarás.
+            </span>
           </div>
 
           <div className="form-group">

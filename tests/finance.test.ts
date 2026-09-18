@@ -148,6 +148,8 @@ import {
   syncDeleteBudget,
   syncUpsertGoal,
   syncDeleteGoal,
+  toDbSpecialPeriod,
+  fromDbSpecialPeriod,
   syncUpsertReserve,
   syncDeleteReserve,
   syncUpsertRecurring,
@@ -208,6 +210,7 @@ import {
 } from '../src/utils/financeSelectors'
 import {
   isMonthInSpecialPeriod,
+  selectAnnualForecast12Months,
   selectActualFixedMonthlyExpenses,
   selectActualExtraordinaryMonthlyExpenses,
   selectActualVariableMonthlyExpenses,
@@ -6802,11 +6805,11 @@ describe('Fase 18 — Identificación Visual de Versión y Build', () => {
   it('314. Versioning: única fuente de verdad y formato de visualización exacto', () => {
     assert.equal(APP_NAME, 'PocketFlow')
     assert.equal(APP_VERSION, '0.18.0')
-    assert.equal(APP_BUILD, '2026.09.18-20')
+    assert.equal(APP_BUILD, '2026.09.18-21')
  
     assert.equal(getAppVersionString(), 'PocketFlow v0.18.0')
-    assert.equal(getAppBuildString(), 'Build 2026.09.18-20')
-    assert.equal(getAppFullVersionLabel(), 'PocketFlow v0.18.0 · Build 2026.09.18-20')
+    assert.equal(getAppBuildString(), 'Build 2026.09.18-21')
+    assert.equal(getAppFullVersionLabel(), 'PocketFlow v0.18.0 · Build 2026.09.18-21')
   })
 })
 
@@ -9150,6 +9153,229 @@ describe('Fase 30 — Consolidación del Ahorro y Limpieza de UX', () => {
     assert.equal(isCompleted, false)
   })
 })
+
+describe('Fase 31 — Periodos Especiales con Importe Opcional y Estacionalidad', () => {
+  it('393. Periodo especial sin importe: expectedExtraBudget es undefined y no suma gasto extra', () => {
+    const periodWithoutAmount: SpecialPeriod = {
+      id: 'sp_no_amount',
+      name: 'Navidad / Reyes',
+      startDate: '2026-12-15',
+      endDate: '2027-01-06',
+      expectedExtraBudget: undefined,
+      type: 'expected_high_spend',
+      note: 'Regalos y cenas sin estimar',
+    }
+
+    const refDec = new Date('2026-12-20')
+    const refJan = new Date('2027-01-02')
+    const refFeb = new Date('2027-02-01')
+
+    assert.equal(isMonthInSpecialPeriod(periodWithoutAmount, 2026, 11), true)
+    assert.equal(isMonthInSpecialPeriod(periodWithoutAmount, 2027, 0), true)
+    assert.equal(isMonthInSpecialPeriod(periodWithoutAmount, 2027, 1), false)
+
+    const extraDec = selectExpectedExtraSpendingForMonth([periodWithoutAmount], refDec)
+    const extraJan = selectExpectedExtraSpendingForMonth([periodWithoutAmount], refJan)
+    const extraFeb = selectExpectedExtraSpendingForMonth([periodWithoutAmount], refFeb)
+
+    assert.equal(extraDec, 0)
+    assert.equal(extraJan, 0)
+    assert.equal(extraFeb, 0)
+  })
+
+  it('394. Periodo especial con importe: expectedExtraBudget numérico suma gasto extra mensual y reduce el margen', () => {
+    const periodWithAmount: SpecialPeriod = {
+      id: 'sp_with_amount',
+      name: 'Navidad / Reyes',
+      startDate: '2026-12-01',
+      endDate: '2026-12-31',
+      expectedExtraBudget: 300,
+      type: 'expected_high_spend',
+    }
+
+    const refDate = new Date('2026-12-15')
+    const extra = selectExpectedExtraSpendingForMonth([periodWithAmount], refDate)
+    assert.equal(extra, 300)
+
+    const settings: FinancialPlanSettings = {
+      monthlyIncome: 2000,
+      targetSavingsType: 'fixed',
+      targetSavingsValue: 200,
+      emergencyFundTargetType: 'months',
+      emergencyFundTargetValue: 3,
+      emergencyFundCurrent: 1000,
+      essentialCategoryIds: [],
+    }
+
+    const summary = selectMonthlyPlanCardSummary(
+      settings,
+      [{ id: 'r1', name: 'Alquiler', amount: 800, type: 'expense', active: true, frequency: 'monthly', nextDate: '2026-12-01', categoryId: 'home', accountId: 'daily', isShared: false }] as RecurringPayment[],
+      [],
+      [periodWithAmount],
+      [],
+      [],
+      [],
+      0,
+      refDate
+    )
+
+    assert.equal(summary.expectedExtraExpenses, 300)
+    // Ingreso 2000 - Comprometido 800 - Ahorro 200 - Extra 300 = Margen 700
+    assert.equal(summary.freeToSpend, 700)
+  })
+
+  it('395. Previsión 12 meses: periodo sin importe preserva el margen y marca el contexto en specialPeriodsInMonth', () => {
+    const periodNoAmount: SpecialPeriod = {
+      id: 'sp_no_amount',
+      name: 'Navidad / Reyes',
+      startDate: '2026-12-01',
+      endDate: '2027-01-06',
+      expectedExtraBudget: undefined,
+      type: 'expected_high_spend',
+    }
+
+    const settings: FinancialPlanSettings = {
+      monthlyIncome: 2000,
+      targetSavingsType: 'fixed',
+      targetSavingsValue: 200,
+      emergencyFundTargetType: 'months',
+      emergencyFundTargetValue: 3,
+      emergencyFundCurrent: 1000,
+      essentialCategoryIds: [],
+    }
+
+    const forecast = selectAnnualForecast12Months(
+      settings,
+      [],
+      600,
+      [periodNoAmount],
+      [],
+      new Date('2026-12-01')
+    )
+
+    const decItem = forecast.find((f) => f.monthKey === '2026-12')!
+    assert.ok(decItem)
+    assert.equal(decItem.expectedExtraExpenses, 0)
+    assert.equal(decItem.isHighSpend, false)
+    // 2000 - (600 + 0 extra + 200 ahorro + 0 reservas) = 1200
+    assert.equal(decItem.estimatedMargin, 1200)
+    assert.equal(decItem.specialPeriodsInMonth?.length, 1)
+    assert.equal(decItem.specialPeriodsInMonth?.[0].name, 'Navidad / Reyes')
+    assert.equal(decItem.specialPeriodsInMonth?.[0].expectedExtraBudget, undefined)
+  })
+
+  it('396. Diferenciación estricta entre Sin estimación (undefined/null), 0 € explícito y estimación positiva', () => {
+    const pUndefined: SpecialPeriod = {
+      id: 'p_undef',
+      name: 'Sin estimar',
+      startDate: '2026-08-01',
+      endDate: '2026-08-31',
+      expectedExtraBudget: undefined,
+      type: 'normal',
+    }
+    const pNull: SpecialPeriod = {
+      id: 'p_null',
+      name: 'Nulo',
+      startDate: '2026-08-01',
+      endDate: '2026-08-31',
+      expectedExtraBudget: null,
+      type: 'normal',
+    }
+    const pZero: SpecialPeriod = {
+      id: 'p_zero',
+      name: 'Cero explícito',
+      startDate: '2026-08-01',
+      endDate: '2026-08-31',
+      expectedExtraBudget: 0,
+      type: 'normal',
+    }
+    const pPositive: SpecialPeriod = {
+      id: 'p_pos',
+      name: 'Con importe',
+      startDate: '2026-08-01',
+      endDate: '2026-08-31',
+      expectedExtraBudget: 150,
+      type: 'expected_high_spend',
+    }
+
+    const aug = new Date('2026-08-15')
+    assert.equal(selectExpectedExtraSpendingForMonth([pUndefined], aug), 0)
+    assert.equal(selectExpectedExtraSpendingForMonth([pNull], aug), 0)
+    assert.equal(selectExpectedExtraSpendingForMonth([pZero], aug), 0)
+    assert.equal(selectExpectedExtraSpendingForMonth([pPositive], aug), 150)
+
+    function getDisplayEstimateStatus(sp: SpecialPeriod): 'none' | 'zero' | 'amount' {
+      if (sp.expectedExtraBudget === undefined || sp.expectedExtraBudget === null) return 'none'
+      if (sp.expectedExtraBudget === 0) return 'zero'
+      return 'amount'
+    }
+
+    assert.equal(getDisplayEstimateStatus(pUndefined), 'none')
+    assert.equal(getDisplayEstimateStatus(pNull), 'none')
+    assert.equal(getDisplayEstimateStatus(pZero), 'zero')
+    assert.equal(getDisplayEstimateStatus(pPositive), 'amount')
+  })
+
+  it('397. Caso de uso Navidad / Reyes: soporte multimes y compatibilidad sin romper cálculo ni UX', () => {
+    const navidad: SpecialPeriod = {
+      id: 'sp_navidad',
+      name: 'Navidad / Reyes',
+      startDate: '2026-12-15',
+      endDate: '2027-01-08',
+      type: 'expected_high_spend',
+      note: 'Regalos, cenas, comidas y viajes familiares',
+    }
+
+    assert.equal(navidad.expectedExtraBudget, undefined)
+    assert.equal(isMonthInSpecialPeriod(navidad, 2026, 11), true)
+    assert.equal(isMonthInSpecialPeriod(navidad, 2027, 0), true)
+
+    const adjustedSpendDec = selectAdjustedMonthlySpendingExpectation(1000, [navidad], new Date('2026-12-20'))
+    assert.equal(adjustedSpendDec, 1000)
+  })
+
+  it('398. Mappers y sincronización Supabase: serialización bidireccional de expectedExtraBudget opcional', () => {
+    const pNoBudget: SpecialPeriod = {
+      id: 'sp_map_1',
+      name: 'Fiestas',
+      startDate: '2026-07-01',
+      endDate: '2026-07-10',
+      expectedExtraBudget: undefined,
+      type: 'normal',
+      note: 'Sin estimación',
+    }
+
+    const dbRow = toDbSpecialPeriod(pNoBudget, 'user_123')
+    assert.equal(dbRow.expected_extra_budget, null)
+    assert.equal(dbRow.name, 'Fiestas')
+    assert.equal(dbRow.user_id, 'user_123')
+
+    const domainObj = fromDbSpecialPeriod(dbRow)
+    assert.equal(domainObj.id, 'sp_map_1')
+    assert.equal(domainObj.name, 'Fiestas')
+    assert.equal(domainObj.expectedExtraBudget, undefined)
+
+    // Con importe numérico
+    const pWithBudget: SpecialPeriod = {
+      ...pNoBudget,
+      expectedExtraBudget: 250,
+    }
+    const dbRow2 = toDbSpecialPeriod(pWithBudget, 'user_123')
+    assert.equal(dbRow2.expected_extra_budget, 250)
+    const domainObj2 = fromDbSpecialPeriod(dbRow2)
+    assert.equal(domainObj2.expectedExtraBudget, 250)
+  })
+
+  it('399. Migración SQL: existencia y contenido de la migración para expected_extra_budget nullable', async () => {
+    const fs = await import('node:fs/promises')
+    const path = await import('node:path')
+    const migrationPath = path.resolve('supabase/migrations/20260918150000_special_periods_optional_amount.sql')
+    const sql = await fs.readFile(migrationPath, 'utf-8')
+    assert.ok(sql.includes('special_periods'), 'Debe afectar a la tabla special_periods')
+    assert.ok(sql.includes('drop not null'), 'Debe eliminar la restricción NOT NULL')
+  })
+})
+
 
 
 

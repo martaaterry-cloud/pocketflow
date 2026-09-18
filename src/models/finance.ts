@@ -182,7 +182,7 @@ export interface SpecialPeriod {
   name: string
   startDate: string // YYYY-MM-DD
   endDate: string // YYYY-MM-DD
-  expectedExtraBudget: number
+  expectedExtraBudget?: number | null
   type: SpecialPeriodType
   note?: string
 }

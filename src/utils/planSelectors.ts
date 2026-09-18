@@ -496,7 +496,13 @@ export function selectExpectedExtraSpendingForMonth(
 
   let totalExtra = 0
   for (const period of specialPeriods) {
-    if (!period.expectedExtraBudget || period.expectedExtraBudget <= 0) continue
+    if (
+      period.expectedExtraBudget === undefined ||
+      period.expectedExtraBudget === null ||
+      period.expectedExtraBudget <= 0
+    ) {
+      continue
+    }
     if (isMonthInSpecialPeriod(period, year, month)) {
       const start = new Date(period.startDate)
       const end = new Date(period.endDate)
@@ -535,6 +541,7 @@ export interface MonthlyForecastItem {
   expectedReserves: number
   estimatedMargin: number
   isHighSpend: boolean
+  specialPeriodsInMonth?: SpecialPeriod[]
 }
 
 const MONTH_NAMES = [
@@ -597,6 +604,7 @@ export function selectAnnualForecast12Months(
     const monthName = MONTH_NAMES[m]
 
     const expectedExtra = selectExpectedExtraSpendingForMonth(specialPeriods, d)
+    const monthPeriods = specialPeriods.filter((p) => isMonthInSpecialPeriod(p, y, m))
 
     let monthReserves = 0
     for (const r of reserves) {
@@ -622,6 +630,7 @@ export function selectAnnualForecast12Months(
       expectedReserves: monthReserves,
       estimatedMargin,
       isHighSpend,
+      specialPeriodsInMonth: monthPeriods,
     })
   }
 
