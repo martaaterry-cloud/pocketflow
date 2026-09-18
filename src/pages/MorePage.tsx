@@ -145,7 +145,13 @@ export function MorePage({
   }
 
   if (subView === 'plan') {
-    return <PlanFinancialPage finance={finance} onBack={() => setSubView('menu')} />
+    return (
+      <PlanFinancialPage
+        finance={finance}
+        onBack={() => setSubView('menu')}
+        onNavigateToRecurring={() => setSubView('recurring')}
+      />
+    )
   }
 
   const pendingDebtors = selectPendingDebtors(finance.expenseShares ?? [], finance.transactions ?? [])

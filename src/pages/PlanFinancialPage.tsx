@@ -13,7 +13,6 @@ import { money } from '../utils/money'
 import { AppIcon } from '../ui/icons'
 import {
   selectAnnualForecast12Months,
-  selectEmergencyFundTarget,
   selectMonthlyReserveNeeded,
   selectUpcomingSpecialPeriods,
 } from '../utils/planSelectors'
@@ -26,9 +25,11 @@ import { SpecialPeriodModal } from '../components/SpecialPeriodModal'
 export function PlanFinancialPage({
   finance,
   onBack,
+  onNavigateToRecurring,
 }: {
   finance: ReturnTypeFinance
   onBack: () => void
+  onNavigateToRecurring?: () => void
 }) {
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [emergencyModalOpen, setEmergencyModalOpen] = useState(false)
@@ -51,22 +52,26 @@ export function PlanFinancialPage({
   }, [finance.specialPeriods, now])
 
   const annualForecast = useMemo(() => {
+    const baseOutflow =
+      plan.expectedCommittedExpenses + (plan.expectedVariableExpenses ?? plan.actualVariableExpenses)
     return selectAnnualForecast12Months(
       settings,
-      plan.essentialMonthlyExpenses + plan.variableMonthlyExpenses,
+      finance.recurring || [],
+      baseOutflow,
       finance.specialPeriods || [],
       finance.reserves || [],
       now
     )
-  }, [settings, plan, finance.specialPeriods, finance.reserves, now])
+  }, [settings, finance.recurring, plan, finance.specialPeriods, finance.reserves, now])
 
+  const emergencyBase = plan.expectedCommittedExpenses > 0 ? plan.expectedCommittedExpenses : (plan.essentialMonthlyExpenses || 1)
   const scenario3Months = useMemo(() => {
-    return Math.round(3 * plan.essentialMonthlyExpenses * 100) / 100
-  }, [plan.essentialMonthlyExpenses])
+    return Math.round(3 * emergencyBase * 100) / 100
+  }, [emergencyBase])
 
   const scenario6Months = useMemo(() => {
-    return Math.round(6 * plan.essentialMonthlyExpenses * 100) / 100
-  }, [plan.essentialMonthlyExpenses])
+    return Math.round(6 * emergencyBase * 100) / 100
+  }, [emergencyBase])
 
   // Handlers para reservas
   const handleOpenCreateReserve = () => {
@@ -133,36 +138,57 @@ export function PlanFinancialPage({
         </button>
       </header>
 
-      {/* 1. Resumen Mensual y Margen */}
+      {/* 1. Resumen Mensual y Márgenes */}
       <section className="hero-card light" style={{ marginBottom: 20 }}>
-        <span className="hero-tag">Margen mensual estimado</span>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <span className="hero-tag">Margen mensual previsto</span>
+          <span style={{ fontSize: 12, color: '#64748b' }}>
+            {plan.incomeDetail?.source === 'recurring' ? 'Nómina / Recurrente' : plan.incomeDetail?.source === 'manual' ? 'Manual' : 'Sin configurar'}
+          </span>
+        </div>
         <strong className={`hero-main-number ${plan.estimatedMonthlyMargin >= 0 ? '' : 'negative'}`}>
           {money(plan.estimatedMonthlyMargin)}
         </strong>
         <p className="hero-desc" style={{ fontSize: 13, color: '#666', marginTop: 4 }}>
-          Ingresos ({money(plan.monthlyIncome)}) menos gastos esenciales ({money(plan.essentialMonthlyExpenses)}), variables ({money(plan.variableMonthlyExpenses)}) y ahorro objetivo ({money(plan.targetMonthlySavings)}).
+          Ingresos ({money(plan.monthlyIncome)}) menos comprometido ({money(plan.expectedCommittedExpenses)}), variable ({plan.expectedVariableExpenses !== null ? money(plan.expectedVariableExpenses) : `${money(plan.actualVariableExpenses)} real`}) y ahorro ({money(plan.targetMonthlySavings)}).
         </p>
 
+        {/* Libre para gastar / Margen restante actual */}
+        <div style={{ marginTop: 12, padding: '8px 12px', background: 'rgba(99, 102, 241, 0.08)', borderRadius: 8, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <span style={{ fontSize: 13, color: '#4338ca', fontWeight: 500 }}>Libre para gastar (margen restante actual)</span>
+          <strong style={{ fontSize: 15, color: plan.currentRemainingMargin >= 0 ? '#10b981' : '#ef4444' }}>
+            {money(plan.currentRemainingMargin)}
+          </strong>
+        </div>
+
         <div className="hero-kpis" style={{ gridTemplateColumns: 'repeat(2, 1fr)', marginTop: 14 }}>
+          <div className="hero-kpi-item">
+            <span>Ingresos previstos</span>
+            <strong>{money(plan.monthlyIncome)}/mes</strong>
+            <small>
+              {plan.incomeDetail?.source === 'recurring'
+                ? `${plan.incomeDetail.items.length} recurrente(s)`
+                : 'Configurado'}
+            </small>
+          </div>
+          <div className="hero-kpi-item">
+            <span>Gasto comprometido</span>
+            <strong>{money(plan.expectedCommittedExpenses)}/mes</strong>
+            <small>Suscripciones y fijos</small>
+          </div>
+          <div className="hero-kpi-item">
+            <span>Gasto variable</span>
+            <strong>{money(plan.actualVariableExpenses)}</strong>
+            <small>
+              {plan.expectedVariableExpenses !== null
+                ? `Previsto: ${money(plan.expectedVariableExpenses)}`
+                : 'Gasto neto real'}
+            </small>
+          </div>
           <div className="hero-kpi-item">
             <span>Ahorro objetivo</span>
             <strong>{money(plan.targetMonthlySavings)}/mes</strong>
             <small>{settings.targetSavingsType === 'percentage' ? `${settings.targetSavingsValue}% ingresos` : 'Fijo'}</small>
-          </div>
-          <div className="hero-kpi-item">
-            <span>Ahorro real este mes</span>
-            <strong>{money(plan.actualMonthlySavings)}</strong>
-            <small>Transferido a ahorro</small>
-          </div>
-          <div className="hero-kpi-item">
-            <span>Gastos esenciales</span>
-            <strong>{money(plan.essentialMonthlyExpenses)}</strong>
-            <small>Alimentación, casa, etc.</small>
-          </div>
-          <div className="hero-kpi-item">
-            <span>Gastos variables</span>
-            <strong>{money(plan.variableMonthlyExpenses)}</strong>
-            <small>Ocio, compras, etc.</small>
           </div>
         </div>
       </section>
@@ -189,7 +215,7 @@ export function PlanFinancialPage({
               <div>
                 <strong>Colchón para imprevistos</strong>
                 <span className="account-subtitle">
-                  {plan.emergencyFundMonthsCovered} meses de gastos esenciales cubiertos
+                  {plan.emergencyFundMonthsCovered} meses de gastos fijos cubiertos
                 </span>
               </div>
             </div>
@@ -444,7 +470,9 @@ export function PlanFinancialPage({
         onClose={() => setSettingsOpen(false)}
         settings={settings}
         categories={finance.categories}
+        recurring={finance.recurring}
         onSave={handleSaveSettings}
+        onNavigateToRecurring={onNavigateToRecurring}
       />
 
       <AllocateEmergencyModal

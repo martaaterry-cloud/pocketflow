@@ -117,11 +117,18 @@ import {
   selectTotalMoney,
 } from '../utils/financeSelectors'
 import {
+  selectActualFixedMonthlyExpenses,
+  selectActualExtraordinaryMonthlyExpenses,
   selectActualMonthlySavings,
+  selectActualVariableMonthlyExpenses,
   selectAdjustedMonthlySpendingExpectation,
   selectEmergencyFundMonthsCovered,
   selectEmergencyFundTarget,
   selectEssentialMonthlyExpenses,
+  selectExpectedCommittedExpenses,
+  selectExpectedMonthlyIncome,
+  selectExpectedMonthlyIncomeDetail,
+  selectExpectedVariableMonthlyExpenses,
   selectFreeSavingsWithReserves,
   selectMonthlyIncome,
   selectMonthlyPlanCardSummary,
@@ -1460,31 +1467,30 @@ export function useFinance(storage: StorageAdapter = defaultAppStorage) {
       now
     )
 
-    // Métricas del plan financiero
-    const monthlyIncome = selectMonthlyIncome(state.planSettings)
-    const essentialExpenses = selectEssentialMonthlyExpenses(
-      state.categories,
-      state.transactions,
-      state.planSettings,
-      now
+    // Métricas del plan financiero (Fase 3: Unificación canónica)
+    const expectedIncomeDetail = selectExpectedMonthlyIncomeDetail(state.planSettings, state.recurring)
+    const monthlyIncome = expectedIncomeDetail.amount
+    const expectedCommittedExpenses = selectExpectedCommittedExpenses(state.recurring)
+    const actualFixedExpenses = selectActualFixedMonthlyExpenses(state.transactions, now)
+    const expectedVariableExpenses = selectExpectedVariableMonthlyExpenses(
+      state.variableExpenseEstimates ?? [],
+      state.budgets ?? []
     )
-    const variableExpenses = selectVariableMonthlyExpenses(
-      state.categories,
-      state.transactions,
-      state.planSettings,
-      now
-    )
-    const targetMonthlySavings = selectTargetMonthlySavings(state.planSettings)
+    const actualVariableExpenses = selectActualVariableMonthlyExpenses(state.transactions, now)
+    const actualExtraordinaryExpenses = selectActualExtraordinaryMonthlyExpenses(state.transactions, now)
+    const targetMonthlySavings = selectTargetMonthlySavings(state.planSettings, monthlyIncome)
     const actualMonthlySavings = selectActualMonthlySavings(state.transactions, reconciledAccounts, now)
-    const emergencyFundTarget = selectEmergencyFundTarget(state.planSettings, essentialExpenses)
-    const emergencyFundMonthsCovered = selectEmergencyFundMonthsCovered(emergencyAllocated, essentialExpenses)
+    const emergencyFundBaseExpenses =
+      expectedCommittedExpenses > 0
+        ? expectedCommittedExpenses
+        : selectEssentialMonthlyExpenses(state.categories, state.transactions, state.planSettings, now)
+    const emergencyFundTarget = selectEmergencyFundTarget(state.planSettings, emergencyFundBaseExpenses)
+    const emergencyFundMonthsCovered = selectEmergencyFundMonthsCovered(emergencyAllocated, emergencyFundBaseExpenses)
     const adjustedSpending = selectAdjustedMonthlySpendingExpectation(
-      essentialExpenses + variableExpenses,
+      expectedCommittedExpenses + (expectedVariableExpenses ?? actualVariableExpenses),
       state.specialPeriods,
       now
     )
-    const monthlyOutflow = essentialExpenses + variableExpenses + targetMonthlySavings
-    const estimatedMonthlyMargin = Math.round((monthlyIncome - monthlyOutflow) * 100) / 100
 
     const currentMonthKey = now.toISOString().slice(0, 7)
     const variableEstimatesSummary = calculateVariableEstimatesSummary(
@@ -1506,12 +1512,17 @@ export function useFinance(storage: StorageAdapter = defaultAppStorage) {
 
     const monthlyPlanSummary = selectMonthlyPlanCardSummary(
       state.planSettings,
-      essentialExpenses,
-      variableExpenses,
+      state.recurring,
+      state.transactions,
       state.specialPeriods,
       state.reserves,
+      state.variableExpenseEstimates,
+      state.budgets,
+      committed,
       now
     )
+
+    const estimatedMonthlyMargin = monthlyPlanSummary.plannedMargin
 
     return {
       // Compatibilidad y concepto neto principal
@@ -1553,13 +1564,22 @@ export function useFinance(storage: StorageAdapter = defaultAppStorage) {
       // Plan financiero
       planMetrics: {
         monthlyIncome,
-        essentialMonthlyExpenses: essentialExpenses,
-        variableMonthlyExpenses: variableExpenses,
+        incomeDetail: expectedIncomeDetail,
+        expectedCommittedExpenses,
+        actualFixedExpenses,
+        expectedVariableExpenses,
+        actualVariableExpenses,
+        actualExtraordinaryExpenses,
+        // Compatibilidad:
+        essentialMonthlyExpenses: expectedCommittedExpenses,
+        variableMonthlyExpenses: actualVariableExpenses,
         targetMonthlySavings,
         actualMonthlySavings,
         emergencyFundTarget,
         emergencyFundMonthsCovered,
         estimatedMonthlyMargin,
+        plannedMonthlyMargin: estimatedMonthlyMargin,
+        currentRemainingMargin: monthlyPlanSummary.freeToSpend,
         adjustedSpending,
         monthlyPlanSummary,
       },

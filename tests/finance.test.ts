@@ -208,12 +208,21 @@ import {
 } from '../src/utils/financeSelectors'
 import {
   isMonthInSpecialPeriod,
+  selectActualFixedMonthlyExpenses,
+  selectActualExtraordinaryMonthlyExpenses,
+  selectActualVariableMonthlyExpenses,
   selectAdjustedMonthlySpendingExpectation,
   selectEmergencyFundMonthsCovered,
   selectEmergencyFundTarget,
   selectEssentialMonthlyExpenses,
+  selectExpectedCommittedExpenses,
   selectExpectedExtraSpendingForMonth,
+  selectExpectedMonthlyIncome,
+  selectExpectedMonthlyIncomeDetail,
+  selectExpectedMonthlyIncomeFromRecurring,
+  selectExpectedVariableMonthlyExpenses,
   selectFreeSavingsWithReserves,
+  selectMonthlyAmountForFrequency,
   selectMonthlyIncome,
   selectMonthlyPlanCardSummary,
   selectMonthlyReserveNeeded,
@@ -6793,11 +6802,11 @@ describe('Fase 18 — Identificación Visual de Versión y Build', () => {
   it('314. Versioning: única fuente de verdad y formato de visualización exacto', () => {
     assert.equal(APP_NAME, 'PocketFlow')
     assert.equal(APP_VERSION, '0.18.0')
-    assert.equal(APP_BUILD, '2026.09.18-16')
+    assert.equal(APP_BUILD, '2026.09.18-17')
 
     assert.equal(getAppVersionString(), 'PocketFlow v0.18.0')
-    assert.equal(getAppBuildString(), 'Build 2026.09.18-16')
-    assert.equal(getAppFullVersionLabel(), 'PocketFlow v0.18.0 · Build 2026.09.18-16')
+    assert.equal(getAppBuildString(), 'Build 2026.09.18-17')
+    assert.equal(getAppFullVersionLabel(), 'PocketFlow v0.18.0 · Build 2026.09.18-17')
   })
 })
 
@@ -8646,6 +8655,378 @@ describe('Fase 28 — Blindaje de Contrato Frontend ↔ Supabase y Reconciliaci�
     assert.ok(content.includes('add column if not exists special_type text'))
     assert.ok(content.includes('add column if not exists expense_nature text'))
     assert.ok(content.includes('add column if not exists gift_recipient text'))
+  })
+})
+
+describe('Fase 29 — Unificación de Ingresos y Simplificación del Plan Financiero', () => {
+  // A. Ingresos
+  it('376. Ingresos: nómina mensual activa alimenta automáticamente el Plan Financiero', () => {
+    const recurring: RecurringPayment[] = [
+      {
+        id: 'r_salary',
+        name: 'Nómina SYTE Automation',
+        amount: 1400,
+        categoryId: 'income',
+        accountId: 'daily',
+        frequency: 'monthly',
+        nextDate: '2026-10-01',
+        active: true,
+        type: 'income',
+        incomeSourceType: 'salary',
+      },
+    ]
+
+    const settings: FinancialPlanSettings = {
+      monthlyIncome: 0,
+      targetSavingsType: 'percentage',
+      targetSavingsValue: 15,
+      emergencyFundTargetType: 'months',
+      emergencyFundTargetValue: 3,
+      emergencyFundCurrent: 0,
+      essentialCategoryIds: [],
+    }
+
+    const detail = selectExpectedMonthlyIncomeDetail(settings, recurring)
+    assert.equal(detail.source, 'recurring')
+    assert.equal(detail.amount, 1400)
+    assert.equal(detail.items.length, 1)
+    assert.equal(detail.items[0].name, 'Nómina SYTE Automation')
+    assert.equal(selectExpectedMonthlyIncome(settings, recurring), 1400)
+  })
+
+  it('377. Ingresos: dos ingresos recurrentes activos se suman correctamente', () => {
+    const recurring: RecurringPayment[] = [
+      {
+        id: 'r1',
+        name: 'Nómina Principal',
+        amount: 1400,
+        categoryId: 'income',
+        accountId: 'daily',
+        frequency: 'monthly',
+        nextDate: '2026-10-01',
+        active: true,
+        type: 'income',
+      },
+      {
+        id: 'r2',
+        name: 'Pensión / Alquiler',
+        amount: 500,
+        categoryId: 'income',
+        accountId: 'daily',
+        frequency: 'monthly',
+        nextDate: '2026-10-05',
+        active: true,
+        type: 'income',
+      },
+    ]
+
+    const expected = selectExpectedMonthlyIncomeFromRecurring(recurring)
+    assert.equal(expected, 1900)
+    assert.equal(selectExpectedMonthlyIncome(null, recurring), 1900)
+  })
+
+  it('378. Ingresos: ingreso recurrente inactivo (active = false) no computa en la previsión', () => {
+    const recurring: RecurringPayment[] = [
+      {
+        id: 'r1',
+        name: 'Nómina Activa',
+        amount: 1500,
+        categoryId: 'income',
+        accountId: 'daily',
+        frequency: 'monthly',
+        nextDate: '2026-10-01',
+        active: true,
+        type: 'income',
+      },
+      {
+        id: 'r2',
+        name: 'Trabajo Antiguo',
+        amount: 800,
+        categoryId: 'income',
+        accountId: 'daily',
+        frequency: 'monthly',
+        nextDate: '2026-05-01',
+        active: false,
+        type: 'income',
+      },
+    ]
+
+    const expected = selectExpectedMonthlyIncomeFromRecurring(recurring)
+    assert.equal(expected, 1500)
+  })
+
+  it('379. Ingresos: mensualización de frecuencias semanal (× 4.33) y anual (/ 12)', () => {
+    assert.equal(selectMonthlyAmountForFrequency(100, 'weekly'), 433)
+    assert.equal(selectMonthlyAmountForFrequency(1200, 'yearly'), 100)
+    assert.equal(selectMonthlyAmountForFrequency(2500, 'monthly'), 2500)
+
+    const recurring: RecurringPayment[] = [
+      {
+        id: 'r_weekly',
+        name: 'Clases particulares',
+        amount: 50,
+        categoryId: 'income',
+        accountId: 'daily',
+        frequency: 'weekly',
+        nextDate: '2026-09-22',
+        active: true,
+        type: 'income',
+      },
+      {
+        id: 'r_yearly',
+        name: 'Paga de beneficios anual',
+        amount: 1200,
+        categoryId: 'income',
+        accountId: 'daily',
+        frequency: 'yearly',
+        nextDate: '2026-12-15',
+        active: true,
+        type: 'income',
+      },
+    ]
+
+    // 50 * 4.33 = 216.50, 1200 / 12 = 100 -> total = 316.50
+    const total = selectExpectedMonthlyIncomeFromRecurring(recurring)
+    assert.equal(total, 316.5)
+  })
+
+  it('380. Ingresos: monthlyIncome manual se usa como fallback si no hay recurrentes, y NO se suma doble', () => {
+    const settingsWithManual: FinancialPlanSettings = {
+      monthlyIncome: 1650,
+      targetSavingsType: 'percentage',
+      targetSavingsValue: 15,
+      emergencyFundTargetType: 'months',
+      emergencyFundTargetValue: 3,
+      emergencyFundCurrent: 0,
+      essentialCategoryIds: [],
+    }
+
+    // Caso 1: Sin recurrentes -> usa manual
+    const fallbackDetail = selectExpectedMonthlyIncomeDetail(settingsWithManual, [])
+    assert.equal(fallbackDetail.source, 'manual')
+    assert.equal(fallbackDetail.amount, 1650)
+
+    // Caso 2: Con recurrentes activos -> prioriza recurrentes y NO suma ambos
+    const recurring: RecurringPayment[] = [
+      {
+        id: 'r_nom',
+        name: 'Nómina Recurrente',
+        amount: 1400,
+        categoryId: 'income',
+        accountId: 'daily',
+        frequency: 'monthly',
+        nextDate: '2026-10-01',
+        active: true,
+        type: 'income',
+      },
+    ]
+
+    const detailWithBoth = selectExpectedMonthlyIncomeDetail(settingsWithManual, recurring)
+    assert.equal(detailWithBoth.source, 'recurring')
+    assert.equal(detailWithBoth.amount, 1400) // 1400, NO 3050 (1400 + 1650)
+  })
+
+  // B. Plan
+  it('381. Plan: gasto recurrente entra como comprometido previsto y se distingue del gasto fijo real', () => {
+    const recurring: RecurringPayment[] = [
+      {
+        id: 'rec_gym',
+        name: 'Gimnasio Fitness Park',
+        amount: 35,
+        categoryId: 'sports',
+        accountId: 'daily',
+        frequency: 'monthly',
+        nextDate: '2026-10-01',
+        active: true,
+        type: 'expense',
+      },
+      {
+        id: 'rec_spotify',
+        name: 'Spotify',
+        amount: 10.99,
+        categoryId: 'subscriptions',
+        accountId: 'daily',
+        frequency: 'monthly',
+        nextDate: '2026-10-05',
+        active: true,
+        type: 'expense',
+      },
+    ]
+
+    const expectedCommitted = selectExpectedCommittedExpenses(recurring)
+    assert.equal(expectedCommitted, 45.99)
+
+    const now = new Date(2026, 8, 15) // Septiembre 2026
+    const transactions: Transaction[] = [
+      {
+        id: 't_fixed1',
+        type: 'expense',
+        amount: 35,
+        accountId: 'daily',
+        description: 'Fitness Park Cobrado',
+        date: '2026-09-02T10:00:00',
+        expenseNature: 'fixed',
+      },
+    ]
+
+    const actualFixed = selectActualFixedMonthlyExpenses(transactions, now)
+    assert.equal(actualFixed, 35)
+  })
+
+  it('382. Plan: gasto variable real computa en neto deduciendo reembolsos vinculados', () => {
+    const now = new Date(2026, 8, 15)
+    const transactions: Transaction[] = [
+      {
+        id: 't_cena',
+        type: 'expense',
+        amount: 60,
+        accountId: 'daily',
+        description: 'Cena amigos',
+        date: '2026-09-10T21:00:00',
+        expenseNature: 'variable',
+      },
+      {
+        id: 't_reimb',
+        type: 'income',
+        amount: 40,
+        accountId: 'daily',
+        description: 'Bizum de la cena',
+        date: '2026-09-11T12:00:00',
+        incomeKind: 'reimbursement',
+        parentExpenseId: 't_cena',
+      },
+    ]
+
+    // Gasto bruto 60 € - reembolso vinculado 40 € = 20 € netos
+    const netVariable = selectActualVariableMonthlyExpenses(transactions, now)
+    assert.equal(netVariable, 20)
+  })
+
+  it('383. Plan: gasto extraordinario real no se confunde con periodos especiales futuros previstos', () => {
+    const now = new Date(2026, 8, 15)
+    const transactions: Transaction[] = [
+      {
+        id: 't_taller',
+        type: 'expense',
+        amount: 300,
+        accountId: 'daily',
+        description: 'Avería coche',
+        date: '2026-09-05T10:00:00',
+        expenseNature: 'extraordinary',
+      },
+    ]
+
+    const specialPeriods: SpecialPeriod[] = [
+      {
+        id: 'sp_navidad',
+        name: 'Navidad y Reyes',
+        startDate: '2026-12-01',
+        endDate: '2027-01-06',
+        expectedExtraBudget: 500,
+        type: 'holiday',
+      },
+    ]
+
+    const actualExtra = selectActualExtraordinaryMonthlyExpenses(transactions, now)
+    assert.equal(actualExtra, 300)
+
+    // En septiembre la previsión de periodos especiales futuros debe ser 0 € (Navidad es en diciembre)
+    const plannedExtraThisMonth = selectExpectedExtraSpendingForMonth(specialPeriods, now)
+    assert.equal(plannedExtraThisMonth, 0)
+  })
+
+  // C. Home
+  it('384. Home: Plan del mes detecta nómina recurrente y activa el cálculo de Libre para gastar', () => {
+    const recurring: RecurringPayment[] = [
+      {
+        id: 'rec_sal',
+        name: 'Nómina',
+        amount: 2000,
+        categoryId: 'income',
+        accountId: 'daily',
+        frequency: 'monthly',
+        nextDate: '2026-10-01',
+        active: true,
+        type: 'income',
+      },
+      {
+        id: 'rec_rent',
+        name: 'Alquiler piso',
+        amount: 700,
+        categoryId: 'housing',
+        accountId: 'daily',
+        frequency: 'monthly',
+        nextDate: '2026-10-01',
+        active: true,
+        type: 'expense',
+      },
+    ]
+
+    const settings: FinancialPlanSettings = {
+      monthlyIncome: 0, // No configurado a mano
+      targetSavingsType: 'percentage',
+      targetSavingsValue: 10, // 200 €
+      emergencyFundTargetType: 'months',
+      emergencyFundTargetValue: 3,
+      emergencyFundCurrent: 0,
+      essentialCategoryIds: [],
+    }
+
+    const summary = selectMonthlyPlanCardSummary(
+      settings,
+      recurring,
+      [],
+      [],
+      [],
+      [],
+      [],
+      0,
+      new Date(2026, 8, 15)
+    )
+
+    assert.equal(summary.hasConfiguredPlan, true)
+    assert.equal(summary.incomeSource, 'recurring')
+    assert.equal(summary.monthlyIncome, 2000)
+    assert.equal(summary.targetSavings, 200)
+    assert.equal(summary.expectedCommittedExpenses, 700)
+    // Libre para gastar = 2000 - 200 (ahorro) - 700 (comprometido) = 1100 €
+    assert.equal(summary.freeToSpend, 1100)
+  })
+
+  // D. Compatibilidad
+  it('385. Compatibilidad: datos antiguos con monthlyIncome manual y essentialCategoryIds operan sin errores', () => {
+    const legacySettings: FinancialPlanSettings = {
+      monthlyIncome: 1800,
+      targetSavingsType: 'fixed',
+      targetSavingsValue: 300,
+      emergencyFundTargetType: 'months',
+      emergencyFundTargetValue: 3,
+      emergencyFundCurrent: 2000,
+      essentialCategoryIds: ['food', 'transport', 'housing'],
+    }
+
+    // Soporta llamada canónica con fallback
+    const detail = selectExpectedMonthlyIncomeDetail(legacySettings, [])
+    assert.equal(detail.source, 'manual')
+    assert.equal(detail.amount, 1800)
+
+    // Selectores legacy siguen devolviendo datos consistentes
+    assert.equal(selectMonthlyIncome(legacySettings), 1800)
+    assert.equal(selectTargetMonthlySavings(legacySettings), 300)
+
+    // selectMonthlyPlanCardSummary soporta tanto la firma legacy posicional como la nueva
+    const legacyCallSummary = selectMonthlyPlanCardSummary(
+      legacySettings,
+      500, // essentialExpenses
+      300, // variableExpenses
+      [],
+      [],
+      new Date(2026, 8, 15)
+    )
+    assert.equal(legacyCallSummary.hasConfiguredPlan, true)
+    assert.equal(legacyCallSummary.monthlyIncome, 1800)
+    // 1800 - 300 (ahorro) - 500 (esenciales) - 300 (variables) = 700 €
+    assert.equal(legacyCallSummary.freeToSpend, 700)
   })
 })
 
