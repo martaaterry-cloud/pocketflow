@@ -841,3 +841,29 @@ export function validateSpecialPeriodDates(
   return { valid: true }
 }
 
+/**
+ * Genera los valores iniciales para crear una reserva a partir de un periodo especial de forma opcional.
+ * - Nombre: mismo nombre del periodo especial.
+ * - Fecha objetivo: startDate del periodo especial.
+ * - Importe objetivo: si expectedExtraBudget > 0 se sugiere ese importe; si no tiene estimación (o es <= 0), se deja undefined.
+ */
+export function buildReserveInitialValuesFromSpecialPeriod(
+  period: Pick<SpecialPeriod, 'name' | 'startDate'> & { expectedExtraBudget?: number | null }
+): {
+  name: string
+  targetDate: string
+  targetAmount?: number
+  iconKey: string
+} {
+  return {
+    name: period.name,
+    targetDate: period.startDate,
+    targetAmount:
+      typeof period.expectedExtraBudget === 'number' && period.expectedExtraBudget > 0
+        ? period.expectedExtraBudget
+        : undefined,
+    iconKey: 'sparkles',
+  }
+}
+
+

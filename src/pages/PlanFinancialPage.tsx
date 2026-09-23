@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react'
 import type {
+  CreateReserveInput,
   CreateSpecialPeriodInput,
   SpecialPeriod,
   UpdatePlanSettingsInput,
@@ -9,12 +10,14 @@ import type { ReturnTypeFinance } from '../types'
 import { money } from '../utils/money'
 import { AppIcon } from '../ui/icons'
 import {
+  buildReserveInitialValuesFromSpecialPeriod,
   selectAnnualForecast12Months,
   selectMonthlyReserveNeeded,
   selectUpcomingSpecialPeriods,
 } from '../utils/planSelectors'
 import { PlanSettingsModal } from '../components/PlanSettingsModal'
 import { SpecialPeriodModal } from '../components/SpecialPeriodModal'
+import { ReserveModal, type ReserveInitialValues } from '../components/ReserveModal'
 
 export function PlanFinancialPage({
   finance,
@@ -30,6 +33,10 @@ export function PlanFinancialPage({
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [specialPeriodModalOpen, setSpecialPeriodModalOpen] = useState(false)
   const [editingPeriod, setEditingPeriod] = useState<SpecialPeriod | null>(null)
+  const [createdPeriodForReservePrompt, setCreatedPeriodForReservePrompt] = useState<CreateSpecialPeriodInput | null>(null)
+  const [reserveModalOpen, setReserveModalOpen] = useState(false)
+  const [reserveInitialValues, setReserveInitialValues] = useState<ReserveInitialValues | null>(null)
+  const [reserveCreatedSuccessName, setReserveCreatedSuccessName] = useState<string | null>(null)
 
   const now = useMemo(() => new Date(), [])
   const plan = finance.totals.planMetrics
@@ -77,6 +84,8 @@ export function PlanFinancialPage({
       finance.updateSpecialPeriod(id, data)
     } else {
       finance.addSpecialPeriod(data as CreateSpecialPeriodInput)
+      // Mostrar confirmación opcional para crear reserva
+      setCreatedPeriodForReservePrompt(data as CreateSpecialPeriodInput)
     }
   }
 
@@ -481,6 +490,192 @@ export function PlanFinancialPage({
         onSave={handleSavePeriod}
         onDelete={finance.deleteSpecialPeriod}
       />
+
+      {/* Confirmación opcional: ¿Crear reserva para el periodo especial? */}
+      {createdPeriodForReservePrompt && (
+        <div
+          className="modal-backdrop"
+          onClick={() => setCreatedPeriodForReservePrompt(null)}
+          role="dialog"
+          aria-modal="true"
+        >
+          <div
+            className="modal-card"
+            onClick={(e) => e.stopPropagation()}
+            style={{ maxWidth: 440 }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 12 }}>
+              <div
+                style={{
+                  width: 40,
+                  height: 40,
+                  borderRadius: '50%',
+                  backgroundColor: 'rgba(16, 185, 129, 0.12)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  color: '#10b981',
+                  flexShrink: 0,
+                }}
+              >
+                <AppIcon name="sparkles" size={22} />
+              </div>
+              <div>
+                <h3 style={{ margin: 0, fontSize: '1.2rem', fontWeight: 700 }}>
+                  Periodo especial creado
+                </h3>
+                <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>
+                  {createdPeriodForReservePrompt.name}
+                </span>
+              </div>
+            </div>
+
+            <p style={{ margin: '0 0 16px', color: 'var(--text-main)', fontSize: '0.95rem', lineHeight: 1.5 }}>
+              ¿Quieres crear una reserva para prepararte para este periodo?
+            </p>
+
+            <div
+              style={{
+                padding: '10px 14px',
+                borderRadius: 12,
+                backgroundColor: 'var(--bg-card-light, #f8fafc)',
+                border: '1px solid var(--border-color, #e2e8f0)',
+                marginBottom: 20,
+                fontSize: '0.85rem',
+                color: 'var(--text-muted)',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 4,
+              }}
+            >
+              <div>
+                <strong>Fecha objetivo:</strong> {createdPeriodForReservePrompt.startDate}
+              </div>
+              {typeof createdPeriodForReservePrompt.expectedExtraBudget === 'number' &&
+              createdPeriodForReservePrompt.expectedExtraBudget > 0 ? (
+                <div>
+                  <strong>Objetivo sugerido:</strong> {money(createdPeriodForReservePrompt.expectedExtraBudget)}
+                </div>
+              ) : (
+                <div>
+                  <strong>Objetivo sugerido:</strong> Sin estimación (tú decides el importe)
+                </div>
+              )}
+            </div>
+
+            <div className="modal-actions horizontal" style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+              <button
+                type="button"
+                className="secondary-button"
+                onClick={() => setCreatedPeriodForReservePrompt(null)}
+                style={{ flex: 1 }}
+              >
+                Ahora no
+              </button>
+              <button
+                type="button"
+                className="primary-button"
+                onClick={() => {
+                  const initialVals = buildReserveInitialValuesFromSpecialPeriod(createdPeriodForReservePrompt)
+                  setCreatedPeriodForReservePrompt(null)
+                  setReserveInitialValues(initialVals)
+                  setReserveModalOpen(true)
+                }}
+                style={{ flex: 1.3 }}
+              >
+                Crear reserva
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal de creación de reserva prellenada */}
+      <ReserveModal
+        open={reserveModalOpen}
+        onClose={() => {
+          setReserveModalOpen(false)
+          setReserveInitialValues(null)
+        }}
+        initialValues={reserveInitialValues}
+        freeSavings={finance.totals.freeSavings || 0}
+        onSave={(data) => {
+          finance.addReserve(data as CreateReserveInput)
+          setReserveModalOpen(false)
+          setReserveInitialValues(null)
+          setReserveCreatedSuccessName(data.name ?? 'Reserva')
+        }}
+      />
+
+      {/* Notificación / Éxito tras crear la reserva */}
+      {reserveCreatedSuccessName && (
+        <div
+          className="modal-backdrop"
+          onClick={() => setReserveCreatedSuccessName(null)}
+          role="dialog"
+          aria-modal="true"
+        >
+          <div
+            className="modal-card"
+            onClick={(e) => e.stopPropagation()}
+            style={{ maxWidth: 440 }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 12 }}>
+              <div
+                style={{
+                  width: 40,
+                  height: 40,
+                  borderRadius: '50%',
+                  backgroundColor: 'rgba(16, 185, 129, 0.12)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  color: '#10b981',
+                  flexShrink: 0,
+                }}
+              >
+                <AppIcon name="check" size={22} />
+              </div>
+              <div>
+                <h3 style={{ margin: 0, fontSize: '1.2rem', fontWeight: 700 }}>
+                  Reserva creada
+                </h3>
+                <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>
+                  {reserveCreatedSuccessName}
+                </span>
+              </div>
+            </div>
+
+            <p style={{ margin: '0 0 20px', color: 'var(--text-main)', fontSize: '0.92rem', lineHeight: 1.5 }}>
+              Tu reserva se ha creado con 0,00 € asignados. Puedes empezar a apartarle dinero desde la sección de Ahorro cuando lo desees.
+            </p>
+
+            <div className="modal-actions horizontal" style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+              <button
+                type="button"
+                className="secondary-button"
+                onClick={() => setReserveCreatedSuccessName(null)}
+                style={{ flex: 1 }}
+              >
+                Cerrar
+              </button>
+              {onNavigateToSavings && (
+                <button
+                  type="button"
+                  className="primary-button"
+                  onClick={() => {
+                    setReserveCreatedSuccessName(null)
+                    onNavigateToSavings()
+                  }}
+                  style={{ flex: 1.3 }}
+                >
+                  Ver en Ahorro
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </main>
   )
 }

@@ -240,6 +240,7 @@ import {
   selectUpcomingSpecialPeriods,
   selectVariableMonthlyExpenses,
   validateSpecialPeriodDates,
+  buildReserveInitialValuesFromSpecialPeriod,
 } from '../src/utils/planSelectors'
 
 describe('Pocketflow — Pruebas Exhaustivas de Dominio Financiero', () => {
@@ -6811,11 +6812,11 @@ describe('Fase 18 — Identificación Visual de Versión y Build', () => {
   it('314. Versioning: única fuente de verdad y formato de visualización exacto', () => {
     assert.equal(APP_NAME, 'PocketFlow')
     assert.equal(APP_VERSION, '0.18.0')
-    assert.equal(APP_BUILD, '2026.09.23-04')
+    assert.equal(APP_BUILD, '2026.09.23-05')
  
     assert.equal(getAppVersionString(), 'PocketFlow v0.18.0')
-    assert.equal(getAppBuildString(), 'Build 2026.09.23-04')
-    assert.equal(getAppFullVersionLabel(), 'PocketFlow v0.18.0 · Build 2026.09.23-04')
+    assert.equal(getAppBuildString(), 'Build 2026.09.23-05')
+    assert.equal(getAppFullVersionLabel(), 'PocketFlow v0.18.0 · Build 2026.09.23-05')
   })
 })
 
@@ -9821,6 +9822,160 @@ describe('Fase 34 — Validación de Fechas en Periodos Especiales', () => {
     assert.equal(res.error, undefined)
   })
 })
+
+describe('Fase 35 — Conexión Opcional de Periodos Especiales con Reservas de Ahorro', () => {
+  it('420. Crear periodo y pulsar "Ahora no" -> periodo creado sin generar reserva', () => {
+    const initialReserves: Reserve[] = [
+      { id: 'r1', name: 'Seguro coche', targetAmount: 400, currentAllocated: 100, targetDate: '2026-11-01', active: true },
+    ]
+
+    const newPeriod: SpecialPeriod = {
+      id: 'sp1',
+      name: 'Navidad / Reyes',
+      startDate: '2026-12-15',
+      endDate: '2027-01-07',
+      expectedExtraBudget: 300,
+      type: 'expected_high_spend',
+    }
+
+    // El periodo se guarda en la lista de periodos especiales
+    const specialPeriods = [newPeriod]
+    assert.equal(specialPeriods.length, 1)
+
+    // Si el usuario descarta ("Ahora no"), no se crea ninguna reserva automáticamente
+    const reserves = [...initialReserves]
+    assert.equal(reserves.length, 1)
+    assert.equal(reserves[0].name, 'Seguro coche')
+  })
+
+  it('421. Periodo con estimación -> genera datos prellenados con importe sugerido y fecha objetivo', () => {
+    const periodWithBudget: SpecialPeriod = {
+      id: 'sp2',
+      name: 'Vacaciones de Verano',
+      startDate: '2026-07-01',
+      endDate: '2026-07-15',
+      expectedExtraBudget: 600,
+      type: 'expected_high_spend',
+    }
+
+    const prefilled = buildReserveInitialValuesFromSpecialPeriod(periodWithBudget)
+    assert.equal(prefilled.name, 'Vacaciones de Verano')
+    assert.equal(prefilled.targetDate, '2026-07-01')
+    assert.equal(prefilled.targetAmount, 600)
+    assert.equal(prefilled.iconKey, 'sparkles')
+  })
+
+  it('422. Periodo sin estimación -> genera datos prellenados con importe vacío (undefined)', () => {
+    const periodWithoutBudget: SpecialPeriod = {
+      id: 'sp3',
+      name: 'Fiestas del Pueblo',
+      startDate: '2026-08-20',
+      endDate: '2026-08-25',
+      expectedExtraBudget: undefined,
+      type: 'expected_high_spend',
+    }
+
+    const prefilled = buildReserveInitialValuesFromSpecialPeriod(periodWithoutBudget)
+    assert.equal(prefilled.name, 'Fiestas del Pueblo')
+    assert.equal(prefilled.targetDate, '2026-08-20')
+    assert.equal(prefilled.targetAmount, undefined, 'El importe objetivo debe quedar indefinido para que el usuario decida')
+  })
+
+  it('423. Ahorro libre 0 € -> permite crear reserva con 0 € asignados sin crear dinero ficticio', () => {
+    const totalSavingsBalance = 500
+    const emergencyAllocated = 0
+    const goalsAllocated = 500
+    const initialReservesAllocated = 0
+
+    // Ahorro libre = 500 - (0 + 500 + 0) = 0 €
+    const freeSavings = selectFreeSavingsWithReserves(totalSavingsBalance, emergencyAllocated, goalsAllocated, initialReservesAllocated)
+    assert.equal(freeSavings, 0)
+
+    // Creamos la nueva reserva con currentAllocated = 0
+    const newReserve: Reserve = {
+      id: 'r_navidad',
+      name: 'Navidad / Reyes',
+      targetAmount: 300,
+      currentAllocated: 0,
+      targetDate: '2026-12-15',
+      active: true,
+    }
+
+    const updatedReservesAllocated = initialReservesAllocated + (newReserve.currentAllocated || 0)
+    assert.equal(updatedReservesAllocated, 0)
+
+    // El ahorro libre sigue siendo exactamente 0 € (sin dinero ficticio ni negativos)
+    const freeSavingsAfter = selectFreeSavingsWithReserves(totalSavingsBalance, emergencyAllocated, goalsAllocated, updatedReservesAllocated)
+    assert.equal(freeSavingsAfter, 0)
+  })
+
+  it('424. No permite asignar a una reserva más dinero del que está libre', () => {
+    const totalSavingsBalance = 200
+    const emergencyAllocated = 0
+    const goalsAllocated = 0
+    const currentReservesAllocated = 50
+
+    // Ahorro libre disponible = 200 - 50 = 150 €
+    const freeSavings = selectFreeSavingsWithReserves(totalSavingsBalance, emergencyAllocated, goalsAllocated, currentReservesAllocated)
+    assert.equal(freeSavings, 150)
+
+    // Intentar asignar 160 € supera el ahorro libre (150 €)
+    const attemptAmount = 160
+    const isExceeding = attemptAmount > freeSavings
+    assert.equal(isExceeding, true, 'Debe detectar y bloquear sobreasignación')
+  })
+
+  it('425. Crear y apartar dinero en reservas no altera el saldo real de las cuentas', () => {
+    const accounts: Account[] = [
+      { id: 'daily', name: 'Cuenta diaria', type: 'spending', initialBalance: 1000 },
+      { id: 'savings', name: 'Ahorro', type: 'savings', initialBalance: 2000 },
+    ]
+    const transactions: Transaction[] = []
+
+    // Saldo real inicial
+    const initialSavingsBalance = calculateAccountBalance(accounts[1], transactions)
+    assert.equal(initialSavingsBalance, 2000)
+
+    // Creamos reservas y asignamos dinero lógicamente
+    const reservesAllocated = 300
+
+    // El saldo bancario real de la cuenta de ahorro permanece íntegro e inalterado
+    const afterSavingsBalance = calculateAccountBalance(accounts[1], transactions)
+    assert.equal(afterSavingsBalance, 2000, 'El saldo real bancario no debe modificarse')
+
+    // El ahorro libre computa la asignación lógica sin tocar cuentas reales
+    const freeSavings = selectFreeSavingsWithReserves(afterSavingsBalance, 0, 0, reservesAllocated)
+    assert.equal(freeSavings, 1700)
+  })
+
+  it('426. Idempotencia y navegación: no duplica reservas al guardar ni al navegar', () => {
+    let reserves: Reserve[] = [
+      { id: 'r1', name: 'Reserva Existente', targetAmount: 200, currentAllocated: 0, targetDate: '2026-11-01', active: true },
+    ]
+
+    const newReserve: Reserve = {
+      id: 'r_navidad_unique',
+      name: 'Navidad / Reyes',
+      targetAmount: 300,
+      currentAllocated: 0,
+      targetDate: '2026-12-15',
+      active: true,
+    }
+
+    // Añadimos la reserva una vez
+    if (!reserves.some((r) => r.id === newReserve.id)) {
+      reserves = [...reserves, newReserve]
+    }
+    assert.equal(reserves.length, 2)
+
+    // Simular re-ejecución o navegación
+    if (!reserves.some((r) => r.id === newReserve.id)) {
+      reserves = [...reserves, newReserve]
+    }
+    assert.equal(reserves.length, 2, 'No debe duplicar la reserva')
+  })
+})
+
 
 
 

@@ -3,15 +3,32 @@ import type { CreateReserveInput, Reserve, UpdateReserveInput } from '../models/
 import { AppIcon, resolveIconKey } from '../ui/icons'
 import { IconPicker } from './IconPicker'
 
+export interface ReserveInitialValues {
+  name?: string
+  targetAmount?: number | ''
+  targetDate?: string
+  iconKey?: string
+}
+
 interface ReserveModalProps {
   open: boolean
   onClose: () => void
   reserve?: Reserve | null
+  initialValues?: ReserveInitialValues | null
+  freeSavings?: number
   onSave: (data: CreateReserveInput | UpdateReserveInput, id?: string) => void
   onDelete?: (id: string) => void
 }
 
-export function ReserveModal({ open, onClose, reserve, onSave, onDelete }: ReserveModalProps) {
+export function ReserveModal({
+  open,
+  onClose,
+  reserve,
+  initialValues,
+  freeSavings,
+  onSave,
+  onDelete,
+}: ReserveModalProps) {
   const [name, setName] = useState('')
   const [targetAmount, setTargetAmount] = useState('')
   const [targetDate, setTargetDate] = useState('')
@@ -27,6 +44,18 @@ export function ReserveModal({ open, onClose, reserve, onSave, onDelete }: Reser
       setTargetDate(reserve.targetDate)
       setIconKey(resolveIconKey(reserve.iconKey, 'sparkles'))
       setConfirmDelete(false)
+    } else if (initialValues) {
+      setName(initialValues.name ?? '')
+      setTargetAmount(
+        initialValues.targetAmount !== undefined &&
+          initialValues.targetAmount !== '' &&
+          initialValues.targetAmount !== null
+          ? String(initialValues.targetAmount).replace('.', ',')
+          : ''
+      )
+      setTargetDate(initialValues.targetDate ?? '')
+      setIconKey(resolveIconKey(initialValues.iconKey, 'sparkles'))
+      setConfirmDelete(false)
     } else {
       setName('')
       setTargetAmount('')
@@ -34,7 +63,7 @@ export function ReserveModal({ open, onClose, reserve, onSave, onDelete }: Reser
       setIconKey('sparkles')
       setConfirmDelete(false)
     }
-  }, [reserve, open])
+  }, [reserve, initialValues, open])
 
   if (!open) return null
 
@@ -129,6 +158,35 @@ export function ReserveModal({ open, onClose, reserve, onSave, onDelete }: Reser
               <IconPicker selectedKey={iconKey} onSelect={setIconKey} />
             </label>
           </div>
+
+          {!isEditing && typeof freeSavings === 'number' && freeSavings <= 0 && (
+            <div
+              className="info-callout"
+              style={{
+                marginTop: 6,
+                marginBottom: 10,
+                padding: '10px 14px',
+                borderRadius: 'var(--radius-sm, 10px)',
+                backgroundColor: 'var(--bg-card-light, #f8fafc)',
+                border: '1px solid var(--border-color, #e2e8f0)',
+              }}
+            >
+              <p
+                style={{
+                  margin: 0,
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 8,
+                  fontSize: '0.85rem',
+                  color: 'var(--text-muted, #64748b)',
+                  lineHeight: 1.4,
+                }}
+              >
+                <AppIcon name="info" size={16} />
+                <span>Puedes crear la reserva ahora y empezar a asignarle dinero más adelante.</span>
+              </p>
+            </div>
+          )}
 
           <div className="modal-actions">
             <button type="submit" className="primary-button">
