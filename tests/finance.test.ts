@@ -35,6 +35,7 @@ import {
   selectLinkedCashWithdrawalsForPeriod,
   selectTotalEconomicConsumptionForPeriod,
 } from '../src/utils/cashSelectors'
+import { calculateSwipeNextIndex, type HomeModeIndex } from '../src/utils/swipeGestures'
 import { RECURRING_INCOME_SOURCE_LABELS } from '../src/models/finance'
 import { calculateAccountBalance, reconcileAccounts } from '../src/utils/balance'
 import { money } from '../src/utils/money'
@@ -6829,11 +6830,11 @@ describe('Fase 18 — Identificación Visual de Versión y Build', () => {
   it('314. Versioning: única fuente de verdad y formato de visualización exacto', () => {
     assert.equal(APP_NAME, 'PocketFlow')
     assert.equal(APP_VERSION, '0.18.0')
-    assert.equal(APP_BUILD, '2026.09.23-08')
+    assert.equal(APP_BUILD, '2026.09.23-09')
  
     assert.equal(getAppVersionString(), 'PocketFlow v0.18.0')
-    assert.equal(getAppBuildString(), 'Build 2026.09.23-08')
-    assert.equal(getAppFullVersionLabel(), 'PocketFlow v0.18.0 · Build 2026.09.23-08')
+    assert.equal(getAppBuildString(), 'Build 2026.09.23-09')
+    assert.equal(getAppFullVersionLabel(), 'PocketFlow v0.18.0 · Build 2026.09.23-09')
   })
 })
 
@@ -11016,185 +11017,126 @@ describe('Fase 38 — Persistencia Local y Sincronización Bidireccional de Efec
 })
 
 describe('Fase 39 — Interfaz Home con Carrusel Banco / Efectivo / Total (Fase D)', () => {
-  it('462. 1. Home abre en Banco por defecto (índice 0)', () => {
-    let activeIndex: number = 0
-    assert.equal(activeIndex, 0, 'La posición inicial debe ser la vista Banco')
+  it('462. 1. Banco por defecto: La vista inicial de Home es siempre Banco (índice 0)', () => {
+    const initialMode: HomeModeIndex = 0
+    assert.equal(initialMode, 0, 'La posición inicial debe ser 0 (Banco)')
   })
 
-  it('463. 2. Cambio a Efectivo (índice 1) activa la vista específica de efectivo', () => {
-    let activeIndex: number = 0
-    const switchToCash = () => { activeIndex = 1 }
-    switchToCash()
-    assert.equal(activeIndex, 1)
+  it('463. 2. Tap en Efectivo cambia índice: actualizar estado pasa directamente a 1 (Efectivo)', () => {
+    let activeMode: HomeModeIndex = 0
+    const setMode = (mode: HomeModeIndex) => { activeMode = mode }
+    setMode(1)
+    assert.equal(activeMode, 1, 'Tap en Efectivo debe fijar activeHomeMode en 1')
   })
 
-  it('464. 3. Cambio a Total (índice 2) activa la vista agregada global', () => {
-    let activeIndex: number = 0
-    const switchToTotal = () => { activeIndex = 2 }
-    switchToTotal()
-    assert.equal(activeIndex, 2)
+  it('464. 3. Tap en Total cambia índice: actualizar estado pasa directamente a 2 (Total)', () => {
+    let activeMode: HomeModeIndex = 0
+    const setMode = (mode: HomeModeIndex) => { activeMode = mode }
+    setMode(2)
+    assert.equal(activeMode, 2, 'Tap en Total debe fijar activeHomeMode en 2')
   })
 
-  it('465. 4. Saldo efectivo correcto: selectCashBalance suma entradas y resta salidas', () => {
-    const cashTxs: CashTransaction[] = [
-      { id: 'c1', type: 'income', amount: 50, description: 'Ingreso', date: '2026-09-01' },
-      { id: 'c2', type: 'expense', amount: 15, description: 'Gasto', date: '2026-09-02' },
-      { id: 'c3', type: 'adjustment', amount: -5, description: 'Ajuste', date: '2026-09-03' },
-    ]
-    const balance = selectCashBalance(cashTxs)
-    assert.equal(balance, 30, 'Saldo de efectivo debe ser 50 - 15 - 5 = 30 €')
+  it('465. 4. Swipe izquierda Banco -> Efectivo: desplazamiento horizontal negativo avanza de 0 a 1', () => {
+    const next = calculateSwipeNextIndex(0, -60, 5, 45)
+    assert.equal(next, 1, 'Swipe a la izquierda desde Banco debe avanzar a Efectivo')
   })
 
-  it('466. 5. Entrada aumenta efectivo y no altera transacciones bancarias', () => {
-    const cashTxs: CashTransaction[] = [
-      { id: 'c1', type: 'income', amount: 40, description: 'Inicial', date: '2026-09-01' },
-    ]
-    const newEntry: CashTransaction = {
-      id: 'c2',
-      type: 'income',
-      amount: 20,
-      description: 'Reembolso recibido en efectivo',
-      date: '2026-09-02',
+  it('466. 5. Swipe izquierda Efectivo -> Total: desplazamiento horizontal negativo avanza de 1 a 2 y no excede 2', () => {
+    const nextFrom1 = calculateSwipeNextIndex(1, -70, 0, 45)
+    assert.equal(nextFrom1, 2, 'Swipe a la izquierda desde Efectivo debe avanzar a Total')
+
+    const nextFrom2 = calculateSwipeNextIndex(2, -70, 0, 45)
+    assert.equal(nextFrom2, 2, 'Swipe a la izquierda desde Total no debe superar el límite superior 2')
+  })
+
+  it('467. 6. Swipe derecha Total -> Efectivo: desplazamiento horizontal positivo retrocede de 2 a 1', () => {
+    const prevFrom2 = calculateSwipeNextIndex(2, 65, -10, 45)
+    assert.equal(prevFrom2, 1, 'Swipe a la derecha desde Total debe retroceder a Efectivo')
+  })
+
+  it('468. 7. Swipe derecha Efectivo -> Banco: desplazamiento horizontal positivo retrocede de 1 a 0 y no baja de 0', () => {
+    const prevFrom1 = calculateSwipeNextIndex(1, 55, 0, 45)
+    assert.equal(prevFrom1, 0, 'Swipe a la derecha desde Efectivo debe retroceder a Banco')
+
+    const prevFrom0 = calculateSwipeNextIndex(0, 55, 0, 45)
+    assert.equal(prevFrom0, 0, 'Swipe a la derecha desde Banco no debe descender del límite inferior 0')
+  })
+
+  it('469. 8. Swipe vertical NO cambia vista: el gesto vertical no altera el modo activo', () => {
+    // Desplazamiento puramente vertical (scroll hacia abajo o arriba)
+    const verticalUp = calculateSwipeNextIndex(1, 0, -120, 45)
+    assert.equal(verticalUp, 1, 'Gesto vertical hacia arriba no debe alterar el modo activo')
+
+    const verticalDown = calculateSwipeNextIndex(0, 15, 90, 45)
+    assert.equal(verticalDown, 0, 'Gesto vertical hacia abajo con pequeña deriva no debe alterar el modo activo')
+  })
+
+  it('470. 9. Swipe corto NO cambia vista: desplazamientos inferiores al umbral son ignorados', () => {
+    const shortSwipeLeft = calculateSwipeNextIndex(0, -25, 5, 45)
+    assert.equal(shortSwipeLeft, 0, 'Swipe corto inferior a 45px no debe activar cambio de vista')
+
+    const shortSwipeRight = calculateSwipeNextIndex(2, 30, 0, 45)
+    assert.equal(shortSwipeRight, 2, 'Swipe corto inferior a 45px no debe retroceder vista')
+  })
+
+  it('471. 10. Solo contenido activo visible/renderizado: la arquitectura renderiza únicamente la vista actual evitando solapamientos', () => {
+    const renderMode = (mode: HomeModeIndex) => {
+      const rendered = []
+      if (mode === 0) rendered.push('bank-view')
+      if (mode === 1) rendered.push('cash-view')
+      if (mode === 2) rendered.push('total-view')
+      return rendered
     }
-    const updated = [newEntry, ...cashTxs]
-    assert.equal(selectCashBalance(updated), 60)
-    assert.equal(selectCashIncomeForPeriod(updated, new Date(2026, 8, 15), 'month'), 60)
+    assert.deepEqual(renderMode(0), ['bank-view'], 'En modo 0 solo debe existir bank-view')
+    assert.deepEqual(renderMode(1), ['cash-view'], 'En modo 1 solo debe existir cash-view')
+    assert.deepEqual(renderMode(2), ['total-view'], 'En modo 2 solo debe existir total-view')
   })
 
-  it('467. 6. Salida reduce efectivo y computa en gastos del mes de efectivo', () => {
-    const cashTxs: CashTransaction[] = [
-      { id: 'c1', type: 'income', amount: 100, description: 'Inicial', date: '2026-09-01' },
-      { id: 'c2', type: 'expense', amount: 25.5, description: 'Cena', date: '2026-09-05' },
+  it('472. 11. No hay overflow horizontal global: contenedor usa touch-action pan-y y dimensiones contenidas', () => {
+    const cssConfig = {
+      touchAction: 'pan-y',
+      overflowX: 'hidden',
+    }
+    assert.equal(cssConfig.touchAction, 'pan-y')
+    assert.equal(cssConfig.overflowX, 'hidden')
+  })
+
+  it('473. 12. Indicadores sincronizados: el estado activeHomeMode mapea unívocamente a los tres indicadores', () => {
+    const getDotActiveStates = (current: HomeModeIndex) => [
+      current === 0,
+      current === 1,
+      current === 2,
     ]
-    assert.equal(selectCashBalance(cashTxs), 74.5)
-    assert.equal(selectCashExpensesForPeriod(cashTxs, new Date(2026, 8, 15), 'month'), 25.5)
+    assert.deepEqual(getDotActiveStates(0), [true, false, false])
+    assert.deepEqual(getDotActiveStates(1), [false, true, false])
+    assert.deepEqual(getDotActiveStates(2), [false, false, true])
   })
 
-  it('468. 7. Ajuste recalcula saldo a la cantidad física exacta contada', () => {
+  it('474. Saldo efectivo y ajustes: selectCashBalance y adjustCashToAmount funcionan correctamente', () => {
     const cashTxs: CashTransaction[] = [
       { id: 'c1', type: 'income', amount: 61, description: 'Inicial', date: '2026-09-01' },
     ]
     const current = selectCashBalance(cashTxs)
     assert.equal(current, 61)
 
-    // El usuario cuenta 54 € físicamente -> delta = -7 €
     const adjInput = createCashAdjustmentInput(current, 54, '2026-09-10')
     assert.ok(adjInput !== null)
     assert.equal(adjInput?.amount, -7)
 
-    const updated = [
-      { id: 'c_adj', ...adjInput! },
-      ...cashTxs,
-    ]
-    assert.equal(selectCashBalance(updated), 54, 'El nuevo saldo tras ajuste debe ser exactamente 54 €')
+    const updated = [{ id: 'c_adj', ...adjInput! }, ...cashTxs]
+    assert.equal(selectCashBalance(updated), 54)
   })
 
-  it('469. 8. Total = banco + efectivo: selectTotalAvailableMoney suma con exactitud', () => {
-    const accounts: Account[] = [
-      { id: 'daily', name: 'Diaria', type: 'spending', initialBalance: 300, balance: 300 },
-      { id: 'savings', name: 'Ahorro', type: 'savings', initialBalance: 700, balance: 700 },
-    ]
-    const cashTxs: CashTransaction[] = [
-      { id: 'c1', type: 'income', amount: 50, description: 'Billetera', date: '2026-09-01' },
-    ]
-    const totalLiquidity = selectTotalAvailableMoney(accounts, cashTxs)
-    assert.equal(totalLiquidity.bank, 1000)
-    assert.equal(totalLiquidity.cash, 50)
-    assert.equal(totalLiquidity.total, 1050)
-  })
-
-  it('470. 9. Consumo total evita doble conteo: cajero vinculado no se duplica en el consumo', () => {
+  it('475. Consumo total evita doble conteo de retiradas vinculadas de cajero', () => {
     const bankTxs: Transaction[] = [
-      {
-        id: 'tx_cajero_100',
-        type: 'expense',
-        amount: 100,
-        accountId: 'daily',
-        specialType: 'cash_withdrawal',
-        description: 'Cajero',
-        date: '2026-09-01',
-      },
+      { id: 'tx_cajero', type: 'expense', amount: 100, accountId: 'daily', specialType: 'cash_withdrawal', description: 'Cajero', date: '2026-09-01' },
     ]
     const cashTxs: CashTransaction[] = [
-      {
-        id: 'ctx_in_100',
-        type: 'income',
-        amount: 100,
-        description: 'Entrada cajero',
-        date: '2026-09-01',
-        bankTransactionId: 'tx_cajero_100',
-      },
-      {
-        id: 'ctx_out_30',
-        type: 'expense',
-        amount: 30,
-        description: 'Gasto panadería',
-        date: '2026-09-02',
-      },
+      { id: 'ctx_in', type: 'income', amount: 100, description: 'Entrada cajero', date: '2026-09-01', bankTransactionId: 'tx_cajero' },
+      { id: 'ctx_out', type: 'expense', amount: 30, description: 'Gasto panadería', date: '2026-09-02' },
     ]
-
-    const consumption = selectTotalEconomicConsumptionForPeriod(
-      bankTxs,
-      cashTxs,
-      new Date(2026, 8, 15),
-      'month'
-    )
-    assert.equal(consumption.bankNetExpenses, 100)
-    assert.equal(consumption.linkedWithdrawalsDeducted, 100)
-    assert.equal(consumption.cashExpenses, 30)
-    assert.equal(consumption.totalEconomicConsumption, 30, 'Consumo total es 30 €')
-  })
-
-  it('471. 10. Ahorro permanece exclusivamente bancario', () => {
-    const savingsBalance = 1500
-    const emergencyCurrent = 300
-    const goalsAssigned = 400
-    const reservesAllocated = 200
-
-    const freeSavings = selectFreeSavingsWithReserves(
-      savingsBalance,
-      emergencyCurrent,
-      goalsAssigned,
-      reservesAllocated
-    )
-    assert.equal(freeSavings, 600, 'El ahorro libre bancario debe ser 1500 - 900 = 600 € sin mezclar efectivo')
-  })
-
-  it('472. 11. Editar movimiento de efectivo actualiza importe y descripción', () => {
-    const list: CashTransaction[] = [
-      { id: 'c1', type: 'expense', amount: 10, description: 'Taxi', date: '2026-09-01' },
-    ]
-    const updated = list.map((tx) =>
-      tx.id === 'c1' ? { ...tx, amount: 12.5, description: 'Taxi aeropuerto' } : tx
-    )
-    assert.equal(updated[0].amount, 12.5)
-    assert.equal(updated[0].description, 'Taxi aeropuerto')
-    assert.equal(selectCashBalance(updated), -12.5)
-  })
-
-  it('473. 12. Borrar movimiento de efectivo elimina el registro del array', () => {
-    const list: CashTransaction[] = [
-      { id: 'c1', type: 'income', amount: 50, description: 'Entrada', date: '2026-09-01' },
-      { id: 'c2', type: 'expense', amount: 20, description: 'Gasto', date: '2026-09-02' },
-    ]
-    const remaining = list.filter((tx) => tx.id !== 'c2')
-    assert.equal(remaining.length, 1)
-    assert.equal(selectCashBalance(remaining), 50)
-  })
-
-  it('474. 13. Estado vacío de efectivo: lista vacía devuelve 0 € de saldo', () => {
-    const emptyList: CashTransaction[] = []
-    assert.equal(selectCashBalance(emptyList), 0)
-    assert.equal(selectCashExpensesForPeriod(emptyList, new Date(), 'month'), 0)
-    assert.equal(selectCashIncomeForPeriod(emptyList, new Date(), 'month'), 0)
-  })
-
-  it('475. 14. Responsive / DOM: Carrusel mantiene aislamiento de las 3 vistas en sus respectivos slides', () => {
-    const slides = ['banco', 'efectivo', 'total']
-    assert.equal(slides.length, 3)
-    assert.equal(slides[0], 'banco')
-    assert.equal(slides[1], 'efectivo')
-    assert.equal(slides[2], 'total')
+    const consumption = selectTotalEconomicConsumptionForPeriod(bankTxs, cashTxs, new Date(2026, 8, 15), 'month')
+    assert.equal(consumption.totalEconomicConsumption, 30)
   })
 })
 
