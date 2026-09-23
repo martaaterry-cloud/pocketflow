@@ -1,13 +1,18 @@
 import type { PersistedState } from '../services/storage/storageAdapter'
 import { migratePersistedState } from '../services/storage/localStorageAdapter'
+import { APP_BUILD, APP_VERSION } from '../version'
 
 export const BACKUP_APP_IDENTIFIER = 'Pocketflow'
 export const CURRENT_BACKUP_VERSION = 1
 export const LAST_BACKUP_DATE_KEY = 'pocketflow:lastBackupAt'
+export const LAST_EXCEL_EXPORT_DATE_KEY = 'pocketflow:lastExcelExportAt'
 
 export interface PocketflowBackup {
   app: string
   version: number
+  build?: string
+  schemaVersion?: number
+  timezone?: string
   exportedAt: string
   data: PersistedState
 }
@@ -37,12 +42,21 @@ export interface BackupValidationError {
 export type BackupValidationResult = BackupValidationSuccess | BackupValidationError
 
 /**
- * Genera la estructura JSON portable y versionada para la copia de seguridad.
+ * Genera la estructura JSON portable y versionada para la copia de seguridad completa.
+ * Conserva íntegramente todos los IDs, relaciones, claves foráneas y entidades sin datos ficticios.
  */
 export function createBackupPayload(state: PersistedState, now = new Date()): PocketflowBackup {
+  const timezone =
+    typeof Intl !== 'undefined' && Intl.DateTimeFormat
+      ? Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'
+      : 'UTC'
+
   return {
     app: BACKUP_APP_IDENTIFIER,
     version: CURRENT_BACKUP_VERSION,
+    build: APP_BUILD,
+    schemaVersion: 1,
+    timezone,
     exportedAt: now.toISOString(),
     data: {
       accounts: state.accounts ?? [],
@@ -54,6 +68,10 @@ export function createBackupPayload(state: PersistedState, now = new Date()): Po
       reserves: state.reserves ?? [],
       specialPeriods: state.specialPeriods ?? [],
       planSettings: state.planSettings,
+      profile: state.profile,
+      variableExpenseEstimates: state.variableExpenseEstimates ?? [],
+      sharedContacts: state.sharedContacts ?? [],
+      expenseShares: state.expenseShares ?? [],
     },
   }
 }
@@ -69,7 +87,7 @@ export function validateBackupPayload(raw: unknown): BackupValidationResult {
 
   const obj = raw as Record<string, unknown>
 
-  if (obj.app !== BACKUP_APP_IDENTIFIER) {
+  if (obj.app !== BACKUP_APP_IDENTIFIER && obj.app !== 'PocketFlow') {
     return {
       valid: false,
       error: `Archivo incompatible. Se esperaba una copia de seguridad de '${BACKUP_APP_IDENTIFIER}'.`,
@@ -136,7 +154,7 @@ export async function shareOrDownloadBackup(backup: PocketflowBackup): Promise<b
       const file = new File([blob], fileName, { type: 'application/json' })
       if (navigator.canShare({ files: [file] })) {
         await navigator.share({
-          title: 'Copia de seguridad Pocketflow',
+          title: 'Copia de seguridad PocketFlow',
           files: [file],
         })
         return true
@@ -174,3 +192,14 @@ export function getLastBackupDate(): string | null {
   if (typeof localStorage === 'undefined') return null
   return localStorage.getItem(LAST_BACKUP_DATE_KEY)
 }
+
+/**
+ * Lee la fecha de la última exportación de Excel.
+ */
+export function getLastExcelExportDate(): string | null {
+  if (typeof localStorage === 'undefined') return null
+  return localStorage.getItem(LAST_EXCEL_EXPORT_DATE_KEY)
+}
+
+// Re-exportar utilidades de Excel
+export { generateExcelWorkbook, shareOrDownloadExcel, auditDataConsistency } from './excelExport'

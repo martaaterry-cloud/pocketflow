@@ -3,8 +3,11 @@ import type { FinanceStore } from '../store/useFinance'
 import { AppIcon } from '../ui/icons'
 import {
   createBackupPayload,
+  generateExcelWorkbook,
   getLastBackupDate,
+  getLastExcelExportDate,
   shareOrDownloadBackup,
+  shareOrDownloadExcel,
   validateBackupPayload,
   type BackupValidationSuccess,
 } from '../utils/backup'
@@ -26,10 +29,12 @@ interface BackupPageProps {
 
 export function BackupPage({ finance, onBack, onToast }: BackupPageProps) {
   const [lastExternalBackup, setLastExternalBackup] = useState<string | null>(getLastBackupDate)
+  const [lastExcelExport, setLastExcelExport] = useState<string | null>(getLastExcelExportDate)
   const [cloudBackups, setCloudBackups] = useState<CloudBackupRecord[]>([])
   const [selectedCloudBackup, setSelectedCloudBackup] = useState<CloudBackupRecord | null>(null)
   const [pendingJsonRestore, setPendingJsonRestore] = useState<BackupValidationSuccess | null>(null)
   const [isExporting, setIsExporting] = useState(false)
+  const [isExportingExcel, setIsExportingExcel] = useState(false)
   const [isCreatingCloud, setIsCreatingCloud] = useState(false)
   const [isRestoring, setIsRestoring] = useState(false)
   const [isLoadingCloudList, setIsLoadingCloudList] = useState(true)
@@ -95,10 +100,35 @@ export function BackupPage({ finance, onBack, onToast }: BackupPageProps) {
         onToast('No se pudo completar la exportación', 'error')
       }
     } catch (err) {
-      console.error('[Backup] Error exportando:', err)
+      console.error('[Backup] Error exportando JSON:', err)
       onToast('Error al exportar la copia de seguridad', 'error')
     } finally {
       setIsExporting(false)
+    }
+  }
+
+  const handleExportExcel = async () => {
+    try {
+      setIsExportingExcel(true)
+      const fullState = finance.getFullState()
+      const workbook = generateExcelWorkbook(fullState)
+      const nowIso = new Date().toISOString()
+      const dateStr = nowIso.slice(0, 10)
+      const ok = await shareOrDownloadExcel(workbook, `pocketflow-analisis-${dateStr}.xlsx`)
+      if (ok) {
+        setLastExcelExport(nowIso)
+        if (typeof localStorage !== 'undefined') {
+          localStorage.setItem('pocketflow:lastExcelExportAt', nowIso)
+        }
+        onToast('Informe Excel exportado correctamente', 'success')
+      } else {
+        onToast('No se pudo completar la exportación a Excel', 'error')
+      }
+    } catch (err) {
+      console.error('[Backup] Error exportando Excel:', err)
+      onToast('Error al generar el archivo Excel', 'error')
+    } finally {
+      setIsExportingExcel(false)
     }
   }
 
@@ -352,40 +382,82 @@ export function BackupPage({ finance, onBack, onToast }: BackupPageProps) {
         </div>
       </section>
 
-      {/* SECCIÓN 2: Copia externa (JSON) */}
+      {/* SECCIÓN 2: Exportación y Copias Externas */}
       <section className="card backup-action-card">
         <div className="backup-card-header">
           <div className="action-icon export-icon">
             <AppIcon name="download" size={20} />
           </div>
           <div>
-            <h3>Copia externa (JSON)</h3>
+            <h3>Exportar datos de PocketFlow</h3>
             <p className="description">
-              Exporta un archivo seguro fuera de la app para guardarlo en <strong>iCloud Drive, Archivos o tu PC</strong>.
+              Genera copias seguras de tus datos reales para conservarlos o analizarlos externamente en <strong>iCloud Drive, Archivos o tu PC</strong>.
             </p>
           </div>
         </div>
 
-        <div className="button-group-stack">
-          <button
-            type="button"
-            className="btn btn-primary btn-block"
-            onClick={handleExportJson}
-            disabled={isExporting}
-          >
-            <AppIcon name="download" size={16} />
-            <span>{isExporting ? 'Exportando...' : 'Exportar copia completa'}</span>
-          </button>
+        <div className="export-options-container" style={{ display: 'flex', flexDirection: 'column', gap: 14, marginTop: 12 }}>
+          {/* Opción A: JSON */}
+          <div className="export-option-box" style={{ background: 'var(--bg-secondary, rgba(255,255,255,0.03))', padding: '12px 14px', borderRadius: 12, border: '1px solid var(--border-color, rgba(255,255,255,0.08))' }}>
+            <div style={{ marginBottom: 8 }}>
+              <strong style={{ fontSize: '0.95rem', display: 'block' }}>Copia completa (.json)</strong>
+              <span className="muted-text" style={{ fontSize: '0.85rem' }}>
+                Copia completa para restaurar PocketFlow.
+              </span>
+            </div>
+            <button
+              type="button"
+              className="btn btn-primary btn-block"
+              onClick={handleExportJson}
+              disabled={isExporting}
+            >
+              <AppIcon name="download" size={16} />
+              <span>{isExporting ? 'Exportando JSON...' : 'Exportar copia completa (.json)'}</span>
+            </button>
+            {lastExternalBackup && (
+              <small className="muted-text" style={{ marginTop: 6, display: 'block', fontSize: '0.75rem' }}>
+                Última exportación JSON: {formatDateTime(lastExternalBackup)}
+              </small>
+            )}
+          </div>
 
-          <button
-            type="button"
-            className="btn btn-secondary btn-block"
-            onClick={handleSelectFile}
-            disabled={isRestoring}
-          >
-            <AppIcon name="upload" size={16} />
-            <span>Importar y restaurar JSON</span>
-          </button>
+          {/* Opción B: Excel */}
+          <div className="export-option-box" style={{ background: 'var(--bg-secondary, rgba(255,255,255,0.03))', padding: '12px 14px', borderRadius: 12, border: '1px solid var(--border-color, rgba(255,255,255,0.08))' }}>
+            <div style={{ marginBottom: 8 }}>
+              <strong style={{ fontSize: '0.95rem', display: 'block' }}>Informe Excel (.xlsx)</strong>
+              <span className="muted-text" style={{ fontSize: '0.85rem' }}>
+                Informe completo y legible para revisar tus finanzas.
+              </span>
+            </div>
+            <button
+              type="button"
+              className="btn btn-secondary btn-block"
+              onClick={handleExportExcel}
+              disabled={isExportingExcel}
+            >
+              <AppIcon name="file-text" size={16} />
+              <span>{isExportingExcel ? 'Generando Excel...' : 'Exportar datos para análisis (.xlsx)'}</span>
+            </button>
+            {lastExcelExport && (
+              <small className="muted-text" style={{ marginTop: 6, display: 'block', fontSize: '0.75rem' }}>
+                Última exportación Excel: {formatDateTime(lastExcelExport)}
+              </small>
+            )}
+          </div>
+
+          {/* Opción C: Restaurar JSON */}
+          <div style={{ paddingTop: 4 }}>
+            <button
+              type="button"
+              className="btn btn-ghost btn-block"
+              onClick={handleSelectFile}
+              disabled={isRestoring}
+              style={{ border: '1px dashed var(--border-color, rgba(255,255,255,0.15))' }}
+            >
+              <AppIcon name="upload" size={16} />
+              <span>Importar y restaurar JSON</span>
+            </button>
+          </div>
         </div>
 
         <input
@@ -395,11 +467,6 @@ export function BackupPage({ finance, onBack, onToast }: BackupPageProps) {
           style={{ display: 'none' }}
           onChange={handleFileChange}
         />
-        {lastExternalBackup && (
-          <small className="muted-text" style={{ marginTop: 8, display: 'block' }}>
-            Última exportación externa: {formatDateTime(lastExternalBackup)}
-          </small>
-        )}
       </section>
 
       {/* SECCIÓN 3: Explicación de seguridad humana */}

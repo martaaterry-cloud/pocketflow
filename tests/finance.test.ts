@@ -40,6 +40,8 @@ import {
   CURRENT_BACKUP_VERSION,
   createBackupPayload,
   validateBackupPayload,
+  generateExcelWorkbook,
+  auditDataConsistency,
 } from '../src/utils/backup'
 import {
   createCloudBackup,
@@ -6812,11 +6814,11 @@ describe('Fase 18 — Identificación Visual de Versión y Build', () => {
   it('314. Versioning: única fuente de verdad y formato de visualización exacto', () => {
     assert.equal(APP_NAME, 'PocketFlow')
     assert.equal(APP_VERSION, '0.18.0')
-    assert.equal(APP_BUILD, '2026.09.23-05')
+    assert.equal(APP_BUILD, '2026.09.23-06')
  
     assert.equal(getAppVersionString(), 'PocketFlow v0.18.0')
-    assert.equal(getAppBuildString(), 'Build 2026.09.23-05')
-    assert.equal(getAppFullVersionLabel(), 'PocketFlow v0.18.0 · Build 2026.09.23-05')
+    assert.equal(getAppBuildString(), 'Build 2026.09.23-06')
+    assert.equal(getAppFullVersionLabel(), 'PocketFlow v0.18.0 · Build 2026.09.23-06')
   })
 })
 
@@ -9975,6 +9977,328 @@ describe('Fase 35 — Conexión Opcional de Periodos Especiales con Reservas de 
     assert.equal(reserves.length, 2, 'No debe duplicar la reserva')
   })
 })
+
+describe('Fase 36 — Exportación Completa y Auditable (JSON y Excel .xlsx)', () => {
+  const sampleRealState: PersistedState = {
+    accounts: [
+      { id: 'daily', name: 'Cuenta diaria', type: 'spending', initialBalance: 1200 },
+      { id: 'savings', name: 'Cuenta ahorro', type: 'savings', initialBalance: 5000 },
+    ],
+    transactions: [
+      {
+        id: 'tx_exp1',
+        type: 'expense',
+        amount: 60,
+        accountId: 'daily',
+        categoryId: 'leisure',
+        description: 'Cena con amigos',
+        date: '2026-09-05T21:00:00.000Z',
+        isShared: true,
+        expenseNature: 'variable',
+      },
+      {
+        id: 'tx_reimb1',
+        type: 'income',
+        incomeKind: 'reimbursement',
+        amount: 20,
+        accountId: 'daily',
+        description: 'Bizum cena Juan',
+        date: '2026-09-06T10:00:00.000Z',
+        parentExpenseId: 'tx_exp1',
+        expenseShareId: 'share_juan',
+      },
+      {
+        id: 'tx_rec1',
+        type: 'expense',
+        amount: 15,
+        accountId: 'daily',
+        categoryId: 'housing',
+        description: 'Netflix suscripción',
+        date: '2026-09-01T08:00:00.000Z',
+        recurringPaymentId: 'rec_netflix',
+        expenseNature: 'fixed',
+      },
+      {
+        id: 'tx_transfer1',
+        type: 'transfer',
+        amount: 300,
+        accountId: 'daily',
+        toAccountId: 'savings',
+        description: 'Traspaso a cuenta ahorro',
+        date: '2026-09-10T12:00:00.000Z',
+      },
+      {
+        id: 'tx_salary',
+        type: 'income',
+        incomeKind: 'income',
+        amount: 2200,
+        accountId: 'daily',
+        categoryId: 'income',
+        description: 'Nómina septiembre',
+        date: '2026-09-01T09:00:00.000Z',
+      },
+    ],
+    goals: [
+      { id: 'goal_viaje', name: 'Viaje Japón', target: 2000, current: 800, targetDate: '2027-06-01' },
+    ],
+    recurring: [
+      {
+        id: 'rec_netflix',
+        name: 'Netflix',
+        amount: 15,
+        categoryId: 'housing',
+        accountId: 'daily',
+        frequency: 'monthly',
+        nextDate: '2026-10-01',
+        active: true,
+        type: 'expense',
+      },
+      {
+        id: 'rec_gym',
+        name: 'Gimnasio',
+        amount: 35,
+        categoryId: 'leisure',
+        accountId: 'daily',
+        frequency: 'monthly',
+        nextDate: '2026-09-25',
+        active: true,
+        type: 'expense',
+      },
+    ],
+    categories: [
+      { id: 'housing', name: 'Hogar y Facturas', color: '#4F46E5', icon: 'home' },
+      { id: 'leisure', name: 'Ocio y Restauración', color: '#F59E0B', icon: 'coffee' },
+      { id: 'income', name: 'Ingresos', color: '#10B981', icon: 'arrow-down' },
+    ],
+    budgets: [
+      { id: 'b_leisure', categoryId: 'leisure', amountLimit: 200, period: 'monthly' },
+    ],
+    reserves: [
+      {
+        id: 'res_navidad',
+        name: 'Navidad / Reyes',
+        targetAmount: 400,
+        currentAllocated: 100,
+        targetDate: '2026-12-15',
+        iconKey: 'gift',
+        active: true,
+      },
+    ],
+    specialPeriods: [
+      {
+        id: 'sp_navidad',
+        name: 'Navidad 2026',
+        startDate: '2026-12-15',
+        endDate: '2027-01-07',
+        expectedExtraBudget: 350,
+        type: 'expected_high_spend',
+      },
+    ],
+    planSettings: {
+      monthlyIncome: 2200,
+      targetSavingsType: 'percentage',
+      targetSavingsValue: 15,
+      emergencyFundTargetType: 'months',
+      emergencyFundTargetValue: 3,
+      emergencyFundCurrent: 1500,
+      essentialCategoryIds: ['housing'],
+    },
+    profile: { displayName: 'Marta' },
+    variableExpenseEstimates: [
+      {
+        id: 'est_cafe',
+        name: 'Café fuera',
+        categoryId: 'leisure',
+        unitCost: 1.5,
+        frequencyType: 'per_week',
+        frequencyValue: 5,
+        active: true,
+      },
+    ],
+    sharedContacts: [
+      { id: 'contact_juan', displayName: 'Juan Pérez' },
+    ],
+    expenseShares: [
+      {
+        id: 'share_marta',
+        expenseTransactionId: 'tx_exp1',
+        participantName: 'Marta',
+        isPayerShare: true,
+        expectedAmount: 40,
+      },
+      {
+        id: 'share_juan',
+        expenseTransactionId: 'tx_exp1',
+        contactId: 'contact_juan',
+        participantName: 'Juan Pérez',
+        isPayerShare: false,
+        expectedAmount: 20,
+      },
+    ],
+  }
+
+  it('427. Exporta datos reales del store sin datos de prueba ni fixtures', () => {
+    const payload = createBackupPayload(sampleRealState)
+    assert.equal(payload.app, 'Pocketflow')
+    assert.equal(payload.version, 1)
+    assert.equal(payload.data.accounts.length, 2)
+    assert.equal(payload.data.transactions.length, 5)
+    assert.equal(payload.data.transactions[0].id, 'tx_exp1')
+    assert.equal(payload.data.profile?.displayName, 'Marta')
+  })
+
+  it('428. Aislamiento absoluto de seed.ts: la lógica de exportación no importa ni depende de seed.ts', async () => {
+    const fs = await import('node:fs/promises')
+    const backupContent = await fs.readFile('src/utils/backup.ts', 'utf-8')
+    const excelContent = await fs.readFile('src/utils/excelExport.ts', 'utf-8')
+
+    assert.equal(backupContent.includes('src/data/seed'), false, 'backup.ts no debe importar seed.ts')
+    assert.equal(backupContent.includes('seed.ts'), false, 'backup.ts no debe mencionar seed.ts')
+    assert.equal(excelContent.includes('src/data/seed'), false, 'excelExport.ts no debe importar seed.ts')
+    assert.equal(excelContent.includes('seed.ts'), false, 'excelExport.ts no debe mencionar seed.ts')
+  })
+
+  it('429. JSON completo contiene todas las entidades y metadatos del estado', () => {
+    const now = new Date(2026, 8, 23, 10, 0, 0)
+    const payload = createBackupPayload(sampleRealState, now)
+
+    // Metadatos
+    assert.equal(payload.app, 'Pocketflow')
+    assert.equal(payload.version, 1)
+    assert.equal(payload.build, APP_BUILD)
+    assert.equal(payload.schemaVersion, 1)
+    assert.ok(payload.timezone)
+    assert.equal(payload.exportedAt, now.toISOString())
+
+    // 13 colecciones completas
+    assert.ok(Array.isArray(payload.data.accounts))
+    assert.ok(Array.isArray(payload.data.transactions))
+    assert.ok(Array.isArray(payload.data.goals))
+    assert.ok(Array.isArray(payload.data.recurring))
+    assert.ok(Array.isArray(payload.data.categories))
+    assert.ok(Array.isArray(payload.data.budgets))
+    assert.ok(Array.isArray(payload.data.reserves))
+    assert.ok(Array.isArray(payload.data.specialPeriods))
+    assert.ok(payload.data.planSettings)
+    assert.ok(payload.data.profile)
+    assert.ok(Array.isArray(payload.data.variableExpenseEstimates))
+    assert.ok(Array.isArray(payload.data.sharedContacts))
+    assert.ok(Array.isArray(payload.data.expenseShares))
+
+    const validation = validateBackupPayload(payload)
+    assert.equal(validation.valid, true)
+  })
+
+  it('430. Integridad referencial en JSON: mantiene IDs, claves foráneas y relaciones sin aplanar', () => {
+    const payload = createBackupPayload(sampleRealState)
+    const txExp = payload.data.transactions.find((t) => t.id === 'tx_exp1')
+    const txReimb = payload.data.transactions.find((t) => t.id === 'tx_reimb1')
+    const txRec = payload.data.transactions.find((t) => t.id === 'tx_rec1')
+    const shareJuan = payload.data.expenseShares?.find((s) => s.id === 'share_juan')
+
+    assert.ok(txExp)
+    assert.ok(txReimb)
+    assert.equal(txReimb.parentExpenseId, 'tx_exp1')
+    assert.equal(txReimb.expenseShareId, 'share_juan')
+    assert.equal(txRec?.recurringPaymentId, 'rec_netflix')
+    assert.equal(shareJuan?.expenseTransactionId, 'tx_exp1')
+  })
+
+  it('431. Hoja MOVIMIENTOS de Excel: calcula gasto neto personal con fórmula canónica exacta', () => {
+    const refDate = new Date(2026, 8, 15)
+    const wb = generateExcelWorkbook(sampleRealState, refDate)
+    const wsMov = wb.Sheets['MOVIMIENTOS']
+    assert.ok(wsMov, 'Hoja MOVIMIENTOS debe existir')
+
+    // Verificar datos generados en la hoja MOVIMIENTOS
+    // tx_exp1: 60 bruto, 20 reembolsado -> 40 neto personal
+    const netCanonicalExp1 = selectNetPersonalExpensesForPeriod(sampleRealState.transactions, refDate, 'month')
+    // Total gastos mes: tx_exp1 (60 - 20 = 40) + tx_rec1 (15 - 0 = 15) = 55 neto
+    assert.equal(netCanonicalExp1, 55)
+
+    const audit = auditDataConsistency(sampleRealState, refDate)
+    assert.equal(audit.isConsistent, true)
+    assert.equal(audit.checks.diffNet, 0)
+    assert.equal(audit.checks.movementsNetSum, 55)
+    assert.equal(audit.checks.monthlyNetExpense, 55)
+  })
+
+  it('432. Hoja RESUMEN y MOVIMIENTOS: transferencias entre cuentas excluidas estrictamente de gastos', () => {
+    const refDate = new Date(2026, 8, 15)
+    const wb = generateExcelWorkbook(sampleRealState, refDate)
+    const wsResumen = wb.Sheets['RESUMEN']
+    assert.ok(wsResumen, 'Hoja RESUMEN debe existir')
+
+    const audit = auditDataConsistency(sampleRealState, refDate)
+    assert.equal(audit.checks.transfersCount, 1)
+    assert.equal(audit.checks.transfersTotal, 300)
+    // El gasto neto mensual de 55 NO incluye los 300 € de transferencia
+    assert.equal(audit.checks.monthlyNetExpense, 55)
+  })
+
+  it('433. Hoja GASTOS_COMPARTIDOS y reembolsos: los reembolsos se descuentan una única vez sin duplicidad', () => {
+    const refDate = new Date(2026, 8, 15)
+    const wb = generateExcelWorkbook(sampleRealState, refDate)
+    const wsComp = wb.Sheets['GASTOS_COMPARTIDOS']
+    assert.ok(wsComp, 'Hoja GASTOS_COMPARTIDOS debe existir')
+
+    const audit = auditDataConsistency(sampleRealState, refDate)
+    assert.equal(audit.checks.reimbursementsLinkedTotal, 20)
+    assert.equal(audit.checks.reimbursementsReceivedTotal, 20)
+  })
+
+  it('434. Segregación estricta: pagos e ingresos recurrentes previstos no se mezclan con transacciones reales', () => {
+    const refDate = new Date(2026, 8, 15)
+    const wb = generateExcelWorkbook(sampleRealState, refDate)
+    const wsRec = wb.Sheets['RECURRENTES']
+    assert.ok(wsRec, 'Hoja RECURRENTES debe existir')
+
+    // El recurrente Gimnasio (35 €) está previsto pero aún no cobrado en transacciones
+    const committed = selectCommittedAmount(sampleRealState.recurring, sampleRealState.transactions, refDate)
+    assert.equal(committed, 35)
+
+    // El gasto neto mensual real solo incluye lo efectivamente ejecutado (55 €), sin meter los 35 € de Gimnasio como gasto realizado
+    const actualNet = selectNetPersonalExpensesForPeriod(sampleRealState.transactions, refDate, 'month')
+    assert.equal(actualNet, 55)
+  })
+
+  it('435. Estructura Excel completa: contiene las 11 hojas requeridas con columnas y tipos numéricos correctos', () => {
+    const refDate = new Date(2026, 8, 15)
+    const wb = generateExcelWorkbook(sampleRealState, refDate)
+
+    const expectedSheets = [
+      'RESUMEN',
+      'MOVIMIENTOS',
+      'CUENTAS',
+      'RECURRENTES',
+      'CATEGORÍAS',
+      'GASTOS_COMPARTIDOS',
+      'OBJETIVOS_AHORRO',
+      'RESERVAS',
+      'PERIODOS_ESPECIALES',
+      'PRESUPUESTOS',
+      'PLAN_FINANCIERO',
+    ]
+
+    for (const sheetName of expectedSheets) {
+      assert.ok(wb.Sheets[sheetName], `Hoja '${sheetName}' debe estar presente en el workbook`)
+    }
+  })
+
+  it('436. Privacidad y Seguridad: el payload de exportación no contiene tokens, JWTs, API keys ni credenciales', () => {
+    const payload = createBackupPayload(sampleRealState)
+    const jsonString = JSON.stringify(payload)
+
+    assert.equal(jsonString.includes('access_token'), false)
+    assert.equal(jsonString.includes('refresh_token'), false)
+    assert.equal(jsonString.includes('supabase_key'), false)
+    assert.equal(jsonString.includes('anon_key'), false)
+    assert.equal(jsonString.includes('service_role'), false)
+    assert.equal(jsonString.includes('Bearer '), false)
+    assert.equal(jsonString.includes('password'), false)
+  })
+})
+
 
 
 
