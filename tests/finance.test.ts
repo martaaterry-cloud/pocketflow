@@ -239,6 +239,7 @@ import {
   selectTotalAllocatedToReserves,
   selectUpcomingSpecialPeriods,
   selectVariableMonthlyExpenses,
+  validateSpecialPeriodDates,
 } from '../src/utils/planSelectors'
 
 describe('Pocketflow — Pruebas Exhaustivas de Dominio Financiero', () => {
@@ -6810,11 +6811,11 @@ describe('Fase 18 — Identificación Visual de Versión y Build', () => {
   it('314. Versioning: única fuente de verdad y formato de visualización exacto', () => {
     assert.equal(APP_NAME, 'PocketFlow')
     assert.equal(APP_VERSION, '0.18.0')
-    assert.equal(APP_BUILD, '2026.09.23-03')
+    assert.equal(APP_BUILD, '2026.09.23-04')
  
     assert.equal(getAppVersionString(), 'PocketFlow v0.18.0')
-    assert.equal(getAppBuildString(), 'Build 2026.09.23-03')
-    assert.equal(getAppFullVersionLabel(), 'PocketFlow v0.18.0 · Build 2026.09.23-03')
+    assert.equal(getAppBuildString(), 'Build 2026.09.23-04')
+    assert.equal(getAppFullVersionLabel(), 'PocketFlow v0.18.0 · Build 2026.09.23-04')
   })
 })
 
@@ -9793,6 +9794,34 @@ describe('Fase 33 — Auditoría Global y Centrado de Modales en Móvil', () => 
     assert.ok(cssContent.includes('.secondary-button'), 'Debe soportar .secondary-button')
   })
 })
+
+describe('Fase 34 — Validación de Fechas en Periodos Especiales', () => {
+  it('417. 1. Fecha final posterior a fecha inicial -> guarda válidamente', () => {
+    const res = validateSpecialPeriodDates('2026-07-01', '2026-07-15')
+    assert.equal(res.valid, true)
+    assert.equal(res.error, undefined)
+
+    // Periodo de 1 día (fecha final = fecha inicial) también permitido
+    const sameDayRes = validateSpecialPeriodDates('2026-08-15', '2026-08-15')
+    assert.equal(sameDayRes.valid, true)
+    assert.equal(sameDayRes.error, undefined)
+  })
+
+  it('418. 2. Fecha final anterior a fecha inicial -> bloquea con error exacto', () => {
+    // Ejemplo de la especificación: Inicio 15/12/2026, Fin 07/10/2026
+    const res = validateSpecialPeriodDates('2026-12-15', '2026-10-07')
+    assert.equal(res.valid, false)
+    assert.equal(res.error, 'La fecha final debe ser posterior a la fecha inicial.')
+  })
+
+  it('419. 3. Periodo que cruza de año -> guarda correctamente', () => {
+    // Caso de uso Navidad / Reyes: 15/12/2026 a 07/01/2027
+    const res = validateSpecialPeriodDates('2026-12-15', '2027-01-07')
+    assert.equal(res.valid, true)
+    assert.equal(res.error, undefined)
+  })
+})
+
 
 
 

@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import type { CreateSpecialPeriodInput, SpecialPeriod, SpecialPeriodType, UpdateSpecialPeriodInput } from '../models/finance'
+import { validateSpecialPeriodDates } from '../utils/planSelectors'
 import { AppIcon } from '../ui/icons'
 
 interface SpecialPeriodModalProps {
@@ -18,6 +19,7 @@ export function SpecialPeriodModal({ open, onClose, period, onSave, onDelete }: 
   const [type, setType] = useState<SpecialPeriodType>('expected_high_spend')
   const [note, setNote] = useState('')
   const [confirmDelete, setConfirmDelete] = useState(false)
+  const [errorMessage, setErrorMessage] = useState<string | null>(null)
 
   const isEditing = Boolean(period)
 
@@ -34,6 +36,7 @@ export function SpecialPeriodModal({ open, onClose, period, onSave, onDelete }: 
       setType(period.type)
       setNote(period.note ?? '')
       setConfirmDelete(false)
+      setErrorMessage(null)
     } else {
       setName('')
       setStartDate('')
@@ -42,6 +45,7 @@ export function SpecialPeriodModal({ open, onClose, period, onSave, onDelete }: 
       setType('expected_high_spend')
       setNote('')
       setConfirmDelete(false)
+      setErrorMessage(null)
     }
   }, [period, open])
 
@@ -50,6 +54,12 @@ export function SpecialPeriodModal({ open, onClose, period, onSave, onDelete }: 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
     if (!name.trim() || !startDate || !endDate) return
+
+    const dateValidation = validateSpecialPeriodDates(startDate, endDate)
+    if (!dateValidation.valid) {
+      setErrorMessage(dateValidation.error ?? 'La fecha final debe ser posterior a la fecha inicial.')
+      return
+    }
 
     const trimmedExtra = expectedExtraBudget.trim()
     let numericExtra: number | undefined = undefined
@@ -121,7 +131,10 @@ export function SpecialPeriodModal({ open, onClose, period, onSave, onDelete }: 
               <input
                 type="date"
                 value={startDate}
-                onChange={(e) => setStartDate(e.target.value)}
+                onChange={(e) => {
+                  setStartDate(e.target.value)
+                  setErrorMessage(null)
+                }}
               />
             </label>
           </div>
@@ -132,10 +145,31 @@ export function SpecialPeriodModal({ open, onClose, period, onSave, onDelete }: 
               <input
                 type="date"
                 value={endDate}
-                onChange={(e) => setEndDate(e.target.value)}
+                onChange={(e) => {
+                  setEndDate(e.target.value)
+                  setErrorMessage(null)
+                }}
               />
             </label>
           </div>
+
+          {errorMessage && (
+            <div
+              className="form-error-callout"
+              style={{
+                backgroundColor: 'rgba(220, 38, 38, 0.08)',
+                color: 'var(--accent-red, #dc2626)',
+                border: '1px solid rgba(220, 38, 38, 0.25)',
+                borderRadius: 'var(--radius-sm, 10px)',
+                padding: '10px 14px',
+                fontSize: '0.85rem',
+                fontWeight: 500,
+                marginBottom: 14,
+              }}
+            >
+              {errorMessage}
+            </div>
+          )}
 
           <div className="form-group">
             <label>

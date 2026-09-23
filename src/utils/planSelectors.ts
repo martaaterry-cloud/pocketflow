@@ -818,3 +818,26 @@ export function selectMonthlyPlanCardSummary(
     variableExpenses: actualVariableExpenses,
   }
 }
+
+/**
+ * Valida las fechas de inicio y fin de un periodo especial.
+ * - Formato de fechas en YYYY-MM-DD.
+ * - La fecha final no puede ser anterior a la fecha inicial.
+ * - Permite periodos de 1 día (startDate === endDate).
+ * - Permite periodos que crucen de año (ej. 2026-12-15 a 2027-01-10).
+ */
+export function validateSpecialPeriodDates(
+  startDate: string,
+  endDate: string
+): { valid: boolean; error?: string } {
+  if (!startDate || !endDate) {
+    return { valid: false, error: 'Debes indicar las fechas de inicio y fin.' }
+  }
+
+  if (endDate < startDate) {
+    return { valid: false, error: 'La fecha final debe ser posterior a la fecha inicial.' }
+  }
+
+  return { valid: true }
+}
+
