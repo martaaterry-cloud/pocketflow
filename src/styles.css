@@ -979,14 +979,23 @@ button, input, select, textarea, label {
 .modal-backdrop {
   position: fixed;
   inset: 0;
-  background: rgba(18, 19, 16, 0.45);
-  backdrop-filter: blur(4px);
-  -webkit-backdrop-filter: blur(4px);
+  background: rgba(18, 19, 16, 0.5);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
   display: flex;
-  align-items: flex-end;
+  align-items: center;
   justify-content: center;
-  z-index: 100;
+  z-index: 1000;
+  padding: max(16px, env(safe-area-inset-top, 16px)) max(16px, env(safe-area-inset-right, 16px)) max(16px, env(safe-area-inset-bottom, 16px)) max(16px, env(safe-area-inset-left, 16px));
+  box-sizing: border-box;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
   animation: fadeIn 0.2s ease-out;
+}
+
+.modal-backdrop:has(> .action-sheet) {
+  align-items: flex-end;
+  padding: 0;
 }
 
 @keyframes fadeIn {
@@ -994,20 +1003,32 @@ button, input, select, textarea, label {
   to { opacity: 1; }
 }
 
-.modal {
-  background: #fbfbf8;
-  border-radius: 28px 28px 0 0;
-  padding: 22px 20px calc(24px + var(--safe-bottom));
-  width: min(500px, 100%);
-  max-height: 90vh;
+.modal,
+.modal-card {
+  background: var(--bg-card, #fbfbf8);
+  color: var(--text-main, #1e293b);
+  border-radius: var(--radius-lg, 24px);
+  padding: 22px 20px;
+  width: min(520px, 100%);
+  margin: auto;
+  box-sizing: border-box;
+  max-height: calc(100vh - 48px);
+  max-height: calc(100dvh - max(32px, env(safe-area-inset-top, 16px) + env(safe-area-inset-bottom, 16px) + 24px));
   overflow-y: auto;
-  box-shadow: 0 -10px 40px rgba(0, 0, 0, 0.15);
-  animation: slideUp 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+  -webkit-overflow-scrolling: touch;
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.18), 0 2px 8px rgba(0, 0, 0, 0.06);
+  animation: popInModal 0.22s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
-@keyframes slideUp {
-  from { transform: translateY(100%); }
-  to { transform: translateY(0); }
+@keyframes popInModal {
+  from {
+    opacity: 0;
+    transform: scale(0.96) translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
 }
 
 .modal-header {
@@ -1101,17 +1122,28 @@ button, input, select, textarea, label {
   margin-top: 20px;
 }
 
+.modal-actions.horizontal,
+.modal-actions-horizontal {
+  flex-direction: row;
+  align-items: center;
+  justify-content: flex-end;
+}
+
 .primary-button {
   width: 100%;
+  min-height: 44px;
   border: 0;
   border-radius: var(--radius-md);
   background: var(--accent-dark);
   color: #ffffff;
-  padding: 15px;
+  padding: 13px 16px;
   font-size: 15px;
   font-weight: 600;
   cursor: pointer;
   box-shadow: var(--shadow-sm);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   transition: transform 0.15s ease, background 0.15s ease;
 }
 
@@ -1122,14 +1154,18 @@ button, input, select, textarea, label {
 
 .danger-outline-button {
   width: 100%;
+  min-height: 44px;
   border: 1px solid rgba(192, 73, 73, 0.35);
   border-radius: var(--radius-md);
   background: transparent;
   color: var(--accent-red);
-  padding: 14px;
+  padding: 13px 16px;
   font-size: 14px;
   font-weight: 600;
   cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   transition: all 0.15s ease;
 }
 
@@ -1156,28 +1192,52 @@ button, input, select, textarea, label {
   gap: 8px;
 }
 
-.danger-button {
+.danger-button,
+.btn.btn-danger {
   flex: 1;
+  min-height: 44px;
   border: 0;
-  border-radius: var(--radius-sm);
-  background: var(--accent-red);
+  border-radius: var(--radius-md);
+  background: var(--accent-red, #dc2626);
   color: #ffffff;
-  padding: 11px;
-  font-size: 13px;
+  padding: 12px 16px;
+  font-size: 14px;
   font-weight: 600;
   cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: opacity 0.15s ease, transform 0.12s ease;
 }
 
-.secondary-button {
+.danger-button:active,
+.btn.btn-danger:active {
+  opacity: 0.9;
+  transform: scale(0.98);
+}
+
+.secondary-button,
+.btn.btn-secondary {
   flex: 1;
-  border: 1px solid var(--border-strong);
-  border-radius: var(--radius-sm);
-  background: #ffffff;
-  color: var(--text-main);
-  padding: 11px;
-  font-size: 13px;
+  min-height: 44px;
+  border: 1px solid var(--border-strong, #cbd5e1);
+  border-radius: var(--radius-md);
+  background: var(--bg-card, #ffffff);
+  color: var(--text-main, #1e293b);
+  padding: 12px 16px;
+  font-size: 14px;
   font-weight: 600;
   cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s ease, transform 0.12s ease;
+}
+
+.secondary-button:active,
+.btn.btn-secondary:active {
+  background: var(--border-color, #f1f5f9);
+  transform: scale(0.98);
 }
 
 .muted {

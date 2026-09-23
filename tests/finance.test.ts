@@ -6810,11 +6810,11 @@ describe('Fase 18 — Identificación Visual de Versión y Build', () => {
   it('314. Versioning: única fuente de verdad y formato de visualización exacto', () => {
     assert.equal(APP_NAME, 'PocketFlow')
     assert.equal(APP_VERSION, '0.18.0')
-    assert.equal(APP_BUILD, '2026.09.23-02')
+    assert.equal(APP_BUILD, '2026.09.23-03')
  
     assert.equal(getAppVersionString(), 'PocketFlow v0.18.0')
-    assert.equal(getAppBuildString(), 'Build 2026.09.23-02')
-    assert.equal(getAppFullVersionLabel(), 'PocketFlow v0.18.0 · Build 2026.09.23-02')
+    assert.equal(getAppBuildString(), 'Build 2026.09.23-03')
+    assert.equal(getAppFullVersionLabel(), 'PocketFlow v0.18.0 · Build 2026.09.23-03')
   })
 })
 
@@ -9765,6 +9765,35 @@ describe('Fase 32 — Cobertura Multimensualidad en Pagos Recurrentes', () => {
     assert.equal(isRecurringCoveredInMonth(spotifyAfterConfirm, remainingTxs, 2026, 9), false)
   })
 })
+
+describe('Fase 33 — Auditoría Global y Centrado de Modales en Móvil', () => {
+  it('416. CSS de modales: centrado vertical, safe-area insets y 100dvh', async () => {
+    const fs = await import('node:fs')
+    const path = await import('node:path')
+    const cssPath = path.resolve(process.cwd(), 'src/styles.css')
+    const cssContent = fs.readFileSync(cssPath, 'utf8')
+
+    // 1. .modal-backdrop debe centrar verticalmente (align-items: center)
+    assert.ok(cssContent.includes('.modal-backdrop {'), 'Debe existir la regla .modal-backdrop')
+    assert.ok(cssContent.includes('align-items: center;'), '.modal-backdrop debe tener align-items: center')
+    assert.ok(cssContent.includes('justify-content: center;'), '.modal-backdrop debe tener justify-content: center')
+
+    // 2. Soporte para iOS Safe Areas en el padding de backdrop
+    assert.ok(cssContent.includes('env(safe-area-inset-top'), 'Debe incluir safe-area-inset-top')
+    assert.ok(cssContent.includes('env(safe-area-inset-bottom'), 'Debe incluir safe-area-inset-bottom')
+
+    // 3. .modal y .modal-card con altura máxima responsiva 100dvh y scroll interno
+    assert.ok(cssContent.includes('.modal-card'), 'Debe existir .modal-card')
+    assert.ok(cssContent.includes('100dvh'), 'Debe usar 100dvh para calcular altura máxima en móviles')
+    assert.ok(cssContent.includes('overflow-y: auto;'), 'Debe permitir scroll interno')
+
+    // 4. Modal actions horizontal
+    assert.ok(cssContent.includes('.modal-actions.horizontal'), 'Debe soportar .modal-actions.horizontal')
+    assert.ok(cssContent.includes('.danger-button'), 'Debe soportar .danger-button')
+    assert.ok(cssContent.includes('.secondary-button'), 'Debe soportar .secondary-button')
+  })
+})
+
 
 
 

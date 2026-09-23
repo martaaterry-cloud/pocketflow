@@ -167,23 +167,23 @@ export function MovementsPage({
 
       {/* Modal de confirmación de eliminación */}
       {txToDelete && (
-        <div className="modal-backdrop" onClick={() => setTxToDelete(null)}>
-          <div className="modal-card" onClick={(e) => e.stopPropagation()}>
-            <h3 style={{ margin: '0 0 8px', fontSize: '1.1rem' }}>¿Eliminar movimiento?</h3>
-            <p className="description" style={{ margin: '0 0 20px', color: 'var(--text-muted)' }}>
+        <div className="modal-backdrop" onClick={() => setTxToDelete(null)} role="dialog" aria-modal="true">
+          <div className="modal-card" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 440 }}>
+            <h3 style={{ margin: '0 0 10px', fontSize: '1.2rem', fontWeight: 700 }}>¿Eliminar movimiento?</h3>
+            <p className="description" style={{ margin: '0 0 20px', color: 'var(--text-muted)', fontSize: '0.92rem', lineHeight: 1.5 }}>
               ¿Seguro que quieres eliminar <strong>{txToDelete.description}</strong> ({money(txToDelete.amount)})? Esta acción no se puede deshacer.
             </p>
-            <div className="modal-actions" style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+            <div className="modal-actions horizontal" style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
               <button
                 type="button"
-                className="btn btn-secondary"
+                className="secondary-button"
                 onClick={() => setTxToDelete(null)}
               >
                 Cancelar
               </button>
               <button
                 type="button"
-                className="btn btn-danger"
+                className="danger-button"
                 onClick={() => {
                   finance.deleteTransaction(txToDelete.id)
                   setTxToDelete(null)

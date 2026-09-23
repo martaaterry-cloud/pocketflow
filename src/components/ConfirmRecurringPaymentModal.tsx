@@ -178,10 +178,10 @@ export function ConfirmRecurringPaymentModal({
           </div>
 
           {/* Botones de acción */}
-          <div className="modal-actions" style={{ marginTop: 8, display: 'flex', gap: 10 }}>
+          <div className="modal-actions horizontal" style={{ marginTop: 8, display: 'flex', gap: 10 }}>
             <button
               type="button"
-              className="text-button"
+              className="secondary-button"
               onClick={onClose}
               disabled={isSubmitting}
               style={{ flex: 1 }}
