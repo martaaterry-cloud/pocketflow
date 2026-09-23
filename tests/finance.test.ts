@@ -6810,11 +6810,11 @@ describe('Fase 18 — Identificación Visual de Versión y Build', () => {
   it('314. Versioning: única fuente de verdad y formato de visualización exacto', () => {
     assert.equal(APP_NAME, 'PocketFlow')
     assert.equal(APP_VERSION, '0.18.0')
-    assert.equal(APP_BUILD, '2026.09.23-01')
+    assert.equal(APP_BUILD, '2026.09.23-02')
  
     assert.equal(getAppVersionString(), 'PocketFlow v0.18.0')
-    assert.equal(getAppBuildString(), 'Build 2026.09.23-01')
-    assert.equal(getAppFullVersionLabel(), 'PocketFlow v0.18.0 · Build 2026.09.23-01')
+    assert.equal(getAppBuildString(), 'Build 2026.09.23-02')
+    assert.equal(getAppFullVersionLabel(), 'PocketFlow v0.18.0 · Build 2026.09.23-02')
   })
 })
 
@@ -9718,7 +9718,54 @@ describe('Fase 32 — Cobertura Multimensualidad en Pagos Recurrentes', () => {
     assert.equal(statusOct.status, 'covered_in_advance')
     assert.equal(statusOct.label, 'Pagado por adelantado')
   })
+
+  it('415. Regresión: Borrar transacción de recurrente reactiva inmediatamente el estado due y el botón Confirmar pago', () => {
+    const septDate = new Date(2026, 8, 23) // 23 de septiembre de 2026
+
+    // 1. Estado inicial: septiembre pendiente
+    const statusInicial = selectRecurringPaymentCycleStatus(baseSpotify, [], septDate)
+    assert.equal(statusInicial.status, 'due')
+    assert.equal(statusInicial.label, 'Pendiente de confirmar')
+
+    // 2. Confirmar 2 mensualidades (septiembre + octubre)
+    const tx7eur: Transaction = {
+      id: 'tx_spot_7eur',
+      type: 'expense',
+      amount: 7.0,
+      description: 'Spotify · septiembre + octubre',
+      accountId: 'daily',
+      categoryId: 'subscriptions',
+      date: '2026-09-23T10:00:00.000Z',
+      recurringPaymentId: 'rec_spotify',
+    }
+
+    // Al confirmarse, el objeto recurrente en la BD/estado pasa a tener nextDate = '2026-11-04'
+    const spotifyAfterConfirm: RecurringPayment = {
+      ...baseSpotify,
+      nextDate: '2026-11-04',
+    }
+
+    const statusSeptConfirmado = selectRecurringPaymentCycleStatus(spotifyAfterConfirm, [tx7eur], septDate)
+    assert.equal(statusSeptConfirmado.status, 'confirmed_for_cycle')
+
+    // 3. Borrar la transacción de 7 € (array de transacciones vacío)
+    const remainingTxs: Transaction[] = []
+
+    // Aunque el objeto recurrente aún tuviera nextDate = '2026-11-04', la fuente de verdad son las transacciones
+    const statusTrasBorrar = selectRecurringPaymentCycleStatus(spotifyAfterConfirm, remainingTxs, septDate)
+    assert.equal(statusTrasBorrar.status, 'due', 'El estado debe volver a ser due tras borrar la transacción')
+    assert.equal(statusTrasBorrar.label, 'Pendiente de confirmar')
+
+    // La fecha recalculada vuelve a ser la de septiembre
+    const nextDateRecalculada = recalculateRecurringNextDate(spotifyAfterConfirm, remainingTxs, septDate)
+    assert.equal(nextDateRecalculada, '2026-09-04')
+
+    // Ni septiembre ni octubre están cubiertos
+    assert.equal(isRecurringCoveredInMonth(spotifyAfterConfirm, remainingTxs, 2026, 8), false)
+    assert.equal(isRecurringCoveredInMonth(spotifyAfterConfirm, remainingTxs, 2026, 9), false)
+  })
 })
+
 
 
 

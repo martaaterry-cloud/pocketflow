@@ -483,16 +483,22 @@ export function selectRecurringPaymentCycleStatus(
     }
   }
 
-  // 3. Si la fecha ya llegó o es hoy
-  if (payment.nextDate <= todayStr) {
+  // 3. Fuente de verdad: Calcular la fecha efectiva del próximo vencimiento a partir de transacciones reales
+  const effectiveNextDate =
+    payment.frequency === 'monthly' && payment.type !== 'income'
+      ? recalculateRecurringNextDate(payment, transactions, referenceDate)
+      : payment.nextDate
+
+  // 4. Si la fecha efectiva ya llegó o es hoy
+  if (effectiveNextDate <= todayStr) {
     return {
       status: 'due',
-      label: payment.nextDate === todayStr ? 'Previsto hoy' : 'Pendiente de confirmar',
+      label: effectiveNextDate === todayStr ? 'Previsto hoy' : 'Pendiente de confirmar',
     }
   }
 
-  // 4. Si la fecha es futura
-  const parts = payment.nextDate.split('-')
+  // 5. Si la fecha efectiva es futura
+  const parts = effectiveNextDate.split('-')
   const day = parseInt(parts[2], 10)
   const monthNames = [
     'ene', 'feb', 'mar', 'abr', 'may', 'jun',

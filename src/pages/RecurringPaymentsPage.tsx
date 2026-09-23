@@ -10,7 +10,10 @@ import type {
 import { RECURRING_INCOME_SOURCE_LABELS } from '../models/finance'
 import type { ReturnTypeFinance } from '../types'
 import { money } from '../utils/money'
-import { selectRecurringPaymentCycleStatus } from '../utils/financeSelectors'
+import {
+  recalculateRecurringNextDate,
+  selectRecurringPaymentCycleStatus,
+} from '../utils/financeSelectors'
 import { AppIcon } from '../ui/icons'
 
 export function RecurringPaymentsPage({
@@ -29,7 +32,11 @@ export function RecurringPaymentsPage({
   const handleConfirmAction = (payment: RecurringPayment) => {
     if (confirmingId) return
     if (payment.type !== 'income' && payment.frequency === 'monthly') {
-      setConfirmModalPayment(payment)
+      const effectiveNextDate = recalculateRecurringNextDate(payment, finance.transactions)
+      setConfirmModalPayment({
+        ...payment,
+        nextDate: effectiveNextDate,
+      })
     } else {
       handleDirectConfirm(payment.id, 1)
     }
@@ -174,14 +181,19 @@ export function RecurringPaymentsPage({
                 ? (externalCount === 1 ? 'Con 1 persona' : `Con ${externalCount} personas`)
                 : 'Compartido'
 
+              const effectiveNextDate =
+                r.frequency === 'monthly' && r.type !== 'income'
+                  ? recalculateRecurringNextDate(r, finance.transactions)
+                  : r.nextDate
+
               const humanNextDate = (() => {
                 try {
-                  const [y, m, d] = r.nextDate.split('-').map(Number)
-                  if (!y || !m || !d) return r.nextDate
+                  const [y, m, d] = effectiveNextDate.split('-').map(Number)
+                  if (!y || !m || !d) return effectiveNextDate
                   const dt = new Date(Date.UTC(y, m - 1, d))
                   return dt.toLocaleDateString('es-ES', { day: 'numeric', month: 'short' })
                 } catch {
-                  return r.nextDate
+                  return effectiveNextDate
                 }
               })()
 
