@@ -258,6 +258,16 @@ export default function App() {
       onExpenseShareDelete: (shareId) => {
         financeRef.current.applyRemoteDeleteExpenseShare(shareId)
       },
+      onCashTransactionInsert: (tx) => {
+        financeRef.current.applyRemoteInsertCashTransaction(tx)
+        setSyncStatus('up_to_date')
+      },
+      onCashTransactionUpdate: (tx) => {
+        financeRef.current.applyRemoteUpdateCashTransaction(tx)
+      },
+      onCashTransactionDelete: (cashTxId) => {
+        financeRef.current.applyRemoteDeleteCashTransaction(cashTxId)
+      },
     })
 
     return () => {

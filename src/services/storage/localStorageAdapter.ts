@@ -44,6 +44,7 @@ export function migratePersistedState(parsed: Partial<PersistedState>): Persiste
     variableExpenseEstimates: parsed.variableExpenseEstimates ?? [],
     sharedContacts: parsed.sharedContacts ?? [],
     expenseShares: parsed.expenseShares ?? [],
+    cashTransactions: parsed.cashTransactions ?? [],
   }
 }
 

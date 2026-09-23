@@ -12,6 +12,7 @@ import type {
   ExpenseShare,
   UserProfile,
   VariableExpenseEstimate,
+  CashTransaction,
 } from '../../models/finance'
 
 export interface PersistedState {
@@ -28,6 +29,7 @@ export interface PersistedState {
   variableExpenseEstimates?: VariableExpenseEstimate[]
   sharedContacts?: SharedContact[]
   expenseShares?: ExpenseShare[]
+  cashTransactions?: CashTransaction[]
 }
 
 export interface StorageAdapter {

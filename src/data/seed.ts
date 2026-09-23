@@ -12,6 +12,7 @@ import type {
   ExpenseShare,
   UserProfile,
   VariableExpenseEstimate,
+  CashTransaction,
 } from '../models/finance'
 
 export const initialProfile: UserProfile = {
@@ -156,5 +157,7 @@ export const cleanInitialFinanceState = {
   variableExpenseEstimates: [] as VariableExpenseEstimate[],
   sharedContacts: [] as SharedContact[],
   expenseShares: [] as ExpenseShare[],
+  cashTransactions: [] as CashTransaction[],
 }
+
 

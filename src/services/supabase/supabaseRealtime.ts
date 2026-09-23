@@ -12,10 +12,12 @@ import {
   fromDbVariableExpenseEstimate,
   fromDbSharedContact,
   fromDbExpenseShare,
+  fromDbCashTransaction,
 } from './supabaseSync'
 import type {
   Account,
   Budget,
+  CashTransaction,
   FinancialPlanSettings,
   RecurringPayment,
   Reserve,
@@ -58,6 +60,9 @@ export interface RealtimeHandlers {
   onSharedContactDelete?: (contactId: string) => void
   onExpenseShareUpsert?: (share: ExpenseShare) => void
   onExpenseShareDelete?: (shareId: string) => void
+  onCashTransactionInsert?: (tx: CashTransaction) => void
+  onCashTransactionUpdate?: (tx: CashTransaction) => void
+  onCashTransactionDelete?: (cashTxId: string) => void
   onStatusChange?: (status: string) => void
 }
 
@@ -368,6 +373,37 @@ event received: ${eventReceivedTime}`)
       const oldRow = payload.old as Record<string, unknown>
       if (!oldRow || isLocalMutation('expense_shares', String(oldRow.id))) return
       handlers.onExpenseShareDelete?.(String(oldRow.id))
+    }
+  )
+
+  // 14. Transacciones de Efectivo (cash_transactions)
+  channel.on(
+    'postgres_changes',
+    { event: 'INSERT', schema: 'public', table: 'cash_transactions', filter: `user_id=eq.${userId}` },
+    (payload) => {
+      const row = payload.new as Record<string, unknown>
+      if (!row || isLocalMutation('cash_transactions', String(row.id))) return
+      handlers.onCashTransactionInsert?.(fromDbCashTransaction(row))
+    }
+  )
+
+  channel.on(
+    'postgres_changes',
+    { event: 'UPDATE', schema: 'public', table: 'cash_transactions', filter: `user_id=eq.${userId}` },
+    (payload) => {
+      const row = payload.new as Record<string, unknown>
+      if (!row || isLocalMutation('cash_transactions', String(row.id))) return
+      handlers.onCashTransactionUpdate?.(fromDbCashTransaction(row))
+    }
+  )
+
+  channel.on(
+    'postgres_changes',
+    { event: 'DELETE', schema: 'public', table: 'cash_transactions', filter: `user_id=eq.${userId}` },
+    (payload) => {
+      const oldRow = payload.old as Record<string, unknown>
+      if (!oldRow || isLocalMutation('cash_transactions', String(oldRow.id))) return
+      handlers.onCashTransactionDelete?.(String(oldRow.id))
     }
   )
 

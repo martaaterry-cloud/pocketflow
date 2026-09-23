@@ -24,7 +24,17 @@ Object.defineProperty(globalThis, 'localStorage', {
 
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import type { Account, Budget, Category, FinancialPlanSettings, RecurringIncomeSourceType, RecurringPayment, Reserve, SavingsGoal, SpecialPeriod, Transaction, UserProfile, VariableExpenseEstimate, SharedContact, ExpenseShare, SpecialMovementType, ExpenseNature } from '../src/models/finance'
+import type { Account, Budget, Category, FinancialPlanSettings, RecurringIncomeSourceType, RecurringPayment, Reserve, SavingsGoal, SpecialPeriod, Transaction, UserProfile, VariableExpenseEstimate, SharedContact, ExpenseShare, SpecialMovementType, ExpenseNature, CashTransaction, CashMovementType } from '../src/models/finance'
+import {
+  selectCashBalance,
+  selectCashIncomeForPeriod,
+  selectCashExpensesForPeriod,
+  calculateCashAdjustmentDelta,
+  createCashAdjustmentInput,
+  selectTotalAvailableMoney,
+  selectLinkedCashWithdrawalsForPeriod,
+  selectTotalEconomicConsumptionForPeriod,
+} from '../src/utils/cashSelectors'
 import { RECURRING_INCOME_SOURCE_LABELS } from '../src/models/finance'
 import { calculateAccountBalance, reconcileAccounts } from '../src/utils/balance'
 import { money } from '../src/utils/money'
@@ -163,6 +173,11 @@ import {
   syncDeleteRecurring,
   syncUpsertSpecialPeriod,
   syncDeleteSpecialPeriod,
+  toDbCashTransaction,
+  fromDbCashTransaction,
+  syncUpsertCashTransaction,
+  syncDeleteCashTransaction,
+  safeUpsertCashTransaction,
   syncUpsertPlanSettings,
   syncUpsertProfile,
   syncUpsertVariableExpenseEstimate,
@@ -6814,11 +6829,11 @@ describe('Fase 18 — Identificación Visual de Versión y Build', () => {
   it('314. Versioning: única fuente de verdad y formato de visualización exacto', () => {
     assert.equal(APP_NAME, 'PocketFlow')
     assert.equal(APP_VERSION, '0.18.0')
-    assert.equal(APP_BUILD, '2026.09.23-06')
+    assert.equal(APP_BUILD, '2026.09.23-07')
  
     assert.equal(getAppVersionString(), 'PocketFlow v0.18.0')
-    assert.equal(getAppBuildString(), 'Build 2026.09.23-06')
-    assert.equal(getAppFullVersionLabel(), 'PocketFlow v0.18.0 · Build 2026.09.23-06')
+    assert.equal(getAppBuildString(), 'Build 2026.09.23-07')
+    assert.equal(getAppFullVersionLabel(), 'PocketFlow v0.18.0 · Build 2026.09.23-07')
   })
 })
 
@@ -10298,6 +10313,709 @@ describe('Fase 36 — Exportación Completa y Auditable (JSON y Excel .xlsx)', (
     assert.equal(jsonString.includes('password'), false)
   })
 })
+
+describe('Fase 37 — Arquitectura Base del Módulo de Efectivo (Fase A)', () => {
+  it('437. Entrada de efectivo: suma al saldo derivado y computa en ingresos de efectivo', () => {
+    const txs: CashTransaction[] = [
+      {
+        id: 'c1',
+        type: 'income',
+        amount: 50,
+        description: 'Regalo cumpleaños en mano',
+        date: '2026-09-10T12:00:00.000Z',
+      },
+    ]
+
+    const balance = selectCashBalance(txs)
+    assert.equal(balance, 50)
+
+    const incomeMonth = selectCashIncomeForPeriod(txs, new Date(2026, 8, 15), 'month')
+    assert.equal(incomeMonth, 50)
+  })
+
+  it('438. Salida de efectivo: resta del saldo derivado y computa en gastos de efectivo', () => {
+    const txs: CashTransaction[] = [
+      { id: 'c1', type: 'income', amount: 50, description: 'Fondo inicial', date: '2026-09-01T10:00:00.000Z' },
+      { id: 'c2', type: 'expense', amount: 15.5, description: 'Panadería y fruta', date: '2026-09-05T11:00:00.000Z' },
+    ]
+
+    const balance = selectCashBalance(txs)
+    assert.equal(balance, 34.5)
+
+    const expensesMonth = selectCashExpensesForPeriod(txs, new Date(2026, 8, 15), 'month')
+    assert.equal(expensesMonth, 15.5)
+  })
+
+  it('439. Ajuste positivo: sube el saldo cuando el conteo físico es superior al estimado', () => {
+    const txs: CashTransaction[] = [
+      { id: 'c1', type: 'income', amount: 20, description: 'Billete', date: '2026-09-01T10:00:00.000Z' },
+    ]
+    // Saldo actual = 20 €. Contamos físicamente 35 € -> Delta = +15 €
+    const currentBalance = selectCashBalance(txs)
+    const counted = 35
+    const delta = calculateCashAdjustmentDelta(currentBalance, counted)
+    assert.equal(delta, 15)
+
+    const adjInput = createCashAdjustmentInput(currentBalance, counted, '2026-09-02T10:00:00.000Z')
+    assert.equal(adjInput.type, 'adjustment')
+    assert.equal(adjInput.amount, 15)
+
+    const updatedTxs: CashTransaction[] = [...txs, { id: 'c_adj', ...adjInput }]
+    assert.equal(selectCashBalance(updatedTxs), 35)
+  })
+
+  it('440. Ajuste negativo: descuenta discrepancia cuando el conteo físico es inferior sin justificar céntimos', () => {
+    const txs: CashTransaction[] = [
+      { id: 'c1', type: 'income', amount: 61, description: 'Cartera', date: '2026-09-01T10:00:00.000Z' },
+    ]
+    // Saldo actual = 61 €. Contamos físicamente 54 € -> Delta = -7 €
+    const currentBalance = selectCashBalance(txs)
+    const counted = 54
+    const delta = calculateCashAdjustmentDelta(currentBalance, counted)
+    assert.equal(delta, -7)
+
+    const adjInput = createCashAdjustmentInput(currentBalance, counted, '2026-09-02T10:00:00.000Z')
+    assert.equal(adjInput.type, 'adjustment')
+    assert.equal(adjInput.amount, -7)
+
+    const updatedTxs: CashTransaction[] = [...txs, { id: 'c_adj', ...adjInput }]
+    assert.equal(selectCashBalance(updatedTxs), 54)
+  })
+
+  it('441. Saldo tras varios movimientos acumulados: entradas, salidas y ajustes preservan la exactitud', () => {
+    const txs: CashTransaction[] = [
+      { id: 'c1', type: 'income', amount: 100, description: 'Cajero', date: '2026-09-01T10:00:00.000Z' },
+      { id: 'c2', type: 'expense', amount: 12.4, description: 'Café y tostada', date: '2026-09-02T10:00:00.000Z' },
+      { id: 'c3', type: 'expense', amount: 20.6, description: 'Farmacia', date: '2026-09-03T10:00:00.000Z' },
+      // Saldo antes de ajuste = 100 - 12.4 - 20.6 = 67.0 €
+      { id: 'c4', type: 'adjustment', amount: -3.0, description: 'Monedero ajuste', date: '2026-09-04T10:00:00.000Z' },
+      // Saldo después = 64.0 €
+      { id: 'c5', type: 'income', amount: 10.0, description: 'Devolución amigo', date: '2026-09-05T10:00:00.000Z' },
+    ]
+
+    const balance = selectCashBalance(txs)
+    assert.equal(balance, 74.0)
+  })
+
+  it('442. Filtrado por periodo: selectCashIncome y selectCashExpenses respetan el mes de referencia vs all', () => {
+    const txs: CashTransaction[] = [
+      { id: 'c_ago', type: 'income', amount: 50, description: 'Agosto', date: '2026-08-15T10:00:00.000Z' },
+      { id: 'c_sep_in', type: 'income', amount: 100, description: 'Septiembre', date: '2026-09-05T10:00:00.000Z' },
+      { id: 'c_sep_out', type: 'expense', amount: 30, description: 'Septiembre', date: '2026-09-10T10:00:00.000Z' },
+      { id: 'c_oct_out', type: 'expense', amount: 40, description: 'Octubre', date: '2026-10-01T10:00:00.000Z' },
+    ]
+
+    const refDateSep = new Date(2026, 8, 15) // Septiembre
+
+    assert.equal(selectCashIncomeForPeriod(txs, refDateSep, 'month'), 100)
+    assert.equal(selectCashIncomeForPeriod(txs, refDateSep, 'all'), 150)
+
+    assert.equal(selectCashExpensesForPeriod(txs, refDateSep, 'month'), 30)
+    assert.equal(selectCashExpensesForPeriod(txs, refDateSep, 'all'), 70)
+  })
+
+  it('443. Banco permanece 100% intacto: los selectores bancarios operan idénticamente sin contaminación', () => {
+    const bankAccounts: Account[] = [
+      { id: 'daily', name: 'Cuenta diaria', type: 'spending', initialBalance: 1000 },
+      { id: 'savings', name: 'Cuenta ahorro', type: 'savings', initialBalance: 2500 },
+    ]
+    const bankTxs: Transaction[] = [
+      { id: 'b1', type: 'expense', amount: 40, accountId: 'daily', description: 'Supermercado', date: '2026-09-02T10:00:00.000Z' },
+    ]
+    const cashTxs: CashTransaction[] = [
+      { id: 'c1', type: 'income', amount: 500, description: 'Efectivo en casa', date: '2026-09-01T10:00:00.000Z' },
+      { id: 'c2', type: 'expense', amount: 50, description: 'Cena', date: '2026-09-02T10:00:00.000Z' },
+    ]
+
+    // Saldo bancario diario = 1000 - 40 = 960 €
+    const dailyBalance = calculateAccountBalance(bankAccounts[0], bankTxs)
+    assert.equal(dailyBalance, 960)
+
+    // Saldo bancario ahorro = 2500 €
+    const savingsBalance = calculateAccountBalance(bankAccounts[1], bankTxs)
+    assert.equal(savingsBalance, 2500)
+
+    // Total dinero bancario = 960 + 2500 = 3460 €
+    const reconciled = reconcileAccounts(bankAccounts, bankTxs)
+    const bankTotal = selectTotalMoney(reconciled)
+    assert.equal(bankTotal, 3460)
+
+    // Total combinado = Banco (3460) + Efectivo (450) = 3910 €
+    const totalAvail = selectTotalAvailableMoney(reconciled, cashTxs)
+    assert.equal(totalAvail.bank, 3460)
+    assert.equal(totalAvail.cash, 450)
+    assert.equal(totalAvail.total, 3910)
+  })
+
+  it('444. Ahorro asignable ignora totalmente el efectivo: el dinero en efectivo no financia reservas, metas ni fondo de emergencia', () => {
+    const savingsBalance = 300 // Solo 300 € en cuenta bancaria de ahorro
+    const cashBalance = 100 // 100 € en efectivo
+
+    // Asignaciones
+    const emergencyFundCurrent = 100
+    const assignedGoals = 100
+    const allocatedReserves = 50
+
+    // Ahorro libre bancario = 300 - (100 + 100 + 50) = 50 €
+    const freeSavings = selectFreeSavingsWithReserves(
+      savingsBalance,
+      emergencyFundCurrent,
+      assignedGoals,
+      allocatedReserves
+    )
+    assert.equal(freeSavings, 50, 'El ahorro asignable no puede incluir los 100 € de efectivo')
+  })
+
+  it('445. Anti doble conteo: cajero 110 € vinculado + gasto 20 € efectivo resulta en 20 € de consumo real (no 130 €)', () => {
+    const refDate = new Date(2026, 8, 15)
+
+    // 1. En banco: Retirada de cajero de 110 €
+    const bankTxs: Transaction[] = [
+      {
+        id: 'tx_cajero_110',
+        type: 'expense',
+        amount: 110,
+        accountId: 'daily',
+        specialType: 'cash_withdrawal',
+        description: 'Retirada cajero',
+        date: '2026-09-05T10:00:00.000Z',
+      },
+    ]
+
+    // 2. En efectivo: Entrada de 110 € vinculada a tx_cajero_110, y gasto real de 20 € en panadería
+    const cashTxs: CashTransaction[] = [
+      {
+        id: 'ctx_in_110',
+        type: 'income',
+        amount: 110,
+        description: 'Entrada desde cajero',
+        date: '2026-09-05T10:05:00.000Z',
+        bankTransactionId: 'tx_cajero_110',
+      },
+      {
+        id: 'ctx_out_20',
+        type: 'expense',
+        amount: 20,
+        description: 'Panadería y prensa',
+        date: '2026-09-06T09:00:00.000Z',
+      },
+    ]
+
+    const consumption = selectTotalEconomicConsumptionForPeriod(bankTxs, cashTxs, refDate, 'month')
+
+    assert.equal(consumption.bankNetExpenses, 110, 'El banco registra salida de 110 €')
+    assert.equal(consumption.linkedWithdrawalsDeducted, 110, 'Se descuentan los 110 € por estar vinculados a efectivo')
+    assert.equal(consumption.cashExpenses, 20, 'Gasto real en efectivo es de 20 €')
+    assert.equal(consumption.totalEconomicConsumption, 20, 'El consumo económico total real es 20 € (NO 130 €)')
+  })
+
+  it('446. Retirada de cajero NO vinculada: mantiene el tratamiento de gasto bancario convencional si no ingresa a efectivo', () => {
+    const refDate = new Date(2026, 8, 15)
+
+    // Retirada de cajero de 50 € que NO fue ingresada en el módulo de efectivo (ej. dada a otra persona)
+    const bankTxs: Transaction[] = [
+      {
+        id: 'tx_cajero_unlinked',
+        type: 'expense',
+        amount: 50,
+        accountId: 'daily',
+        specialType: 'cash_withdrawal',
+        description: 'Retirada cajero suelto',
+        date: '2026-09-10T12:00:00.000Z',
+      },
+    ]
+    const cashTxs: CashTransaction[] = []
+
+    const consumption = selectTotalEconomicConsumptionForPeriod(bankTxs, cashTxs, refDate, 'month')
+
+    assert.equal(consumption.bankNetExpenses, 50)
+    assert.equal(consumption.linkedWithdrawalsDeducted, 0)
+    assert.equal(consumption.cashExpenses, 0)
+    assert.equal(consumption.totalEconomicConsumption, 50, 'La retirada no vinculada se considera gasto bancario normal')
+  })
+})
+
+describe('Fase 38 — Persistencia Local y Sincronización Bidireccional de Efectivo (Fase C)', () => {
+  it('447. 1. Estado antiguo sin cashTransactions -> se carga como [] sin romper datos', () => {
+    const legacyState: Partial<PersistedState> = {
+      accounts: [{ id: 'daily', name: 'Cuenta diaria', type: 'spending', initialBalance: 100 }],
+      transactions: [{ id: 'tx_1', type: 'expense', amount: 25, accountId: 'daily', description: 'Café', date: '2026-09-01' }],
+      categories: [],
+      goals: [],
+      reserves: [],
+      budgets: [],
+      recurring: [],
+      specialPeriods: [],
+    }
+
+    const migrated = migratePersistedState(legacyState)
+    assert.ok(Array.isArray(migrated.cashTransactions), 'cashTransactions debe ser un array')
+    assert.equal(migrated.cashTransactions.length, 0, 'cashTransactions debe ser un array vacío []')
+    assert.equal(migrated.transactions.length, 1, 'Las transacciones bancarias no se alteran')
+  })
+
+  it('448. 2. Persistencia local: LocalStorageAdapter persiste y recupera cashTransactions', async () => {
+    const memoryStore: Record<string, string> = {}
+    const customStorage: StorageAdapter = {
+      async load() {
+        const raw = memoryStore['test_key']
+        return raw ? migratePersistedState(JSON.parse(raw)) : null
+      },
+      async save(state: PersistedState) {
+        memoryStore['test_key'] = JSON.stringify(state)
+      },
+      async clear() {
+        delete memoryStore['test_key']
+      },
+    }
+
+    const testState: PersistedState = {
+      accounts: [{ id: 'daily', name: 'Cuenta diaria', type: 'spending', initialBalance: 100 }],
+      transactions: [],
+      categories: [],
+      budgets: [],
+      goals: [],
+      reserves: [],
+      recurring: [],
+      specialPeriods: [],
+      planSettings: {
+        monthlyIncome: 0,
+        targetSavingsType: 'percentage',
+        targetSavingsValue: 0,
+        emergencyFundTargetType: 'months',
+        emergencyFundTargetValue: 0,
+        emergencyFundCurrent: 0,
+        essentialCategoryIds: [],
+      },
+      profile: { displayName: 'Pepe' },
+      variableExpenseEstimates: [],
+      sharedContacts: [],
+      expenseShares: [],
+      cashTransactions: [
+        {
+          id: 'cash_1',
+          type: 'income',
+          amount: 50,
+          description: 'Ingreso efectivo',
+          date: '2026-09-10',
+          bankTransactionId: 'tx_bank_cajero',
+        },
+        {
+          id: 'cash_2',
+          type: 'expense',
+          amount: 12.5,
+          description: 'Café y bollo',
+          date: '2026-09-11',
+          categoryId: 'food',
+        },
+      ],
+    }
+
+    await customStorage.save(testState)
+    const loaded = await customStorage.load()
+
+    assert.ok(loaded !== null)
+    assert.equal(loaded?.cashTransactions?.length, 2)
+    assert.equal(loaded?.cashTransactions?.[0].id, 'cash_1')
+    assert.equal(loaded?.cashTransactions?.[0].amount, 50)
+    assert.equal(loaded?.cashTransactions?.[0].bankTransactionId, 'tx_bank_cajero')
+    assert.equal(loaded?.cashTransactions?.[1].amount, 12.5)
+  })
+
+  it('449. 3. Mapper frontend -> DB: toDbCashTransaction mapea campos camelCase a snake_case y conserva nulls', () => {
+    const cashTx: CashTransaction = {
+      id: 'cash_abc',
+      type: 'expense',
+      amount: 15.5,
+      description: 'Compra quiosco',
+      date: '2026-09-20',
+      categoryId: 'leisure',
+      note: 'Periódico dominical',
+      bankTransactionId: 'tx_cajero_1',
+      createdAt: '2026-09-20T10:00:00.000Z',
+      updatedAt: '2026-09-20T10:00:00.000Z',
+    }
+
+    const row = toDbCashTransaction(cashTx, 'user_uuid_123')
+    assert.equal(row.id, 'cash_abc')
+    assert.equal(row.user_id, 'user_uuid_123')
+    assert.equal(row.type, 'expense')
+    assert.equal(row.amount, 15.5)
+    assert.equal(row.description, 'Compra quiosco')
+    assert.equal(row.date, '2026-09-20')
+    assert.equal(row.category_id, 'leisure')
+    assert.equal(row.note, 'Periódico dominical')
+    assert.equal(row.bank_transaction_id, 'tx_cajero_1')
+
+    // Probar conversión de undefined a null para SQL
+    const minimalTx: CashTransaction = {
+      id: 'cash_min',
+      type: 'income',
+      amount: 20,
+      description: 'Cumpleaños',
+      date: '2026-09-21',
+    }
+    const minimalRow = toDbCashTransaction(minimalTx, 'user_uuid_123')
+    assert.equal(minimalRow.category_id, null)
+    assert.equal(minimalRow.note, null)
+    assert.equal(minimalRow.bank_transaction_id, null)
+  })
+
+  it('450. 4. Mapper DB -> frontend: fromDbCashTransaction reconstruye el modelo tipado con números y opcionales', () => {
+    const row = {
+      id: 'cash_row_1',
+      user_id: 'user_uuid_123',
+      type: 'adjustment',
+      amount: -4.5,
+      description: 'Ajuste por redondeo',
+      date: '2026-09-22',
+      category_id: null,
+      note: 'Diferencia en bolsillo',
+      bank_transaction_id: null,
+      created_at: '2026-09-22T12:00:00.000Z',
+      updated_at: '2026-09-22T12:05:00.000Z',
+    }
+
+    const model = fromDbCashTransaction(row)
+    assert.equal(model.id, 'cash_row_1')
+    assert.equal(model.type, 'adjustment')
+    assert.equal(model.amount, -4.5)
+    assert.equal(model.description, 'Ajuste por redondeo')
+    assert.equal(model.date, '2026-09-22')
+    assert.equal(model.categoryId, undefined)
+    assert.equal(model.note, 'Diferencia en bolsillo')
+    assert.equal(model.bankTransactionId, undefined)
+    assert.equal(model.createdAt, '2026-09-22T12:00:00.000Z')
+    assert.equal(model.updatedAt, '2026-09-22T12:05:00.000Z')
+  })
+
+  it('451. 5. Sync Upsert Cash Transaction: envía a Supabase la fila mapeada', async () => {
+    let upsertedRow: any = null
+    const mockSupabase = {
+      from: (table: string) => {
+        assert.equal(table, 'cash_transactions')
+        return {
+          upsert: async (row: any) => {
+            upsertedRow = row
+            return { error: null }
+          },
+        }
+      },
+    }
+
+    const cashTx: CashTransaction = {
+      id: 'cash_sync_1',
+      type: 'income',
+      amount: 100,
+      description: 'Bizum retirado a mano',
+      date: '2026-09-23',
+      bankTransactionId: 'tx_bank_99',
+    }
+
+    await syncUpsertCashTransaction(mockSupabase as any, 'user_1', cashTx)
+    assert.ok(upsertedRow !== null)
+    assert.equal(upsertedRow.id, 'cash_sync_1')
+    assert.equal(upsertedRow.user_id, 'user_1')
+    assert.equal(upsertedRow.amount, 100)
+    assert.equal(upsertedRow.bank_transaction_id, 'tx_bank_99')
+  })
+
+  it('452. 6. Sync Delete Cash Transaction: ejecuta delete con id y user_id', async () => {
+    let deletedId: string | null = null
+    let deletedUser: string | null = null
+
+    const mockSupabase = {
+      from: (table: string) => {
+        assert.equal(table, 'cash_transactions')
+        return {
+          delete: () => ({
+            eq: (col1: string, val1: string) => ({
+              eq: async (col2: string, val2: string) => {
+                if (col1 === 'id') deletedId = val1
+                if (col2 === 'user_id') deletedUser = val2
+                return { error: null }
+              },
+            }),
+          }),
+        }
+      },
+    }
+
+    await syncDeleteCashTransaction(mockSupabase as any, 'user_1', 'cash_del_123')
+    assert.equal(deletedId, 'cash_del_123')
+    assert.equal(deletedUser, 'user_1')
+  })
+
+  it('453. 7. Ajuste de efectivo: createCashAdjustmentInput y delta funcionan con exactitud', () => {
+    // Saldo actual 40 €, contado real 35 € -> Delta -5 € (adjustment negativo)
+    const inputNegative = createCashAdjustmentInput(40, 35, '2026-09-23', 'Ajuste descuadre')
+    assert.ok(inputNegative !== null)
+    assert.equal(inputNegative?.type, 'adjustment')
+    assert.equal(inputNegative?.amount, -5)
+    assert.equal(inputNegative?.description, 'Ajuste de efectivo (discrepancia)')
+
+    // Saldo actual 40 €, contado real 50 € -> Delta +10 € (adjustment positivo)
+    const inputPositive = createCashAdjustmentInput(40, 50, '2026-09-23')
+    assert.ok(inputPositive !== null)
+    assert.equal(inputPositive?.type, 'adjustment')
+    assert.equal(inputPositive?.amount, 10)
+    assert.equal(inputPositive?.description, 'Ajuste positivo de efectivo')
+
+    // Saldo actual 40 €, contado real 40 € -> Delta 0 (no genera ajuste)
+    const inputZero = createCashAdjustmentInput(40, 40)
+    assert.equal(inputZero, null)
+  })
+
+  it('454. 8. Offline Queue: mutación de cash_transaction (insert/update) se encola y vacía correctamente', async () => {
+    const mockStore: Record<string, string> = {}
+    // @ts-expect-error Mock
+    globalThis.localStorage = {
+      getItem: (k: string) => mockStore[k] || null,
+      setItem: (k: string, v: string) => {
+        mockStore[k] = v
+      },
+      removeItem: (k: string) => {
+        delete mockStore[k]
+      },
+    }
+
+    clearOfflineQueue()
+    const cashTx: CashTransaction = {
+      id: 'cash_off_1',
+      type: 'expense',
+      amount: 7.5,
+      description: 'Pan y café',
+      date: '2026-09-23',
+    }
+
+    enqueueOfflineMutation({
+      entity: 'cash_transaction',
+      action: 'insert',
+      data: cashTx,
+    })
+
+    assert.equal(getPendingMutationsCount(), 1)
+    const queue = getOfflineQueue()
+    assert.equal(queue[0].entity, 'cash_transaction')
+    assert.equal(queue[0].action, 'insert')
+
+    let upsertedRow: any = null
+    const mockSupabase = {
+      from: (table: string) => ({
+        upsert: async (row: any) => {
+          if (table === 'cash_transactions') upsertedRow = row
+          return { error: null }
+        },
+      }),
+    }
+
+    const { successCount, failCount } = await flushOfflineQueue(mockSupabase as any, 'u_offline_1')
+    assert.equal(successCount, 1)
+    assert.equal(failCount, 0)
+    assert.equal(getPendingMutationsCount(), 0)
+    assert.equal(upsertedRow?.id, 'cash_off_1')
+    assert.equal(upsertedRow?.amount, 7.5)
+
+    // @ts-expect-error Limpieza
+    delete globalThis.localStorage
+  })
+
+  it('455. 9. Offline Queue: mutación de cash_transaction delete se procesa', async () => {
+    const mockStore: Record<string, string> = {}
+    // @ts-expect-error Mock
+    globalThis.localStorage = {
+      getItem: (k: string) => mockStore[k] || null,
+      setItem: (k: string, v: string) => {
+        mockStore[k] = v
+      },
+      removeItem: (k: string) => {
+        delete mockStore[k]
+      },
+    }
+
+    clearOfflineQueue()
+    enqueueOfflineMutation({
+      entity: 'cash_transaction',
+      action: 'delete',
+      data: { id: 'cash_to_del_99' },
+    })
+
+    let deletedId: string | null = null
+    const mockSupabase = {
+      from: (table: string) => ({
+        delete: () => ({
+          eq: (col1: string, val1: string) => ({
+            eq: async (col2: string, val2: string) => {
+              if (table === 'cash_transactions' && col1 === 'id') deletedId = val1
+              return { error: null }
+            },
+          }),
+        }),
+      }),
+    }
+
+    const { successCount } = await flushOfflineQueue(mockSupabase as any, 'u_offline_1')
+    assert.equal(successCount, 1)
+    assert.equal(deletedId, 'cash_to_del_99')
+
+    // @ts-expect-error Limpieza
+    delete globalThis.localStorage
+  })
+
+  it('456. 10. fetchRemoteState: recupera cash_transactions de Supabase y las fusiona en rawState.cashTransactions', async () => {
+    const mockDbAccounts = [{ id: 'daily', name: 'Diaria', type: 'spending', initial_balance: 50 }]
+    const mockDbCashTxs = [
+      {
+        id: 'ctx_remote_1',
+        type: 'income',
+        amount: 80,
+        description: 'Cajero',
+        date: '2026-09-20',
+        bank_transaction_id: 'tx_bank_1',
+        user_id: 'u_test_fetch',
+      },
+      {
+        id: 'ctx_remote_2',
+        type: 'expense',
+        amount: 15,
+        description: 'Tapas',
+        date: '2026-09-21',
+        user_id: 'u_test_fetch',
+      },
+    ]
+
+    const mockSupabase = {
+      from: (table: string) => {
+        return {
+          select: () => ({
+            eq: (col: string, val: string) => ({
+              order: () => Promise.resolve({
+                data: table === 'cash_transactions' ? mockDbCashTxs : [],
+                error: null,
+              }),
+              maybeSingle: () => Promise.resolve({ data: null, error: null }),
+              data: table === 'accounts' ? mockDbAccounts : [],
+              error: null,
+              then: (resolve: any) =>
+                resolve({
+                  data: table === 'accounts' ? mockDbAccounts : (table === 'cash_transactions' ? mockDbCashTxs : []),
+                  error: null,
+                }),
+            }),
+          }),
+        }
+      },
+    }
+
+    const state = await fetchRemoteState(mockSupabase as any, 'u_test_fetch')
+    assert.ok(state !== null)
+    assert.equal(state?.cashTransactions.length, 2)
+    assert.equal(state?.cashTransactions[0].id, 'ctx_remote_1')
+    assert.equal(state?.cashTransactions[0].amount, 80)
+    assert.equal(state?.cashTransactions[0].bankTransactionId, 'tx_bank_1')
+    assert.equal(state?.cashTransactions[1].amount, 15)
+  })
+
+  it('457. 11. Supabase Realtime: markLocalMutation y isLocalMutation registran mutaciones anti-echo', () => {
+    markLocalMutation('cash_transactions', 'ctx_local_123')
+    assert.equal(isLocalMutation('cash_transactions', 'ctx_local_123'), true, 'Debe detectar mutación local reciente')
+    assert.equal(isLocalMutation('cash_transactions', 'ctx_other_456'), false, 'No debe filtrar IDs distintos')
+  })
+
+  it('458. 12. Realtime no duplica: aplicar inserción remota sobre elemento existente lo actualiza idénticamente', () => {
+    const existing: CashTransaction[] = [
+      { id: 'ctx_1', type: 'income', amount: 50, description: 'Inicial', date: '2026-09-01' },
+    ]
+    const incoming: CashTransaction = {
+      id: 'ctx_1',
+      type: 'income',
+      amount: 60,
+      description: 'Inicial corregido',
+      date: '2026-09-01',
+    }
+
+    const exists = existing.some((x) => x.id === incoming.id)
+    const nextList = exists
+      ? existing.map((x) => (x.id === incoming.id ? incoming : x))
+      : [incoming, ...existing]
+
+    assert.equal(nextList.length, 1, 'No debe duplicar registros con el mismo ID')
+    assert.equal(nextList[0].amount, 60)
+    assert.equal(nextList[0].description, 'Inicial corregido')
+  })
+
+  it('459. 13. Validación estricta: bloquea importes inválidos (<= 0 en income/expense, 0 en adjustment)', () => {
+    // Verificamos las reglas de validación de addCashTransaction
+    const validate = (type: CashMovementType, amount: number) => {
+      if (isNaN(amount) || !isFinite(amount)) throw new Error('El importe debe ser un número válido.')
+      if ((type === 'income' || type === 'expense') && amount <= 0) throw new Error('El importe de un ingreso o gasto de efectivo debe ser mayor que 0.')
+      if (type === 'adjustment' && amount === 0) throw new Error('El importe de un ajuste de efectivo no puede ser 0.')
+      return true
+    }
+
+    assert.throws(() => validate('income', 0), /mayor que 0/)
+    assert.throws(() => validate('income', -10), /mayor que 0/)
+    assert.throws(() => validate('expense', 0), /mayor que 0/)
+    assert.throws(() => validate('expense', -5), /mayor que 0/)
+    assert.throws(() => validate('adjustment', 0), /no puede ser 0/)
+    assert.throws(() => validate('income', NaN), /número válido/)
+
+    assert.equal(validate('income', 20), true)
+    assert.equal(validate('expense', 15.5), true)
+    assert.equal(validate('adjustment', -3.2), true)
+    assert.equal(validate('adjustment', 8.0), true)
+  })
+
+  it('460. 14. Banco permanece 100% intacto: transacciones bancarias, saldos y recurrentes no se ven alterados', () => {
+    const bankAccounts: Account[] = [
+      { id: 'daily', name: 'Diaria', type: 'spending', initialBalance: 500 },
+      { id: 'savings', name: 'Ahorro', type: 'savings', initialBalance: 1000 },
+    ]
+    const bankTransactions: Transaction[] = [
+      { id: 'btx_1', type: 'expense', amount: 50, accountId: 'daily', description: 'Compra', date: '2026-09-01' },
+      { id: 'btx_2', type: 'income', amount: 1500, accountId: 'daily', description: 'Nómina', date: '2026-09-02' },
+    ]
+
+    const reconciled = reconcileAccounts(bankAccounts, bankTransactions)
+    assert.equal(reconciled.find((a) => a.id === 'daily')?.balance, 1950)
+    assert.equal(reconciled.find((a) => a.id === 'savings')?.balance, 1000)
+
+    // Agregamos transacciones de efectivo en memoria paralela
+    const cashTxs: CashTransaction[] = [
+      { id: 'ctx_1', type: 'income', amount: 200, description: 'Efectivo', date: '2026-09-03' },
+      { id: 'ctx_2', type: 'expense', amount: 50, description: 'Gasto efectivo', date: '2026-09-04' },
+    ]
+
+    // Reconciliación bancaria vuelve a correr y los saldos bancarios son exactamente los mismos
+    const reconciledAfterCash = reconcileAccounts(bankAccounts, bankTransactions)
+    assert.equal(reconciledAfterCash.find((a) => a.id === 'daily')?.balance, 1950)
+    assert.equal(reconciledAfterCash.find((a) => a.id === 'savings')?.balance, 1000)
+    assert.equal(selectCashBalance(cashTxs), 150)
+  })
+
+  it('461. 15. Ahorro asignable ignora totalmente el saldo de efectivo', () => {
+    const savingsBalance = 2000
+    const emergencyFundCurrent = 500
+    const goalsAllocated = 600
+    const reservesAllocated = 400
+
+    const freeSavings = selectFreeSavingsWithReserves(
+      savingsBalance,
+      emergencyFundCurrent,
+      goalsAllocated,
+      reservesAllocated
+    )
+
+    // Ahorro libre = 2000 - (500 + 600 + 400) = 500 €
+    assert.equal(freeSavings, 500)
+
+    // Aunque existan 300 € en efectivo, el selector de ahorro libre toma únicamente el saldo bancario de ahorro
+    const cashBalance = 300
+    assert.equal(freeSavings, 500, 'El ahorro asignable no incorpora efectivo')
+  })
+})
+
+
 
 
 

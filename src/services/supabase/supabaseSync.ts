@@ -17,6 +17,8 @@ import type {
   RecurringSharingTemplate,
   UserProfile,
   VariableExpenseEstimate,
+  CashTransaction,
+  CashMovementType,
 } from '../../models/finance'
 import type { PersistedState } from '../storage/storageAdapter'
 import { categories as seedCategories } from '../../data/seed'
@@ -54,6 +56,7 @@ export function createCleanInitialState(): PersistedState {
     variableExpenseEstimates: [],
     sharedContacts: [],
     expenseShares: [],
+    cashTransactions: [],
   }
 }
 
@@ -388,15 +391,15 @@ export function fromDbSharedContact(row: Record<string, unknown>): SharedContact
   }
 }
 
-export function toDbExpenseShare(s: ExpenseShare, userId: string) {
+export function toDbExpenseShare(row: ExpenseShare, userId: string) {
   return {
-    id: s.id,
+    id: row.id,
     user_id: userId,
-    expense_transaction_id: s.expenseTransactionId,
-    contact_id: s.contactId || null,
-    participant_name: s.participantName,
-    is_payer_share: Boolean(s.isPayerShare),
-    expected_amount: s.expectedAmount,
+    expense_transaction_id: row.expenseTransactionId,
+    contact_id: row.contactId || null,
+    participant_name: row.participantName,
+    is_payer_share: Boolean(row.isPayerShare),
+    expected_amount: row.expectedAmount,
   }
 }
 
@@ -408,6 +411,35 @@ export function fromDbExpenseShare(row: Record<string, unknown>): ExpenseShare {
     participantName: String(row.participant_name),
     isPayerShare: Boolean(row.is_payer_share),
     expectedAmount: Number(row.expected_amount),
+    createdAt: row.created_at ? String(row.created_at) : undefined,
+    updatedAt: row.updated_at ? String(row.updated_at) : undefined,
+  }
+}
+
+export function toDbCashTransaction(tx: CashTransaction, userId: string) {
+  return {
+    id: tx.id,
+    user_id: userId,
+    type: tx.type,
+    amount: tx.amount,
+    description: tx.description,
+    date: tx.date,
+    category_id: tx.categoryId || null,
+    note: tx.note || null,
+    bank_transaction_id: tx.bankTransactionId || null,
+  }
+}
+
+export function fromDbCashTransaction(row: Record<string, unknown>): CashTransaction {
+  return {
+    id: String(row.id),
+    type: row.type as CashMovementType,
+    amount: Number(row.amount),
+    description: String(row.description),
+    date: String(row.date),
+    categoryId: row.category_id ? String(row.category_id) : undefined,
+    note: row.note ? String(row.note) : undefined,
+    bankTransactionId: row.bank_transaction_id ? String(row.bank_transaction_id) : undefined,
     createdAt: row.created_at ? String(row.created_at) : undefined,
     updatedAt: row.updated_at ? String(row.updated_at) : undefined,
   }
@@ -435,6 +467,7 @@ export async function fetchRemoteState(
     estimatesRes,
     contactsRes,
     sharesRes,
+    cashRes,
   ] = await Promise.all([
     supabase.from('accounts').select('*').eq('user_id', userId),
     supabase.from('categories').select('*').eq('user_id', userId),
@@ -449,6 +482,7 @@ export async function fetchRemoteState(
     supabase.from('variable_expense_estimates').select('*').eq('user_id', userId),
     supabase.from('shared_contacts').select('*').eq('user_id', userId),
     supabase.from('expense_shares').select('*').eq('user_id', userId),
+    supabase.from('cash_transactions').select('*').eq('user_id', userId).order('date', { ascending: false }),
   ])
 
   // Comprobar errores en CADA query para evitar borrado accidental de datos locales
@@ -465,6 +499,7 @@ export async function fetchRemoteState(
   if (estimatesRes.error) throw new Error(`[Sync] Error leyendo variable_expense_estimates: ${estimatesRes.error.message}`)
   if (contactsRes.error) throw new Error(`[Sync] Error leyendo shared_contacts: ${contactsRes.error.message}`)
   if (sharesRes.error) throw new Error(`[Sync] Error leyendo expense_shares: ${sharesRes.error.message}`)
+  if (cashRes.error) throw new Error(`[Sync] Error leyendo cash_transactions: ${cashRes.error.message}`)
 
   // Si no hay cuentas remotas, la base de datos de este usuario está virgen
   if (!accountsRes.data || accountsRes.data.length === 0) {
@@ -485,6 +520,7 @@ export async function fetchRemoteState(
     variableExpenseEstimates: (estimatesRes.data ?? []).map(fromDbVariableExpenseEstimate),
     sharedContacts: (contactsRes.data ?? []).map(fromDbSharedContact),
     expenseShares: (sharesRes.data ?? []).map(fromDbExpenseShare),
+    cashTransactions: (cashRes.data ?? []).map(fromDbCashTransaction),
   }
 
   return migratePersistedState(rawState)
@@ -912,6 +948,48 @@ export async function syncDeleteExpenseShare(
   if (error) throw error
 }
 
+export async function safeUpsertCashTransaction(
+  supabase: SupabaseClient,
+  row: Record<string, unknown>,
+  userId?: string
+): Promise<void> {
+  const effectiveUserId = (userId || row.user_id) as string | undefined
+  const { error } = await supabase.from('cash_transactions').upsert(row)
+  if (error) {
+    console.error('[Supabase Real Error - Upsert Cash Transaction]', {
+      code: error.code,
+      message: error.message,
+      details: error.details,
+      hint: error.hint,
+      row,
+      userId: effectiveUserId,
+    })
+    throw error
+  }
+}
+
+export async function syncUpsertCashTransaction(
+  supabase: SupabaseClient,
+  userId: string,
+  tx: CashTransaction
+): Promise<void> {
+  const row = toDbCashTransaction(tx, userId)
+  await safeUpsertCashTransaction(supabase, row, userId)
+}
+
+export async function syncDeleteCashTransaction(
+  supabase: SupabaseClient,
+  userId: string,
+  cashTxId: string
+): Promise<void> {
+  const { error } = await supabase
+    .from('cash_transactions')
+    .delete()
+    .eq('id', cashTxId)
+    .eq('user_id', userId)
+  if (error) throw error
+}
+
 // ==========================================================================
 // Subida completa (SOLO para migración inicial o restauración de backup)
 // ==========================================================================
@@ -1001,6 +1079,15 @@ export async function uploadStateToSupabase(
       const dbShares = state.expenseShares.map((s) => toDbExpenseShare(s, userId))
       const { error } = await supabase.from('expense_shares').upsert(dbShares)
       if (error) throw error
+    }
+
+    if (state.cashTransactions?.length) {
+      const dbCash = state.cashTransactions.map((c) => toDbCashTransaction(c, userId))
+      for (let i = 0; i < dbCash.length; i += 100) {
+        const batch = dbCash.slice(i, i + 100)
+        const { error } = await supabase.from('cash_transactions').upsert(batch)
+        if (error) throw error
+      }
     }
 
     return true

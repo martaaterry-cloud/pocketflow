@@ -45,7 +45,11 @@ import type {
   ExpenseShare,
   CreateSharedContactInput,
   CreateExpenseShareInput,
+  CashTransaction,
+  CreateCashTransactionInput,
+  UpdateCashTransactionInput,
 } from '../models/finance'
+import { selectCashBalance, createCashAdjustmentInput } from '../utils/cashSelectors'
 import { defaultAppStorage } from '../services/storage/indexedDbAdapter'
 import { defaultStorage } from '../services/storage/localStorageAdapter'
 import type { PersistedState, StorageAdapter } from '../services/storage/storageAdapter'
@@ -74,6 +78,7 @@ import {
 import { markLocalMutation } from '../services/supabase/supabaseRealtime'
 import {
   syncDeleteBudget,
+  syncDeleteCashTransaction,
   syncDeleteGoal,
   syncDeleteRecurring,
   syncDeleteReserve,
@@ -86,6 +91,7 @@ import {
   syncUpdateTransaction,
   syncUpsertAccount,
   syncUpsertBudget,
+  syncUpsertCashTransaction,
   syncUpsertGoal,
   syncUpsertPlanSettings,
   syncUpsertProfile,
@@ -154,6 +160,7 @@ export const demoFinanceState: PersistedState = {
   variableExpenseEstimates: [],
   sharedContacts: [],
   expenseShares: [],
+  cashTransactions: [],
 }
 
 export const initialFinanceState: PersistedState = demoFinanceState
@@ -191,6 +198,9 @@ export function useFinance(storage: StorageAdapter = defaultAppStorage) {
             planSettings: parsed.planSettings ?? cleanPlanSettings,
             profile: parsed.profile ?? initialProfile,
             variableExpenseEstimates: parsed.variableExpenseEstimates ?? [],
+            sharedContacts: parsed.sharedContacts ?? [],
+            expenseShares: parsed.expenseShares ?? [],
+            cashTransactions: parsed.cashTransactions ?? [],
           }
         }
       }
@@ -228,6 +238,9 @@ export function useFinance(storage: StorageAdapter = defaultAppStorage) {
             planSettings: loaded.planSettings ?? initialFinanceState.planSettings,
             profile: loaded.profile ?? initialProfile,
             variableExpenseEstimates: loaded.variableExpenseEstimates ?? [],
+            sharedContacts: loaded.sharedContacts ?? [],
+            expenseShares: loaded.expenseShares ?? [],
+            cashTransactions: loaded.cashTransactions ?? [],
           })
         }
         setStorageHydrated(true)
@@ -1521,6 +1534,114 @@ export function useFinance(storage: StorageAdapter = defaultAppStorage) {
   )
 
   /* ==========================================================================
+     Módulo de Efectivo (Dinero físico independiente)
+     ========================================================================== */
+
+  const addCashTransaction = useCallback(
+    (input: CreateCashTransactionInput): CashTransaction => {
+      const amount = Number(input.amount)
+      if (isNaN(amount) || !isFinite(amount)) {
+        throw new Error('El importe debe ser un número válido.')
+      }
+      if ((input.type === 'income' || input.type === 'expense') && amount <= 0) {
+        throw new Error('El importe de un ingreso o gasto de efectivo debe ser mayor que 0.')
+      }
+      if (input.type === 'adjustment' && amount === 0) {
+        throw new Error('El importe de un ajuste de efectivo no puede ser 0.')
+      }
+
+      const nowIso = new Date().toISOString()
+      const newCashTx: CashTransaction = {
+        ...input,
+        id: `cash_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+        amount,
+        createdAt: nowIso,
+        updatedAt: nowIso,
+      }
+
+      commit(
+        {
+          ...state,
+          cashTransactions: [newCashTx, ...(state.cashTransactions ?? [])],
+        },
+        newCashTx.id
+      )
+
+      dispatchSync('cash_transaction', 'insert', newCashTx.id, newCashTx, (sb, uid) =>
+        syncUpsertCashTransaction(sb, uid, newCashTx)
+      )
+
+      return newCashTx
+    },
+    [state, commit, dispatchSync]
+  )
+
+  const updateCashTransaction = useCallback(
+    (id: string, patch: UpdateCashTransactionInput): CashTransaction | null => {
+      const existing = (state.cashTransactions ?? []).find((tx) => tx.id === id)
+      if (!existing) return null
+
+      const merged = { ...existing, ...patch }
+      const amount = merged.amount !== undefined ? Number(merged.amount) : existing.amount
+      if (isNaN(amount) || !isFinite(amount)) {
+        throw new Error('El importe debe ser un número válido.')
+      }
+      if ((merged.type === 'income' || merged.type === 'expense') && amount <= 0) {
+        throw new Error('El importe de un ingreso o gasto de efectivo debe ser mayor que 0.')
+      }
+      if (merged.type === 'adjustment' && amount === 0) {
+        throw new Error('El importe de un ajuste de efectivo no puede ser 0.')
+      }
+
+      const nowIso = new Date().toISOString()
+      const updatedTx: CashTransaction = {
+        ...merged,
+        amount,
+        updatedAt: nowIso,
+      }
+
+      const nextCashTxs = (state.cashTransactions ?? []).map((tx) => (tx.id === id ? updatedTx : tx))
+      commit(
+        {
+          ...state,
+          cashTransactions: nextCashTxs,
+        },
+        id
+      )
+
+      dispatchSync('cash_transaction', 'update', id, updatedTx, (sb, uid) =>
+        syncUpsertCashTransaction(sb, uid, updatedTx)
+      )
+
+      return updatedTx
+    },
+    [state, commit, dispatchSync]
+  )
+
+  const deleteCashTransaction = useCallback(
+    (id: string) => {
+      commit({
+        ...state,
+        cashTransactions: (state.cashTransactions ?? []).filter((tx) => tx.id !== id),
+      })
+      dispatchSync('cash_transaction', 'delete', id, { id }, (sb, uid) =>
+        syncDeleteCashTransaction(sb, uid, id)
+      )
+    },
+    [state, commit, dispatchSync]
+  )
+
+  const adjustCashToAmount = useCallback(
+    (countedAmount: number, date?: string, note?: string): CashTransaction | null => {
+      const currentBalance = selectCashBalance(state.cashTransactions ?? [])
+      const input = createCashAdjustmentInput(currentBalance, countedAmount, date, note)
+      if (!input) return null
+      return addCashTransaction(input)
+    },
+    [state.cashTransactions, addCashTransaction]
+  )
+
+  /* ==========================================================================
      Totales y Conceptos Financieros Centralizados
      ========================================================================== */
 
@@ -2016,6 +2137,52 @@ export function useFinance(storage: StorageAdapter = defaultAppStorage) {
     [persistStateAsync]
   )
 
+  const applyRemoteInsertCashTransaction = useCallback(
+    (tx: CashTransaction) => {
+      setState((prev) => {
+        const existing = prev.cashTransactions ?? []
+        const exists = existing.some((x) => x.id === tx.id)
+        const nextCash = exists
+          ? existing.map((x) => (x.id === tx.id ? tx : x))
+          : [tx, ...existing]
+        const next = { ...prev, cashTransactions: nextCash }
+        persistStateAsync(next)
+        return next
+      })
+    },
+    [persistStateAsync]
+  )
+
+  const applyRemoteUpdateCashTransaction = useCallback(
+    (tx: CashTransaction) => {
+      setState((prev) => {
+        const existing = prev.cashTransactions ?? []
+        const exists = existing.some((x) => x.id === tx.id)
+        const nextCash = exists
+          ? existing.map((x) => (x.id === tx.id ? tx : x))
+          : [tx, ...existing]
+        const next = { ...prev, cashTransactions: nextCash }
+        persistStateAsync(next)
+        return next
+      })
+    },
+    [persistStateAsync]
+  )
+
+  const applyRemoteDeleteCashTransaction = useCallback(
+    (cashTxId: string) => {
+      setState((prev) => {
+        const next = {
+          ...prev,
+          cashTransactions: (prev.cashTransactions ?? []).filter((tx) => tx.id !== cashTxId),
+        }
+        persistStateAsync(next)
+        return next
+      })
+    },
+    [persistStateAsync]
+  )
+
   const restoreState = useCallback(
     async (newState: PersistedState) => {
       const txs = newState.transactions ?? []
@@ -2036,6 +2203,7 @@ export function useFinance(storage: StorageAdapter = defaultAppStorage) {
         variableExpenseEstimates: newState.variableExpenseEstimates ?? [],
         sharedContacts: newState.sharedContacts ?? [],
         expenseShares: newState.expenseShares ?? [],
+        cashTransactions: newState.cashTransactions ?? [],
       }
       setState(completeState)
       await storage.save(completeState)
@@ -2058,6 +2226,7 @@ export function useFinance(storage: StorageAdapter = defaultAppStorage) {
       variableExpenseEstimates: state.variableExpenseEstimates ?? [],
       sharedContacts: state.sharedContacts ?? [],
       expenseShares: state.expenseShares ?? [],
+      cashTransactions: state.cashTransactions ?? [],
     }
   }, [reconciledAccounts, state])
 
@@ -2067,6 +2236,7 @@ export function useFinance(storage: StorageAdapter = defaultAppStorage) {
     variableExpenseEstimates: state.variableExpenseEstimates ?? [],
     sharedContacts: state.sharedContacts ?? [],
     expenseShares: state.expenseShares ?? [],
+    cashTransactions: state.cashTransactions ?? [],
     storageHydrated,
     setSyncUser,
     setOnSyncStatusChange,
@@ -2080,6 +2250,12 @@ export function useFinance(storage: StorageAdapter = defaultAppStorage) {
     updateTransaction,
     deleteTransaction,
     updateAccountInitialBalance,
+
+    // Efectivo
+    addCashTransaction,
+    updateCashTransaction,
+    deleteCashTransaction,
+    adjustCashToAmount,
 
     // Perfil
     updateProfile,
@@ -2150,6 +2326,9 @@ export function useFinance(storage: StorageAdapter = defaultAppStorage) {
     applyRemoteDeleteSharedContact,
     applyRemoteUpsertExpenseShare,
     applyRemoteDeleteExpenseShare,
+    applyRemoteInsertCashTransaction,
+    applyRemoteUpdateCashTransaction,
+    applyRemoteDeleteCashTransaction,
 
     // Copias de seguridad
     restoreState,

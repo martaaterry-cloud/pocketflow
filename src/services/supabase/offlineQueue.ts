@@ -1,14 +1,18 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import {
   safeUpsertBudget,
+  safeUpsertCashTransaction,
   safeUpsertRecurring,
   safeUpsertTransaction,
+  syncDeleteCashTransaction,
   syncDeleteExpenseShare,
   syncDeleteSharedContact,
+  syncUpsertCashTransaction,
   syncUpsertExpenseShare,
   syncUpsertSharedContact,
   toDbAccount,
   toDbBudget,
+  toDbCashTransaction,
   toDbExpenseShare,
   toDbGoal,
   toDbPlanSettings,
@@ -23,6 +27,7 @@ import {
 import type {
   Account,
   Budget,
+  CashTransaction,
   ExpenseShare,
   FinancialPlanSettings,
   RecurringPayment,
@@ -48,6 +53,7 @@ export type OfflineEntity =
   | 'variable_expense_estimate'
   | 'shared_contact'
   | 'expense_share'
+  | 'cash_transaction'
 
 export interface OfflineMutation {
   id: string
@@ -331,6 +337,13 @@ export async function flushOfflineQueue(
           const dbRow = toDbVariableExpenseEstimate(item.data as VariableExpenseEstimate, userId)
           const { error } = await supabase.from('variable_expense_estimates').upsert(dbRow)
           if (error) throw error
+        }
+      } else if (item.entity === 'cash_transaction') {
+        if (item.action === 'delete') {
+          const id = (item.data as { id: string }).id
+          await syncDeleteCashTransaction(supabase, userId, id)
+        } else {
+          await syncUpsertCashTransaction(supabase, userId, item.data as CashTransaction)
         }
       }
       successCount++

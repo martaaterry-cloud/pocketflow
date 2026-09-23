@@ -235,3 +235,26 @@ export interface VariableExpenseEstimate {
 export type CreateVariableExpenseEstimateInput = Omit<VariableExpenseEstimate, 'id' | 'createdAt' | 'updatedAt'>
 export type UpdateVariableExpenseEstimateInput = Partial<CreateVariableExpenseEstimateInput>
 
+/* ==========================================================================
+   Módulo de Efectivo (Dinero físico independiente)
+   ========================================================================== */
+
+export type CashMovementType = 'income' | 'expense' | 'adjustment'
+
+export interface CashTransaction {
+  id: string
+  type: CashMovementType
+  amount: number // Positivo para income y expense; positivo o negativo para adjustment
+  description: string
+  date: string // ISO string o YYYY-MM-DD
+  categoryId?: string
+  note?: string
+  bankTransactionId?: string // Enlace opcional a la retirada bancaria de cajero
+  createdAt?: string
+  updatedAt?: string
+}
+
+export type CreateCashTransactionInput = Omit<CashTransaction, 'id' | 'createdAt' | 'updatedAt'>
+export type UpdateCashTransactionInput = Partial<CreateCashTransactionInput>
+
+
