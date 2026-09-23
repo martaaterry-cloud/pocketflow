@@ -4,6 +4,7 @@ import {
   ArrowDownLeft,
   ArrowLeftRight,
   Baby,
+  Banknote,
   Calendar,
   Car,
   ChartPie,
@@ -15,6 +16,7 @@ import {
   Clock,
   Cloud,
   CloudUpload,
+  Coins,
   Copy,
   CreditCard,
   Download,
@@ -29,6 +31,7 @@ import {
   Landmark,
   Laptop,
   Lock,
+  Minus,
   Pencil,
   PartyPopper,
   PiggyBank,
@@ -37,6 +40,7 @@ import {
   Plus,
   ReceiptText,
   RefreshCw,
+  Scale,
   Search,
   Settings,
   Shield,
@@ -142,6 +146,10 @@ export const ICON_MAP: Record<string, React.ComponentType<{ size?: number | stri
   circle: Circle,
   copy: Copy,
   zap: Zap,
+  banknote: Banknote,
+  coins: Coins,
+  minus: Minus,
+  scale: Scale,
 }
 
 // Mapeo retrocompatible de antiguos símbolos y emojis a iconKey
