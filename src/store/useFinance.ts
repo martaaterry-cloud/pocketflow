@@ -105,6 +105,9 @@ import {
 } from '../utils/syncPerfTracker'
 import {
   calculateNextRecurringDate,
+  formatCoverageDescription,
+  isRecurringCoveredInMonth,
+  recalculateRecurringNextDate,
   selectAssignedSavings,
   selectCommittedAmount,
   selectFreeSavings,
@@ -532,45 +535,102 @@ export function useFinance(storage: StorageAdapter = defaultAppStorage) {
       const existingIndex = state.transactions.findIndex((t) => t.id === id)
       if (existingIndex === -1) return
 
+      const existingTx = state.transactions[existingIndex]
       const updatedTx: Transaction = {
-        ...state.transactions[existingIndex],
+        ...existingTx,
         ...updates,
-        amount: updates.amount !== undefined ? Number(updates.amount) : state.transactions[existingIndex].amount,
+        amount: updates.amount !== undefined ? Number(updates.amount) : existingTx.amount,
       }
 
       const nextTransactions = [...state.transactions]
       nextTransactions[existingIndex] = updatedTx
 
+      const affectedRecIds = new Set<string>()
+      if (existingTx.recurringPaymentId) affectedRecIds.add(existingTx.recurringPaymentId)
+      if (updatedTx.recurringPaymentId) affectedRecIds.add(updatedTx.recurringPaymentId)
+
+      let nextRecurring = state.recurring
+      const recsToSync: RecurringPayment[] = []
+
+      for (const recId of affectedRecIds) {
+        const rec = nextRecurring.find((r) => r.id === recId)
+        if (rec && rec.type !== 'income' && rec.frequency === 'monthly') {
+          const recalculatedDate = recalculateRecurringNextDate(rec, nextTransactions)
+          if (recalculatedDate !== rec.nextDate) {
+            const updatedRec: RecurringPayment = {
+              ...rec,
+              nextDate: recalculatedDate,
+            }
+            nextRecurring = nextRecurring.map((r) => (r.id === rec.id ? updatedRec : r))
+            recsToSync.push(updatedRec)
+          }
+        }
+      }
+
       commit(
         {
           ...state,
           transactions: nextTransactions,
+          recurring: nextRecurring,
         },
         updatedTx.id
       )
       dispatchSync('transaction', 'update', updatedTx.id, updatedTx, (sb, uid) =>
         syncUpdateTransaction(sb, uid, updatedTx)
       )
+      recsToSync.forEach((rToSync) => {
+        dispatchSync('recurring', 'update', rToSync.id, rToSync, (sb, uid) =>
+          syncUpsertRecurring(sb, uid, rToSync)
+        )
+      })
     },
     [state, commit, dispatchSync]
   )
 
   const deleteTransaction = useCallback(
     (id: string) => {
+      const txToDelete = state.transactions.find((t) => t.id === id)
       const remainingShares = (state.expenseShares ?? []).filter(
         (s) => s.expenseTransactionId !== id
       )
+      const nextTransactions = state.transactions.filter((t) => t.id !== id)
+
+      let nextRecurring = state.recurring
+      let updatedRecToSync: RecurringPayment | null = null
+
+      if (txToDelete?.recurringPaymentId) {
+        const rec = state.recurring.find((r) => r.id === txToDelete.recurringPaymentId)
+        if (rec && rec.type !== 'income' && rec.frequency === 'monthly') {
+          const recalculatedDate = recalculateRecurringNextDate(rec, nextTransactions)
+          if (recalculatedDate !== rec.nextDate) {
+            const updatedRec: RecurringPayment = {
+              ...rec,
+              nextDate: recalculatedDate,
+            }
+            nextRecurring = state.recurring.map((r) => (r.id === rec.id ? updatedRec : r))
+            updatedRecToSync = updatedRec
+          }
+        }
+      }
+
       commit(
         {
           ...state,
-          transactions: state.transactions.filter((t) => t.id !== id),
+          transactions: nextTransactions,
           expenseShares: remainingShares,
+          recurring: nextRecurring,
         },
         id
       )
       dispatchSync('transaction', 'delete', id, { id }, (sb, uid) =>
         syncDeleteTransaction(sb, uid, id)
       )
+      if (updatedRecToSync) {
+        const rToSync: RecurringPayment = updatedRecToSync
+        dispatchSync('recurring', 'update', rToSync.id, rToSync, (sb, uid) =>
+          syncUpsertRecurring(sb, uid, rToSync)
+        )
+      }
     },
     [state, commit, dispatchSync]
   )
@@ -828,34 +888,47 @@ export function useFinance(storage: StorageAdapter = defaultAppStorage) {
   )
 
   const confirmRecurringPayment = useCallback(
-    (id: string, confirmationDate?: string): Transaction | null => {
+    (
+      id: string,
+      monthsCountOrDate: number | string = 1,
+      confirmationDate?: string
+    ): Transaction | null => {
       const rec = state.recurring.find((r) => r.id === id)
       if (!rec) return null
 
-      const dateStr = confirmationDate || new Date().toISOString()
+      let monthsCount = 1
+      let dateStr = new Date().toISOString()
+
+      if (typeof monthsCountOrDate === 'number') {
+        monthsCount = Math.max(1, Math.round(monthsCountOrDate))
+        if (confirmationDate) dateStr = confirmationDate
+      } else if (typeof monthsCountOrDate === 'string') {
+        dateStr = monthsCountOrDate
+      }
+
       const d = new Date(dateStr)
       const currentMonth = d.getMonth()
       const currentYear = d.getFullYear()
 
       // Idempotencia: Verificar si ya existe una transacción para este recurrente en este mes
-      const alreadyConfirmed = state.transactions.some(
-        (t) =>
-          t.type === 'expense' &&
-          t.recurringPaymentId === id &&
-          new Date(t.date).getMonth() === currentMonth &&
-          new Date(t.date).getFullYear() === currentYear
-      )
-      if (alreadyConfirmed) {
-        console.warn(`[useFinance] El pago recurrente ${id} ya fue confirmado para este ciclo`)
+      if (isRecurringCoveredInMonth(rec, state.transactions, currentYear, currentMonth)) {
+        console.warn(`[useFinance] El pago recurrente ${id} ya fue confirmado/cubierto para este ciclo`)
         return null
       }
+
+      const isMonthlyExpense = rec.type !== 'income' && rec.frequency === 'monthly'
+      const effectiveMonths = isMonthlyExpense ? monthsCount : 1
+      const totalAmount = Math.round(rec.amount * effectiveMonths * 100) / 100
+      const description = isMonthlyExpense
+        ? formatCoverageDescription(rec.name, dateStr, effectiveMonths)
+        : rec.name
 
       // 1. Crear transacción real vinculada con recurringPaymentId
       const newTx: Transaction = {
         id: `tx_${crypto.randomUUID()}`,
         type: 'expense',
-        amount: rec.amount,
-        description: rec.name,
+        amount: totalAmount,
+        description,
         categoryId: rec.categoryId,
         accountId: rec.accountId || 'daily',
         date: dateStr,
@@ -868,7 +941,7 @@ export function useFinance(storage: StorageAdapter = defaultAppStorage) {
       if (rec.isShared && rec.sharingTemplate) {
         if (rec.sharingTemplate.splitType === 'equal') {
           const splitResults = splitExpenseEqually(
-            rec.amount,
+            totalAmount,
             rec.sharingTemplate.participants,
             rec.sharingTemplate.includePayer,
             'Tú'
@@ -890,14 +963,14 @@ export function useFinance(storage: StorageAdapter = defaultAppStorage) {
             contactId: p.contactId,
             participantName: p.name,
             isPayerShare: false,
-            expectedAmount: Number(p.amount),
+            expectedAmount: Math.round(Number(p.amount) * effectiveMonths * 100) / 100,
             createdAt: dateStr,
             updatedAt: dateStr,
           }))
 
           if (rec.sharingTemplate.includePayer) {
             const externalTotal = cycleShares.reduce((s, sh) => s + sh.expectedAmount, 0)
-            const payerAmount = Math.max(0, Math.round((rec.amount - externalTotal) * 100) / 100)
+            const payerAmount = Math.max(0, Math.round((totalAmount - externalTotal) * 100) / 100)
             cycleShares.unshift({
               id: crypto.randomUUID(),
               expenseTransactionId: newTx.id,
@@ -911,8 +984,11 @@ export function useFinance(storage: StorageAdapter = defaultAppStorage) {
         }
       }
 
-      // 2. Avanzar nextDate según frecuencia de calendario segura
-      const nextDate = calculateNextRecurringDate(rec.nextDate, rec.frequency)
+      // 2. Avanzar nextDate según los ciclos cubiertos
+      let nextDate = rec.nextDate
+      for (let i = 0; i < effectiveMonths; i++) {
+        nextDate = calculateNextRecurringDate(nextDate, rec.frequency)
+      }
       const updatedRec: RecurringPayment = {
         ...rec,
         nextDate,

@@ -3275,6 +3275,10 @@ input:checked + .slider:before {
   border-left: 3px solid #10b981;
 }
 
+.recurring-card.covered_in_advance {
+  border-left: 3px solid #34c759;
+}
+
 .recurring-status-row {
   display: flex;
   align-items: center;
@@ -3290,6 +3294,14 @@ input:checked + .slider:before {
 .badge-status.confirmed_for_cycle {
   background: rgba(16, 185, 129, 0.12);
   color: #059669;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.badge-status.covered_in_advance {
+  background: rgba(52, 199, 89, 0.12);
+  color: #28a745;
   display: inline-flex;
   align-items: center;
   gap: 3px;

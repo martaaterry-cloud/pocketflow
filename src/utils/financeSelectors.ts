@@ -58,10 +58,195 @@ export function selectGoalProgress(
   }
 }
 
+export const SPANISH_MONTH_NAMES = [
+  'enero',
+  'febrero',
+  'marzo',
+  'abril',
+  'mayo',
+  'junio',
+  'julio',
+  'agosto',
+  'septiembre',
+  'octubre',
+  'noviembre',
+  'diciembre',
+]
+
+/**
+ * Devuelve el conjunto de claves 'YYYY-MM' de los meses cubiertos por las transacciones de un recurrente.
+ * Para recurrentes mensuales:
+ * - Una transacción vinculada cubre N = max(1, round(tx.amount / rec.amount)) meses a partir del mes de tx.date.
+ */
+export function getCoveredMonthKeysForRecurring(
+  rec: RecurringPayment,
+  transactions: Transaction[]
+): Set<string> {
+  const covered = new Set<string>()
+  if (!rec || !Array.isArray(transactions) || rec.type === 'income') return covered
+
+  const linkedTxs = transactions.filter(
+    (t) => t.type === 'expense' && t.recurringPaymentId === rec.id
+  )
+
+  for (const tx of linkedTxs) {
+    if (!tx.date) continue
+    const txDate = new Date(tx.date)
+    const txYear = txDate.getFullYear()
+    const txMonth = txDate.getMonth() // 0-11
+
+    if (rec.frequency === 'monthly' && rec.amount > 0) {
+      const monthsCovered = Math.max(1, Math.round((tx.amount / rec.amount) * 100) / 100)
+      const count = Math.max(1, Math.round(monthsCovered))
+
+      for (let i = 0; i < count; i++) {
+        let y = txYear
+        let m = txMonth + i
+        while (m > 11) {
+          y += 1
+          m -= 12
+        }
+        const key = `${y}-${String(m + 1).padStart(2, '0')}`
+        covered.add(key)
+      }
+    } else {
+      const key = `${txYear}-${String(txMonth + 1).padStart(2, '0')}`
+      covered.add(key)
+    }
+  }
+
+  return covered
+}
+
+/**
+ * Comprueba si un recurrente está cubierto en un mes y año específicos.
+ */
+export function isRecurringCoveredInMonth(
+  rec: RecurringPayment,
+  transactions: Transaction[],
+  year: number,
+  month: number // 0-11
+): boolean {
+  if (!rec || rec.type === 'income') return false
+  const key = `${year}-${String(month + 1).padStart(2, '0')}`
+  const covered = getCoveredMonthKeysForRecurring(rec, transactions)
+  return covered.has(key)
+}
+
+/**
+ * Formatea una descripción legible para el movimiento según los meses cubiertos.
+ * Ejemplo (2 meses): "Spotify · septiembre + octubre"
+ * Ejemplo (3 meses): "Spotify · septiembre + octubre + noviembre"
+ */
+export function formatCoverageDescription(
+  baseName: string,
+  startDate: string | Date,
+  monthsCount: number
+): string {
+  const count = Math.max(1, Math.round(monthsCount))
+  if (count === 1) {
+    return baseName
+  }
+
+  const d = typeof startDate === 'string' ? new Date(startDate) : startDate
+  const startMonth = d.getMonth()
+  const startYear = d.getFullYear()
+
+  const monthLabels: string[] = []
+  for (let i = 0; i < count; i++) {
+    let m = startMonth + i
+    let y = startYear
+    while (m > 11) {
+      y += 1
+      m -= 12
+    }
+    monthLabels.push(SPANISH_MONTH_NAMES[m])
+  }
+
+  return `${baseName} · ${monthLabels.join(' + ')}`
+}
+
+/**
+ * Genera la lista de meses cubiertos con formato amigable para UI / Modales.
+ */
+export function getCoveredMonthsList(
+  startDate: string | Date,
+  monthsCount: number
+): { name: string; year: number; label: string }[] {
+  const count = Math.max(1, Math.round(monthsCount))
+  const d = typeof startDate === 'string' ? new Date(startDate) : startDate
+  const startMonth = d.getMonth()
+  const startYear = d.getFullYear()
+
+  const list: { name: string; year: number; label: string }[] = []
+  for (let i = 0; i < count; i++) {
+    let m = startMonth + i
+    let y = startYear
+    while (m > 11) {
+      y += 1
+      m -= 12
+    }
+    const capName = SPANISH_MONTH_NAMES[m].charAt(0).toUpperCase() + SPANISH_MONTH_NAMES[m].slice(1)
+    list.push({
+      name: capName,
+      year: y,
+      label: `${capName} ${y}`,
+    })
+  }
+  return list
+}
+
+/**
+ * Recalcula la fecha del próximo vencimiento (nextDate) de un recurrente mensual
+ * a partir del primer mes que NO se encuentre cubierto.
+ */
+export function recalculateRecurringNextDate(
+  rec: RecurringPayment,
+  transactions: Transaction[],
+  referenceDate: Date = new Date()
+): string {
+  if (!rec || rec.type === 'income' || rec.frequency !== 'monthly') {
+    return rec.nextDate
+  }
+
+  const coveredKeys = getCoveredMonthKeysForRecurring(rec, transactions)
+  const baseParts = (rec.nextDate || '').split('-').map(Number)
+  const baseDay = baseParts.length === 3 && !isNaN(baseParts[2]) ? baseParts[2] : 1
+
+  const refYear = referenceDate.getFullYear()
+  const refMonth = referenceDate.getMonth()
+
+  let candidateYear = refYear
+  let candidateMonth = refMonth
+
+  for (let offset = 0; offset < 36; offset++) {
+    let y = refYear
+    let m = refMonth + offset
+    while (m > 11) {
+      y += 1
+      m -= 12
+    }
+    const key = `${y}-${String(m + 1).padStart(2, '0')}`
+    if (!coveredKeys.has(key)) {
+      candidateYear = y
+      candidateMonth = m
+      break
+    }
+  }
+
+  const maxDaysInTargetMonth = new Date(Date.UTC(candidateYear, candidateMonth + 1, 0)).getUTCDate()
+  const targetDay = Math.min(baseDay, maxDaysInTargetMonth)
+  const mm = String(candidateMonth + 1).padStart(2, '0')
+  const dd = String(targetDay).padStart(2, '0')
+
+  return `${candidateYear}-${mm}-${dd}`
+}
+
 /**
  * Obtiene la lista de pagos recurrentes que siguen pendientes de cobro en el periodo (mes en curso).
  * Considera únicamente los recurrentes activos que afectan a la cuenta de gastos diaria.
- * Verifica si ya existe una transacción vinculada mediante recurringPaymentId (o heurística de respaldo).
+ * Verifica si ya existe una transacción vinculada mediante recurringPaymentId (o heurística de respaldo),
+ * o si el periodo ya fue cubierto por adelantado mediante un pago multimensualidad.
  */
 export function selectPendingRecurringPayments(
   recurring: RecurringPayment[],
@@ -82,7 +267,12 @@ export function selectPendingRecurringPayments(
     // 3. Debe pertenecer a la cuenta diaria
     if (r.accountId && r.accountId !== spendingAccountId) return false
 
-    // 4. Comprobar si ya fue registrado como gasto en el mes en curso
+    // 4. Comprobar si está cubierto en el mes de referencia
+    if (isRecurringCoveredInMonth(r, transactions, currentYear, currentMonth)) {
+      return false
+    }
+
+    // 5. Enlace de respaldo por coincidencia de nombre/categoría e importe en el mes en curso
     const alreadyRegistered = transactions.some((t) => {
       if (t.type !== 'expense') return false
 
@@ -239,11 +429,16 @@ export function calculateNextRecurringDate(
   return currentDateStr
 }
 
-export type RecurringPaymentCycleStatus = 'confirmed_for_cycle' | 'due' | 'upcoming'
+export type RecurringPaymentCycleStatus =
+  | 'confirmed_for_cycle'
+  | 'covered_in_advance'
+  | 'due'
+  | 'upcoming'
 
 /**
  * Determina el estado contextual de un pago recurrente en el ciclo actual:
- * - 'confirmed_for_cycle': ya cobrado este mes
+ * - 'confirmed_for_cycle': ya cobrado/pagado este mes mediante transacción
+ * - 'covered_in_advance': pagado por adelantado por un pago multimes
  * - 'due': pendiente de confirmar o previsto hoy
  * - 'upcoming': próximo en fecha futura
  */
@@ -277,7 +472,18 @@ export function selectRecurringPaymentCycleStatus(
     }
   }
 
-  // 2. Si la fecha ya llegó o es hoy
+  // 2. Comprobar si está cubierto por adelantado desde un mes previo (pago multimes)
+  if (
+    payment.type !== 'income' &&
+    isRecurringCoveredInMonth(payment, transactions, currentYear, currentMonth)
+  ) {
+    return {
+      status: 'covered_in_advance',
+      label: 'Pagado por adelantado',
+    }
+  }
+
+  // 3. Si la fecha ya llegó o es hoy
   if (payment.nextDate <= todayStr) {
     return {
       status: 'due',
@@ -285,7 +491,7 @@ export function selectRecurringPaymentCycleStatus(
     }
   }
 
-  // 3. Si la fecha es futura
+  // 4. Si la fecha es futura
   const parts = payment.nextDate.split('-')
   const day = parseInt(parts[2], 10)
   const monthNames = [

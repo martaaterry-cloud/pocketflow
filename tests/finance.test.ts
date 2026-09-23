@@ -63,6 +63,11 @@ import {
 } from '../src/utils/variableEstimates'
 import {
   calculateNextRecurringDate,
+  formatCoverageDescription,
+  getCoveredMonthKeysForRecurring,
+  getCoveredMonthsList,
+  isRecurringCoveredInMonth,
+  recalculateRecurringNextDate,
   selectCategoryExpenses,
   selectCommittedAmount,
   selectMonthExpenses,
@@ -6805,11 +6810,11 @@ describe('Fase 18 — Identificación Visual de Versión y Build', () => {
   it('314. Versioning: única fuente de verdad y formato de visualización exacto', () => {
     assert.equal(APP_NAME, 'PocketFlow')
     assert.equal(APP_VERSION, '0.18.0')
-    assert.equal(APP_BUILD, '2026.09.18-21')
+    assert.equal(APP_BUILD, '2026.09.23-01')
  
     assert.equal(getAppVersionString(), 'PocketFlow v0.18.0')
-    assert.equal(getAppBuildString(), 'Build 2026.09.18-21')
-    assert.equal(getAppFullVersionLabel(), 'PocketFlow v0.18.0 · Build 2026.09.18-21')
+    assert.equal(getAppBuildString(), 'Build 2026.09.23-01')
+    assert.equal(getAppFullVersionLabel(), 'PocketFlow v0.18.0 · Build 2026.09.23-01')
   })
 })
 
@@ -9375,6 +9380,346 @@ describe('Fase 31 — Periodos Especiales con Importe Opcional y Estacionalidad'
     assert.ok(sql.includes('drop not null'), 'Debe eliminar la restricción NOT NULL')
   })
 })
+
+describe('Fase 32 — Cobertura Multimensualidad en Pagos Recurrentes', () => {
+  const baseSpotify: RecurringPayment = {
+    id: 'rec_spotify',
+    name: 'Spotify',
+    amount: 3.5,
+    categoryId: 'subscriptions',
+    accountId: 'daily',
+    frequency: 'monthly',
+    nextDate: '2026-09-04',
+    active: true,
+    type: 'expense',
+  }
+
+  it('400. 1. Confirmar 1 mensualidad: crea transacción de importe mensual y cubre 1 mes', () => {
+    const tx: Transaction = {
+      id: 'tx_spot_1',
+      type: 'expense',
+      amount: 3.5,
+      description: 'Spotify',
+      accountId: 'daily',
+      categoryId: 'subscriptions',
+      date: '2026-09-23T10:00:00.000Z',
+      recurringPaymentId: 'rec_spotify',
+    }
+    const coveredKeys = getCoveredMonthKeysForRecurring(baseSpotify, [tx])
+    assert.ok(coveredKeys.has('2026-09'), 'Septiembre debe estar cubierto')
+    assert.ok(!coveredKeys.has('2026-10'), 'Octubre no debe estar cubierto')
+    assert.equal(isRecurringCoveredInMonth(baseSpotify, [tx], 2026, 8), true) // Septiembre (mes 8)
+    assert.equal(isRecurringCoveredInMonth(baseSpotify, [tx], 2026, 9), false) // Octubre (mes 9)
+  })
+
+  it('401. 2. Confirmar 2 mensualidades: 1 transacción de 7,00 € con descripción clara cubre septiembre + octubre', () => {
+    const desc = formatCoverageDescription('Spotify', '2026-09-23', 2)
+    assert.equal(desc, 'Spotify · septiembre + octubre')
+
+    const tx: Transaction = {
+      id: 'tx_spot_2m',
+      type: 'expense',
+      amount: 7.0,
+      description: desc,
+      accountId: 'daily',
+      categoryId: 'subscriptions',
+      date: '2026-09-23T10:00:00.000Z',
+      recurringPaymentId: 'rec_spotify',
+    }
+
+    const coveredKeys = getCoveredMonthKeysForRecurring(baseSpotify, [tx])
+    assert.ok(coveredKeys.has('2026-09'), 'Septiembre debe estar cubierto')
+    assert.ok(coveredKeys.has('2026-10'), 'Octubre debe estar cubierto por adelantado')
+    assert.ok(!coveredKeys.has('2026-11'), 'Noviembre debe seguir pendiente')
+  })
+
+  it('402. 3. Confirmar 3 mensualidades: cubre 3 meses consecutivos a partir de la fecha', () => {
+    const desc = formatCoverageDescription('Spotify', '2026-09-23', 3)
+    assert.equal(desc, 'Spotify · septiembre + octubre + noviembre')
+
+    const tx: Transaction = {
+      id: 'tx_spot_3m',
+      type: 'expense',
+      amount: 10.5,
+      description: desc,
+      accountId: 'daily',
+      categoryId: 'subscriptions',
+      date: '2026-09-23T10:00:00.000Z',
+      recurringPaymentId: 'rec_spotify',
+    }
+
+    const coveredKeys = getCoveredMonthKeysForRecurring(baseSpotify, [tx])
+    assert.ok(coveredKeys.has('2026-09'), 'Septiembre cubierto')
+    assert.ok(coveredKeys.has('2026-10'), 'Octubre cubierto')
+    assert.ok(coveredKeys.has('2026-11'), 'Noviembre cubierto')
+    assert.ok(!coveredKeys.has('2026-12'), 'Diciembre pendiente')
+  })
+
+  it('403. 4. Importe real = monthlyAmount * meses', () => {
+    const months = 5
+    const expected = Math.round(baseSpotify.amount * months * 100) / 100
+    assert.equal(expected, 17.5)
+    const list = getCoveredMonthsList('2026-09-23', months)
+    assert.equal(list.length, 5)
+    assert.equal(list[0].label, 'Septiembre 2026')
+    assert.equal(list[1].label, 'Octubre 2026')
+    assert.equal(list[2].label, 'Noviembre 2026')
+    assert.equal(list[3].label, 'Diciembre 2026')
+    assert.equal(list[4].label, 'Enero 2027')
+  })
+
+  it('404. 5. Solo se crea una transacción para cubrir múltiples mensualidades', () => {
+    const tx: Transaction = {
+      id: 'tx_single_7eur',
+      type: 'expense',
+      amount: 7.0,
+      description: 'Spotify · septiembre + octubre',
+      accountId: 'daily',
+      categoryId: 'subscriptions',
+      date: '2026-09-23T10:00:00.000Z',
+      recurringPaymentId: 'rec_spotify',
+    }
+    const txList = [tx]
+    assert.equal(txList.length, 1, 'Debe existir exactamente 1 transacción')
+    assert.equal(txList[0].amount, 7.0)
+  })
+
+  it('405. 6. Próximo periodo pendiente salta correctamente al avanzar meses', () => {
+    let nextDate = baseSpotify.nextDate // '2026-09-04'
+    const monthsToAdvance = 2
+    for (let i = 0; i < monthsToAdvance; i++) {
+      nextDate = calculateNextRecurringDate(nextDate, baseSpotify.frequency)
+    }
+    assert.equal(nextDate, '2026-11-04', 'Tras cubrir 2 meses debe saltar a noviembre')
+  })
+
+  it('406. 7. Mes pagado por adelantado no se vuelve a comprometer ni aparece como pendiente', () => {
+    const tx: Transaction = {
+      id: 'tx_spot_2m',
+      type: 'expense',
+      amount: 7.0,
+      description: 'Spotify · septiembre + octubre',
+      accountId: 'daily',
+      categoryId: 'subscriptions',
+      date: '2026-09-23T10:00:00.000Z',
+      recurringPaymentId: 'rec_spotify',
+    }
+
+    // Comprobación en septiembre 2026 (mes actual)
+    const septDate = new Date(2026, 8, 23)
+    const septPending = selectPendingRecurringPayments([baseSpotify], [tx], septDate)
+    assert.equal(septPending.length, 0, 'En septiembre no debe estar pendiente')
+    const septCommitted = selectCommittedAmount([baseSpotify], [tx], septDate)
+    assert.equal(septCommitted, 0, 'En septiembre comprometido = 0')
+
+    // Comprobación en octubre 2026 (mes cubierto por adelantado)
+    const octDate = new Date(2026, 9, 15)
+    const octPending = selectPendingRecurringPayments([baseSpotify], [tx], octDate)
+    assert.equal(octPending.length, 0, 'En octubre no debe estar pendiente')
+    const octCommitted = selectCommittedAmount([baseSpotify], [tx], octDate)
+    assert.equal(octCommitted, 0, 'En octubre comprometido = 0')
+
+    // Comprobación en noviembre 2026 (mes no cubierto)
+    const novDate = new Date(2026, 10, 15)
+    const novPending = selectPendingRecurringPayments([baseSpotify], [tx], novDate)
+    assert.equal(novPending.length, 1, 'En noviembre vuelve a estar pendiente')
+    assert.equal(novPending[0].id, 'rec_spotify')
+    const novCommitted = selectCommittedAmount([baseSpotify], [tx], novDate)
+    assert.equal(novCommitted, 3.5, 'En noviembre comprometido = 3.50 €')
+  })
+
+  it('407. 8. Plan financiero preserva el coste estructural sin duplicar el compromiso', () => {
+    const tx: Transaction = {
+      id: 'tx_spot_2m',
+      type: 'expense',
+      amount: 7.0,
+      description: 'Spotify · septiembre + octubre',
+      accountId: 'daily',
+      categoryId: 'subscriptions',
+      date: '2026-09-23T10:00:00.000Z',
+      recurringPaymentId: 'rec_spotify',
+    }
+    // El recurrente sigue siendo 3.50 €/mes estructuralmente
+    assert.equal(baseSpotify.amount, 3.5)
+    assert.equal(baseSpotify.frequency, 'monthly')
+  })
+
+  it('408. 9. Disponible proyectado no duplica el pago en meses adelantados', () => {
+    const tx: Transaction = {
+      id: 'tx_spot_2m',
+      type: 'expense',
+      amount: 7.0,
+      description: 'Spotify · septiembre + octubre',
+      accountId: 'daily',
+      categoryId: 'subscriptions',
+      date: '2026-09-23T10:00:00.000Z',
+      recurringPaymentId: 'rec_spotify',
+    }
+    const octDate = new Date(2026, 9, 1)
+    const committedOct = selectCommittedAmount([baseSpotify], [tx], octDate)
+    const realAvailable = selectRealAvailable(500, committedOct)
+    assert.equal(committedOct, 0)
+    assert.equal(realAvailable, 500, 'No descuenta 3.50 € en octubre porque ya está pagado')
+  })
+
+  it('409. 10. Borrar transacción revierte cobertura y recalcula fecha pendiente', () => {
+    const tx: Transaction = {
+      id: 'tx_spot_2m',
+      type: 'expense',
+      amount: 7.0,
+      description: 'Spotify · septiembre + octubre',
+      accountId: 'daily',
+      categoryId: 'subscriptions',
+      date: '2026-09-23T10:00:00.000Z',
+      recurringPaymentId: 'rec_spotify',
+    }
+    const spotifyAdvanced: RecurringPayment = {
+      ...baseSpotify,
+      nextDate: '2026-11-04',
+    }
+
+    // Al borrar la transacción (array de transacciones vacío):
+    const remainingTxs: Transaction[] = []
+    const septDate = new Date(2026, 8, 23)
+    const pending = selectPendingRecurringPayments([spotifyAdvanced], remainingTxs, septDate)
+    assert.equal(pending.length, 1, 'Septiembre vuelve a estar pendiente')
+
+    const recalculatedDate = recalculateRecurringNextDate(spotifyAdvanced, remainingTxs, septDate)
+    assert.equal(recalculatedDate, '2026-09-04', 'La fecha de cobro vuelve a ser la de septiembre')
+  })
+
+  it('410. 11. Editar transacción no deja cobertura huérfana', () => {
+    // Transacción editada de 7.00 € a 3.50 €
+    const editedTx: Transaction = {
+      id: 'tx_spot_edited',
+      type: 'expense',
+      amount: 3.5,
+      description: 'Spotify',
+      accountId: 'daily',
+      categoryId: 'subscriptions',
+      date: '2026-09-23T10:00:00.000Z',
+      recurringPaymentId: 'rec_spotify',
+    }
+
+    const septDate = new Date(2026, 8, 23)
+    const octDate = new Date(2026, 9, 15)
+
+    assert.equal(isRecurringCoveredInMonth(baseSpotify, [editedTx], 2026, 8), true, 'Septiembre sigue cubierto')
+    assert.equal(isRecurringCoveredInMonth(baseSpotify, [editedTx], 2026, 9), false, 'Octubre ya no está cubierto')
+
+    const octPending = selectPendingRecurringPayments([baseSpotify], [editedTx], octDate)
+    assert.equal(octPending.length, 1, 'Octubre vuelve a estar pendiente')
+  })
+
+  it('411. 12. Ingresos recurrentes permanecen intactos (no aplican cobertura multimes)', () => {
+    const salaryRec: RecurringPayment = {
+      id: 'rec_salary',
+      name: 'Nómina',
+      amount: 2000,
+      categoryId: 'income',
+      accountId: 'daily',
+      frequency: 'monthly',
+      nextDate: '2026-09-30',
+      active: true,
+      type: 'income',
+    }
+
+    const tx: Transaction = {
+      id: 'tx_salary',
+      type: 'income',
+      amount: 4000,
+      description: 'Nómina',
+      accountId: 'daily',
+      categoryId: 'income',
+      date: '2026-09-30T10:00:00.000Z',
+      recurringPaymentId: 'rec_salary',
+    }
+
+    const covered = getCoveredMonthKeysForRecurring(salaryRec, [tx])
+    assert.equal(covered.size, 0, 'No genera claves de gasto cubierto para ingresos')
+    assert.equal(isRecurringCoveredInMonth(salaryRec, [tx], 2026, 8), false)
+  })
+
+  it('412. 13. Recurrentes no mensuales mantienen comportamiento anterior', () => {
+    const gymWeekly: RecurringPayment = {
+      id: 'rec_gym_weekly',
+      name: 'Gimnasio semanal',
+      amount: 10,
+      categoryId: 'sport',
+      accountId: 'daily',
+      frequency: 'weekly',
+      nextDate: '2026-09-07',
+      active: true,
+      type: 'expense',
+    }
+
+    const nextWeekly = calculateNextRecurringDate(gymWeekly.nextDate, gymWeekly.frequency)
+    assert.equal(nextWeekly, '2026-09-14', 'Avanza exactamente 7 días')
+
+    const insuranceYearly: RecurringPayment = {
+      id: 'rec_insurance',
+      name: 'Seguro Coche',
+      amount: 300,
+      categoryId: 'transport',
+      accountId: 'daily',
+      frequency: 'yearly',
+      nextDate: '2026-09-15',
+      active: true,
+      type: 'expense',
+    }
+
+    const nextYearly = calculateNextRecurringDate(insuranceYearly.nextDate, insuranceYearly.frequency)
+    assert.equal(nextYearly, '2027-09-15', 'Avanza exactamente 1 año')
+  })
+
+  it('413. 14. Retrocompatibilidad con recurrentes antiguos y transacciones sin metadatos', () => {
+    const legacyRec: RecurringPayment = {
+      id: 'rec_legacy',
+      name: 'Netflix',
+      amount: 12.99,
+      categoryId: 'subscriptions',
+      accountId: 'daily',
+      frequency: 'monthly',
+      nextDate: '2026-09-10',
+      active: true,
+    }
+
+    const legacyTx: Transaction = {
+      id: 'tx_legacy',
+      type: 'expense',
+      amount: 12.99,
+      description: 'Netflix',
+      accountId: 'daily',
+      categoryId: 'subscriptions',
+      date: '2026-09-10T12:00:00.000Z',
+      recurringPaymentId: 'rec_legacy',
+    }
+
+    const septDate = new Date(2026, 8, 10)
+    const status = selectRecurringPaymentCycleStatus(legacyRec, [legacyTx], septDate)
+    assert.equal(status.status, 'confirmed_for_cycle')
+    assert.equal(status.label, 'Cobrado este ciclo')
+  })
+
+  it('414. UI / Selector de ciclo: Estado contextual covered_in_advance en el mes cubierto', () => {
+    const tx: Transaction = {
+      id: 'tx_spot_2m',
+      type: 'expense',
+      amount: 7.0,
+      description: 'Spotify · septiembre + octubre',
+      accountId: 'daily',
+      categoryId: 'subscriptions',
+      date: '2026-09-23T10:00:00.000Z',
+      recurringPaymentId: 'rec_spotify',
+    }
+
+    const octDate = new Date(2026, 9, 10)
+    const statusOct = selectRecurringPaymentCycleStatus(baseSpotify, [tx], octDate)
+    assert.equal(statusOct.status, 'covered_in_advance')
+    assert.equal(statusOct.label, 'Pagado por adelantado')
+  })
+})
+
 
 
 

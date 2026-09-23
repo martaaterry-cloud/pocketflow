@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { RecurringPaymentModal } from '../components/RecurringPaymentModal'
+import { ConfirmRecurringPaymentModal } from '../components/ConfirmRecurringPaymentModal'
 import type {
   CreateRecurringPaymentInput,
   RecurringIncomeSourceType,
@@ -21,14 +22,24 @@ export function RecurringPaymentsPage({
 }) {
   const [modalOpen, setModalOpen] = useState(false)
   const [editingPayment, setEditingPayment] = useState<RecurringPayment | null>(null)
+  const [confirmModalPayment, setConfirmModalPayment] = useState<RecurringPayment | null>(null)
   const [confirmingId, setConfirmingId] = useState<string | null>(null)
   const [filter, setFilter] = useState<'all' | 'expense' | 'income'>('all')
 
-  const handleConfirm = async (paymentId: string) => {
+  const handleConfirmAction = (payment: RecurringPayment) => {
+    if (confirmingId) return
+    if (payment.type !== 'income' && payment.frequency === 'monthly') {
+      setConfirmModalPayment(payment)
+    } else {
+      handleDirectConfirm(payment.id, 1)
+    }
+  }
+
+  const handleDirectConfirm = async (paymentId: string, monthsCount = 1) => {
     if (confirmingId) return
     setConfirmingId(paymentId)
     try {
-      finance.confirmRecurringPayment(paymentId)
+      finance.confirmRecurringPayment(paymentId, monthsCount)
     } finally {
       setTimeout(() => setConfirmingId(null), 300)
     }
@@ -227,7 +238,12 @@ export function RecurringPaymentsPage({
                       )}
                       {!isIncome && r.active && cycleStatus.status === 'confirmed_for_cycle' && (
                         <span className="badge-status confirmed_for_cycle">
-                          <AppIcon name="check" size={11} /> Confirmado
+                          <AppIcon name="check" size={11} /> Pagado
+                        </span>
+                      )}
+                      {!isIncome && r.active && cycleStatus.status === 'covered_in_advance' && (
+                        <span className="badge-status covered_in_advance">
+                          <AppIcon name="check" size={11} /> Pagado por adelantado
                         </span>
                       )}
                     </div>
@@ -257,11 +273,11 @@ export function RecurringPaymentsPage({
                         disabled={isConfirming}
                         onClick={(e) => {
                           e.stopPropagation()
-                          handleConfirm(r.id)
+                          handleConfirmAction(r)
                         }}
                       >
                         <AppIcon name="check" size={14} />
-                        <span>{isConfirming ? 'Confirmando...' : 'Confirmar cobro'}</span>
+                        <span>{isConfirming ? 'Confirmando...' : 'Confirmar pago'}</span>
                       </button>
                       <button
                         type="button"
@@ -307,6 +323,17 @@ export function RecurringPaymentsPage({
         payment={editingPayment}
         onSave={handleSave}
         onDelete={finance.deleteRecurringPayment}
+      />
+
+      <ConfirmRecurringPaymentModal
+        open={Boolean(confirmModalPayment)}
+        payment={confirmModalPayment}
+        onClose={() => setConfirmModalPayment(null)}
+        onConfirm={(paymentId, monthsCount) => {
+          setConfirmModalPayment(null)
+          handleDirectConfirm(paymentId, monthsCount)
+        }}
+        isSubmitting={Boolean(confirmingId)}
       />
     </main>
   )
