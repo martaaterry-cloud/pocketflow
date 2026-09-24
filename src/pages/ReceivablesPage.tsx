@@ -23,12 +23,20 @@ export function ReceivablesPage({
   const [expandedDebtor, setExpandedDebtor] = useState<string | null>(null)
 
   const pendingDebtors = useMemo(() => {
-    return selectPendingDebtors(finance.expenseShares ?? [], finance.transactions ?? [])
-  }, [finance.expenseShares, finance.transactions])
+    return selectPendingDebtors(
+      finance.expenseShares ?? [],
+      finance.transactions ?? [],
+      finance.cashTransactions ?? []
+    )
+  }, [finance.expenseShares, finance.transactions, finance.cashTransactions])
 
   const settledList = useMemo(() => {
-    return selectSettledReimbursements(finance.expenseShares ?? [], finance.transactions ?? [])
-  }, [finance.expenseShares, finance.transactions])
+    return selectSettledReimbursements(
+      finance.expenseShares ?? [],
+      finance.transactions ?? [],
+      finance.cashTransactions ?? []
+    )
+  }, [finance.expenseShares, finance.transactions, finance.cashTransactions])
 
   const totalPending = useMemo(() => {
     return Math.round(pendingDebtors.reduce((acc, d) => acc + d.totalPending, 0) * 100) / 100

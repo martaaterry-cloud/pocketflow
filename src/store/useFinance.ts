@@ -462,10 +462,51 @@ export function useFinance(storage: StorageAdapter = defaultAppStorage) {
       date?: string
       note?: string
       description?: string
+      paymentMethod?: 'bank' | 'cash'
     }) => {
+      const paymentMethod = input.paymentMethod || 'bank'
       const parentTx = state.transactions.find((t) => t.id === input.parentExpenseId)
       const share = (state.expenseShares ?? []).find((s) => s.id === input.expenseShareId)
       const targetExpenseId = input.parentExpenseId || share?.expenseTransactionId
+
+      if (paymentMethod === 'cash') {
+        const desc =
+          input.description ||
+          (share
+            ? `Efectivo ${share.participantName} · ${parentTx?.description || 'Reembolso'}`
+            : `Reembolso efectivo · ${parentTx?.description || 'Gasto'}`)
+
+        const cashNoteParts: string[] = []
+        if (input.note) cashNoteParts.push(input.note)
+        if (input.expenseShareId) cashNoteParts.push(`[share:${input.expenseShareId}]`)
+        const finalNote = cashNoteParts.join(' ') || undefined
+
+        const newCashTx: CashTransaction = {
+          id: crypto.randomUUID(),
+          type: 'income',
+          amount: Number(input.amount),
+          date: input.date || new Date().toISOString(),
+          description: desc,
+          note: finalNote,
+          bankTransactionId: targetExpenseId,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        }
+
+        commit(
+          {
+            ...state,
+            cashTransactions: [newCashTx, ...(state.cashTransactions ?? [])],
+          },
+          newCashTx.id
+        )
+
+        dispatchSync('cash_transaction', 'insert', newCashTx.id, newCashTx, (sb, uid) =>
+          syncUpsertCashTransaction(sb, uid, newCashTx)
+        )
+
+        return newCashTx
+      }
 
       const desc =
         input.description ||
@@ -545,7 +586,11 @@ export function useFinance(storage: StorageAdapter = defaultAppStorage) {
   )
 
   const updateTransaction = useCallback(
-    (id: string, updates: UpdateTransactionInput) => {
+    (
+      id: string,
+      updates: UpdateTransactionInput,
+      shares?: { participantName: string; contactId?: string; isPayerShare: boolean; expectedAmount: number }[]
+    ) => {
       const existingIndex = state.transactions.findIndex((t) => t.id === id)
       if (existingIndex === -1) return
 
@@ -554,6 +599,102 @@ export function useFinance(storage: StorageAdapter = defaultAppStorage) {
         ...existingTx,
         ...updates,
         amount: updates.amount !== undefined ? Number(updates.amount) : existingTx.amount,
+      }
+
+      let nextExpenseShares = state.expenseShares ?? []
+      let nextSharedContacts = state.sharedContacts ?? []
+      const sharesToDelete: string[] = []
+      const sharesToUpsert: ExpenseShare[] = []
+      const contactsToUpsert: SharedContact[] = []
+
+      if (shares !== undefined) {
+        const existingSharesForTx = nextExpenseShares.filter((s) => s.expenseTransactionId === id)
+        const otherShares = nextExpenseShares.filter((s) => s.expenseTransactionId !== id)
+
+        if (shares.length > 0) {
+          updatedTx.isShared = true
+          const usedExistingIds = new Set<string>()
+
+          const finalShares: ExpenseShare[] = shares.map((s) => {
+            const nameTrimmed = s.participantName.trim()
+            // Reutilizar ID de share previo si coincide para no romper enlaces de reembolsos existentes
+            const matchedExisting = existingSharesForTx.find(
+              (ex) =>
+                !usedExistingIds.has(ex.id) &&
+                ((s.isPayerShare && ex.isPayerShare) ||
+                  (!s.isPayerShare && !ex.isPayerShare && ex.participantName.toLowerCase() === nameTrimmed.toLowerCase()))
+            )
+
+            if (matchedExisting) {
+              usedExistingIds.add(matchedExisting.id)
+              const updatedShare: ExpenseShare = {
+                ...matchedExisting,
+                participantName: nameTrimmed,
+                contactId: s.contactId,
+                isPayerShare: s.isPayerShare,
+                expectedAmount: Number(s.expectedAmount),
+                updatedAt: new Date().toISOString(),
+              }
+              sharesToUpsert.push(updatedShare)
+              return updatedShare
+            } else {
+              const newShare: ExpenseShare = {
+                id: crypto.randomUUID(),
+                expenseTransactionId: id,
+                contactId: s.contactId,
+                participantName: nameTrimmed,
+                isPayerShare: s.isPayerShare,
+                expectedAmount: Number(s.expectedAmount),
+                createdAt: new Date().toISOString(),
+                updatedAt: new Date().toISOString(),
+              }
+              sharesToUpsert.push(newShare)
+              return newShare
+            }
+          })
+
+          // Eliminar las que ya no están en la lista
+          existingSharesForTx.forEach((ex) => {
+            if (!usedExistingIds.has(ex.id)) {
+              sharesToDelete.push(ex.id)
+            }
+          })
+
+          // Guardar contactos nuevos
+          shares.forEach((s) => {
+            if (!s.isPayerShare) {
+              const name = s.participantName.trim()
+              const exists =
+                nextSharedContacts.some((c) => c.displayName.toLowerCase() === name.toLowerCase()) ||
+                contactsToUpsert.some((c) => c.displayName.toLowerCase() === name.toLowerCase())
+              if (!exists && name.length > 0) {
+                const newC: SharedContact = {
+                  id: s.contactId || crypto.randomUUID(),
+                  displayName: name,
+                  createdAt: new Date().toISOString(),
+                  updatedAt: new Date().toISOString(),
+                }
+                contactsToUpsert.push(newC)
+              }
+            }
+          })
+
+          nextExpenseShares = [...finalShares, ...otherShares]
+          nextSharedContacts = [...contactsToUpsert, ...nextSharedContacts]
+        } else {
+          // Si shares es [] o se desmarca compartido
+          updatedTx.isShared = false
+          existingSharesForTx.forEach((ex) => {
+            sharesToDelete.push(ex.id)
+          })
+          nextExpenseShares = otherShares
+        }
+      } else if (updates.isShared === false && existingTx.isShared) {
+        const existingSharesForTx = nextExpenseShares.filter((s) => s.expenseTransactionId === id)
+        existingSharesForTx.forEach((ex) => {
+          sharesToDelete.push(ex.id)
+        })
+        nextExpenseShares = nextExpenseShares.filter((s) => s.expenseTransactionId !== id)
       }
 
       const nextTransactions = [...state.transactions]
@@ -585,6 +726,8 @@ export function useFinance(storage: StorageAdapter = defaultAppStorage) {
         {
           ...state,
           transactions: nextTransactions,
+          expenseShares: nextExpenseShares,
+          sharedContacts: nextSharedContacts,
           recurring: nextRecurring,
         },
         updatedTx.id
@@ -592,6 +735,21 @@ export function useFinance(storage: StorageAdapter = defaultAppStorage) {
       dispatchSync('transaction', 'update', updatedTx.id, updatedTx, (sb, uid) =>
         syncUpdateTransaction(sb, uid, updatedTx)
       )
+      sharesToDelete.forEach((sId) => {
+        dispatchSync('expense_share', 'delete', sId, { id: sId }, (sb, uid) =>
+          syncDeleteExpenseShare(sb, uid, sId)
+        )
+      })
+      sharesToUpsert.forEach((share) => {
+        dispatchSync('expense_share', 'insert', share.id, share, (sb, uid) =>
+          syncUpsertExpenseShare(sb, uid, share)
+        )
+      })
+      contactsToUpsert.forEach((c) => {
+        dispatchSync('shared_contact', 'insert', c.id, c, (sb, uid) =>
+          syncUpsertSharedContact(sb, uid, c)
+        )
+      })
       recsToSync.forEach((rToSync) => {
         dispatchSync('recurring', 'update', rToSync.id, rToSync, (sb, uid) =>
           syncUpsertRecurring(sb, uid, rToSync)
@@ -1716,12 +1874,37 @@ export function useFinance(storage: StorageAdapter = defaultAppStorage) {
 
     // Métricas de gastos brutos vs netos e ingresos reales vs reembolsos
     const grossMonthExpenses = selectGrossExpensesForPeriod(state.transactions, now, 'month')
-    const linkedReimbursementsMonth = selectLinkedReimbursementsForPeriod(state.transactions, now, 'month')
-    const reimbursementsMonth = selectReimbursementsReceived(state.transactions, now, 'month')
-    const netMonthExpenses = selectNetPersonalExpensesForPeriod(state.transactions, now, 'month')
-    const netCategoryExpenses = selectNetExpensesByCategory(state.transactions, state.categories, now, 'month')
+    const linkedReimbursementsMonth = selectLinkedReimbursementsForPeriod(
+      state.transactions,
+      now,
+      'month',
+      state.cashTransactions ?? []
+    )
+    const reimbursementsMonth = selectReimbursementsReceived(
+      state.transactions,
+      now,
+      'month',
+      state.cashTransactions ?? []
+    )
+    const netMonthExpenses = selectNetPersonalExpensesForPeriod(
+      state.transactions,
+      now,
+      'month',
+      state.cashTransactions ?? []
+    )
+    const netCategoryExpenses = selectNetExpensesByCategory(
+      state.transactions,
+      state.categories,
+      now,
+      'month',
+      state.cashTransactions ?? []
+    )
     const realMonthIncome = selectRealIncome(state.transactions, now)
-    const pendingReimbursements = selectPendingReimbursements(state.expenseShares ?? [], state.transactions)
+    const pendingReimbursements = selectPendingReimbursements(
+      state.expenseShares ?? [],
+      state.transactions,
+      state.cashTransactions ?? []
+    )
 
     const monthlyPlanSummary = selectMonthlyPlanCardSummary(
       state.planSettings,
@@ -1810,6 +1993,7 @@ export function useFinance(storage: StorageAdapter = defaultAppStorage) {
     state.planSettings,
     state.variableExpenseEstimates,
     state.expenseShares,
+    state.cashTransactions,
   ])
 
   /* ==========================================================================

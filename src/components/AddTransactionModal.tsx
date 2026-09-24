@@ -4,6 +4,7 @@ import type {
   Category,
   CreateTransactionInput,
   ExpenseNature,
+  ExpenseShare,
   IncomeKind,
   SharedContact,
   SpecialMovementType,
@@ -22,6 +23,7 @@ interface AddTransactionModalProps {
   accounts: Account[]
   categories: Category[]
   transactions?: Transaction[]
+  expenseShares?: ExpenseShare[]
   sharedContacts?: SharedContact[]
   cashTransactions?: CashTransaction[]
   defaultType?: 'expense' | 'income' | 'transfer'
@@ -31,7 +33,11 @@ interface AddTransactionModalProps {
     value: CreateTransactionInput,
     shares: { participantName: string; contactId?: string; isPayerShare: boolean; expectedAmount: number }[]
   ) => void
-  onUpdate?: (id: string, value: Partial<CreateTransactionInput>) => void
+  onUpdate?: (
+    id: string,
+    value: Partial<CreateTransactionInput>,
+    shares?: { participantName: string; contactId?: string; isPayerShare: boolean; expectedAmount: number }[]
+  ) => void
   onDelete?: (id: string) => void
   onAddCashTransaction?: (input: CreateCashTransactionInput) => void
   onUpdateCashTransaction?: (id: string, patch: UpdateCashTransactionInput) => void
@@ -52,6 +58,7 @@ export function AddTransactionModal({
   accounts,
   categories,
   transactions = [],
+  expenseShares = [],
   sharedContacts = [],
   cashTransactions = [],
   defaultType = 'expense',
@@ -80,6 +87,10 @@ export function AddTransactionModal({
 
   // Sub-modal / Confirmación de edición de retirada vinculada
   const [pendingLinkedUpdatePayload, setPendingLinkedUpdatePayload] = useState<CreateTransactionInput | null>(null)
+
+  // Confirmación al desmarcar gasto compartido con datos existentes
+  const [showUnshareConfirm, setShowUnshareConfirm] = useState(false)
+  const [unshareHasReimbursements, setUnshareHasReimbursements] = useState(false)
 
   // Estados para Tipo Especial y Naturaleza
   const [isCashWithdrawal, setIsCashWithdrawal] = useState(false)
@@ -138,11 +149,34 @@ export function AddTransactionModal({
       setToAccountId(initialTransaction.toAccountId ?? accounts.find((a) => a.id !== initialTransaction.accountId)?.id ?? '')
       setDate(initialTransaction.date.slice(0, 10))
       setNote(initialTransaction.note ?? '')
-      setIsShared(Boolean(initialTransaction.isShared))
+      
+      const sharesForTx = (expenseShares || []).filter((s) => s.expenseTransactionId === initialTransaction.id)
+      const initialIsShared = Boolean(initialTransaction.isShared) || sharesForTx.length > 0
+      setIsShared(initialIsShared)
+      if (initialIsShared && sharesForTx.length > 0) {
+        const payerShare = sharesForTx.find((s) => s.isPayerShare)
+        setSelfParticipates(Boolean(payerShare))
+        const extParticipants = sharesForTx
+          .filter((s) => !s.isPayerShare)
+          .map((s) => ({
+            id: s.id,
+            name: s.participantName,
+            contactId: s.contactId,
+            customAmount: s.expectedAmount,
+          }))
+        setParticipants(extParticipants)
+        setSplitType('equal')
+      } else {
+        setSelfParticipates(true)
+        setSplitType('equal')
+        setParticipants([])
+      }
+
       setExpenseNature(initialTransaction.expenseNature || 'variable')
       setGiftRecipient(initialTransaction.giftRecipient ?? '')
       setConfirmDelete(false)
       setPendingLinkedUpdatePayload(null)
+      setShowUnshareConfirm(false)
     } else {
       setType(defaultType)
       setIncomeKind('income')
@@ -248,6 +282,32 @@ export function AddTransactionModal({
     })
   }
 
+  const handleToggleShared = (checked: boolean) => {
+    if (
+      !checked &&
+      isEditing &&
+      (initialTransaction?.isShared || (expenseShares || []).some((s) => s.expenseTransactionId === initialTransaction?.id))
+    ) {
+      const sharesForTx = (expenseShares || []).filter((s) => s.expenseTransactionId === initialTransaction?.id)
+      const hasReimb =
+        transactions.some(
+          (t) =>
+            t.type === 'income' &&
+            t.incomeKind === 'reimbursement' &&
+            (t.parentExpenseId === initialTransaction?.id || sharesForTx.some((s) => s.id === t.expenseShareId))
+        ) ||
+        cashTransactions.some(
+          (c) =>
+            c.type === 'income' &&
+            c.bankTransactionId === initialTransaction?.id
+        )
+      setUnshareHasReimbursements(hasReimb)
+      setShowUnshareConfirm(true)
+      return
+    }
+    setIsShared(checked)
+  }
+
   const submit = () => {
     if (!numericAmount || numericAmount <= 0) return
     if (!description.trim()) return
@@ -284,7 +344,20 @@ export function AddTransactionModal({
           return
         }
       }
-      onUpdate(initialTransaction.id, payload)
+
+      if (type === 'expense' && isShared && computedShares.length > 0) {
+        const sharesInput = computedShares.map((s) => ({
+          participantName: s.participantName,
+          contactId: s.contactId,
+          isPayerShare: s.isPayerShare,
+          expectedAmount: s.amount,
+        }))
+        onUpdate(initialTransaction.id, { ...payload, isShared: true }, sharesInput)
+      } else if (type === 'expense' && !isShared && initialTransaction.isShared) {
+        onUpdate(initialTransaction.id, { ...payload, isShared: false }, [])
+      } else {
+        onUpdate(initialTransaction.id, payload)
+      }
     } else if (type === 'expense' && isShared && onAddShared && computedShares.length > 0) {
       const sharesInput = computedShares.map((s) => ({
         participantName: s.participantName,
@@ -305,7 +378,17 @@ export function AddTransactionModal({
   const executeLinkedUpdate = (updateCash: boolean) => {
     if (!pendingLinkedUpdatePayload || !initialTransaction || !onUpdate) return
 
-    onUpdate(initialTransaction.id, pendingLinkedUpdatePayload)
+    if (pendingLinkedUpdatePayload.type === 'expense' && isShared && computedShares.length > 0) {
+      const sharesInput = computedShares.map((s) => ({
+        participantName: s.participantName,
+        contactId: s.contactId,
+        isPayerShare: s.isPayerShare,
+        expectedAmount: s.amount,
+      }))
+      onUpdate(initialTransaction.id, { ...pendingLinkedUpdatePayload, isShared: true }, sharesInput)
+    } else {
+      onUpdate(initialTransaction.id, pendingLinkedUpdatePayload)
+    }
 
     if (updateCash && linkedCashTx && onUpdateCashTransaction) {
       onUpdateCashTransaction(linkedCashTx.id, {
@@ -622,7 +705,7 @@ export function AddTransactionModal({
         )}
 
         {/* Sección Gasto Compartido (discreta, OFF por defecto) */}
-        {type === 'expense' && !isEditing && (
+        {type === 'expense' && (
           <div className="shared-expense-section">
             <div className="shared-toggle-row">
               <div className="shared-toggle-text">
@@ -633,7 +716,7 @@ export function AddTransactionModal({
                 <input
                   type="checkbox"
                   checked={isShared}
-                  onChange={(e) => setIsShared(e.target.checked)}
+                  onChange={(e) => handleToggleShared(e.target.checked)}
                 />
                 <span className="switch-slider" />
               </label>
@@ -798,6 +881,70 @@ export function AddTransactionModal({
                   onClick={() => setPendingLinkedUpdatePayload(null)}
                 >
                   Cancelar
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Confirmación al desmarcar reparto compartido */}
+        {showUnshareConfirm && (
+          <div
+            style={{
+              position: 'fixed',
+              top: 0,
+              left: 0,
+              right: 0,
+              bottom: 0,
+              backgroundColor: 'rgba(0, 0, 0, 0.65)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              zIndex: 1200,
+              padding: 16,
+              backdropFilter: 'blur(4px)',
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div
+              style={{
+                background: 'var(--card-bg, #ffffff)',
+                borderRadius: 'var(--radius-lg, 16px)',
+                padding: '22px 20px',
+                maxWidth: 380,
+                width: '100%',
+                boxShadow: '0 20px 25px -5px rgba(0,0,0,0.3)',
+                border: '1px solid var(--border, #e2e8f0)',
+              }}
+            >
+              <h4 style={{ margin: '0 0 10px', fontSize: '1.05rem', fontWeight: 700, color: 'var(--text-main)' }}>
+                Eliminar reparto compartido
+              </h4>
+              <p style={{ margin: '0 0 18px', fontSize: '0.88rem', lineHeight: 1.45, color: 'var(--text-muted)' }}>
+                {unshareHasReimbursements
+                  ? 'Atención: Este gasto ya tiene cobros o reembolsos registrados asociados. Si eliminas el reparto, el gasto pasará a contar como 100% gasto personal y se desvincularán los participantes. ¿Deseas continuar?'
+                  : 'Este gasto tiene información de reparto asociada. ¿Quieres eliminar el reparto y que vuelva a contar completo como tu gasto personal?'}
+              </p>
+              <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+                <button
+                  type="button"
+                  className="secondary-button"
+                  style={{ padding: '8px 16px', fontSize: '0.88rem' }}
+                  onClick={() => setShowUnshareConfirm(false)}
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="button"
+                  className="danger-button"
+                  style={{ padding: '8px 16px', fontSize: '0.88rem' }}
+                  onClick={() => {
+                    setShowUnshareConfirm(false)
+                    setIsShared(false)
+                    setParticipants([])
+                  }}
+                >
+                  Eliminar reparto
                 </button>
               </div>
             </div>

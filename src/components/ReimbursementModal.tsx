@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect } from 'react'
-import type { Account, ExpenseShare, Transaction } from '../models/finance'
+import type { Account, CashTransaction, ExpenseShare, Transaction } from '../models/finance'
 import { money, shortDate } from '../utils/money'
 import { selectPendingDebtors } from '../utils/sharedExpenseSelectors'
 import { AppIcon } from '../ui/icons'
@@ -10,16 +10,18 @@ interface ReimbursementModalProps {
   accounts: Account[]
   transactions: Transaction[]
   expenseShares: ExpenseShare[]
+  cashTransactions?: CashTransaction[]
   initialShareId?: string
   initialExpenseId?: string
   onSubmit: (input: {
     parentExpenseId?: string
     expenseShareId?: string
     amount: number
-    accountId: string
+    accountId?: string
     date: string
     note?: string
     description?: string
+    paymentMethod?: 'bank' | 'cash'
   }) => void
 }
 
@@ -29,10 +31,12 @@ export function ReimbursementModal({
   accounts,
   transactions,
   expenseShares,
+  cashTransactions = [],
   initialShareId,
   initialExpenseId,
   onSubmit,
 }: ReimbursementModalProps) {
+  const [paymentMethod, setPaymentMethod] = useState<'bank' | 'cash'>('bank')
   const [selectedShareId, setSelectedShareId] = useState<string>(initialShareId || '')
   const [amount, setAmount] = useState('')
   const [accountId, setAccountId] = useState(() => accounts.find((a) => a.type === 'spending')?.id ?? accounts[0]?.id ?? 'daily')
@@ -42,8 +46,8 @@ export function ReimbursementModal({
   const [customDescription, setCustomDescription] = useState('')
 
   const pendingDebtors = useMemo(() => {
-    return selectPendingDebtors(expenseShares, transactions)
-  }, [expenseShares, transactions])
+    return selectPendingDebtors(expenseShares, transactions, cashTransactions)
+  }, [expenseShares, transactions, cashTransactions])
 
   // Todas las shares externas pendientes
   const pendingShares = useMemo(() => {
@@ -55,18 +59,28 @@ export function ReimbursementModal({
 
     expenseShares.filter((s) => !s.isPayerShare).forEach((s) => {
       const parentTx = transactions.find((t) => t.id === s.expenseTransactionId)
-      const reimbursements = transactions.filter(
+      const bankReimbursements = transactions.filter(
         (t) => t.type === 'income' && t.incomeKind === 'reimbursement' && t.expenseShareId === s.id
       )
-      const received = reimbursements.reduce((sum, t) => sum + t.amount, 0)
-      const pending = Math.max(0, Math.round((s.expectedAmount - received) * 100) / 100)
+      const cashReimbursements = cashTransactions.filter(
+        (c) =>
+          c.type === 'income' &&
+          c.bankTransactionId === s.expenseTransactionId &&
+          (c.note?.includes(s.id) || !c.note?.includes('[share:'))
+      )
+
+      const bankReceived = bankReimbursements.reduce((sum, t) => sum + t.amount, 0)
+      const cashReceived = cashReimbursements.reduce((sum, c) => sum + c.amount, 0)
+      const totalReceived = bankReceived + cashReceived
+
+      const pending = Math.max(0, Math.round((s.expectedAmount - totalReceived) * 100) / 100)
       if (pending > 0) {
         list.push({ share: s, pendingAmount: pending, expense: parentTx })
       }
     })
 
     return list
-  }, [expenseShares, transactions])
+  }, [expenseShares, transactions, cashTransactions])
 
   useEffect(() => {
     if (initialShareId) {
@@ -102,26 +116,34 @@ export function ReimbursementModal({
   const handleSubmit = () => {
     const numericAmount = Number(amount.replace(',', '.'))
     if (!numericAmount || numericAmount <= 0) return
-    if (!accountId) return
+    if (paymentMethod === 'bank' && !accountId) return
 
     if (isCustom) {
       if (!customDescription.trim()) return
       onSubmit({
         amount: numericAmount,
-        accountId,
+        accountId: paymentMethod === 'bank' ? accountId : undefined,
         date: new Date(date).toISOString(),
-        description: `Bizum / Reembolso · ${customDescription.trim()}`,
+        description:
+          paymentMethod === 'cash'
+            ? `Efectivo / Reembolso · ${customDescription.trim()}`
+            : `Bizum / Reembolso · ${customDescription.trim()}`,
         note: note.trim() || undefined,
+        paymentMethod,
       })
     } else if (selectedItem) {
       onSubmit({
         parentExpenseId: selectedItem.share.expenseTransactionId,
         expenseShareId: selectedItem.share.id,
         amount: numericAmount,
-        accountId,
+        accountId: paymentMethod === 'bank' ? accountId : undefined,
         date: new Date(date).toISOString(),
-        description: `Bizum ${selectedItem.share.participantName} · ${selectedItem.expense?.description || 'Gasto compartido'}`,
+        description:
+          paymentMethod === 'cash'
+            ? `Efectivo ${selectedItem.share.participantName} · ${selectedItem.expense?.description || 'Gasto compartido'}`
+            : `Bizum ${selectedItem.share.participantName} · ${selectedItem.expense?.description || 'Gasto compartido'}`,
         note: note.trim() || undefined,
+        paymentMethod,
       })
     }
 
@@ -136,6 +158,27 @@ export function ReimbursementModal({
           <button className="close-btn" onClick={onClose} aria-label="Cerrar">
             <AppIcon name="x" size={18} />
           </button>
+        </div>
+
+        {/* Selector de Método de Cobro: Banco / Bizum vs Efectivo */}
+        <div className="form-group">
+          <label className="section-label">¿Dónde recibiste el dinero?</label>
+          <div className="segmented" style={{ marginTop: 4 }}>
+            <button
+              type="button"
+              className={paymentMethod === 'bank' ? 'active' : ''}
+              onClick={() => setPaymentMethod('bank')}
+            >
+              Banco / Bizum
+            </button>
+            <button
+              type="button"
+              className={paymentMethod === 'cash' ? 'active' : ''}
+              onClick={() => setPaymentMethod('cash')}
+            >
+              Efectivo
+            </button>
+          </div>
         </div>
 
         {/* Lista de gastos pendientes para selección rápida */}
@@ -218,18 +261,45 @@ export function ReimbursementModal({
           )}
         </div>
 
-        <div className="form-group">
-          <label>
-            Ingresar en cuenta
-            <select value={accountId} onChange={(e) => setAccountId(e.target.value)}>
-              {accounts.map((a) => (
-                <option key={a.id} value={a.id}>
-                  {a.name} ({a.type === 'spending' ? 'Diaria' : 'Ahorro'})
-                </option>
-              ))}
-            </select>
-          </label>
-        </div>
+        {paymentMethod === 'bank' ? (
+          <div className="form-group">
+            <label>
+              Ingresar en cuenta
+              <select value={accountId} onChange={(e) => setAccountId(e.target.value)}>
+                {accounts.map((a) => (
+                  <option key={a.id} value={a.id}>
+                    {a.name} ({a.type === 'spending' ? 'Diaria' : 'Ahorro'})
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+        ) : (
+          <div
+            className="form-group"
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 10,
+              padding: '12px 14px',
+              borderRadius: 'var(--radius-md, 12px)',
+              background: 'rgba(34, 197, 94, 0.1)',
+              border: '1px solid rgba(34, 197, 94, 0.25)',
+              color: '#16a34a',
+              fontSize: '0.88rem',
+            }}
+          >
+            <AppIcon name="banknote" size={20} />
+            <div>
+              <strong>Aumentará el saldo físico de Efectivo</strong>
+              <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
+                {amount && Number(amount.replace(',', '.')) > 0
+                  ? `+${money(Number(amount.replace(',', '.')))} en Efectivo · Tu banco no cambiará`
+                  : 'Tu saldo bancario no cambiará'}
+              </div>
+            </div>
+          </div>
+        )}
 
         <div className="form-group">
           <label>

@@ -107,6 +107,7 @@ import {
   splitExpenseEqually,
   selectGrossExpenses,
   selectGrossExpensesForPeriod,
+  selectLinkedReimbursementsForExpense,
   selectLinkedReimbursementsForPeriod,
   selectReimbursementsReceived,
   selectNetPersonalExpenses,
@@ -6831,11 +6832,11 @@ describe('Fase 18 — Identificación Visual de Versión y Build', () => {
   it('314. Versioning: única fuente de verdad y formato de visualización exacto', () => {
     assert.equal(APP_NAME, 'PocketFlow')
     assert.equal(APP_VERSION, '0.18.0')
-    assert.equal(APP_BUILD, '2026.09.24-02')
+    assert.equal(APP_BUILD, '2026.09.24-03')
  
     assert.equal(getAppVersionString(), 'PocketFlow v0.18.0')
-    assert.equal(getAppBuildString(), 'Build 2026.09.24-02')
-    assert.equal(getAppFullVersionLabel(), 'PocketFlow v0.18.0 · Build 2026.09.24-02')
+    assert.equal(getAppBuildString(), 'Build 2026.09.24-03')
+    assert.equal(getAppFullVersionLabel(), 'PocketFlow v0.18.0 · Build 2026.09.24-03')
   })
 })
 
@@ -11704,6 +11705,376 @@ describe('Fase 41 — Fase de Pulido y Corrección del Módulo Efectivo / Cajero
 
     const freeSavings = selectFreeSavingsWithReserves(savingsBalance, emergencyFund, goalsTotal, manualReserves)
     assert.equal(freeSavings, 700, 'Ahorro libre = 2500 - 1800 = 700 € con total independencia del efectivo físico')
+  })
+})
+
+describe('Fase 42: Corrección de Flujos Existentes (Reembolso en Efectivo y Edición de Gasto Compartido)', () => {
+  // 1. reembolso recibido en Banco mantiene comportamiento actual
+  it('507. 1. Reembolso recibido en Banco crea ingreso bancario de reembolso y mantiene comportamiento existente', () => {
+    const parentTx: Transaction = {
+      id: 'tx_shared_1',
+      type: 'expense',
+      amount: 60,
+      description: 'Cena amigos',
+      accountId: 'daily',
+      date: '2026-09-10',
+      isShared: true,
+    }
+    const share: ExpenseShare = {
+      id: 'share_sergi_1',
+      expenseTransactionId: 'tx_shared_1',
+      participantName: 'Sergi',
+      isPayerShare: false,
+      expectedAmount: 30,
+      createdAt: '2026-09-10',
+      updatedAt: '2026-09-10',
+    }
+    const bankReimbTx: Transaction = {
+      id: 'tx_reimb_1',
+      type: 'income',
+      incomeKind: 'reimbursement',
+      amount: 30,
+      description: 'Bizum Sergi · Cena amigos',
+      accountId: 'daily',
+      date: '2026-09-12',
+      parentExpenseId: 'tx_shared_1',
+      expenseShareId: 'share_sergi_1',
+    }
+
+    const txs = [parentTx, bankReimbTx]
+    const linkedReimbs = selectLinkedReimbursementsForExpense('tx_shared_1', txs, [])
+    assert.equal(linkedReimbs, 30)
+
+    const netExpenses = selectNetPersonalExpensesForPeriod(txs, new Date('2026-09-15'), 'month', [])
+    assert.equal(netExpenses, 30, 'Gasto neto debe ser 60 - 30 = 30 €')
+
+    const details = selectExpenseShareDetails('tx_shared_1', txs, [share], [])
+    assert.equal(details.totalPendingToRecover, 0, 'La deuda de Sergi queda completamente saldada')
+  })
+
+  // 2. reembolso recibido en Efectivo aumenta cash balance
+  it('508. 2. Reembolso recibido en Efectivo crea CashTransaction income y aumenta el saldo de Efectivo', () => {
+    const initialCashTxs: CashTransaction[] = [
+      { id: 'c_init', type: 'income', amount: 50, date: '2026-09-01', description: 'Saldo inicial' },
+    ]
+    const initialBalance = selectCashBalance(initialCashTxs)
+    assert.equal(initialBalance, 50)
+
+    // Cobro de 30 € en efectivo por reembolso
+    const cashReimb: CashTransaction = {
+      id: 'c_reimb_1',
+      type: 'income',
+      amount: 30,
+      date: '2026-09-12',
+      description: 'Efectivo Sergi · Cena amigos',
+      bankTransactionId: 'tx_shared_1',
+      note: '[share:share_sergi_1]',
+    }
+
+    const updatedCashTxs = [cashReimb, ...initialCashTxs]
+    const newCashBalance = selectCashBalance(updatedCashTxs)
+    assert.equal(newCashBalance, 80, 'Saldo en efectivo aumenta de 50 a 80 €')
+  })
+
+  // 3. reembolso efectivo reduce gasto neto igual que Bizum
+  it('509. 3. Reembolso recibido en Efectivo reduce el gasto neto personal exactamente igual que si fuera Bizum', () => {
+    const parentTx: Transaction = {
+      id: 'tx_hsn_1',
+      type: 'expense',
+      amount: 60,
+      description: 'Gasto HSN',
+      accountId: 'daily',
+      date: '2026-09-10',
+      isShared: true,
+    }
+    const cashReimb: CashTransaction = {
+      id: 'c_hsn_reimb',
+      type: 'income',
+      amount: 30,
+      date: '2026-09-12',
+      description: 'Efectivo Sergi · Gasto HSN',
+      bankTransactionId: 'tx_hsn_1',
+    }
+
+    const txs = [parentTx]
+    const cashTxs = [cashReimb]
+
+    const netExpenses = selectNetPersonalExpensesForPeriod(txs, new Date('2026-09-15'), 'month', cashTxs)
+    assert.equal(netExpenses, 30, 'Gasto neto debe reducirse de 60 € a 30 €')
+
+    const linkedReimbs = selectLinkedReimbursementsForExpense('tx_hsn_1', txs, cashTxs)
+    assert.equal(linkedReimbs, 30)
+  })
+
+  // 4. reembolso efectivo no crea ingreso bancario
+  it('510. 4. Reembolso en efectivo no crea ingreso bancario ficticio y no altera las cuentas bancarias', () => {
+    const accounts: Account[] = [
+      { id: 'daily', name: 'Cuenta diaria', type: 'spending', initialBalance: 500, balance: 440 },
+    ]
+    const bankTxs: Transaction[] = [
+      { id: 'tx_hsn_1', type: 'expense', amount: 60, accountId: 'daily', description: 'Gasto HSN', date: '2026-09-10', isShared: true },
+    ]
+    const cashTxs: CashTransaction[] = [
+      { id: 'c_reimb', type: 'income', amount: 30, description: 'Efectivo Sergi', bankTransactionId: 'tx_hsn_1', date: '2026-09-12' },
+    ]
+
+    const reconciled = reconcileAccounts(accounts, bankTxs)
+    assert.equal(reconciled[0].balance, 440, 'El saldo bancario sigue siendo 500 - 60 = 440 € sin ingresos bancarios ficticios')
+    assert.equal(bankTxs.length, 1, 'No se añade ninguna transacción bancaria extra')
+  })
+
+  // 5. no se duplica un reembolso
+  it('511. 5. Una sola fuente de verdad: no se duplica el reembolso ni se resta dos veces el gasto neto', () => {
+    const parentTx: Transaction = {
+      id: 'tx_1',
+      type: 'expense',
+      amount: 100,
+      accountId: 'daily',
+      description: 'Compra compartida',
+      date: '2026-09-05',
+      isShared: true,
+    }
+    const cashReimb: CashTransaction = {
+      id: 'c_1',
+      type: 'income',
+      amount: 50,
+      description: 'Efectivo devolución',
+      bankTransactionId: 'tx_1',
+      date: '2026-09-06',
+    }
+
+    const netExpense = selectNetPersonalExpensesForPeriod([parentTx], new Date('2026-09-15'), 'month', [cashReimb])
+    assert.equal(netExpense, 50, 'El gasto neto se resta exactamente una vez (100 - 50 = 50 €)')
+  })
+
+  // 6. gasto normal puede convertirse en compartido al editar
+  // 7. se crea expenseShare sin duplicar transaction
+  // 8. net personal expense se recalcula correctamente
+  it('512. 6, 7 & 8. Convertir gasto normal (60 €) en compartido al editar crea expenseShares sin duplicar la transacción bancaria y recalcula el gasto neto', () => {
+    const originalTx: Transaction = {
+      id: 'tx_restaurante',
+      type: 'expense',
+      amount: 60,
+      description: 'Restaurante',
+      accountId: 'daily',
+      date: '2026-09-08',
+      isShared: false,
+    }
+
+    // Inicialmente el gasto neto es 60 €
+    let net = selectNetPersonalExpensesForPeriod([originalTx], new Date('2026-09-15'), 'month', [])
+    assert.equal(net, 60)
+
+    // Se edita para compartirlo 50/50 con Sergi
+    const computedShares = splitExpenseEqually(60, [{ name: 'Sergi' }], true, 'Tú')
+    assert.equal(computedShares.length, 2)
+    assert.equal(computedShares[0].amount, 30) // Tú
+    assert.equal(computedShares[1].amount, 30) // Sergi
+
+    const createdShares: ExpenseShare[] = computedShares.map((s) => ({
+      id: s.isPayerShare ? 'share_payer' : 'share_sergi',
+      expenseTransactionId: originalTx.id,
+      participantName: s.participantName,
+      isPayerShare: s.isPayerShare,
+      expectedAmount: s.amount,
+      createdAt: '2026-09-08',
+      updatedAt: '2026-09-08',
+    }))
+
+    const updatedTx: Transaction = {
+      ...originalTx,
+      isShared: true,
+    }
+
+    const txs = [updatedTx]
+    assert.equal(txs.length, 1, 'La transacción original se conserva sin duplicados')
+    assert.equal(txs[0].id, 'tx_restaurante')
+
+    // Ahora el estado de cobro para Sergi muestra 30 € pendientes
+    const pendingDebtors = selectPendingDebtors(createdShares, txs, [])
+    assert.equal(pendingDebtors.length, 1)
+    assert.equal(pendingDebtors[0].name, 'Sergi')
+    assert.equal(pendingDebtors[0].totalPending, 30)
+  })
+
+  // 9. gasto compartido existente puede editar reparto
+  it('513. 9. Editar un gasto ya compartido actualiza personas e importes y recalcula las deudas', () => {
+    const tx: Transaction = {
+      id: 'tx_viaje',
+      type: 'expense',
+      amount: 90,
+      description: 'Gasolina viaje',
+      accountId: 'daily',
+      date: '2026-09-02',
+      isShared: true,
+    }
+
+    // Reparto inicial entre 2 personas: 45 € cada una
+    const initialShares: ExpenseShare[] = [
+      { id: 'sh_payer', expenseTransactionId: 'tx_viaje', participantName: 'Tú', isPayerShare: true, expectedAmount: 45, createdAt: '2026-09-02', updatedAt: '2026-09-02' },
+      { id: 'sh_sergi', expenseTransactionId: 'tx_viaje', participantName: 'Sergi', isPayerShare: false, expectedAmount: 45, createdAt: '2026-09-02', updatedAt: '2026-09-02' },
+    ]
+
+    let debtors = selectPendingDebtors(initialShares, [tx], [])
+    assert.equal(debtors[0].totalPending, 45)
+
+    // Se añade una tercera persona (Marta), pasando a 30 € cada una
+    const newSharesInput = splitExpenseEqually(90, [{ name: 'Sergi' }, { name: 'Marta' }], true, 'Tú')
+    const updatedShares: ExpenseShare[] = newSharesInput.map((s) => ({
+      id: s.participantName === 'Sergi' ? 'sh_sergi' : crypto.randomUUID(),
+      expenseTransactionId: 'tx_viaje',
+      participantName: s.participantName,
+      isPayerShare: s.isPayerShare,
+      expectedAmount: s.amount,
+      createdAt: '2026-09-02',
+      updatedAt: '2026-09-03',
+    }))
+
+    debtors = selectPendingDebtors(updatedShares, [tx], [])
+    assert.equal(debtors.length, 2)
+    assert.equal(debtors.find((d) => d.name === 'Sergi')?.totalPending, 30)
+    assert.equal(debtors.find((d) => d.name === 'Marta')?.totalPending, 30)
+  })
+
+  // 10. desmarcar compartido pide confirmación
+  // 11. eliminar reparto conserva transacción original
+  it('514. 10 & 11. Eliminar reparto desmarca compartido, borra expenseShares y el gasto vuelve a contar completo como personal', () => {
+    const originalTx: Transaction = {
+      id: 'tx_hotel',
+      type: 'expense',
+      amount: 120,
+      description: 'Hotel',
+      accountId: 'daily',
+      date: '2026-09-05',
+      isShared: true,
+    }
+    const shares: ExpenseShare[] = [
+      { id: 'sh_p', expenseTransactionId: 'tx_hotel', participantName: 'Tú', isPayerShare: true, expectedAmount: 60, createdAt: '2026-09-05', updatedAt: '2026-09-05' },
+      { id: 'sh_ext', expenseTransactionId: 'tx_hotel', participantName: 'Alex', isPayerShare: false, expectedAmount: 60, createdAt: '2026-09-05', updatedAt: '2026-09-05' },
+    ]
+
+    // Al desmarcar compartido:
+    const unsharedTx: Transaction = {
+      ...originalTx,
+      isShared: false,
+    }
+    const remainingShares = shares.filter((s) => s.expenseTransactionId !== 'tx_hotel')
+
+    assert.equal(remainingShares.length, 0, 'Las shares asociadas quedan eliminadas')
+    assert.equal(unsharedTx.amount, 120, 'La transacción original conserva sus 120 €')
+    assert.equal(unsharedTx.isShared, false)
+
+    const net = selectNetPersonalExpensesForPeriod([unsharedTx], new Date('2026-09-15'), 'month', [])
+    assert.equal(net, 120, 'El gasto vuelve a computar 100% como personal')
+  })
+
+  // 12. edición no rompe reembolsos existentes
+  it('515. 12. Editar el gasto preserva el ID de shares coincidentes para no romper reembolsos bancarios ni en efectivo ya recibidos', () => {
+    const tx: Transaction = {
+      id: 'tx_compra',
+      type: 'expense',
+      amount: 100,
+      description: 'Supermercado',
+      accountId: 'daily',
+      date: '2026-09-01',
+      isShared: true,
+    }
+    const existingShare: ExpenseShare = {
+      id: 'share_stable_id_123',
+      expenseTransactionId: 'tx_compra',
+      participantName: 'Sergi',
+      isPayerShare: false,
+      expectedAmount: 50,
+      createdAt: '2026-09-01',
+      updatedAt: '2026-09-01',
+    }
+    // Reembolso ya recibido en efectivo vinculado a tx_compra y share_stable_id_123
+    const cashReimb: CashTransaction = {
+      id: 'c_reimb_super',
+      type: 'income',
+      amount: 50,
+      date: '2026-09-02',
+      description: 'Efectivo Sergi · Supermercado',
+      bankTransactionId: 'tx_compra',
+      note: '[share:share_stable_id_123]',
+    }
+
+    // Al editar el gasto y cambiar la descripción o importe, se conserva share_stable_id_123
+    const newShares = [
+      { participantName: 'Tú', isPayerShare: true, expectedAmount: 50 },
+      { participantName: 'Sergi', isPayerShare: false, expectedAmount: 50 },
+    ]
+    const updatedShares = newShares.map((s) => {
+      if (s.participantName === 'Sergi') {
+        return {
+          ...existingShare,
+          expectedAmount: s.expectedAmount,
+          updatedAt: '2026-09-03',
+        }
+      }
+      return {
+        id: 'share_payer_new',
+        expenseTransactionId: 'tx_compra',
+        participantName: 'Tú',
+        isPayerShare: true,
+        expectedAmount: s.expectedAmount,
+        createdAt: '2026-09-01',
+        updatedAt: '2026-09-03',
+      }
+    })
+
+    const details = selectExpenseShareDetails('tx_compra', [tx], updatedShares, [cashReimb])
+    assert.equal(details.totalRecovered, 50, 'El reembolso previo de 50 € se mantiene perfectamente vinculado')
+    assert.equal(details.totalPendingToRecover, 0, 'No queda saldo pendiente')
+  })
+
+  // 13. ahorro / Plan siguen intactos
+  it('516. 13. Las operaciones de reembolso en efectivo y gastos compartidos no alteran el cálculo del Plan financiero ni ahorro', () => {
+    const accounts: Account[] = [
+      { id: 'daily', name: 'Cuenta diaria', type: 'spending', initialBalance: 1000, balance: 1000 },
+      { id: 'savings', name: 'Cuenta ahorro', type: 'savings', initialBalance: 3000, balance: 3000 },
+    ]
+    const planSettings: FinancialPlanSettings = {
+      id: 'plan_1',
+      monthlyIncomeExpected: 2000,
+      emergencyFundTargetMonths: 3,
+      emergencyFundCurrent: 1500,
+      targetSavingsRate: 20,
+      updatedAt: '2026-09-01',
+    }
+    const goals: SavingsGoal[] = [
+      { id: 'g1', name: 'Vacaciones', targetAmount: 1000, current: 500, currentAmount: 500, targetDate: '2026-12-31', createdAt: '2026-09-01', updatedAt: '2026-09-01' },
+    ]
+    const reserves: Reserve[] = [
+      { id: 'r1', name: 'Seguro', targetAmount: 400, currentAmount: 200, currentAllocated: 200, active: true, isEmergencyFund: false, createdAt: '2026-09-01', updatedAt: '2026-09-01' },
+    ]
+
+    const goalsAllocated = selectAssignedSavings(goals)
+    const reservesAllocated = selectTotalAllocatedToReserves(reserves)
+    const emergencyAllocated = planSettings.emergencyFundCurrent || 0
+    const freeSavings = selectFreeSavingsWithReserves(3000, emergencyAllocated, goalsAllocated, reservesAllocated)
+
+    // Ahorro libre: 3000 - (1500 + 500 + 200) = 800 €
+    assert.equal(freeSavings, 800)
+    assert.equal(goalsAllocated, 500)
+    assert.equal(reservesAllocated, 200)
+  })
+
+  // 14. Total refleja el efectivo recibido correctamente
+  it('517. 14. Total disponible (selectTotalAvailableMoney) refleja fielmente el efectivo recibido por reembolso', () => {
+    const accounts: Account[] = [
+      { id: 'daily', name: 'Cuenta diaria', type: 'spending', initialBalance: 1000, balance: 940 }, // 1000 - 60
+    ]
+    const cashTxs: CashTransaction[] = [
+      { id: 'c_init', type: 'income', amount: 20, description: 'Efectivo inicial', date: '2026-09-01' },
+      { id: 'c_reimb', type: 'income', amount: 30, description: 'Efectivo Sergi', bankTransactionId: 'tx_60', date: '2026-09-12' },
+    ]
+
+    const totals = selectTotalAvailableMoney(accounts, cashTxs)
+    // Banco: 940, Efectivo: 20 + 30 = 50, Total = 990 €
+    assert.equal(totals.bank, 940)
+    assert.equal(totals.cash, 50)
+    assert.equal(totals.total, 990)
   })
 })
 

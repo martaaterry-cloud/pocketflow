@@ -44,8 +44,13 @@ export function CalendarPage({
   }
 
   const monthDataByDay = useMemo(() => {
-    return selectMonthDailyNetStats(finance.transactions, year, month)
-  }, [finance.transactions, month, year])
+    return selectMonthDailyNetStats(
+      finance.transactions,
+      year,
+      month,
+      finance.cashTransactions ?? []
+    )
+  }, [finance.transactions, month, year, finance.cashTransactions])
 
   const selectedRows = useMemo(() => {
     return finance.transactions.filter((t) => {
@@ -59,12 +64,23 @@ export function CalendarPage({
   }, [finance.transactions, year, month, selectedDay])
 
   const monthTotalExpenses = useMemo(() => {
-    return selectNetPersonalExpensesForPeriod(finance.transactions, currentDate, 'month')
-  }, [finance.transactions, currentDate])
+    return selectNetPersonalExpensesForPeriod(
+      finance.transactions,
+      currentDate,
+      'month',
+      finance.cashTransactions ?? []
+    )
+  }, [finance.transactions, currentDate, finance.cashTransactions])
 
   const selectedDayStats = useMemo(() => {
-    return selectDayNetFinanceStats(finance.transactions, year, month, selectedDay)
-  }, [finance.transactions, year, month, selectedDay])
+    return selectDayNetFinanceStats(
+      finance.transactions,
+      year,
+      month,
+      selectedDay,
+      finance.cashTransactions ?? []
+    )
+  }, [finance.transactions, year, month, selectedDay, finance.cashTransactions])
 
   const monthLabel = new Intl.DateTimeFormat('es-ES', { month: 'long', year: 'numeric' }).format(currentDate)
 

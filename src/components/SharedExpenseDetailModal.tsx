@@ -1,4 +1,4 @@
-import type { ExpenseShare, Transaction } from '../models/finance'
+import type { CashTransaction, ExpenseShare, Transaction } from '../models/finance'
 import { money, shortDate } from '../utils/money'
 import { selectExpenseShareDetails } from '../utils/sharedExpenseSelectors'
 import { AppIcon } from '../ui/icons'
@@ -9,6 +9,7 @@ interface SharedExpenseDetailModalProps {
   expenseTransaction: Transaction
   allTransactions: Transaction[]
   expenseShares: ExpenseShare[]
+  cashTransactions?: CashTransaction[]
   onRecordReimbursement: (shareId: string) => void
   onEditExpense?: (tx: Transaction) => void
 }
@@ -19,6 +20,7 @@ export function SharedExpenseDetailModal({
   expenseTransaction,
   allTransactions,
   expenseShares,
+  cashTransactions = [],
   onRecordReimbursement,
   onEditExpense,
 }: SharedExpenseDetailModalProps) {
@@ -27,7 +29,8 @@ export function SharedExpenseDetailModal({
   const details = selectExpenseShareDetails(
     expenseTransaction.id,
     allTransactions,
-    expenseShares
+    expenseShares,
+    cashTransactions
   )
 
   return (

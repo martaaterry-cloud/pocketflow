@@ -1,4 +1,4 @@
-import type { Category, ExpenseShare, ExpenseShareStatus, Transaction } from '../models/finance'
+import type { Category, ExpenseShare, ExpenseShareStatus, Transaction, CashTransaction } from '../models/finance'
 import { normalizeCategoryAlias } from './categoryNormalization'
 
 export interface SplitResult {
@@ -18,16 +18,23 @@ export interface NetCategoryExpense {
 }
 
 /**
- * Reembolsos vinculados a un gasto concreto (por parentExpenseId).
+ * Reembolsos vinculados a un gasto concreto (por parentExpenseId / bankTransactionId),
+ * sumando tanto reembolsos bancarios (Bizum) como reembolsos recibidos en efectivo.
  */
 export function selectLinkedReimbursementsForExpense(
   expenseId: string,
-  transactions: Transaction[]
+  transactions: Transaction[] = [],
+  cashTransactions: CashTransaction[] = []
 ): number {
-  const reimbursements = transactions.filter(
+  const bankReimbursements = transactions.filter(
     (t) => t.type === 'income' && t.incomeKind === 'reimbursement' && t.parentExpenseId === expenseId
   )
-  const sum = reimbursements.reduce((acc, t) => acc + t.amount, 0)
+  const cashReimbursements = cashTransactions.filter(
+    (c) => c.type === 'income' && c.bankTransactionId === expenseId
+  )
+  const sum =
+    bankReimbursements.reduce((acc, t) => acc + t.amount, 0) +
+    cashReimbursements.reduce((acc, c) => acc + c.amount, 0)
   return Math.round(sum * 100) / 100
 }
 
@@ -59,12 +66,13 @@ export const selectGrossExpenses = selectGrossExpensesForPeriod
 /**
  * Reembolsos vinculados a los gastos de este periodo.
  * Solo descuenta reembolsos asociados a gastos cuya fecha pertenece al periodo,
- * independientemente de la fecha en que se recibió el Bizum.
+ * independientemente de la fecha en que se recibió el Bizum o efectivo.
  */
 export function selectLinkedReimbursementsForPeriod(
   transactions: Transaction[],
   referenceDate: Date = new Date(),
-  scope: 'month' | 'all' = 'month'
+  scope: 'month' | 'all' = 'month',
+  cashTransactions: CashTransaction[] = []
 ): number {
   const currentMonth = referenceDate.getMonth()
   const currentYear = referenceDate.getFullYear()
@@ -78,7 +86,7 @@ export function selectLinkedReimbursementsForPeriod(
 
   let sum = 0
   periodExpenses.forEach((exp) => {
-    const linked = selectLinkedReimbursementsForExpense(exp.id, transactions)
+    const linked = selectLinkedReimbursementsForExpense(exp.id, transactions, cashTransactions)
     // Capped al importe del gasto para evitar excesos
     sum += Math.min(exp.amount, linked)
   })
@@ -87,19 +95,19 @@ export function selectLinkedReimbursementsForPeriod(
 }
 
 /**
- * Reembolsos recibidos en el periodo (flujo de caja de entrada).
- * Incluye cualquier ingreso con incomeKind = 'reimbursement' que entró en este mes,
- * incluso si es un reembolso histórico o de gastos de meses anteriores.
+ * Reembolsos recibidos en el periodo (flujo de caja de entrada total, banco + efectivo).
+ * Incluye cualquier ingreso de reembolso que entró en este mes.
  */
 export function selectReimbursementsReceived(
   transactions: Transaction[],
   referenceDate: Date = new Date(),
-  scope: 'month' | 'all' = 'month'
+  scope: 'month' | 'all' = 'month',
+  cashTransactions: CashTransaction[] = []
 ): number {
   const currentMonth = referenceDate.getMonth()
   const currentYear = referenceDate.getFullYear()
 
-  const sum = transactions
+  const bankSum = transactions
     .filter((t) => t.type === 'income' && t.incomeKind === 'reimbursement')
     .filter((t) => {
       if (scope === 'all') return true
@@ -108,7 +116,16 @@ export function selectReimbursementsReceived(
     })
     .reduce((acc, t) => acc + t.amount, 0)
 
-  return Math.round(sum * 100) / 100
+  const cashSum = cashTransactions
+    .filter((c) => c.type === 'income' && Boolean(c.bankTransactionId))
+    .filter((c) => {
+      if (scope === 'all') return true
+      const d = new Date(c.date)
+      return d.getMonth() === currentMonth && d.getFullYear() === currentYear
+    })
+    .reduce((acc, c) => acc + c.amount, 0)
+
+  return Math.round((bankSum + cashSum) * 100) / 100
 }
 
 /**
@@ -119,7 +136,8 @@ export function selectReimbursementsReceived(
 export function selectNetPersonalExpensesForPeriod(
   transactions: Transaction[],
   referenceDate: Date = new Date(),
-  scope: 'month' | 'all' = 'month'
+  scope: 'month' | 'all' = 'month',
+  cashTransactions: CashTransaction[] = []
 ): number {
   const currentMonth = referenceDate.getMonth()
   const currentYear = referenceDate.getFullYear()
@@ -133,7 +151,7 @@ export function selectNetPersonalExpensesForPeriod(
 
   let totalNet = 0
   periodExpenses.forEach((exp) => {
-    const linked = selectLinkedReimbursementsForExpense(exp.id, transactions)
+    const linked = selectLinkedReimbursementsForExpense(exp.id, transactions, cashTransactions)
     const net = Math.max(0, Math.round((exp.amount - linked) * 100) / 100)
     totalNet += net
   })
@@ -151,7 +169,8 @@ export function selectNetExpensesByCategory(
   transactions: Transaction[],
   categories: Category[],
   referenceDate: Date = new Date(),
-  scope: 'month' | 'all' = 'month'
+  scope: 'month' | 'all' = 'month',
+  cashTransactions: CashTransaction[] = []
 ): NetCategoryExpense[] {
   const currentMonth = referenceDate.getMonth()
   const currentYear = referenceDate.getFullYear()
@@ -167,7 +186,7 @@ export function selectNetExpensesByCategory(
 
   periodExpenses.forEach((exp) => {
     const catId = normalizeCategoryAlias(exp.categoryId || 'other')
-    const linked = selectLinkedReimbursementsForExpense(exp.id, transactions)
+    const linked = selectLinkedReimbursementsForExpense(exp.id, transactions, cashTransactions)
     const net = Math.max(0, Math.round((exp.amount - linked) * 100) / 100)
     netByCategory.set(catId, Math.round(((netByCategory.get(catId) ?? 0) + net) * 100) / 100)
   })
@@ -299,19 +318,20 @@ export function selectRealIncome(
 }
 
 /**
- * Calcula el estado de una parte de gasto (ExpenseShare) en base a los reembolsos recibidos.
+ * Calcula el estado de una parte de gasto (ExpenseShare) en base a los reembolsos recibidos (banco o efectivo).
  */
 export function selectExpenseShareStatus(
   share: ExpenseShare,
-  transactions: Transaction[]
+  transactions: Transaction[] = [],
+  cashTransactions: CashTransaction[] = []
 ): {
   expectedAmount: number
   receivedAmount: number
   pendingAmount: number
   status: ExpenseShareStatus
-  reimbursements: Transaction[]
+  reimbursements: (Transaction | CashTransaction)[]
 } {
-  const reimbursements = transactions.filter(
+  const bankReimbursements = transactions.filter(
     (t) =>
       t.type === 'income' &&
       t.incomeKind === 'reimbursement' &&
@@ -319,7 +339,15 @@ export function selectExpenseShareStatus(
         (t.parentExpenseId === share.expenseTransactionId && !t.expenseShareId && !share.isPayerShare))
   )
 
-  const receivedAmount = Math.round(reimbursements.reduce((sum, t) => sum + t.amount, 0) * 100) / 100
+  const cashReimbursements = cashTransactions.filter(
+    (c) =>
+      c.type === 'income' &&
+      c.bankTransactionId === share.expenseTransactionId &&
+      (!c.note?.includes('[share:') || c.note.includes(`[share:${share.id}]`))
+  )
+
+  const allReimbursements: (Transaction | CashTransaction)[] = [...bankReimbursements, ...cashReimbursements]
+  const receivedAmount = Math.round(allReimbursements.reduce((sum, t) => sum + t.amount, 0) * 100) / 100
   const expectedAmount = Math.round(share.expectedAmount * 100) / 100
   const pendingAmount = Math.max(0, Math.round((expectedAmount - receivedAmount) * 100) / 100)
 
@@ -335,7 +363,7 @@ export function selectExpenseShareStatus(
     receivedAmount,
     pendingAmount,
     status,
-    reimbursements,
+    reimbursements: allReimbursements,
   }
 }
 
@@ -343,12 +371,13 @@ export function selectExpenseShareStatus(
  * Pendiente total por recuperar de todas las partes de gastos compartidos (excluyendo la cuota propia).
  */
 export function selectPendingReimbursements(
-  shares: ExpenseShare[],
-  transactions: Transaction[]
+  shares: ExpenseShare[] = [],
+  transactions: Transaction[] = [],
+  cashTransactions: CashTransaction[] = []
 ): number {
   const externalShares = shares.filter((s) => !s.isPayerShare)
   const total = externalShares.reduce((sum, share) => {
-    const { pendingAmount } = selectExpenseShareStatus(share, transactions)
+    const { pendingAmount } = selectExpenseShareStatus(share, transactions, cashTransactions)
     return sum + pendingAmount
   }, 0)
 
@@ -360,8 +389,9 @@ export function selectPendingReimbursements(
  */
 export function selectExpenseShareDetails(
   expenseTransactionId: string,
-  transactions: Transaction[],
-  shares: ExpenseShare[]
+  transactions: Transaction[] = [],
+  shares: ExpenseShare[] = [],
+  cashTransactions: CashTransaction[] = []
 ) {
   const expenseTx = transactions.find((t) => t.id === expenseTransactionId)
   const expenseShares = shares.filter((s) => s.expenseTransactionId === expenseTransactionId)
@@ -371,7 +401,7 @@ export function selectExpenseShareDetails(
 
   const externalSharesWithStatus = externalShares.map((s) => ({
     share: s,
-    ...selectExpenseShareStatus(s, transactions),
+    ...selectExpenseShareStatus(s, transactions, cashTransactions),
   }))
 
   const totalExpected = Math.round(expenseShares.reduce((acc, s) => acc + s.expectedAmount, 0) * 100) / 100
@@ -397,8 +427,9 @@ export function selectExpenseShareDetails(
  * Lista agrupada de deudores con saldo pendiente para selector rápido.
  */
 export function selectPendingDebtors(
-  shares: ExpenseShare[],
-  transactions: Transaction[]
+  shares: ExpenseShare[] = [],
+  transactions: Transaction[] = [],
+  cashTransactions: CashTransaction[] = []
 ) {
   const map = new Map<string, {
     contactId?: string
@@ -415,7 +446,7 @@ export function selectPendingDebtors(
   const externalShares = shares.filter((s) => !s.isPayerShare)
 
   externalShares.forEach((s) => {
-    const { pendingAmount } = selectExpenseShareStatus(s, transactions)
+    const { pendingAmount } = selectExpenseShareStatus(s, transactions, cashTransactions)
     if (pendingAmount > 0) {
       const key = s.contactId || s.participantName.toLowerCase().trim()
       const tx = transactions.find((t) => t.id === s.expenseTransactionId)
@@ -446,8 +477,9 @@ export const selectPendingReimbursementsByContact = selectPendingDebtors
  * Lista de cuotas externas ya cobradas / recuperadas en su totalidad.
  */
 export function selectSettledReimbursements(
-  shares: ExpenseShare[],
-  transactions: Transaction[]
+  shares: ExpenseShare[] = [],
+  transactions: Transaction[] = [],
+  cashTransactions: CashTransaction[] = []
 ) {
   const externalShares = shares.filter((s) => !s.isPayerShare)
   const settledList: {
@@ -459,7 +491,7 @@ export function selectSettledReimbursements(
   }[] = []
 
   externalShares.forEach((s) => {
-    const status = selectExpenseShareStatus(s, transactions)
+    const status = selectExpenseShareStatus(s, transactions, cashTransactions)
     if (status.status === 'received') {
       const tx = transactions.find((t) => t.id === s.expenseTransactionId)
       const lastReimb = status.reimbursements[status.reimbursements.length - 1]
@@ -492,7 +524,8 @@ export function selectDayNetFinanceStats(
   transactions: Transaction[],
   year: number,
   month: number,
-  day: number
+  day: number,
+  cashTransactions: CashTransaction[] = []
 ): DayNetStats {
   let grossExpenses = 0
   let netExpenses = 0
@@ -504,7 +537,7 @@ export function selectDayNetFinanceStats(
     if (d.getFullYear() === year && d.getMonth() === month && d.getDate() === day) {
       if (t.type === 'expense') {
         grossExpenses += t.amount
-        const linked = selectLinkedReimbursementsForExpense(t.id, transactions)
+        const linked = selectLinkedReimbursementsForExpense(t.id, transactions, cashTransactions)
         const net = Math.max(0, Math.round((t.amount - linked) * 100) / 100)
         netExpenses += net
       } else if (t.type === 'income') {
@@ -513,6 +546,16 @@ export function selectDayNetFinanceStats(
         } else {
           realIncome += t.amount
         }
+      }
+    }
+  })
+
+  // Reembolsos recibidos en efectivo en este día
+  cashTransactions.forEach((c) => {
+    const d = new Date(c.date)
+    if (d.getFullYear() === year && d.getMonth() === month && d.getDate() === day) {
+      if (c.type === 'income' && Boolean(c.bankTransactionId)) {
+        reimbursements += c.amount
       }
     }
   })
@@ -538,7 +581,8 @@ export function selectDayNetFinanceStats(
 export function selectMonthDailyNetStats(
   transactions: Transaction[],
   year: number,
-  month: number
+  month: number,
+  cashTransactions: CashTransaction[] = []
 ): Map<number, DayNetStats> {
   const map = new Map<number, DayNetStats>()
   const daysInMonth = new Date(year, month + 1, 0).getDate()
@@ -554,8 +598,20 @@ export function selectMonthDailyNetStats(
     }
   })
 
+  const cashByDay = new Map<number, CashTransaction[]>()
+  cashTransactions.forEach((c) => {
+    const d = new Date(c.date)
+    if (d.getFullYear() === year && d.getMonth() === month) {
+      const day = d.getDate()
+      const list = cashByDay.get(day) ?? []
+      list.push(c)
+      cashByDay.set(day, list)
+    }
+  })
+
   for (let day = 1; day <= daysInMonth; day++) {
     const dayTxs = txsByDay.get(day) ?? []
+    const dayCash = cashByDay.get(day) ?? []
     let grossExpenses = 0
     let netExpenses = 0
     let realIncome = 0
@@ -564,7 +620,7 @@ export function selectMonthDailyNetStats(
     dayTxs.forEach((t) => {
       if (t.type === 'expense') {
         grossExpenses += t.amount
-        const linked = selectLinkedReimbursementsForExpense(t.id, transactions)
+        const linked = selectLinkedReimbursementsForExpense(t.id, transactions, cashTransactions)
         const net = Math.max(0, Math.round((t.amount - linked) * 100) / 100)
         netExpenses += net
       } else if (t.type === 'income') {
@@ -573,6 +629,12 @@ export function selectMonthDailyNetStats(
         } else {
           realIncome += t.amount
         }
+      }
+    })
+
+    dayCash.forEach((c) => {
+      if (c.type === 'income' && Boolean(c.bankTransactionId)) {
+        reimbursements += c.amount
       }
     })
 

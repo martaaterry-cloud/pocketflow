@@ -612,10 +612,12 @@ export default function App() {
         accounts={finance.accounts}
         transactions={finance.transactions}
         expenseShares={finance.expenseShares}
+        cashTransactions={finance.cashTransactions}
         initialShareId={reimbursementShareId}
         onSubmit={(input) => {
           finance.recordReimbursement(input)
-          showToast(`Reembolso registrado (+${input.amount.toFixed(2)} €)`, 'success')
+          const targetStr = input.paymentMethod === 'cash' ? 'en Efectivo' : 'en Banco'
+          showToast(`Reembolso registrado (+${input.amount.toFixed(2)} € ${targetStr})`, 'success')
         }}
       />
 
@@ -626,6 +628,7 @@ export default function App() {
           expenseTransaction={selectedSharedTx}
           allTransactions={finance.transactions}
           expenseShares={finance.expenseShares}
+          cashTransactions={finance.cashTransactions}
           onRecordReimbursement={(shareId) => {
             setSelectedSharedTx(null)
             setReimbursementShareId(shareId)
@@ -646,6 +649,7 @@ export default function App() {
         accounts={finance.accounts}
         categories={finance.categories}
         transactions={finance.transactions}
+        expenseShares={finance.expenseShares}
         sharedContacts={finance.sharedContacts}
         cashTransactions={finance.cashTransactions}
         defaultType={modalDefaultType}
