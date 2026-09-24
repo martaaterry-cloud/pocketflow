@@ -465,9 +465,11 @@ export function useFinance(storage: StorageAdapter = defaultAppStorage) {
       paymentMethod?: 'bank' | 'cash'
     }) => {
       const paymentMethod = input.paymentMethod || 'bank'
-      const parentTx = state.transactions.find((t) => t.id === input.parentExpenseId)
       const share = (state.expenseShares ?? []).find((s) => s.id === input.expenseShareId)
       const targetExpenseId = input.parentExpenseId || share?.expenseTransactionId
+      const parentTx =
+        state.transactions.find((t) => t.id === targetExpenseId) ||
+        state.cashTransactions?.find((c) => c.id === targetExpenseId)
 
       if (paymentMethod === 'cash') {
         const desc =
@@ -514,12 +516,14 @@ export function useFinance(storage: StorageAdapter = defaultAppStorage) {
           ? `Bizum ${share.participantName} · ${parentTx?.description || 'Reembolso'}`
           : `Reembolso · ${parentTx?.description || 'Gasto'}`)
 
+      const fallbackAccountId = parentTx && 'accountId' in parentTx && parentTx.accountId ? parentTx.accountId : 'daily'
+
       const newTx: Transaction = {
         id: crypto.randomUUID(),
         type: 'income',
         incomeKind: 'reimbursement',
         amount: Number(input.amount),
-        accountId: input.accountId || parentTx?.accountId || 'daily',
+        accountId: input.accountId || fallbackAccountId,
         date: input.date || new Date().toISOString(),
         description: desc,
         note: input.note,
@@ -1697,7 +1701,10 @@ export function useFinance(storage: StorageAdapter = defaultAppStorage) {
      ========================================================================== */
 
   const addCashTransaction = useCallback(
-    (input: CreateCashTransactionInput): CashTransaction => {
+    (
+      input: CreateCashTransactionInput,
+      shares?: { participantName: string; contactId?: string; isPayerShare: boolean; expectedAmount: number }[]
+    ): CashTransaction => {
       const amount = Number(input.amount)
       if (isNaN(amount) || !isFinite(amount)) {
         throw new Error('El importe debe ser un número válido.')
@@ -1710,18 +1717,59 @@ export function useFinance(storage: StorageAdapter = defaultAppStorage) {
       }
 
       const nowIso = new Date().toISOString()
+      const isShared = Boolean(input.type === 'expense' && shares && shares.length > 0)
       const newCashTx: CashTransaction = {
         ...input,
         id: `cash_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
         amount,
+        isShared,
         createdAt: nowIso,
         updatedAt: nowIso,
       }
+
+      let createdShares: ExpenseShare[] = []
+      let newContacts: SharedContact[] = []
+      const currentContacts = state.sharedContacts ?? []
+
+      if (isShared && shares) {
+        createdShares = shares.map((s) => ({
+          id: crypto.randomUUID(),
+          expenseTransactionId: newCashTx.id,
+          contactId: s.contactId,
+          participantName: s.participantName.trim(),
+          isPayerShare: s.isPayerShare,
+          expectedAmount: Number(s.expectedAmount),
+          createdAt: nowIso,
+          updatedAt: nowIso,
+        }))
+
+        shares.forEach((s) => {
+          if (!s.isPayerShare) {
+            const name = s.participantName.trim()
+            const exists =
+              currentContacts.some((c) => c.displayName.toLowerCase() === name.toLowerCase()) ||
+              newContacts.some((c) => c.displayName.toLowerCase() === name.toLowerCase())
+            if (!exists && name.length > 0) {
+              newContacts.push({
+                id: s.contactId || crypto.randomUUID(),
+                displayName: name,
+                createdAt: nowIso,
+                updatedAt: nowIso,
+              })
+            }
+          }
+        })
+      }
+
+      const nextContacts = [...newContacts, ...currentContacts]
+      const nextShares = [...createdShares, ...(state.expenseShares ?? [])]
 
       commit(
         {
           ...state,
           cashTransactions: [newCashTx, ...(state.cashTransactions ?? [])],
+          expenseShares: nextShares,
+          sharedContacts: nextContacts,
         },
         newCashTx.id
       )
@@ -1729,6 +1777,16 @@ export function useFinance(storage: StorageAdapter = defaultAppStorage) {
       dispatchSync('cash_transaction', 'insert', newCashTx.id, newCashTx, (sb, uid) =>
         syncUpsertCashTransaction(sb, uid, newCashTx)
       )
+      createdShares.forEach((share) => {
+        dispatchSync('expense_share', 'insert', share.id, share, (sb, uid) =>
+          syncUpsertExpenseShare(sb, uid, share)
+        )
+      })
+      newContacts.forEach((c) => {
+        dispatchSync('shared_contact', 'insert', c.id, c, (sb, uid) =>
+          syncUpsertSharedContact(sb, uid, c)
+        )
+      })
 
       return newCashTx
     },
@@ -1736,7 +1794,11 @@ export function useFinance(storage: StorageAdapter = defaultAppStorage) {
   )
 
   const updateCashTransaction = useCallback(
-    (id: string, patch: UpdateCashTransactionInput): CashTransaction | null => {
+    (
+      id: string,
+      patch: UpdateCashTransactionInput,
+      shares?: { participantName: string; contactId?: string; isPayerShare: boolean; expectedAmount: number }[]
+    ): CashTransaction | null => {
       const existing = (state.cashTransactions ?? []).find((tx) => tx.id === id)
       if (!existing) return null
 
@@ -1759,11 +1821,96 @@ export function useFinance(storage: StorageAdapter = defaultAppStorage) {
         updatedAt: nowIso,
       }
 
+      let nextExpenseShares = state.expenseShares ?? []
+      let nextSharedContacts = state.sharedContacts ?? []
+      const sharesToDelete: string[] = []
+      const sharesToUpsert: ExpenseShare[] = []
+      const contactsToUpsert: SharedContact[] = []
+
+      if (shares !== undefined) {
+        const existingSharesForTx = nextExpenseShares.filter((s) => s.expenseTransactionId === id)
+        const otherShares = nextExpenseShares.filter((s) => s.expenseTransactionId !== id)
+
+        if (shares.length > 0) {
+          updatedTx.isShared = true
+          const usedExistingIds = new Set<string>()
+
+          const finalShares: ExpenseShare[] = shares.map((s) => {
+            const nameTrimmed = s.participantName.trim()
+            const matchedExisting = existingSharesForTx.find(
+              (ex) =>
+                !usedExistingIds.has(ex.id) &&
+                ((s.isPayerShare && ex.isPayerShare) ||
+                  (!s.isPayerShare && !ex.isPayerShare && ex.participantName.toLowerCase() === nameTrimmed.toLowerCase()))
+            )
+
+            if (matchedExisting) {
+              usedExistingIds.add(matchedExisting.id)
+              const updatedShare: ExpenseShare = {
+                ...matchedExisting,
+                participantName: nameTrimmed,
+                contactId: s.contactId,
+                isPayerShare: s.isPayerShare,
+                expectedAmount: Number(s.expectedAmount),
+                updatedAt: nowIso,
+              }
+              sharesToUpsert.push(updatedShare)
+              return updatedShare
+            } else {
+              const newShare: ExpenseShare = {
+                id: crypto.randomUUID(),
+                expenseTransactionId: id,
+                contactId: s.contactId,
+                participantName: nameTrimmed,
+                isPayerShare: s.isPayerShare,
+                expectedAmount: Number(s.expectedAmount),
+                createdAt: nowIso,
+                updatedAt: nowIso,
+              }
+              sharesToUpsert.push(newShare)
+
+              if (!s.isPayerShare) {
+                const exists =
+                  nextSharedContacts.some((c) => c.displayName.toLowerCase() === nameTrimmed.toLowerCase()) ||
+                  contactsToUpsert.some((c) => c.displayName.toLowerCase() === nameTrimmed.toLowerCase())
+                if (!exists && nameTrimmed.length > 0) {
+                  const newContact: SharedContact = {
+                    id: s.contactId || crypto.randomUUID(),
+                    displayName: nameTrimmed,
+                    createdAt: nowIso,
+                    updatedAt: nowIso,
+                  }
+                  contactsToUpsert.push(newContact)
+                }
+              }
+              return newShare
+            }
+          })
+
+          existingSharesForTx.forEach((oldShare) => {
+            if (!usedExistingIds.has(oldShare.id)) {
+              sharesToDelete.push(oldShare.id)
+            }
+          })
+
+          nextExpenseShares = [...finalShares, ...otherShares]
+          nextSharedContacts = [...contactsToUpsert, ...nextSharedContacts]
+        } else {
+          updatedTx.isShared = false
+          existingSharesForTx.forEach((oldShare) => {
+            sharesToDelete.push(oldShare.id)
+          })
+          nextExpenseShares = otherShares
+        }
+      }
+
       const nextCashTxs = (state.cashTransactions ?? []).map((tx) => (tx.id === id ? updatedTx : tx))
       commit(
         {
           ...state,
           cashTransactions: nextCashTxs,
+          expenseShares: nextExpenseShares,
+          sharedContacts: nextSharedContacts,
         },
         id
       )
@@ -1771,6 +1918,21 @@ export function useFinance(storage: StorageAdapter = defaultAppStorage) {
       dispatchSync('cash_transaction', 'update', id, updatedTx, (sb, uid) =>
         syncUpsertCashTransaction(sb, uid, updatedTx)
       )
+      sharesToDelete.forEach((shareId) => {
+        dispatchSync('expense_share', 'delete', shareId, { id: shareId }, (sb, uid) =>
+          syncDeleteExpenseShare(sb, uid, shareId)
+        )
+      })
+      sharesToUpsert.forEach((share) => {
+        dispatchSync('expense_share', 'insert', share.id, share, (sb, uid) =>
+          syncUpsertExpenseShare(sb, uid, share)
+        )
+      })
+      contactsToUpsert.forEach((contact) => {
+        dispatchSync('shared_contact', 'insert', contact.id, contact, (sb, uid) =>
+          syncUpsertSharedContact(sb, uid, contact)
+        )
+      })
 
       return updatedTx
     },
@@ -1779,13 +1941,24 @@ export function useFinance(storage: StorageAdapter = defaultAppStorage) {
 
   const deleteCashTransaction = useCallback(
     (id: string) => {
+      const sharesToDelete = (state.expenseShares ?? []).filter((s) => s.expenseTransactionId === id)
+      const remainingShares = (state.expenseShares ?? []).filter((s) => s.expenseTransactionId !== id)
+      const nextCashTxs = (state.cashTransactions ?? []).filter((tx) => tx.id !== id)
+
       commit({
         ...state,
-        cashTransactions: (state.cashTransactions ?? []).filter((tx) => tx.id !== id),
-      })
+        cashTransactions: nextCashTxs,
+        expenseShares: remainingShares,
+      }, id)
+
       dispatchSync('cash_transaction', 'delete', id, { id }, (sb, uid) =>
         syncDeleteCashTransaction(sb, uid, id)
       )
+      sharesToDelete.forEach((share) => {
+        dispatchSync('expense_share', 'delete', share.id, { id: share.id }, (sb, uid) =>
+          syncDeleteExpenseShare(sb, uid, share.id)
+        )
+      })
     },
     [state, commit, dispatchSync]
   )

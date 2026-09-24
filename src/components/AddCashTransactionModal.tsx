@@ -1,5 +1,7 @@
-import { useState, useEffect } from 'react'
-import type { Category, CreateCashTransactionInput } from '../models/finance'
+import { useState, useEffect, useMemo } from 'react'
+import type { Category, CreateCashTransactionInput, SharedContact } from '../models/finance'
+import { money } from '../utils/money'
+import { splitExpenseEqually } from '../utils/sharedExpenseSelectors'
 import { AppIcon } from '../ui/icons'
 
 interface AddCashTransactionModalProps {
@@ -7,7 +9,17 @@ interface AddCashTransactionModalProps {
   onClose: () => void
   type: 'income' | 'expense'
   categories: Category[]
-  onSave: (input: CreateCashTransactionInput) => void
+  sharedContacts?: SharedContact[]
+  onSave: (
+    input: CreateCashTransactionInput,
+    shares?: { participantName: string; contactId?: string; isPayerShare: boolean; expectedAmount: number }[]
+  ) => void
+}
+
+interface ParticipantEntry {
+  name: string
+  contactId?: string
+  customAmount?: number
 }
 
 export function AddCashTransactionModal({
@@ -15,6 +27,7 @@ export function AddCashTransactionModal({
   onClose,
   type: initialType,
   categories,
+  sharedContacts = [],
   onSave,
 }: AddCashTransactionModalProps) {
   const [type, setType] = useState<'income' | 'expense'>(initialType)
@@ -25,6 +38,13 @@ export function AddCashTransactionModal({
   const [note, setNote] = useState('')
   const [error, setError] = useState<string | null>(null)
 
+  // Estados para Gasto Compartido en Efectivo
+  const [isShared, setIsShared] = useState(false)
+  const [selfParticipates, setSelfParticipates] = useState(true)
+  const [splitType, setSplitType] = useState<'equal' | 'custom'>('equal')
+  const [participants, setParticipants] = useState<ParticipantEntry[]>([])
+  const [newParticipantInput, setNewParticipantInput] = useState('')
+
   useEffect(() => {
     if (open) {
       setType(initialType)
@@ -34,12 +54,80 @@ export function AddCashTransactionModal({
       setCategoryId('')
       setNote('')
       setError(null)
+      setIsShared(false)
+      setSelfParticipates(true)
+      setSplitType('equal')
+      setParticipants([])
+      setNewParticipantInput('')
     }
   }, [open, initialType])
+
+  const numericAmount = Number(amount.replace(',', '.')) || 0
+
+  // Cálculo de reparto en tiempo real con exactitud de céntimos
+  const computedShares = useMemo(() => {
+    if (!isShared || numericAmount <= 0) return []
+
+    if (splitType === 'equal') {
+      const externalList = participants.map((p) => ({
+        name: p.name,
+        contactId: p.contactId,
+      }))
+      return splitExpenseEqually(numericAmount, externalList, selfParticipates, 'Tú')
+    } else {
+      const results = []
+      if (selfParticipates) {
+        const externalTotal = participants.reduce((s, p) => s + (p.customAmount || 0), 0)
+        const payerAmount = Math.max(0, Math.round((numericAmount - externalTotal) * 100) / 100)
+        results.push({
+          participantName: 'Tú',
+          isPayerShare: true,
+          amount: payerAmount,
+        })
+      }
+      participants.forEach((p) => {
+        results.push({
+          participantName: p.name,
+          contactId: p.contactId,
+          isPayerShare: false,
+          amount: p.customAmount || 0,
+        })
+      })
+      return results
+    }
+  }, [isShared, numericAmount, splitType, participants, selfParticipates])
 
   if (!open) return null
 
   const isIncome = type === 'income'
+
+  const handleAddParticipant = (nameToAdd?: string) => {
+    const rawName = (nameToAdd || newParticipantInput).trim()
+    if (!rawName) return
+
+    if (participants.some((p) => p.name.toLowerCase() === rawName.toLowerCase())) {
+      setNewParticipantInput('')
+      return
+    }
+
+    const matchedContact = sharedContacts.find(
+      (c) => c.displayName.toLowerCase() === rawName.toLowerCase()
+    )
+
+    setParticipants([
+      ...participants,
+      {
+        name: matchedContact ? matchedContact.displayName : rawName,
+        contactId: matchedContact?.id,
+        customAmount: 0,
+      },
+    ])
+    setNewParticipantInput('')
+  }
+
+  const handleRemoveParticipant = (index: number) => {
+    setParticipants(participants.filter((_, i) => i !== index))
+  }
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
@@ -57,14 +145,42 @@ export function AddCashTransactionModal({
       return
     }
 
-    onSave({
-      type,
-      amount: numAmount,
-      description: trimmedDesc,
-      date: date || new Date().toISOString().slice(0, 10),
-      categoryId: categoryId || undefined,
-      note: note.trim() || undefined,
-    })
+    if (type === 'expense' && isShared) {
+      if (participants.length === 0) {
+        setError('Añade al menos una persona para compartir el gasto.')
+        return
+      }
+
+      const sharesInput = computedShares.map((s) => ({
+        participantName: s.participantName,
+        contactId: s.contactId,
+        isPayerShare: s.isPayerShare,
+        expectedAmount: s.amount,
+      }))
+
+      onSave(
+        {
+          type,
+          amount: numAmount,
+          description: trimmedDesc,
+          date: date || new Date().toISOString().slice(0, 10),
+          categoryId: categoryId || undefined,
+          note: note.trim() || undefined,
+          isShared: true,
+        },
+        sharesInput
+      )
+    } else {
+      onSave({
+        type,
+        amount: numAmount,
+        description: trimmedDesc,
+        date: date || new Date().toISOString().slice(0, 10),
+        categoryId: categoryId || undefined,
+        note: note.trim() || undefined,
+        isShared: false,
+      })
+    }
 
     onClose()
   }
@@ -265,6 +381,97 @@ export function AddCashTransactionModal({
               ))}
             </select>
           </div>
+
+          {type === 'expense' && (
+            <div className="shared-expense-section">
+              <div className="shared-toggle-row">
+                <div className="shared-toggle-text">
+                  <strong>Gasto compartido</strong>
+                  <span>Divide este gasto con otras personas</span>
+                </div>
+                <label className="switch">
+                  <input
+                    type="checkbox"
+                    checked={isShared}
+                    onChange={(e) => setIsShared(e.target.checked)}
+                  />
+                  <span className="switch-slider" />
+                </label>
+              </div>
+
+              {isShared && (
+                <div className="shared-config-box">
+                  <label className="checkbox-row">
+                    <input
+                      type="checkbox"
+                      checked={selfParticipates}
+                      onChange={(e) => setSelfParticipates(e.target.checked)}
+                    />
+                    <span>Yo también participo en este gasto</span>
+                  </label>
+
+                  <div className="participant-input-row">
+                    <input
+                      type="text"
+                      placeholder="Escribe nombre (ej. Sergi)..."
+                      value={newParticipantInput}
+                      onChange={(e) => setNewParticipantInput(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault()
+                          handleAddParticipant()
+                        }
+                      }}
+                      list="cash-shared-contacts-list"
+                    />
+                    <datalist id="cash-shared-contacts-list">
+                      {sharedContacts.map((c) => (
+                        <option key={c.id} value={c.displayName} />
+                      ))}
+                    </datalist>
+                    <button
+                      type="button"
+                      className="secondary-button add-participant-btn"
+                      onClick={() => handleAddParticipant()}
+                    >
+                      + Añadir
+                    </button>
+                  </div>
+
+                  {participants.length > 0 && (
+                    <div className="participant-chips">
+                      {participants.map((p, idx) => (
+                        <span className="participant-chip" key={idx}>
+                          {p.name}
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveParticipant(idx)}
+                            aria-label={`Quitar ${p.name}`}
+                          >
+                            ×
+                          </button>
+                        </span>
+                      ))}
+                    </div>
+                  )}
+
+                  {computedShares.length > 0 && (
+                    <div className="split-preview">
+                      <span className="split-preview-title">Reparto exacto de céntimos:</span>
+                      <div className="split-preview-list">
+                        {computedShares.map((s, idx) => (
+                          <div className="split-preview-item" key={idx}>
+                            <span>{s.participantName}</span>
+                            <strong>{money(s.amount)}</strong>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
 
           <div className="form-group" style={{ width: '100%', boxSizing: 'border-box' }}>
             <label htmlFor="cash-note" style={{ fontSize: '0.86rem', fontWeight: 600, color: 'var(--text-muted)', display: 'block', marginBottom: 6 }}>

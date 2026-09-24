@@ -250,6 +250,7 @@ export interface CashTransaction {
   categoryId?: string
   note?: string
   bankTransactionId?: string // Enlace opcional a la retirada bancaria de cajero
+  isShared?: boolean
   createdAt?: string
   updatedAt?: string
 }

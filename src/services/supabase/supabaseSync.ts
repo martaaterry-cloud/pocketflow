@@ -427,6 +427,7 @@ export function toDbCashTransaction(tx: CashTransaction, userId: string) {
     category_id: tx.categoryId || null,
     note: tx.note || null,
     bank_transaction_id: tx.bankTransactionId || null,
+    is_shared: tx.isShared ?? false,
   }
 }
 
@@ -440,6 +441,7 @@ export function fromDbCashTransaction(row: Record<string, unknown>): CashTransac
     categoryId: row.category_id ? String(row.category_id) : undefined,
     note: row.note ? String(row.note) : undefined,
     bankTransactionId: row.bank_transaction_id ? String(row.bank_transaction_id) : undefined,
+    isShared: Boolean(row.is_shared),
     createdAt: row.created_at ? String(row.created_at) : undefined,
     updatedAt: row.updated_at ? String(row.updated_at) : undefined,
   }

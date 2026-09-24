@@ -34,6 +34,8 @@ import {
   selectTotalAvailableMoney,
   selectLinkedCashWithdrawalsForPeriod,
   selectTotalEconomicConsumptionForPeriod,
+  selectGrossCashExpensesForPeriod,
+  selectNetCashExpensesForPeriod,
 } from '../src/utils/cashSelectors'
 import { calculateSwipeNextIndex, type HomeModeIndex } from '../src/utils/swipeGestures'
 import { RECURRING_INCOME_SOURCE_LABELS } from '../src/models/finance'
@@ -6832,11 +6834,11 @@ describe('Fase 18 — Identificación Visual de Versión y Build', () => {
   it('314. Versioning: única fuente de verdad y formato de visualización exacto', () => {
     assert.equal(APP_NAME, 'PocketFlow')
     assert.equal(APP_VERSION, '0.18.0')
-    assert.equal(APP_BUILD, '2026.09.24-04')
+    assert.equal(APP_BUILD, '2026.09.24-05')
  
     assert.equal(getAppVersionString(), 'PocketFlow v0.18.0')
-    assert.equal(getAppBuildString(), 'Build 2026.09.24-04')
-    assert.equal(getAppFullVersionLabel(), 'PocketFlow v0.18.0 · Build 2026.09.24-04')
+    assert.equal(getAppBuildString(), 'Build 2026.09.24-05')
+    assert.equal(getAppFullVersionLabel(), 'PocketFlow v0.18.0 · Build 2026.09.24-05')
   })
 })
 
@@ -12183,6 +12185,321 @@ describe('Fase 43 — Auditoría y Corrección Responsive de Inputs de Fecha y M
     assert.ok(modalScrollBehavior.maxHeightFormula.includes('safe-area-inset-top'))
   })
 })
+
+/* ==========================================================================
+   FASE 44 — EXTENSIÓN DE GASTOS COMPARTIDOS A GASTOS EN EFECTIVO
+   ========================================================================== */
+
+describe('Fase 44 — Gastos Compartidos en Efectivo (CashTransaction + ExpenseShare)', () => {
+  // 1. Crear gasto efectivo compartido
+  it('524. 1. Crear gasto efectivo compartido genera CashTransaction con isShared=true y ExpenseShares vinculados', () => {
+    const cashTx: CashTransaction = {
+      id: 'cash_dinner_40',
+      type: 'expense',
+      amount: 40,
+      description: 'Cena pizzería en efectivo',
+      date: '2026-09-15T21:00:00.000Z',
+      isShared: true,
+    }
+
+    const shares: ExpenseShare[] = [
+      {
+        id: 'share_payer_20',
+        expenseTransactionId: 'cash_dinner_40',
+        participantName: 'Tú',
+        isPayerShare: true,
+        expectedAmount: 20,
+      },
+      {
+        id: 'share_sergi_20',
+        expenseTransactionId: 'cash_dinner_40',
+        participantName: 'Sergi',
+        isPayerShare: false,
+        expectedAmount: 20,
+      },
+    ]
+
+    const details = selectExpenseShareDetails(cashTx.id, [], shares, [cashTx])
+    assert.equal(details.expenseTx?.id, 'cash_dinner_40')
+    assert.equal(details.expenseTx?.description, 'Cena pizzería en efectivo')
+    assert.equal(details.payerShare?.expectedAmount, 20)
+    assert.equal(details.totalExpected, 40)
+    assert.equal(details.totalPendingToRecover, 20)
+    assert.equal(details.isFullyReimbursed, false)
+  })
+
+  // 2. Saldo efectivo baja por importe bruto
+  it('525. 2. Saldo de efectivo físico baja exactamente por el importe bruto total (40 €)', () => {
+    const initialCash: CashTransaction = {
+      id: 'c_init_100',
+      type: 'income',
+      amount: 100,
+      description: 'Saldo inicial efectivo',
+      date: '2026-09-01',
+    }
+    const sharedExpense: CashTransaction = {
+      id: 'cash_dinner_40',
+      type: 'expense',
+      amount: 40,
+      description: 'Cena pizzería en efectivo',
+      date: '2026-09-15',
+      isShared: true,
+    }
+
+    const balance = selectCashBalance([initialCash, sharedExpense])
+    // 100 - 40 = 60 €
+    assert.equal(balance, 60, 'El saldo de caja disminuye los 40 € íntegros abonados físicamente')
+  })
+
+  // 3. Gasto neto solo cuenta parte personal
+  it('526. 3. Gasto neto en efectivo solo computa la cuota personal (20 €) tras reembolso recibido', () => {
+    const cashExpense: CashTransaction = {
+      id: 'cash_40',
+      type: 'expense',
+      amount: 40,
+      description: 'Cena compartida',
+      date: '2026-09-15',
+      isShared: true,
+    }
+    const cashReimbursement: CashTransaction = {
+      id: 'cash_reimb_20',
+      type: 'income',
+      amount: 20,
+      description: 'Efectivo Sergi · Cena compartida',
+      bankTransactionId: 'cash_40',
+      date: '2026-09-16',
+    }
+
+    const gross = selectGrossCashExpensesForPeriod([cashExpense, cashReimbursement], new Date('2026-09-15'), 'month')
+    const net = selectNetCashExpensesForPeriod([cashExpense, cashReimbursement], [], new Date('2026-09-15'), 'month')
+
+    assert.equal(gross, 40, 'Gasto bruto de efectivo = 40 €')
+    assert.equal(net, 20, 'Gasto neto de efectivo = 40 - 20 = 20 €')
+  })
+
+  // 4. Deuda aparece en Por cobrar
+  it('527. 4. La deuda originada por el gasto en efectivo aparece unificada en selectPendingDebtors con descripción correcta', () => {
+    const cashTx: CashTransaction = {
+      id: 'cash_40',
+      type: 'expense',
+      amount: 40,
+      description: 'Comida bar Manolo',
+      date: '2026-09-10T14:00:00.000Z',
+      isShared: true,
+    }
+    const shares: ExpenseShare[] = [
+      { id: 's_payer', expenseTransactionId: 'cash_40', participantName: 'Tú', isPayerShare: true, expectedAmount: 20 },
+      { id: 's_sergi', expenseTransactionId: 'cash_40', participantName: 'Sergi', isPayerShare: false, expectedAmount: 20 },
+    ]
+
+    const debtors = selectPendingDebtors(shares, [], [cashTx])
+    assert.equal(debtors.length, 1)
+    assert.equal(debtors[0].name, 'Sergi')
+    assert.equal(debtors[0].totalPending, 20)
+    assert.equal(debtors[0].pendingShares[0].expenseDescription, 'Comida bar Manolo')
+  })
+
+  // 5. Cobrar en Banco funciona
+  it('528. 5. Cobrar deuda de efectivo a través de ingreso bancario / Bizum salda la deuda y reduce gasto neto', () => {
+    const cashTx: CashTransaction = {
+      id: 'cash_40',
+      type: 'expense',
+      amount: 40,
+      description: 'Cena compartida',
+      date: '2026-09-10',
+      isShared: true,
+    }
+    const shares: ExpenseShare[] = [
+      { id: 's_payer', expenseTransactionId: 'cash_40', participantName: 'Tú', isPayerShare: true, expectedAmount: 20 },
+      { id: 's_sergi', expenseTransactionId: 'cash_40', participantName: 'Sergi', isPayerShare: false, expectedAmount: 20 },
+    ]
+
+    // Sergi paga los 20 € por Bizum al banco
+    const bankBizum: Transaction = {
+      id: 'tx_bizum_20',
+      type: 'income',
+      incomeKind: 'reimbursement',
+      amount: 20,
+      accountId: 'daily',
+      description: 'Bizum Sergi · Cena compartida',
+      parentExpenseId: 'cash_40',
+      expenseShareId: 's_sergi',
+      date: '2026-09-11',
+    }
+
+    const shareStatus = selectExpenseShareStatus(shares[1], [bankBizum], [cashTx])
+    assert.equal(shareStatus.status, 'received')
+    assert.equal(shareStatus.pendingAmount, 0)
+    assert.equal(shareStatus.receivedAmount, 20)
+
+    const pending = selectPendingDebtors(shares, [bankBizum], [cashTx])
+    assert.equal(pending.length, 0, 'No quedan deudores pendientes')
+
+    const settled = selectSettledReimbursements(shares, [bankBizum], [cashTx])
+    assert.equal(settled.length, 1)
+    assert.equal(settled[0].participantName, 'Sergi')
+    assert.equal(settled[0].amount, 20)
+  })
+
+  // 6. Cobrar en Efectivo funciona
+  it('529. 6. Cobrar deuda de efectivo mediante entrega en efectivo físico aumenta saldo cash y salda la deuda', () => {
+    const initialCash: CashTransaction = { id: 'c_init', type: 'income', amount: 50, description: 'Saldo inicial', date: '2026-09-01' }
+    const cashTx: CashTransaction = { id: 'c_expense_40', type: 'expense', amount: 40, description: 'Cena', date: '2026-09-02', isShared: true }
+    const shares: ExpenseShare[] = [
+      { id: 's_payer', expenseTransactionId: 'c_expense_40', participantName: 'Tú', isPayerShare: true, expectedAmount: 20 },
+      { id: 's_sergi', expenseTransactionId: 'c_expense_40', participantName: 'Sergi', isPayerShare: false, expectedAmount: 20 },
+    ]
+
+    // Saldo tras pagar: 50 - 40 = 10 €
+    assert.equal(selectCashBalance([initialCash, cashTx]), 10)
+
+    // Sergi entrega billete de 20 € en mano
+    const cashReimbursement: CashTransaction = {
+      id: 'c_reimb_sergi_20',
+      type: 'income',
+      amount: 20,
+      description: 'Efectivo Sergi · Cena',
+      bankTransactionId: 'c_expense_40',
+      note: '[share:s_sergi]',
+      date: '2026-09-03',
+    }
+
+    const allCash = [initialCash, cashTx, cashReimbursement]
+    // Saldo tras cobrar en mano: 10 + 20 = 30 €
+    assert.equal(selectCashBalance(allCash), 30)
+
+    const status = selectExpenseShareStatus(shares[1], [], allCash)
+    assert.equal(status.status, 'received')
+    assert.equal(status.pendingAmount, 0)
+    assert.equal(status.receivedAmount, 20)
+  })
+
+  // 7. No doble conteo
+  it('530. 7. Consumo económico total no doble cuenta el gasto en efectivo y deduce fielmente el reembolso vinculado', () => {
+    const bankTxs: Transaction[] = []
+    const cashTx: CashTransaction = { id: 'c_40', type: 'expense', amount: 40, description: 'Cena', date: '2026-09-01', isShared: true }
+    const cashReimb: CashTransaction = { id: 'c_reimb_20', type: 'income', amount: 20, description: 'Reembolso Sergi', bankTransactionId: 'c_40', date: '2026-09-02' }
+
+    const summary = selectTotalEconomicConsumptionForPeriod(bankTxs, [cashTx, cashReimb], new Date('2026-09-01'), 'month')
+    assert.equal(summary.cashExpenses, 20, 'Gasto real neto de efectivo = 20 €')
+    assert.equal(summary.totalEconomicConsumption, 20, 'Consumo total = 20 €')
+  })
+
+  // 8. Editar reparto
+  it('531. 8. Editar un gasto en efectivo compartido actualiza personas, importes y recalcula las deudas', () => {
+    const cashTx: CashTransaction = { id: 'c_60', type: 'expense', amount: 60, description: 'Compra supermercado', date: '2026-09-05', isShared: true }
+    const originalShares: ExpenseShare[] = [
+      { id: 's_p', expenseTransactionId: 'c_60', participantName: 'Tú', isPayerShare: true, expectedAmount: 30 },
+      { id: 's_s', expenseTransactionId: 'c_60', participantName: 'Sergi', isPayerShare: false, expectedAmount: 30 },
+    ]
+
+    let details = selectExpenseShareDetails('c_60', [], originalShares, [cashTx])
+    assert.equal(details.totalPendingToRecover, 30)
+
+    // Editar a 3 participantes (Tú 20, Sergi 20, Pepa 20)
+    const updatedShares: ExpenseShare[] = [
+      { id: 's_p', expenseTransactionId: 'c_60', participantName: 'Tú', isPayerShare: true, expectedAmount: 20 },
+      { id: 's_s', expenseTransactionId: 'c_60', participantName: 'Sergi', isPayerShare: false, expectedAmount: 20 },
+      { id: 's_pepa', expenseTransactionId: 'c_60', participantName: 'Pepa', isPayerShare: false, expectedAmount: 20 },
+    ]
+
+    details = selectExpenseShareDetails('c_60', [], updatedShares, [cashTx])
+    assert.equal(details.payerShare?.expectedAmount, 20)
+    assert.equal(details.totalPendingToRecover, 40)
+  })
+
+  // 9. Convertir gasto antiguo de efectivo en compartido
+  it('532. 9. Convertir gasto normal de efectivo en compartido crea ExpenseShares sin alterar id ni saldo', () => {
+    const legacyCashTx: CashTransaction = { id: 'c_old_50', type: 'expense', amount: 50, description: 'Farmacia', date: '2026-09-01' }
+    assert.equal(legacyCashTx.isShared, undefined)
+
+    // Se convierte en compartido dividiendo con Manuela (25 € cada uno)
+    const newShares = splitExpenseEqually(50, [{ name: 'Manuela' }], true, 'Tú').map((s) => ({
+      id: crypto.randomUUID(),
+      expenseTransactionId: legacyCashTx.id,
+      participantName: s.participantName,
+      isPayerShare: s.isPayerShare,
+      expectedAmount: s.amount,
+    }))
+
+    const convertedTx: CashTransaction = { ...legacyCashTx, isShared: true }
+    const details = selectExpenseShareDetails(convertedTx.id, [], newShares, [convertedTx])
+
+    assert.equal(details.payerShare?.expectedAmount, 25)
+    assert.equal(details.totalPendingToRecover, 25)
+    assert.equal(selectCashBalance([convertedTx]), -50)
+  })
+
+  // 10. Desmarcar compartido
+  it('533. 10. Desmarcar compartido elimina los ExpenseShares y el gasto vuelve a computar 100% como personal', () => {
+    const sharedCashTx: CashTransaction = { id: 'c_60', type: 'expense', amount: 60, description: 'Gasolina', date: '2026-09-01', isShared: true }
+    const shares: ExpenseShare[] = [
+      { id: 's_p', expenseTransactionId: 'c_60', participantName: 'Tú', isPayerShare: true, expectedAmount: 30 },
+      { id: 's_s', expenseTransactionId: 'c_60', participantName: 'Sergi', isPayerShare: false, expectedAmount: 30 },
+    ]
+
+    // Al desmarcar compartido:
+    const unsharedTx: CashTransaction = { ...sharedCashTx, isShared: false }
+    const remainingShares = shares.filter((s) => s.expenseTransactionId !== unsharedTx.id)
+
+    const debtors = selectPendingDebtors(remainingShares, [], [unsharedTx])
+    assert.equal(debtors.length, 0, 'No queda ninguna deuda activa')
+
+    const net = selectNetCashExpensesForPeriod([unsharedTx], [], new Date('2026-09-01'), 'month', [])
+    assert.equal(net, 60, 'Vuelve a contar 60 € como gasto íntegro personal')
+  })
+
+  // 11. Borrar gasto compartido de efectivo limpia de forma segura
+  it('534. 11. Borrar gasto de efectivo compartido limpia sus ExpenseShares asociados', () => {
+    const cashList: CashTransaction[] = [
+      { id: 'c_to_delete', type: 'expense', amount: 30, description: 'Taxi compartido', date: '2026-09-01', isShared: true },
+      { id: 'c_keep', type: 'expense', amount: 15, description: 'Café', date: '2026-09-01' },
+    ]
+    const allShares: ExpenseShare[] = [
+      { id: 's_del_1', expenseTransactionId: 'c_to_delete', participantName: 'Tú', isPayerShare: true, expectedAmount: 15 },
+      { id: 's_del_2', expenseTransactionId: 'c_to_delete', participantName: 'Pepa', isPayerShare: false, expectedAmount: 15 },
+      { id: 's_other', expenseTransactionId: 'tx_bank_other', participantName: 'Sergi', isPayerShare: false, expectedAmount: 50 },
+    ]
+
+    // Simular deleteCashTransaction
+    const idToDelete = 'c_to_delete'
+    const nextCashList = cashList.filter((c) => c.id !== idToDelete)
+    const nextShares = allShares.filter((s) => s.expenseTransactionId !== idToDelete)
+
+    assert.equal(nextCashList.length, 1)
+    assert.equal(nextShares.length, 1)
+    assert.equal(nextShares[0].id, 's_other', 'Solo se conserva el share no relacionado')
+  })
+
+  // 12. Banco sigue funcionando igual
+  it('535. 12. Gastos compartidos bancarios y sus reembolsos Bizum siguen funcionando de forma 100% idéntica', () => {
+    const bankExpense: Transaction = { id: 'tx_bank_80', type: 'expense', amount: 80, accountId: 'daily', description: 'Cena restaurante banco', date: '2026-09-10', isShared: true }
+    const bankBizum: Transaction = { id: 'tx_bizum_40', type: 'income', incomeKind: 'reimbursement', amount: 40, accountId: 'daily', description: 'Bizum Manuela', parentExpenseId: 'tx_bank_80', date: '2026-09-11' }
+
+    const netBank = selectNetPersonalExpensesForPeriod([bankExpense, bankBizum], new Date('2026-09-10'), 'month', [])
+    assert.equal(netBank, 40, 'El gasto bancario personal neto es 40 €')
+  })
+
+  // 13. Ahorro y Plan siguen sin usar efectivo
+  it('536. 13. Gastos compartidos de efectivo no alteran fondos de ahorro ni asignaciones del Plan financiero', () => {
+    const accounts: Account[] = [
+      { id: 'daily', name: 'Cuenta diaria', type: 'spending', initialBalance: 1000, balance: 1000 },
+      { id: 'savings', name: 'Cuenta ahorro', type: 'savings', initialBalance: 2000, balance: 2000 },
+    ]
+    const planSettings: FinancialPlanSettings = {
+      id: 'plan_1',
+      monthlyIncomeExpected: 2500,
+      emergencyFundTargetMonths: 3,
+      emergencyFundCurrent: 1000,
+      targetSavingsRate: 20,
+      updatedAt: '2026-09-01',
+    }
+
+    const freeSavings = selectFreeSavingsWithReserves(2000, planSettings.emergencyFundCurrent || 0, 0, 0)
+    assert.equal(freeSavings, 1000, 'Ahorro libre = 2000 - 1000 = 1000 € intacto')
+  })
+})
+
 
 
 

@@ -142,6 +142,20 @@ export function CashTransactionList({
                 <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)', display: 'flex', gap: 6, alignItems: 'center' }}>
                   <span>{formattedDate}</span>
                   {cat && <span>· {cat.name}</span>}
+                  {tx.isShared && (
+                    <span
+                      style={{
+                        padding: '1px 6px',
+                        borderRadius: 6,
+                        background: 'rgba(139, 92, 246, 0.12)',
+                        color: '#7c3aed',
+                        fontSize: '0.72rem',
+                        fontWeight: 600,
+                      }}
+                    >
+                      Compartido
+                    </span>
+                  )}
                   {tx.bankTransactionId && (
                     <span
                       style={{

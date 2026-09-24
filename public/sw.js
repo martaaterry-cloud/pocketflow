@@ -1,4 +1,4 @@
-const CACHE_NAME = 'pocketflow-v0.18.0-2026.09.24-04'
+const CACHE_NAME = 'pocketflow-v0.18.0-2026.09.24-05'
 
 // Recursos estáticos iniciales a cachear
 const PRECACHE_URLS = [

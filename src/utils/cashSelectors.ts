@@ -1,6 +1,32 @@
 import type { Account, CashTransaction, Transaction } from '../models/finance'
 import { selectTotalMoney } from './financeSelectors'
-import { selectNetPersonalExpensesForPeriod } from './sharedExpenseSelectors'
+import { selectNetPersonalExpensesForPeriod, selectNetCashExpensesForPeriod } from './sharedExpenseSelectors'
+
+export { selectNetCashExpensesForPeriod } from './sharedExpenseSelectors'
+
+/**
+ * Salidas de efectivo brutas (expense) en un periodo dado.
+ */
+export function selectGrossCashExpensesForPeriod(
+  cashTransactions: CashTransaction[] = [],
+  referenceDate: Date = new Date(),
+  scope: 'month' | 'all' = 'month'
+): number {
+  if (!Array.isArray(cashTransactions)) return 0
+  const refMonth = referenceDate.getMonth()
+  const refYear = referenceDate.getFullYear()
+
+  const sum = cashTransactions
+    .filter((tx) => tx.type === 'expense')
+    .filter((tx) => {
+      if (scope === 'all') return true
+      const d = new Date(tx.date)
+      return d.getMonth() === refMonth && d.getFullYear() === refYear
+    })
+    .reduce((acc, tx) => acc + Math.abs(Number(tx.amount) || 0), 0)
+
+  return Math.round(sum * 100) / 100
+}
 
 /**
  * Calcula el saldo de efectivo físico derivado exclusivamente de sus movimientos:
@@ -57,27 +83,15 @@ export function selectCashIncomeForPeriod(
 }
 
 /**
- * Salidas de efectivo (expense) en un periodo dado.
+ * Salidas de efectivo (expense) en un periodo dado. Por defecto computa el gasto neto.
  */
 export function selectCashExpensesForPeriod(
   cashTransactions: CashTransaction[] = [],
   referenceDate: Date = new Date(),
-  scope: 'month' | 'all' = 'month'
+  scope: 'month' | 'all' = 'month',
+  transactions: Transaction[] = []
 ): number {
-  if (!Array.isArray(cashTransactions)) return 0
-  const refMonth = referenceDate.getMonth()
-  const refYear = referenceDate.getFullYear()
-
-  const sum = cashTransactions
-    .filter((tx) => tx.type === 'expense')
-    .filter((tx) => {
-      if (scope === 'all') return true
-      const d = new Date(tx.date)
-      return d.getMonth() === refMonth && d.getFullYear() === refYear
-    })
-    .reduce((acc, tx) => acc + Math.abs(Number(tx.amount) || 0), 0)
-
-  return Math.round(sum * 100) / 100
+  return selectNetCashExpensesForPeriod(cashTransactions, transactions, referenceDate, scope)
 }
 
 /**
@@ -185,16 +199,7 @@ export interface TotalEconomicConsumptionSummary {
 /**
  * Selector canónico de consumo económico global sin doble conteo de cajero:
  *
- * Gasto Total Real = (Gasto Neto Bancario - Retiradas de Cajero Vinculadas a Efectivo) + Gasto Real en Efectivo
- *
- * Reglas:
- * 1. Si retiras 110 € de cajero y lo metes en efectivo (+110 €) y gastas 20 € en efectivo:
- *    - Gasto neto banco: 110 €
- *    - Deducción de cajero vinculado: -110 €
- *    - Gasto en efectivo: +20 €
- *    - Consumo total: 20 € (NO 130 €).
- * 2. Si retiras 50 € de cajero y NO lo vinculas a efectivo (retirada no vinculada):
- *    - Sigue computando como gasto bancario normal porque el dinero salió de las cuentas sin trazabilidad en la app.
+ * Gasto Total Real = (Gasto Neto Bancario - Retiradas de Cajero Vinculadas a Efectivo) + Gasto Real Neto en Efectivo
  */
 export function selectTotalEconomicConsumptionForPeriod(
   transactions: Transaction[] = [],
@@ -202,8 +207,8 @@ export function selectTotalEconomicConsumptionForPeriod(
   referenceDate: Date = new Date(),
   scope: 'month' | 'all' = 'month'
 ): TotalEconomicConsumptionSummary {
-  const bankNetExpenses = selectNetPersonalExpensesForPeriod(transactions, referenceDate, scope)
-  const cashExpenses = selectCashExpensesForPeriod(cashTransactions, referenceDate, scope)
+  const bankNetExpenses = selectNetPersonalExpensesForPeriod(transactions, referenceDate, scope, cashTransactions)
+  const cashExpenses = selectNetCashExpensesForPeriod(cashTransactions, transactions, referenceDate, scope)
   const linkedWithdrawalsDeducted = selectLinkedCashWithdrawalsForPeriod(
     transactions,
     cashTransactions,

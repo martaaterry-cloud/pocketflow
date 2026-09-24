@@ -26,6 +26,11 @@ export function selectLinkedReimbursementsForExpense(
   transactions: Transaction[] = [],
   cashTransactions: CashTransaction[] = []
 ): number {
+  const bankExpense = transactions.find((t) => t.id === expenseId)
+  if (bankExpense && bankExpense.specialType === 'cash_withdrawal') {
+    return 0
+  }
+
   const bankReimbursements = transactions.filter(
     (t) => t.type === 'income' && t.incomeKind === 'reimbursement' && t.parentExpenseId === expenseId
   )
@@ -116,8 +121,17 @@ export function selectReimbursementsReceived(
     })
     .reduce((acc, t) => acc + t.amount, 0)
 
+  const withdrawalTxIds = new Set(
+    transactions.filter((t) => t.specialType === 'cash_withdrawal').map((t) => t.id)
+  )
+
   const cashSum = cashTransactions
-    .filter((c) => c.type === 'income' && Boolean(c.bankTransactionId))
+    .filter(
+      (c) =>
+        c.type === 'income' &&
+        Boolean(c.bankTransactionId) &&
+        !withdrawalTxIds.has(c.bankTransactionId as string)
+    )
     .filter((c) => {
       if (scope === 'all') return true
       const d = new Date(c.date)
@@ -385,7 +399,7 @@ export function selectPendingReimbursements(
 }
 
 /**
- * Detalle completo de un gasto compartido.
+ * Detalle completo de un gasto compartido (banco o efectivo).
  */
 export function selectExpenseShareDetails(
   expenseTransactionId: string,
@@ -393,7 +407,9 @@ export function selectExpenseShareDetails(
   shares: ExpenseShare[] = [],
   cashTransactions: CashTransaction[] = []
 ) {
-  const expenseTx = transactions.find((t) => t.id === expenseTransactionId)
+  const expenseTx =
+    transactions.find((t) => t.id === expenseTransactionId) ||
+    cashTransactions.find((c) => c.id === expenseTransactionId)
   const expenseShares = shares.filter((s) => s.expenseTransactionId === expenseTransactionId)
 
   const payerShare = expenseShares.find((s) => s.isPayerShare)
@@ -449,7 +465,9 @@ export function selectPendingDebtors(
     const { pendingAmount } = selectExpenseShareStatus(s, transactions, cashTransactions)
     if (pendingAmount > 0) {
       const key = s.contactId || s.participantName.toLowerCase().trim()
-      const tx = transactions.find((t) => t.id === s.expenseTransactionId)
+      const tx =
+        transactions.find((t) => t.id === s.expenseTransactionId) ||
+        cashTransactions.find((c) => c.id === s.expenseTransactionId)
       const existing = map.get(key) ?? {
         contactId: s.contactId,
         name: s.participantName,
@@ -493,7 +511,9 @@ export function selectSettledReimbursements(
   externalShares.forEach((s) => {
     const status = selectExpenseShareStatus(s, transactions, cashTransactions)
     if (status.status === 'received') {
-      const tx = transactions.find((t) => t.id === s.expenseTransactionId)
+      const tx =
+        transactions.find((t) => t.id === s.expenseTransactionId) ||
+        cashTransactions.find((c) => c.id === s.expenseTransactionId)
       const lastReimb = status.reimbursements[status.reimbursements.length - 1]
       settledList.push({
         share: s,
@@ -506,6 +526,108 @@ export function selectSettledReimbursements(
   })
 
   return settledList.sort((a, b) => new Date(b.settledDate).getTime() - new Date(a.settledDate).getTime())
+}
+
+/**
+ * Gasto neto personal de efectivo del periodo:
+ * Para cada gasto de efectivo (expense) realizado en el periodo:
+ * net = max(0, expense.amount - linkedReimbursements).
+ */
+export function selectNetCashExpensesForPeriod(
+  cashTransactions: CashTransaction[] = [],
+  transactions: Transaction[] = [],
+  referenceDate: Date = new Date(),
+  scope: 'month' | 'all' = 'month'
+): number {
+  const currentMonth = referenceDate.getMonth()
+  const currentYear = referenceDate.getFullYear()
+
+  const periodExpenses = cashTransactions.filter((c) => {
+    if (c.type !== 'expense') return false
+    if (scope === 'all') return true
+    const d = new Date(c.date)
+    return d.getMonth() === currentMonth && d.getFullYear() === currentYear
+  })
+
+  let totalNet = 0
+  periodExpenses.forEach((exp) => {
+    const linked = selectLinkedReimbursementsForExpense(exp.id, transactions, cashTransactions)
+    const net = Math.max(0, Math.round((exp.amount - linked) * 100) / 100)
+    totalNet += net
+  })
+
+  return Math.round(totalNet * 100) / 100
+}
+
+export const selectNetCashExpenses = selectNetCashExpensesForPeriod
+
+/**
+ * Gasto neto de efectivo agrupado por categoría para el periodo.
+ */
+export function selectNetCashExpensesByCategory(
+  cashTransactions: CashTransaction[] = [],
+  transactions: Transaction[] = [],
+  categories: Category[] = [],
+  referenceDate: Date = new Date(),
+  scope: 'month' | 'all' = 'month'
+): NetCategoryExpense[] {
+  const currentMonth = referenceDate.getMonth()
+  const currentYear = referenceDate.getFullYear()
+
+  const periodExpenses = cashTransactions.filter((c) => {
+    if (c.type !== 'expense') return false
+    if (scope === 'all') return true
+    const d = new Date(c.date)
+    return d.getMonth() === currentMonth && d.getFullYear() === currentYear
+  })
+
+  const netByCategory = new Map<string, number>()
+
+  periodExpenses.forEach((exp) => {
+    const catId = normalizeCategoryAlias(exp.categoryId || 'other')
+    const linked = selectLinkedReimbursementsForExpense(exp.id, transactions, cashTransactions)
+    const net = Math.max(0, Math.round((exp.amount - linked) * 100) / 100)
+    netByCategory.set(catId, Math.round(((netByCategory.get(catId) ?? 0) + net) * 100) / 100)
+  })
+
+  const totalNet = Array.from(netByCategory.values()).reduce((sum, v) => sum + v, 0)
+  const results: NetCategoryExpense[] = []
+  const processedCatIds = new Set<string>()
+
+  categories.forEach((cat) => {
+    const canonicalId = normalizeCategoryAlias(cat.id)
+    const amount = netByCategory.get(canonicalId) ?? 0
+    if (amount > 0 && !processedCatIds.has(canonicalId)) {
+      const percentage = totalNet > 0 ? Math.round((amount / totalNet) * 100) : 0
+      results.push({
+        id: canonicalId,
+        name: canonicalId === 'other' ? 'Otros' : cat.name,
+        color: cat.color ?? '#B9B9B9',
+        icon: cat.iconKey || cat.icon || 'ellipsis',
+        amount,
+        percentage,
+      })
+      processedCatIds.add(canonicalId)
+    }
+  })
+
+  netByCategory.forEach((amount, catId) => {
+    if (!processedCatIds.has(catId) && amount > 0) {
+      const percentage = totalNet > 0 ? Math.round((amount / totalNet) * 100) : 0
+      results.push({
+        id: catId,
+        name: catId === 'other' ? 'Otros' : catId,
+        color: '#B9B9B9',
+        icon: 'ellipsis',
+        amount,
+        percentage,
+      })
+      processedCatIds.add(catId)
+    }
+  })
+
+  results.sort((a, b) => b.amount - a.amount)
+  return results
 }
 
 export interface DayNetStats {

@@ -21,6 +21,7 @@ import {
   selectTotalAvailableMoney,
   selectTotalEconomicConsumptionForPeriod,
 } from '../utils/cashSelectors'
+import { selectLinkedReimbursementsForExpense } from '../utils/sharedExpenseSelectors'
 import { calculateSwipeNextIndex, type HomeModeIndex } from '../utils/swipeGestures'
 import { AppIcon } from '../ui/icons'
 
@@ -72,8 +73,8 @@ export function HomePage({
   const cashTransactions = finance.cashTransactions ?? []
   const cashBalance = useMemo(() => selectCashBalance(cashTransactions), [cashTransactions])
   const cashMonthExpenses = useMemo(
-    () => selectCashExpensesForPeriod(cashTransactions, new Date(), 'month'),
-    [cashTransactions]
+    () => selectCashExpensesForPeriod(cashTransactions, new Date(), 'month', finance.transactions ?? []),
+    [cashTransactions, finance.transactions]
   )
   const cashMonthIncome = useMemo(
     () => selectCashIncomeForPeriod(cashTransactions, new Date(), 'month'),
@@ -84,18 +85,23 @@ export function HomePage({
   const cashExpensesAsTransactions = useMemo<Transaction[]>(() => {
     return cashTransactions
       .filter((tx) => tx.type === 'expense')
-      .map((tx) => ({
-        id: tx.id,
-        type: 'expense',
-        amount: tx.amount,
-        description: tx.description,
-        date: tx.date,
-        categoryId: tx.categoryId,
-        accountId: 'daily',
-        incomeKind: 'income',
-        note: tx.note,
-      }))
-  }, [cashTransactions])
+      .map((tx) => {
+        const linked = selectLinkedReimbursementsForExpense(tx.id, finance.transactions ?? [], cashTransactions)
+        const netAmount = Math.max(0, Math.round((tx.amount - linked) * 100) / 100)
+        return {
+          id: tx.id,
+          type: 'expense',
+          amount: netAmount,
+          description: tx.description,
+          date: tx.date,
+          categoryId: tx.categoryId,
+          accountId: 'daily',
+          incomeKind: 'income',
+          note: tx.note,
+          isShared: tx.isShared,
+        }
+      })
+  }, [cashTransactions, finance.transactions])
 
   // Cálculos de Total
   const totalAvailable = useMemo(
@@ -760,7 +766,8 @@ export function HomePage({
         onClose={() => setIsCashAddModalOpen(false)}
         type={cashAddModalType}
         categories={finance.categories}
-        onSave={(input) => finance.addCashTransaction(input)}
+        sharedContacts={finance.sharedContacts}
+        onSave={(input, shares) => finance.addCashTransaction(input, shares)}
       />
 
       <AdjustCashModal
@@ -777,7 +784,9 @@ export function HomePage({
         onClose={() => setEditingCashTx(null)}
         transaction={editingCashTx}
         categories={finance.categories}
-        onUpdate={(id, patch) => finance.updateCashTransaction(id, patch)}
+        expenseShares={finance.expenseShares}
+        sharedContacts={finance.sharedContacts}
+        onUpdate={(id, patch, shares) => finance.updateCashTransaction(id, patch, shares)}
         onDelete={(id) => finance.deleteCashTransaction(id)}
       />
 
