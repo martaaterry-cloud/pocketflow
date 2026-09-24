@@ -6,12 +6,12 @@ import { AppIcon } from '../ui/icons'
 interface SharedExpenseDetailModalProps {
   open: boolean
   onClose: () => void
-  expenseTransaction: Transaction
+  expenseTransaction: Transaction | CashTransaction
   allTransactions: Transaction[]
   expenseShares: ExpenseShare[]
   cashTransactions?: CashTransaction[]
   onRecordReimbursement: (shareId: string) => void
-  onEditExpense?: (tx: Transaction) => void
+  onEditExpense?: (tx: Transaction | CashTransaction) => void
 }
 
 export function SharedExpenseDetailModal({

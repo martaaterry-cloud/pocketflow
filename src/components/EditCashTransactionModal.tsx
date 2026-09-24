@@ -414,17 +414,55 @@ export function EditCashTransactionModal({
                 </div>
 
                 {isShared && (
-                  <div className="shared-config-box">
-                    <label className="checkbox-row">
+                  <div
+                    className="shared-config-box"
+                    style={{
+                      padding: '14px',
+                      background: 'rgba(0,0,0,0.02)',
+                      borderRadius: 'var(--radius-md, 14px)',
+                      border: '1px solid var(--border-light, #eaeae4)',
+                      marginTop: 12,
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: 14,
+                      boxSizing: 'border-box',
+                      width: '100%',
+                    }}
+                  >
+                    <label
+                      className="checkbox-row"
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 10,
+                        cursor: 'pointer',
+                        fontSize: '0.92rem',
+                        fontWeight: 500,
+                        color: 'var(--text-main)',
+                        userSelect: 'none',
+                        width: '100%',
+                        boxSizing: 'border-box',
+                      }}
+                    >
                       <input
                         type="checkbox"
                         checked={selfParticipates}
                         onChange={(e) => setSelfParticipates(e.target.checked)}
+                        style={{
+                          width: 18,
+                          height: 18,
+                          flexShrink: 0,
+                          cursor: 'pointer',
+                          margin: 0,
+                        }}
                       />
                       <span>Yo también participo en este gasto</span>
                     </label>
 
-                    <div className="participant-input-row">
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 6, width: '100%', boxSizing: 'border-box' }}>
+                      <label style={{ fontSize: '0.86rem', fontWeight: 600, color: 'var(--text-muted)' }}>
+                        Participantes
+                      </label>
                       <input
                         type="text"
                         placeholder="Escribe nombre (ej. Sergi)..."
@@ -437,6 +475,16 @@ export function EditCashTransactionModal({
                           }
                         }}
                         list="edit-cash-shared-contacts-list"
+                        className="input-field"
+                        style={{
+                          width: '100%',
+                          boxSizing: 'border-box',
+                          padding: '10px 14px',
+                          borderRadius: 'var(--radius-md, 12px)',
+                          border: '1px solid var(--border-strong, #d7d8d0)',
+                          fontSize: '0.92rem',
+                          background: '#ffffff',
+                        }}
                       />
                       <datalist id="edit-cash-shared-contacts-list">
                         {sharedContacts.map((c) => (
@@ -445,22 +493,67 @@ export function EditCashTransactionModal({
                       </datalist>
                       <button
                         type="button"
-                        className="secondary-button add-participant-btn"
+                        className="secondary-button"
                         onClick={() => handleAddParticipant()}
+                        style={{
+                          width: '100%',
+                          minHeight: 40,
+                          borderRadius: 'var(--radius-md, 12px)',
+                          fontWeight: 600,
+                          fontSize: '0.88rem',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          gap: 6,
+                          boxSizing: 'border-box',
+                        }}
                       >
-                        + Añadir
+                        + Añadir participante
                       </button>
                     </div>
 
                     {participants.length > 0 && (
-                      <div className="participant-chips">
+                      <div
+                        className="participant-chips"
+                        style={{
+                          display: 'flex',
+                          flexWrap: 'wrap',
+                          gap: 8,
+                          width: '100%',
+                          boxSizing: 'border-box',
+                        }}
+                      >
                         {participants.map((p, idx) => (
-                          <span className="participant-chip" key={idx}>
+                          <span
+                            className="participant-chip"
+                            key={idx}
+                            style={{
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: 6,
+                              padding: '6px 12px',
+                              borderRadius: 9999,
+                              background: 'rgba(124, 58, 237, 0.1)',
+                              color: '#7c3aed',
+                              fontWeight: 600,
+                              fontSize: '0.85rem',
+                            }}
+                          >
                             {p.name}
                             <button
                               type="button"
                               onClick={() => handleRemoveParticipant(idx)}
                               aria-label={`Quitar ${p.name}`}
+                              style={{
+                                background: 'transparent',
+                                border: 'none',
+                                color: '#7c3aed',
+                                cursor: 'pointer',
+                                padding: 0,
+                                fontWeight: 700,
+                                fontSize: '1rem',
+                                lineHeight: 1,
+                              }}
                             >
                               ×
                             </button>
@@ -470,13 +563,61 @@ export function EditCashTransactionModal({
                     )}
 
                     {computedShares.length > 0 && (
-                      <div className="split-preview">
-                        <span className="split-preview-title">Reparto exacto de céntimos:</span>
-                        <div className="split-preview-list">
+                      <div
+                        className="split-preview"
+                        style={{
+                          width: '100%',
+                          boxSizing: 'border-box',
+                        }}
+                      >
+                        <span
+                          className="split-preview-title"
+                          style={{
+                            fontSize: '0.84rem',
+                            fontWeight: 600,
+                            color: 'var(--text-muted)',
+                            display: 'block',
+                            marginBottom: 8,
+                          }}
+                        >
+                          Reparto exacto de céntimos:
+                        </span>
+                        <div
+                          className="split-preview-list"
+                          style={{
+                            display: 'flex',
+                            flexDirection: 'column',
+                            gap: 4,
+                            width: '100%',
+                            background: '#ffffff',
+                            border: '1px solid var(--border-light, #eaeae4)',
+                            borderRadius: 'var(--radius-md, 12px)',
+                            padding: '10px 14px',
+                            boxSizing: 'border-box',
+                          }}
+                        >
                           {computedShares.map((s, idx) => (
-                            <div className="split-preview-item" key={idx}>
-                              <span>{s.participantName}</span>
-                              <strong>{money(s.amount)}</strong>
+                            <div
+                              className="split-preview-item"
+                              key={idx}
+                              style={{
+                                display: 'flex',
+                                justifyContent: 'space-between',
+                                alignItems: 'center',
+                                fontSize: '0.92rem',
+                                padding: '5px 0',
+                                borderBottom:
+                                  idx < computedShares.length - 1
+                                    ? '1px solid rgba(0,0,0,0.05)'
+                                    : 'none',
+                              }}
+                            >
+                              <span style={{ color: 'var(--text-main)', fontWeight: 500 }}>
+                                {s.participantName}
+                              </span>
+                              <strong style={{ color: 'var(--text-main)' }}>
+                                {money(s.amount)}
+                              </strong>
                             </div>
                           ))}
                         </div>

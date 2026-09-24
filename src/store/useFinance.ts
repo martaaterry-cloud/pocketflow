@@ -1390,6 +1390,7 @@ export function useFinance(storage: StorageAdapter = defaultAppStorage) {
         targetAmount: Number(input.targetAmount),
         currentAllocated: Number(input.currentAllocated ?? 0),
         active: input.active !== undefined ? input.active : true,
+        specialPeriodId: input.specialPeriodId || undefined,
       }
       commit({
         ...state,
@@ -1406,12 +1407,17 @@ export function useFinance(storage: StorageAdapter = defaultAppStorage) {
     (id: string, updates: UpdateReserveInput) => {
       const nextReserves = state.reserves.map((r) => {
         if (r.id !== id) return r
+        let specialPeriodId = r.specialPeriodId
+        if (updates.specialPeriodId !== undefined) {
+          specialPeriodId = updates.specialPeriodId || undefined
+        }
         return {
           ...r,
           ...updates,
           targetAmount: updates.targetAmount !== undefined ? Number(updates.targetAmount) : r.targetAmount,
           currentAllocated:
             updates.currentAllocated !== undefined ? Number(updates.currentAllocated) : r.currentAllocated,
+          specialPeriodId,
         }
       })
       commit({
@@ -1587,13 +1593,30 @@ export function useFinance(storage: StorageAdapter = defaultAppStorage) {
 
   const deleteSpecialPeriod = useCallback(
     (id: string) => {
+      // Desvincular de forma segura las reservas asociadas sin borrarlas
+      const affectedReserves: Reserve[] = []
+      const nextReserves = state.reserves.map((r) => {
+        if (r.specialPeriodId === id) {
+          const unlinked: Reserve = { ...r, specialPeriodId: undefined }
+          affectedReserves.push(unlinked)
+          return unlinked
+        }
+        return r
+      })
+
       commit({
         ...state,
+        reserves: nextReserves,
         specialPeriods: state.specialPeriods.filter((p) => p.id !== id),
       })
       dispatchSync('specialPeriod', 'delete', id, { id }, (sb, uid) =>
         syncDeleteSpecialPeriod(sb, uid, id)
       )
+      affectedReserves.forEach((r) => {
+        dispatchSync('reserve', 'update', r.id, r, (sb, uid) =>
+          syncUpsertReserve(sb, uid, r)
+        )
+      })
     },
     [state, commit, dispatchSync]
   )

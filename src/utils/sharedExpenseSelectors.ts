@@ -341,6 +341,7 @@ export function selectExpenseShareStatus(
 ): {
   expectedAmount: number
   receivedAmount: number
+  appliedAmount: number
   pendingAmount: number
   status: ExpenseShareStatus
   reimbursements: (Transaction | CashTransaction)[]
@@ -363,7 +364,8 @@ export function selectExpenseShareStatus(
   const allReimbursements: (Transaction | CashTransaction)[] = [...bankReimbursements, ...cashReimbursements]
   const receivedAmount = Math.round(allReimbursements.reduce((sum, t) => sum + t.amount, 0) * 100) / 100
   const expectedAmount = Math.round(share.expectedAmount * 100) / 100
-  const pendingAmount = Math.max(0, Math.round((expectedAmount - receivedAmount) * 100) / 100)
+  const appliedAmount = Math.min(expectedAmount, receivedAmount)
+  const pendingAmount = Math.max(0, Math.round((expectedAmount - appliedAmount) * 100) / 100)
 
   let status: ExpenseShareStatus = 'pending'
   if (pendingAmount <= 0) {
@@ -375,6 +377,7 @@ export function selectExpenseShareStatus(
   return {
     expectedAmount,
     receivedAmount,
+    appliedAmount,
     pendingAmount,
     status,
     reimbursements: allReimbursements,
@@ -422,7 +425,7 @@ export function selectExpenseShareDetails(
 
   const totalExpected = Math.round(expenseShares.reduce((acc, s) => acc + s.expectedAmount, 0) * 100) / 100
   const totalRecovered = Math.round(
-    externalSharesWithStatus.reduce((acc, s) => acc + s.receivedAmount, 0) * 100
+    externalSharesWithStatus.reduce((acc, s) => acc + s.appliedAmount, 0) * 100
   ) / 100
   const totalPendingToRecover = Math.round(
     externalSharesWithStatus.reduce((acc, s) => acc + s.pendingAmount, 0) * 100

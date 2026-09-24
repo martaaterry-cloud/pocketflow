@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import type { CreateSpecialPeriodInput, SpecialPeriod, SpecialPeriodType, UpdateSpecialPeriodInput } from '../models/finance'
+import type { CreateSpecialPeriodInput, Reserve, SpecialPeriod, SpecialPeriodType, UpdateSpecialPeriodInput } from '../models/finance'
 import { validateSpecialPeriodDates } from '../utils/planSelectors'
 import { AppIcon } from '../ui/icons'
 
@@ -7,11 +7,19 @@ interface SpecialPeriodModalProps {
   open: boolean
   onClose: () => void
   period?: SpecialPeriod | null
+  reserves?: Reserve[]
   onSave: (data: CreateSpecialPeriodInput | UpdateSpecialPeriodInput, id?: string) => void
   onDelete?: (id: string) => void
 }
 
-export function SpecialPeriodModal({ open, onClose, period, onSave, onDelete }: SpecialPeriodModalProps) {
+export function SpecialPeriodModal({
+  open,
+  onClose,
+  period,
+  reserves = [],
+  onSave,
+  onDelete,
+}: SpecialPeriodModalProps) {
   const [name, setName] = useState('')
   const [startDate, setStartDate] = useState('')
   const [endDate, setEndDate] = useState('')
@@ -22,6 +30,7 @@ export function SpecialPeriodModal({ open, onClose, period, onSave, onDelete }: 
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
 
   const isEditing = Boolean(period)
+  const linkedReserves = isEditing && period ? reserves.filter((r) => r.specialPeriodId === period.id) : []
 
   useEffect(() => {
     if (period) {
@@ -227,7 +236,14 @@ export function SpecialPeriodModal({ open, onClose, period, onSave, onDelete }: 
                   </button>
                 ) : (
                   <div className="confirm-delete-box">
-                    <p>¿Seguro que deseas eliminar este periodo estacional?</p>
+                    <p>
+                      ¿Seguro que deseas eliminar este periodo estacional?
+                      {linkedReserves.length > 0 && (
+                        <span style={{ display: 'block', marginTop: 6, fontWeight: 500 }}>
+                          Este periodo tiene {linkedReserves.length} reserva(s) vinculada(s). Se eliminará el vínculo, pero las reservas se conservarán.
+                        </span>
+                      )}
+                    </p>
                     <div className="confirm-delete-actions">
                       <button
                         type="button"

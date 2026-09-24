@@ -29,6 +29,7 @@ export function HomePage({
   finance,
   onAdd,
   onSelectTransaction,
+  onSelectSharedExpense,
   onNavigateToVariableEstimates,
   onNavigateToReceivables,
   onNavigateToPlan,
@@ -36,6 +37,7 @@ export function HomePage({
   finance: ReturnTypeFinance
   onAdd: () => void
   onSelectTransaction?: (tx: Transaction) => void
+  onSelectSharedExpense?: (tx: Transaction | CashTransaction) => void
   onNavigateToVariableEstimates?: () => void
   onNavigateToReceivables?: () => void
   onNavigateToPlan?: () => void
@@ -552,8 +554,16 @@ export function HomePage({
                 transactions={finance.transactions}
                 categories={finance.categories}
                 expenseShares={finance.expenseShares}
+                cashTransactions={finance.cashTransactions}
+                allTransactions={finance.transactions}
                 limit={5}
-                onSelect={onSelectTransaction}
+                onSelect={(t) => {
+                  if (t.isShared && onSelectSharedExpense) {
+                    onSelectSharedExpense(t)
+                  } else {
+                    onSelectTransaction?.(t)
+                  }
+                }}
                 onEdit={onSelectTransaction}
                 onDelete={(t) => setTxToDelete(t)}
               />
@@ -624,7 +634,13 @@ export function HomePage({
               <CashTransactionList
                 transactions={cashTransactions}
                 categories={finance.categories}
-                onEdit={(tx) => setEditingCashTx(tx)}
+                onEdit={(tx) => {
+                  if (tx.isShared && onSelectSharedExpense) {
+                    onSelectSharedExpense(tx)
+                  } else {
+                    setEditingCashTx(tx)
+                  }
+                }}
               />
             </section>
           </div>

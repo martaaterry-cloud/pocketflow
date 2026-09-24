@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect } from 'react'
-import type { Category, ExpenseShare, Transaction } from '../models/finance'
+import type { CashTransaction, Category, ExpenseShare, Transaction } from '../models/finance'
 import { SwipeableTransactionRow } from './SwipeableTransactionRow'
 import { selectExpenseShareStatus } from '../utils/sharedExpenseSelectors'
 
@@ -7,6 +7,8 @@ export function TransactionList({
   transactions,
   categories,
   expenseShares = [],
+  cashTransactions = [],
+  allTransactions,
   limit,
   onSelect,
   onEdit,
@@ -15,6 +17,8 @@ export function TransactionList({
   transactions: Transaction[]
   categories: Category[]
   expenseShares?: ExpenseShare[]
+  cashTransactions?: CashTransaction[]
+  allTransactions?: Transaction[]
   limit?: number
   onSelect?: (transaction: Transaction) => void
   onEdit?: (transaction: Transaction) => void
@@ -41,18 +45,19 @@ export function TransactionList({
     }
   }, [openRowId])
 
-  // Mapa rápido de deudas pendientes por transacción compartida
+  // Mapa rápido de deudas pendientes por transacción compartida usando fuente canónica y completa
+  const txSource = allTransactions ?? transactions
   const pendingByTx = useMemo(() => {
     const map = new Map<string, number>()
     if (!expenseShares.length) return map
 
     expenseShares.filter((s) => !s.isPayerShare).forEach((s) => {
-      const { pendingAmount } = selectExpenseShareStatus(s, transactions)
+      const { pendingAmount } = selectExpenseShareStatus(s, txSource, cashTransactions)
       const prev = map.get(s.expenseTransactionId) ?? 0
       map.set(s.expenseTransactionId, Math.round((prev + pendingAmount) * 100) / 100)
     })
     return map
-  }, [expenseShares, transactions])
+  }, [expenseShares, txSource, cashTransactions])
 
   if (rows.length === 0) {
     return (

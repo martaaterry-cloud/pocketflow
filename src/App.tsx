@@ -3,10 +3,11 @@ import { App as CapacitorApp } from '@capacitor/app'
 import type { User } from '@supabase/supabase-js'
 import { AddTransactionModal } from './components/AddTransactionModal'
 import { CashWithdrawalLinkModal } from './components/CashWithdrawalLinkModal'
+import { EditCashTransactionModal } from './components/EditCashTransactionModal'
 import { QuickActionSheet } from './components/QuickActionSheet'
 import { ReimbursementModal } from './components/ReimbursementModal'
 import { SharedExpenseDetailModal } from './components/SharedExpenseDetailModal'
-import type { Transaction } from './models/finance'
+import type { CashTransaction, Transaction } from './models/finance'
 import { money } from './utils/money'
 import { CalendarPage } from './pages/CalendarPage'
 import { HomePage } from './pages/HomePage'
@@ -421,7 +422,8 @@ export default function App() {
   const [modalDefaultType, setModalDefaultType] = useState<'expense' | 'income' | 'transfer'>('expense')
   const [isReimbursementModalOpen, setIsReimbursementModalOpen] = useState(false)
   const [reimbursementShareId, setReimbursementShareId] = useState<string | undefined>(undefined)
-  const [selectedSharedTx, setSelectedSharedTx] = useState<Transaction | null>(null)
+  const [selectedSharedTx, setSelectedSharedTx] = useState<Transaction | CashTransaction | null>(null)
+  const [editingCashTx, setEditingCashTx] = useState<CashTransaction | null>(null)
 
   const handleOpenAdd = () => {
     setIsActionSheetOpen(true)
@@ -487,6 +489,7 @@ export default function App() {
           finance={finance}
           onAdd={handleOpenAdd}
           onSelectTransaction={handleSelectTransaction}
+          onSelectSharedExpense={(tx) => setSelectedSharedTx(tx)}
           onNavigateToVariableEstimates={() => {
             setMoreSubView('variable_estimates')
             setTab('more')
@@ -636,12 +639,27 @@ export default function App() {
           }}
           onEditExpense={(tx) => {
             setSelectedSharedTx(null)
-            setSelectedTx(tx)
-            setModalDefaultType('expense')
-            setIsModalOpen(true)
+            if ('accountId' in tx) {
+              setSelectedTx(tx)
+              setModalDefaultType('expense')
+              setIsModalOpen(true)
+            } else {
+              setEditingCashTx(tx)
+            }
           }}
         />
       )}
+
+      <EditCashTransactionModal
+        open={Boolean(editingCashTx)}
+        onClose={() => setEditingCashTx(null)}
+        transaction={editingCashTx}
+        categories={finance.categories}
+        expenseShares={finance.expenseShares}
+        sharedContacts={finance.sharedContacts}
+        onUpdate={(id, patch, shares) => finance.updateCashTransaction(id, patch, shares)}
+        onDelete={(id) => finance.deleteCashTransaction(id)}
+      />
 
       <AddTransactionModal
         open={isModalOpen}

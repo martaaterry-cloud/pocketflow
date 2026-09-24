@@ -160,6 +160,8 @@ export function MovementsPage({
           transactions={filteredTransactions}
           categories={finance.categories}
           expenseShares={finance.expenseShares}
+          cashTransactions={finance.cashTransactions}
+          allTransactions={finance.transactions}
           onSelect={onSelectTransaction}
           onEdit={onSelectTransaction}
           onDelete={(t) => setTxToDelete(t)}

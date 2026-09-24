@@ -363,6 +363,32 @@ export function SavingsPage({ finance }: { finance: ReturnTypeFinance }) {
                       <div>
                         <strong>{reserve.name}</strong>
                         <span className="goal-deadline">Previsto: {reserve.targetDate}</span>
+                        {(() => {
+                          const linkedPeriod = reserve.specialPeriodId
+                            ? finance.specialPeriods?.find((p) => p.id === reserve.specialPeriodId)
+                            : null
+                          if (!linkedPeriod) return null
+                          return (
+                            <span
+                              className="reserve-period-badge"
+                              style={{
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: 4,
+                                fontSize: '0.75rem',
+                                color: 'var(--text-muted, #64748b)',
+                                backgroundColor: 'var(--bg-card-light, #f1f5f9)',
+                                padding: '2px 8px',
+                                borderRadius: 6,
+                                marginTop: 4,
+                                fontWeight: 500,
+                              }}
+                            >
+                              <AppIcon name="calendar" size={12} />
+                              Periodo: {linkedPeriod.name}
+                            </span>
+                          )
+                        })()}
                       </div>
                     </div>
                     <span className={`goal-badge ${isCovered ? 'completed' : ''}`}>
@@ -459,6 +485,7 @@ export function SavingsPage({ finance }: { finance: ReturnTypeFinance }) {
           setEditingReserve(null)
         }}
         reserve={editingReserve}
+        specialPeriods={finance.specialPeriods}
         onSave={handleSaveReserve}
         onDelete={finance.deleteReserve}
       />

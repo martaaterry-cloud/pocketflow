@@ -155,7 +155,11 @@ export function MorePage({
     )
   }
 
-  const pendingDebtors = selectPendingDebtors(finance.expenseShares ?? [], finance.transactions ?? [])
+  const pendingDebtors = selectPendingDebtors(
+    finance.expenseShares ?? [],
+    finance.transactions ?? [],
+    finance.cashTransactions ?? []
+  )
 
   return (
     <main className="page">

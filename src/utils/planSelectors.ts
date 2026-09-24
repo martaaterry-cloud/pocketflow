@@ -848,12 +848,13 @@ export function validateSpecialPeriodDates(
  * - Importe objetivo: si expectedExtraBudget > 0 se sugiere ese importe; si no tiene estimación (o es <= 0), se deja undefined.
  */
 export function buildReserveInitialValuesFromSpecialPeriod(
-  period: Pick<SpecialPeriod, 'name' | 'startDate'> & { expectedExtraBudget?: number | null }
+  period: Pick<SpecialPeriod, 'name' | 'startDate'> & { id?: string; expectedExtraBudget?: number | null }
 ): {
   name: string
   targetDate: string
   targetAmount?: number
   iconKey: string
+  specialPeriodId?: string
 } {
   return {
     name: period.name,
@@ -863,6 +864,7 @@ export function buildReserveInitialValuesFromSpecialPeriod(
         ? period.expectedExtraBudget
         : undefined,
     iconKey: 'sparkles',
+    specialPeriodId: period.id,
   }
 }
 

@@ -575,6 +575,8 @@ export function generateExcelWorkbook(
   // ==========================================
   // 8. HOJA: RESERVAS
   // ==========================================
+  const specialPeriodsMap = new Map((specialPeriods || []).map((p) => [p.id, p]))
+
   const reservasHeaders = [
     'ID',
     'Nombre',
@@ -584,6 +586,8 @@ export function generateExcelWorkbook(
     'Fecha objetivo',
     'Cuota mensual sugerida (€)',
     'Activo',
+    'Periodo especial asociado',
+    'ID Periodo especial',
     'Nota',
   ]
   const reservasRows = reserves.map((r) => {
@@ -591,6 +595,11 @@ export function generateExcelWorkbook(
     const current = Math.round((r.currentAllocated || 0) * 100) / 100
     const progress = target > 0 ? Math.min(100, Math.round((current / target) * 100)) : 0
     const quota = selectMonthlyReserveNeeded(r, referenceDate)
+    const linkedPeriod = r.specialPeriodId ? specialPeriodsMap.get(r.specialPeriodId) : null
+    const periodLabel = linkedPeriod
+      ? `${linkedPeriod.name} (${linkedPeriod.startDate} - ${linkedPeriod.endDate})`
+      : 'Ninguno'
+    const periodId = r.specialPeriodId || ''
     return [
       r.id,
       r.name,
@@ -600,12 +609,14 @@ export function generateExcelWorkbook(
       r.targetDate || '',
       quota,
       r.active ? 'Sí' : 'No',
+      periodLabel,
+      periodId,
       r.note || '',
     ]
   })
   const wsReservas = XLSX.utils.aoa_to_sheet([reservasHeaders, ...reservasRows])
-  setColWidths(wsReservas, [16, 26, 20, 18, 14, 16, 24, 10, 24])
-  wsReservas['!autofilter'] = { ref: `A1:I${Math.max(1, reservasRows.length + 1)}` }
+  setColWidths(wsReservas, [16, 26, 20, 18, 14, 16, 24, 10, 28, 18, 24])
+  wsReservas['!autofilter'] = { ref: `A1:K${Math.max(1, reservasRows.length + 1)}` }
   XLSX.utils.book_append_sheet(wb, wsReservas, 'RESERVAS')
 
   // ==========================================

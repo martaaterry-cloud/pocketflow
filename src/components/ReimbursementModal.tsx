@@ -1,7 +1,7 @@
 import { useState, useMemo, useEffect } from 'react'
 import type { Account, CashTransaction, ExpenseShare, Transaction } from '../models/finance'
 import { money, shortDate } from '../utils/money'
-import { selectPendingDebtors } from '../utils/sharedExpenseSelectors'
+import { selectPendingDebtors, selectExpenseShareStatus } from '../utils/sharedExpenseSelectors'
 import { AppIcon } from '../ui/icons'
 
 interface ReimbursementModalProps {
@@ -54,28 +54,17 @@ export function ReimbursementModal({
     const list: {
       share: ExpenseShare
       pendingAmount: number
-      expense?: Transaction
+      expense?: Transaction | CashTransaction
     }[] = []
 
     expenseShares.filter((s) => !s.isPayerShare).forEach((s) => {
-      const parentTx = transactions.find((t) => t.id === s.expenseTransactionId)
-      const bankReimbursements = transactions.filter(
-        (t) => t.type === 'income' && t.incomeKind === 'reimbursement' && t.expenseShareId === s.id
-      )
-      const cashReimbursements = cashTransactions.filter(
-        (c) =>
-          c.type === 'income' &&
-          c.bankTransactionId === s.expenseTransactionId &&
-          (c.note?.includes(s.id) || !c.note?.includes('[share:'))
-      )
+      const parentTx =
+        transactions.find((t) => t.id === s.expenseTransactionId) ||
+        cashTransactions.find((c) => c.id === s.expenseTransactionId)
+      const { pendingAmount } = selectExpenseShareStatus(s, transactions, cashTransactions)
 
-      const bankReceived = bankReimbursements.reduce((sum, t) => sum + t.amount, 0)
-      const cashReceived = cashReimbursements.reduce((sum, c) => sum + c.amount, 0)
-      const totalReceived = bankReceived + cashReceived
-
-      const pending = Math.max(0, Math.round((s.expectedAmount - totalReceived) * 100) / 100)
-      if (pending > 0) {
-        list.push({ share: s, pendingAmount: pending, expense: parentTx })
+      if (pendingAmount > 0) {
+        list.push({ share: s, pendingAmount, expense: parentTx })
       }
     })
 

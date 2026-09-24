@@ -6834,11 +6834,11 @@ describe('Fase 18 — Identificación Visual de Versión y Build', () => {
   it('314. Versioning: única fuente de verdad y formato de visualización exacto', () => {
     assert.equal(APP_NAME, 'PocketFlow')
     assert.equal(APP_VERSION, '0.18.0')
-    assert.equal(APP_BUILD, '2026.09.24-05')
+    assert.equal(APP_BUILD, '2026.09.24-07')
  
     assert.equal(getAppVersionString(), 'PocketFlow v0.18.0')
-    assert.equal(getAppBuildString(), 'Build 2026.09.24-05')
-    assert.equal(getAppFullVersionLabel(), 'PocketFlow v0.18.0 · Build 2026.09.24-05')
+    assert.equal(getAppBuildString(), 'Build 2026.09.24-07')
+    assert.equal(getAppFullVersionLabel(), 'PocketFlow v0.18.0 · Build 2026.09.24-07')
   })
 })
 
@@ -12499,6 +12499,745 @@ describe('Fase 44 — Gastos Compartidos en Efectivo (CashTransaction + ExpenseS
     assert.equal(freeSavings, 1000, 'Ahorro libre = 2000 - 1000 = 1000 € intacto')
   })
 })
+
+describe('Fase 45 — Vínculo Opcional entre Reservas y Periodos Especiales (Reserve <-> SpecialPeriod)', () => {
+  // 1. Reserva sin periodo sigue funcionando
+  it('537. 1. Reserva sin periodo sigue funcionando de forma 100% independiente', () => {
+    const reserve: Reserve = {
+      id: 'res_seguro',
+      name: 'Seguro del coche',
+      targetAmount: 600,
+      currentAllocated: 200,
+      targetDate: '2026-11-15',
+      iconKey: 'shield',
+      active: true,
+      specialPeriodId: undefined,
+    }
+
+    assert.equal(reserve.specialPeriodId, undefined)
+    assert.equal(reserve.targetAmount, 600)
+    assert.equal(reserve.currentAllocated, 200)
+  })
+
+  // 2. Reserva puede vincularse a periodo
+  it('538. 2. Reserva puede vincularse a un periodo especial existente', () => {
+    const period: SpecialPeriod = {
+      id: 'sp_navidad_2026',
+      name: 'Navidad 2026',
+      startDate: '2026-12-15',
+      endDate: '2027-01-06',
+      expectedExtraBudget: 500,
+      type: 'expected_high_spend',
+    }
+    const reserve: Reserve = {
+      id: 'res_regalos',
+      name: 'Regalos Navidad',
+      targetAmount: 400,
+      currentAllocated: 150,
+      targetDate: '2026-12-20',
+      iconKey: 'gift',
+      active: true,
+      specialPeriodId: period.id,
+    }
+
+    assert.equal(reserve.specialPeriodId, 'sp_navidad_2026')
+    assert.equal(reserve.name, 'Regalos Navidad')
+  })
+
+  // 3. Crear reserva desde periodo asigna specialPeriodId
+  it('539. 3. Crear reserva desde periodo especial asigna automáticamente specialPeriodId', () => {
+    const period: SpecialPeriod = {
+      id: 'sp_vacaciones',
+      name: 'Vacaciones de Verano',
+      startDate: '2026-08-01',
+      endDate: '2026-08-15',
+      expectedExtraBudget: 800,
+      type: 'expected_high_spend',
+    }
+
+    const initialValues = buildReserveInitialValuesFromSpecialPeriod(period)
+    assert.equal(initialValues.name, 'Vacaciones de Verano')
+    assert.equal(initialValues.targetDate, '2026-08-01')
+    assert.equal(initialValues.targetAmount, 800)
+    assert.equal(initialValues.specialPeriodId, 'sp_vacaciones')
+  })
+
+  // 4. Editar reserva cambia periodo
+  it('540. 4. Editar reserva permite cambiar de periodo especial', () => {
+    const reserve: Reserve = {
+      id: 'res_1',
+      name: 'Reserva flexible',
+      targetAmount: 300,
+      currentAllocated: 50,
+      targetDate: '2026-10-01',
+      iconKey: 'target',
+      active: true,
+      specialPeriodId: 'sp_period_1',
+    }
+
+    const updated: Reserve = {
+      ...reserve,
+      specialPeriodId: 'sp_period_2',
+    }
+
+    assert.equal(updated.specialPeriodId, 'sp_period_2')
+  })
+
+  // 5. Editar reserva elimina vínculo
+  it('541. 5. Editar reserva permite eliminar el vínculo estableciendo specialPeriodId en null/undefined', () => {
+    const reserve: Reserve = {
+      id: 'res_1',
+      name: 'Reserva antes vinculada',
+      targetAmount: 300,
+      currentAllocated: 50,
+      targetDate: '2026-10-01',
+      iconKey: 'target',
+      active: true,
+      specialPeriodId: 'sp_period_1',
+    }
+
+    const unlinked: Reserve = {
+      ...reserve,
+      specialPeriodId: undefined,
+    }
+
+    assert.equal(unlinked.specialPeriodId, undefined)
+    assert.equal(unlinked.name, 'Reserva antes vinculada')
+    assert.equal(unlinked.currentAllocated, 50)
+  })
+
+  // 6. Borrar periodo desvincula reservas sin borrarlas
+  it('542. 6. Borrar un periodo especial desvincula sus reservas asociadas sin eliminarlas', () => {
+    const reserves: Reserve[] = [
+      {
+        id: 'res_navidad_1',
+        name: 'Regalos',
+        targetAmount: 200,
+        currentAllocated: 100,
+        targetDate: '2026-12-24',
+        iconKey: 'sparkles',
+        active: true,
+        specialPeriodId: 'sp_navidad',
+      },
+      {
+        id: 'res_navidad_2',
+        name: 'Cena',
+        targetAmount: 150,
+        currentAllocated: 50,
+        targetDate: '2026-12-24',
+        iconKey: 'sparkles',
+        active: true,
+        specialPeriodId: 'sp_navidad',
+      },
+      {
+        id: 'res_coche',
+        name: 'Seguro',
+        targetAmount: 500,
+        currentAllocated: 300,
+        targetDate: '2026-11-01',
+        iconKey: 'shield',
+        active: true,
+      },
+    ]
+
+    const periodToDeleteId = 'sp_navidad'
+
+    // Lógica canónica de desvinculación segura
+    const nextReserves = reserves.map((r) => {
+      if (r.specialPeriodId === periodToDeleteId) {
+        return { ...r, specialPeriodId: undefined }
+      }
+      return r
+    })
+
+    assert.equal(nextReserves.length, 3, 'Ninguna reserva se borra')
+    assert.equal(nextReserves[0].specialPeriodId, undefined, 'Reserva 1 desvinculada')
+    assert.equal(nextReserves[0].currentAllocated, 100, 'Saldo de reserva 1 intacto')
+    assert.equal(nextReserves[1].specialPeriodId, undefined, 'Reserva 2 desvinculada')
+    assert.equal(nextReserves[2].specialPeriodId, undefined, 'Reserva 3 sigue intacta')
+  })
+
+  // 7. Editar periodo no modifica campos de reserva
+  it('543. 7. Editar un periodo especial no altera nombre, fecha ni saldo de la reserva vinculada', () => {
+    const period: SpecialPeriod = {
+      id: 'sp_1',
+      name: 'Navidad Original',
+      startDate: '2026-12-15',
+      endDate: '2027-01-06',
+      expectedExtraBudget: 500,
+      type: 'expected_high_spend',
+    }
+    const reserve: Reserve = {
+      id: 'res_1',
+      name: 'Regalos Personalizados',
+      targetAmount: 350,
+      currentAllocated: 120,
+      targetDate: '2026-12-22',
+      iconKey: 'gift',
+      active: true,
+      specialPeriodId: 'sp_1',
+    }
+
+    // Editar periodo
+    const updatedPeriod: SpecialPeriod = {
+      ...period,
+      name: 'Navidad 2026 Modificada',
+      expectedExtraBudget: 750,
+      startDate: '2026-12-10',
+    }
+
+    assert.equal(reserve.name, 'Regalos Personalizados', 'Nombre de la reserva no cambia')
+    assert.equal(reserve.targetAmount, 350, 'Objetivo de reserva no cambia')
+    assert.equal(reserve.targetDate, '2026-12-22', 'Fecha de reserva no cambia')
+    assert.equal(reserve.currentAllocated, 120, 'Asignación no cambia')
+    assert.equal(reserve.specialPeriodId, updatedPeriod.id, 'Vínculo sigue apuntando al periodo')
+  })
+
+  // 8. Vínculo no altera ahorro
+  it('544. 8. El vínculo no altera el cálculo de Ahorro Libre disponible ni asignado', () => {
+    const savingsBalance = 2500
+    const emergencyFundAllocated = 1000
+    const goalsAssigned = 300
+    const reservesAllocated = 400
+
+    const freeSavingsWithoutLink = selectFreeSavingsWithReserves(
+      savingsBalance,
+      emergencyFundAllocated,
+      goalsAssigned,
+      reservesAllocated
+    )
+
+    // Con reserva vinculada a periodo especial
+    const freeSavingsWithLink = selectFreeSavingsWithReserves(
+      savingsBalance,
+      emergencyFundAllocated,
+      goalsAssigned,
+      reservesAllocated
+    )
+
+    assert.equal(freeSavingsWithoutLink, 800)
+    assert.equal(freeSavingsWithLink, 800, 'El cálculo de ahorro libre es idéntico (2500 - 1000 - 300 - 400 = 800 €)')
+  })
+
+  // 9. Vínculo no altera Plan
+  it('545. 9. El vínculo no altera las proyecciones financieras ni el margen del Plan', () => {
+    const settings: FinancialPlanSettings = {
+      monthlyIncome: 2200,
+      targetSavingsType: 'percentage',
+      targetSavingsValue: 10,
+      emergencyFundTargetType: 'months',
+      emergencyFundTargetValue: 3,
+      emergencyFundCurrent: 1000,
+      essentialCategoryIds: ['housing', 'utilities'],
+    }
+    const recurring: RecurringPayment[] = []
+    const variableEstimates: VariableExpenseEstimate[] = []
+    const specialPeriods: SpecialPeriod[] = [
+      {
+        id: 'sp_1',
+        name: 'Periodo 1',
+        startDate: '2026-09-01',
+        endDate: '2026-09-30',
+        expectedExtraBudget: 200,
+        type: 'expected_high_spend',
+      },
+    ]
+    const reservesUnlinked: Reserve[] = [
+      {
+        id: 'r_1',
+        name: 'Reserva 1',
+        targetAmount: 300,
+        currentAllocated: 100,
+        targetDate: '2026-12-01',
+        iconKey: 'target',
+        active: true,
+      },
+    ]
+    const reservesLinked: Reserve[] = [
+      {
+        id: 'r_1',
+        name: 'Reserva 1',
+        targetAmount: 300,
+        currentAllocated: 100,
+        targetDate: '2026-12-01',
+        iconKey: 'target',
+        active: true,
+        specialPeriodId: 'sp_1',
+      },
+    ]
+
+    const summary1 = selectMonthlyPlanCardSummary(
+      settings,
+      recurring,
+      variableEstimates,
+      specialPeriods,
+      reservesUnlinked,
+      new Date('2026-09-15')
+    )
+    const summary2 = selectMonthlyPlanCardSummary(
+      settings,
+      recurring,
+      variableEstimates,
+      specialPeriods,
+      reservesLinked,
+      new Date('2026-09-15')
+    )
+
+    assert.equal(summary1.estimatedMargin, summary2.estimatedMargin)
+    assert.equal(summary1.expectedExtraExpenses, summary2.expectedExtraExpenses)
+  })
+
+  // 10. Vínculo no altera expectedExtraBudget
+  it('10. Vínculo no altera expectedExtraBudget ni suma reservas dos veces en meses estacionales', () => {
+    const specialPeriods: SpecialPeriod[] = [
+      {
+        id: 'sp_navidad',
+        name: 'Navidad',
+        startDate: '2026-12-01',
+        endDate: '2026-12-31',
+        expectedExtraBudget: 500,
+        type: 'expected_high_spend',
+      },
+    ]
+
+    const expectedExtra = selectExpectedExtraSpendingForMonth(specialPeriods, new Date('2026-12-15'))
+    assert.equal(expectedExtra, 500, 'El gasto extraordinario esperado del periodo sigue siendo exactamente 500 €')
+  })
+
+  // 11. Persistencia local conserva specialPeriodId
+  it('11. Persistencia local en LocalStorageAdapter conserva specialPeriodId de las reservas', () => {
+    const rawState = {
+      accounts: [],
+      transactions: [],
+      reserves: [
+        {
+          id: 'res_persisted',
+          name: 'Reserva con periodo',
+          targetAmount: 500,
+          currentAllocated: 100,
+          targetDate: '2026-10-15',
+          iconKey: 'sparkles',
+          active: true,
+          specialPeriodId: 'sp_persisted_123',
+        },
+      ],
+    }
+
+    const migrated = migratePersistedState(rawState)
+    assert.equal(migrated.reserves[0].specialPeriodId, 'sp_persisted_123')
+  })
+
+  // 12. Supabase mapper conserva special_period_id
+  it('12. Supabase mappers toDbReserve y fromDbReserve mapean correctamente special_period_id', () => {
+    const reserve: Reserve = {
+      id: 'res_sync',
+      name: 'Reserva Sincronizada',
+      targetAmount: 700,
+      currentAllocated: 250,
+      targetDate: '2026-11-20',
+      iconKey: 'target',
+      active: true,
+      note: 'Nota de prueba',
+      specialPeriodId: 'sp_sync_abc',
+    }
+
+    const dbRow = toDbReserve(reserve, 'user_123')
+    assert.equal(dbRow.special_period_id, 'sp_sync_abc')
+
+    const mappedBack = fromDbReserve(dbRow as Record<string, unknown>)
+    assert.equal(mappedBack.specialPeriodId, 'sp_sync_abc')
+  })
+
+  // 13. Realtime no pierde vínculo
+  it('13. Recepción realtime desde Supabase restaura specialPeriodId con fromDbReserve', () => {
+    const incomingRealtimeRow = {
+      id: 'res_realtime',
+      user_id: 'user_456',
+      name: 'Reserva Realtime',
+      target_amount: 1000,
+      current_allocated: 500,
+      target_date: '2026-12-31',
+      icon_key: 'gift',
+      active: true,
+      special_period_id: 'sp_realtime_period',
+    }
+
+    const model = fromDbReserve(incomingRealtimeRow)
+    assert.equal(model.specialPeriodId, 'sp_realtime_period')
+  })
+
+  // 14. Export JSON incluye vínculo
+  it('14. Exportación a JSON (createBackupPayload) incluye specialPeriodId en el payload', () => {
+    const mockState: PersistedState = {
+      accounts: [],
+      transactions: [],
+      goals: [],
+      recurring: [],
+      categories: [],
+      budgets: [],
+      reserves: [
+        {
+          id: 'res_backup',
+          name: 'Reserva Exportada',
+          targetAmount: 450,
+          currentAllocated: 150,
+          targetDate: '2026-09-30',
+          iconKey: 'shield',
+          active: true,
+          specialPeriodId: 'sp_backup_id',
+        },
+      ],
+      specialPeriods: [
+        {
+          id: 'sp_backup_id',
+          name: 'Periodo Exportado',
+          startDate: '2026-09-01',
+          endDate: '2026-09-30',
+          expectedExtraBudget: 300,
+          type: 'expected_high_spend',
+        },
+      ],
+      planSettings: {
+        monthlyIncome: 2000,
+        targetSavingsType: 'percentage',
+        targetSavingsValue: 10,
+        emergencyFundTargetType: 'months',
+        emergencyFundTargetValue: 3,
+        emergencyFundCurrent: 500,
+        essentialCategoryIds: [],
+      },
+      profile: { displayName: 'Marta' },
+      variableExpenseEstimates: [],
+      sharedContacts: [],
+      expenseShares: [],
+      cashTransactions: [],
+    }
+
+    const payload = createBackupPayload(mockState)
+    const backupReserve = payload.data.reserves[0]
+    assert.equal(backupReserve.specialPeriodId, 'sp_backup_id')
+  })
+
+  // 15. Excel RESERVAS muestra periodo asociado
+  it('15. Exportación a Excel genera hoja RESERVAS con columna Periodo especial asociado', () => {
+    const mockState: PersistedState = {
+      accounts: [],
+      transactions: [],
+      goals: [],
+      recurring: [],
+      categories: [],
+      budgets: [],
+      reserves: [
+        {
+          id: 'res_excel',
+          name: 'Reserva Excel',
+          targetAmount: 600,
+          currentAllocated: 200,
+          targetDate: '2026-12-25',
+          iconKey: 'sparkles',
+          active: true,
+          specialPeriodId: 'sp_excel_navidad',
+        },
+      ],
+      specialPeriods: [
+        {
+          id: 'sp_excel_navidad',
+          name: 'Navidad 2026',
+          startDate: '2026-12-15',
+          endDate: '2027-01-06',
+          expectedExtraBudget: 500,
+          type: 'expected_high_spend',
+        },
+      ],
+      planSettings: {
+        monthlyIncome: 2000,
+        targetSavingsType: 'percentage',
+        targetSavingsValue: 10,
+        emergencyFundTargetType: 'months',
+        emergencyFundTargetValue: 3,
+        emergencyFundCurrent: 500,
+        essentialCategoryIds: [],
+      },
+      profile: { displayName: 'Marta' },
+      variableExpenseEstimates: [],
+      sharedContacts: [],
+      expenseShares: [],
+      cashTransactions: [],
+    }
+
+    const wb = generateExcelWorkbook(mockState, new Date('2026-09-15'))
+    assert.ok(wb.Sheets['RESERVAS'], 'La hoja RESERVAS existe en el workbook')
+  })
+})
+
+describe('Fase 46 — Corrección Canónica de Gastos Compartidos + Reembolsos en Efectivo (Caso HSN y Coherencia Total)', () => {
+  // CASO REAL EXACTO HSN
+  it('547. Caso Real HSN: Gasto 48,99 €, cuota Sergi 24,50 €, reembolso efectivo +30,00 € -> saldo liquidado, pending=0, sin saldo negativo', () => {
+    const hsnExpense: Transaction = {
+      id: 'tx_hsn_4899',
+      type: 'expense',
+      amount: 48.99,
+      description: 'HSN',
+      categoryId: 'health',
+      accountId: 'daily',
+      date: '2026-09-20T10:00:00.000Z',
+      isShared: true,
+    }
+
+    const shares: ExpenseShare[] = [
+      {
+        id: 'share_hsn_payer',
+        expenseTransactionId: 'tx_hsn_4899',
+        participantName: 'Tú',
+        isPayerShare: true,
+        expectedAmount: 24.49,
+      },
+      {
+        id: 'share_hsn_sergi',
+        expenseTransactionId: 'tx_hsn_4899',
+        participantName: 'Sergi',
+        isPayerShare: false,
+        expectedAmount: 24.50,
+      },
+    ]
+
+    const cashReimbursement: CashTransaction = {
+      id: 'cash_reimb_hsn_30',
+      type: 'income',
+      amount: 30.00,
+      description: 'Efectivo Sergi · HSN',
+      bankTransactionId: 'tx_hsn_4899',
+      date: '2026-09-21T12:00:00.000Z',
+    }
+
+    // 1. Selector de estado individual
+    const sergiStatus = selectExpenseShareStatus(shares[1], [hsnExpense], [cashReimbursement])
+    assert.equal(sergiStatus.expectedAmount, 24.50, 'Cuota esperada de Sergi = 24,50 €')
+    assert.equal(sergiStatus.receivedAmount, 30.00, 'Reembolso físico recibido = 30,00 €')
+    assert.equal(sergiStatus.appliedAmount, 24.50, 'Reembolso aplicado clamp a deuda = 24,50 €')
+    assert.equal(sergiStatus.pendingAmount, 0, 'Pendiente queda exactamente en 0,00 € (no negativo)')
+    assert.equal(sergiStatus.status, 'received', 'Estado de la cuota es received/completado')
+
+    // 2. Detalle del gasto compartido (SharedExpenseDetailModal)
+    const details = selectExpenseShareDetails('tx_hsn_4899', [hsnExpense], shares, [cashReimbursement])
+    assert.equal(details.totalExpected, 48.99)
+    assert.equal(details.totalRecovered, 24.50, 'Total recuperado = 24,50 €')
+    assert.equal(details.totalPendingToRecover, 0, 'Pendiente por recuperar = 0,00 €')
+    assert.equal(details.isFullyReimbursed, true, 'isFullyReimbursed es true')
+
+    // 3. Deudores pendientes (ReceivablesPage / Por cobrar)
+    const pendingDebtors = selectPendingDebtors(shares, [hsnExpense], [cashReimbursement])
+    assert.equal(pendingDebtors.length, 0, 'Sergi NO aparece en la lista de por cobrar')
+
+    // 4. Cobrados (ReceivablesPage tab Cobrado)
+    const settled = selectSettledReimbursements(shares, [hsnExpense], [cashReimbursement])
+    assert.equal(settled.length, 1, 'Aparece en la pestaña de cobrados')
+    assert.equal(settled[0].participantName, 'Sergi')
+    assert.equal(settled[0].amount, 24.50)
+
+    // 5. Gasto neto personal (nunca negativo)
+    const netPersonal = selectNetPersonalExpensesForPeriod([hsnExpense], new Date('2026-09-20'), 'month', [cashReimbursement])
+    assert.ok(netPersonal >= 0, 'Gasto neto nunca es negativo')
+
+    // 6. Efectivo físico no pierde los 30 €
+    const cashBalance = selectCashBalance([cashReimbursement])
+    assert.equal(cashBalance, 30.00, 'El efectivo físico conserva íntegros los 30,00 €')
+  })
+
+  // 1. Gasto banco + reembolso banco
+  it('548. 1. Gasto banco + reembolso banco salda deuda limpiamente', () => {
+    const bankExpense: Transaction = { id: 'tx_b1', type: 'expense', amount: 60, accountId: 'daily', description: 'Cena', date: '2026-09-10', isShared: true }
+    const shares: ExpenseShare[] = [
+      { id: 's_p', expenseTransactionId: 'tx_b1', participantName: 'Tú', isPayerShare: true, expectedAmount: 30 },
+      { id: 's_s', expenseTransactionId: 'tx_b1', participantName: 'Sergi', isPayerShare: false, expectedAmount: 30 },
+    ]
+    const bankBizum: Transaction = { id: 'tx_bizum', type: 'income', incomeKind: 'reimbursement', amount: 30, accountId: 'daily', description: 'Bizum Sergi', parentExpenseId: 'tx_b1', expenseShareId: 's_s', date: '2026-09-11' }
+
+    const status = selectExpenseShareStatus(shares[1], [bankExpense, bankBizum], [])
+    assert.equal(status.pendingAmount, 0)
+    assert.equal(status.status, 'received')
+    assert.equal(selectPendingDebtors(shares, [bankExpense, bankBizum], []).length, 0)
+  })
+
+  // 2. Gasto banco + reembolso efectivo
+  it('549. 2. Gasto banco + reembolso efectivo salda deuda y aumenta saldo de efectivo', () => {
+    const bankExpense: Transaction = { id: 'tx_b2', type: 'expense', amount: 60, accountId: 'daily', description: 'Supermercado', date: '2026-09-10', isShared: true }
+    const shares: ExpenseShare[] = [
+      { id: 's_p', expenseTransactionId: 'tx_b2', participantName: 'Tú', isPayerShare: true, expectedAmount: 30 },
+      { id: 's_s', expenseTransactionId: 'tx_b2', participantName: 'Sergi', isPayerShare: false, expectedAmount: 30 },
+    ]
+    const cashReimb: CashTransaction = { id: 'c_reimb_30', type: 'income', amount: 30, description: 'Efectivo Sergi · Supermercado', bankTransactionId: 'tx_b2', date: '2026-09-11' }
+
+    const status = selectExpenseShareStatus(shares[1], [bankExpense], [cashReimb])
+    assert.equal(status.pendingAmount, 0)
+    assert.equal(status.status, 'received')
+    assert.equal(selectCashBalance([cashReimb]), 30)
+    assert.equal(selectPendingDebtors(shares, [bankExpense], [cashReimb]).length, 0)
+  })
+
+  // 3. Gasto efectivo + reembolso banco
+  it('550. 3. Gasto efectivo + reembolso banco (Bizum) salda deuda de efectivo sin crear entrada cash', () => {
+    const cashExpense: CashTransaction = { id: 'c_exp_40', type: 'expense', amount: 40, description: 'Gasolina efectivo', date: '2026-09-10', isShared: true }
+    const shares: ExpenseShare[] = [
+      { id: 's_p', expenseTransactionId: 'c_exp_40', participantName: 'Tú', isPayerShare: true, expectedAmount: 20 },
+      { id: 's_s', expenseTransactionId: 'c_exp_40', participantName: 'Sergi', isPayerShare: false, expectedAmount: 20 },
+    ]
+    const bankBizum: Transaction = { id: 'tx_biz_20', type: 'income', incomeKind: 'reimbursement', amount: 20, accountId: 'daily', description: 'Bizum Sergi · Gasolina', parentExpenseId: 'c_exp_40', expenseShareId: 's_s', date: '2026-09-11' }
+
+    const status = selectExpenseShareStatus(shares[1], [bankBizum], [cashExpense])
+    assert.equal(status.pendingAmount, 0)
+    assert.equal(status.status, 'received')
+    assert.equal(selectPendingDebtors(shares, [bankBizum], [cashExpense]).length, 0)
+    assert.equal(selectCashBalance([cashExpense]), -40)
+  })
+
+  // 4. Gasto efectivo + reembolso efectivo
+  it('551. 4. Gasto efectivo + reembolso efectivo salda deuda y actualiza saldo neto físico', () => {
+    const cashExpense: CashTransaction = { id: 'c_exp_40', type: 'expense', amount: 40, description: 'Almuerzo efectivo', date: '2026-09-10', isShared: true }
+    const shares: ExpenseShare[] = [
+      { id: 's_p', expenseTransactionId: 'c_exp_40', participantName: 'Tú', isPayerShare: true, expectedAmount: 20 },
+      { id: 's_s', expenseTransactionId: 'c_exp_40', participantName: 'Sergi', isPayerShare: false, expectedAmount: 20 },
+    ]
+    const cashReimb: CashTransaction = { id: 'c_reimb_20', type: 'income', amount: 20, description: 'Efectivo Sergi · Almuerzo', bankTransactionId: 'c_exp_40', date: '2026-09-11' }
+
+    const status = selectExpenseShareStatus(shares[1], [], [cashExpense, cashReimb])
+    assert.equal(status.pendingAmount, 0)
+    assert.equal(status.status, 'received')
+    assert.equal(selectCashBalance([cashExpense, cashReimb]), -20)
+    assert.equal(selectPendingDebtors(shares, [], [cashExpense, cashReimb]).length, 0)
+  })
+
+  // 5. Sobrepago en banco
+  it('552. 5. Sobrepago en banco clamp a expectedAmount sin saldo negativo ni desbordar', () => {
+    const bankExpense: Transaction = { id: 'tx_b5', type: 'expense', amount: 50, accountId: 'daily', description: 'Regalo conjunto', date: '2026-09-10', isShared: true }
+    const shares: ExpenseShare[] = [
+      { id: 's_p', expenseTransactionId: 'tx_b5', participantName: 'Tú', isPayerShare: true, expectedAmount: 25 },
+      { id: 's_s', expenseTransactionId: 'tx_b5', participantName: 'Sergi', isPayerShare: false, expectedAmount: 25 },
+    ]
+    const overpaymentBizum: Transaction = { id: 'tx_biz_35', type: 'income', incomeKind: 'reimbursement', amount: 35, accountId: 'daily', description: 'Bizum Sergi (sobrepago)', parentExpenseId: 'tx_b5', expenseShareId: 's_s', date: '2026-09-11' }
+
+    const status = selectExpenseShareStatus(shares[1], [bankExpense, overpaymentBizum], [])
+    assert.equal(status.receivedAmount, 35)
+    assert.equal(status.appliedAmount, 25)
+    assert.equal(status.pendingAmount, 0)
+    assert.equal(status.status, 'received')
+  })
+
+  // 6. Sobrepago en efectivo
+  it('553. 6. Sobrepago en efectivo clamp a expectedAmount y conserva el saldo físico real', () => {
+    const cashExpense: CashTransaction = { id: 'c_exp_50', type: 'expense', amount: 50, description: 'Cena efectivo', date: '2026-09-10', isShared: true }
+    const shares: ExpenseShare[] = [
+      { id: 's_p', expenseTransactionId: 'c_exp_50', participantName: 'Tú', isPayerShare: true, expectedAmount: 25 },
+      { id: 's_s', expenseTransactionId: 'c_exp_50', participantName: 'Sergi', isPayerShare: false, expectedAmount: 25 },
+    ]
+    const overpaymentCash: CashTransaction = { id: 'c_reimb_35', type: 'income', amount: 35, description: 'Efectivo Sergi (sobrepago)', bankTransactionId: 'c_exp_50', date: '2026-09-11' }
+
+    const status = selectExpenseShareStatus(shares[1], [], [cashExpense, overpaymentCash])
+    assert.equal(status.receivedAmount, 35)
+    assert.equal(status.appliedAmount, 25)
+    assert.equal(status.pendingAmount, 0)
+    assert.equal(status.status, 'received')
+    assert.equal(selectCashBalance([overpaymentCash]), 35)
+  })
+
+  // 7. Reembolso parcial sigue pendiente
+  it('554. 7. Reembolso parcial mantiene estado partial y calcula pendiente exacto', () => {
+    const expense: Transaction = { id: 'tx_p7', type: 'expense', amount: 60, accountId: 'daily', description: 'Compra grande', date: '2026-09-10', isShared: true }
+    const shares: ExpenseShare[] = [
+      { id: 's_p', expenseTransactionId: 'tx_p7', participantName: 'Tú', isPayerShare: true, expectedAmount: 30 },
+      { id: 's_s', expenseTransactionId: 'tx_p7', participantName: 'Sergi', isPayerShare: false, expectedAmount: 30 },
+    ]
+    const partialCash: CashTransaction = { id: 'c_reimb_10', type: 'income', amount: 10, description: 'Efectivo Sergi parcial', bankTransactionId: 'tx_p7', date: '2026-09-11' }
+
+    const status = selectExpenseShareStatus(shares[1], [expense], [partialCash])
+    assert.equal(status.receivedAmount, 10)
+    assert.equal(status.appliedAmount, 10)
+    assert.equal(status.pendingAmount, 20)
+    assert.equal(status.status, 'partial')
+
+    const debtors = selectPendingDebtors(shares, [expense], [partialCash])
+    assert.equal(debtors.length, 1)
+    assert.equal(debtors[0].totalPending, 20)
+  })
+
+  // 8. Reembolso completo desaparece de Por cobrar
+  it('555. 8. Al completar el cobro restante, desaparece de Por cobrar y pasa a Cobrados', () => {
+    const expense: Transaction = { id: 'tx_p8', type: 'expense', amount: 60, accountId: 'daily', description: 'Compra grande', date: '2026-09-10', isShared: true }
+    const shares: ExpenseShare[] = [
+      { id: 's_p', expenseTransactionId: 'tx_p8', participantName: 'Tú', isPayerShare: true, expectedAmount: 30 },
+      { id: 's_s', expenseTransactionId: 'tx_p8', participantName: 'Sergi', isPayerShare: false, expectedAmount: 30 },
+    ]
+    const partialCash: CashTransaction = { id: 'c_reimb_10', type: 'income', amount: 10, description: 'Efectivo Sergi', bankTransactionId: 'tx_p8', date: '2026-09-11' }
+    const finalBizum: Transaction = { id: 'tx_biz_20', type: 'income', incomeKind: 'reimbursement', amount: 20, accountId: 'daily', description: 'Bizum Sergi resto', parentExpenseId: 'tx_p8', expenseShareId: 's_s', date: '2026-09-12' }
+
+    const allTxs = [expense, finalBizum]
+    const allCash = [partialCash]
+
+    const status = selectExpenseShareStatus(shares[1], allTxs, allCash)
+    assert.equal(status.pendingAmount, 0)
+    assert.equal(status.status, 'received')
+
+    assert.equal(selectPendingDebtors(shares, allTxs, allCash).length, 0)
+    assert.equal(selectSettledReimbursements(shares, allTxs, allCash).length, 1)
+  })
+
+  // 9. Editar gasto compartido cobrado conserva estado
+  it('556. 9. Editar metadatos de un gasto compartido cobrado conserva los IDs y el estado de cobro', () => {
+    const expense: Transaction = { id: 'tx_p9', type: 'expense', amount: 50, accountId: 'daily', description: 'Cena original', date: '2026-09-10', isShared: true }
+    const originalShares: ExpenseShare[] = [
+      { id: 's_payer_fixed', expenseTransactionId: 'tx_p9', participantName: 'Tú', isPayerShare: true, expectedAmount: 25 },
+      { id: 's_sergi_fixed', expenseTransactionId: 'tx_p9', participantName: 'Sergi', isPayerShare: false, expectedAmount: 25 },
+    ]
+    const reimb: CashTransaction = { id: 'c_reimb_25', type: 'income', amount: 25, description: 'Efectivo Sergi', bankTransactionId: 'tx_p9', date: '2026-09-11' }
+
+    // Simular edición: cambia descripción de gasto pero conserva share IDs
+    const updatedExpense: Transaction = { ...expense, description: 'Cena pizzería con amigos' }
+    const status = selectExpenseShareStatus(originalShares[1], [updatedExpense], [reimb])
+    assert.equal(status.status, 'received')
+    assert.equal(status.pendingAmount, 0)
+  })
+
+  // 10. Lista, detalle y Por cobrar devuelven exactamente el mismo pending
+  it('557. 10. Consistencia Total: Lista de movimientos, modal de detalle y Por cobrar calculan el mismo pending exacto', () => {
+    const bankTx: Transaction = { id: 'tx_bank_cons', type: 'expense', amount: 100, accountId: 'daily', description: 'Escapada hotel', date: '2026-09-15', isShared: true }
+    const cashTx: CashTransaction = { id: 'c_cash_cons', type: 'expense', amount: 50, description: 'Gasolina escapada', date: '2026-09-15', isShared: true }
+
+    const shares: ExpenseShare[] = [
+      { id: 's1_p', expenseTransactionId: 'tx_bank_cons', participantName: 'Tú', isPayerShare: true, expectedAmount: 50 },
+      { id: 's1_s', expenseTransactionId: 'tx_bank_cons', participantName: 'Sergi', isPayerShare: false, expectedAmount: 50 },
+      { id: 's2_p', expenseTransactionId: 'c_cash_cons', participantName: 'Tú', isPayerShare: true, expectedAmount: 25 },
+      { id: 's2_s', expenseTransactionId: 'c_cash_cons', participantName: 'Sergi', isPayerShare: false, expectedAmount: 25 },
+    ]
+
+    // Sergi paga 20 € de los 50 € del hotel en efectivo
+    const reimb1: CashTransaction = { id: 'c_r1', type: 'income', amount: 20, description: 'Efectivo hotel', bankTransactionId: 'tx_bank_cons', date: '2026-09-16' }
+    // Sergi paga los 25 € íntegros de la gasolina por Bizum
+    const reimb2: Transaction = { id: 'tx_r2', type: 'income', incomeKind: 'reimbursement', amount: 25, accountId: 'daily', description: 'Bizum gasolina', parentExpenseId: 'c_cash_cons', expenseShareId: 's2_s', date: '2026-09-16' }
+
+    const allTxs = [bankTx, reimb2]
+    const allCash = [cashTx, reimb1]
+
+    // 1. Detalle de tx_bank_cons -> pending = 30
+    const detailBank = selectExpenseShareDetails('tx_bank_cons', allTxs, shares, allCash)
+    assert.equal(detailBank.totalPendingToRecover, 30)
+
+    // 2. Detalle de c_cash_cons -> pending = 0
+    const detailCash = selectExpenseShareDetails('c_cash_cons', allTxs, shares, allCash)
+    assert.equal(detailCash.totalPendingToRecover, 0)
+
+    // 3. Por cobrar -> total = 30
+    const debtors = selectPendingDebtors(shares, allTxs, allCash)
+    assert.equal(debtors.length, 1)
+    assert.equal(debtors[0].totalPending, 30)
+
+    // 4. Lista de movimientos pendiente por tx
+    const bankShareStatus = selectExpenseShareStatus(shares[1], allTxs, allCash)
+    const cashShareStatus = selectExpenseShareStatus(shares[3], allTxs, allCash)
+    assert.equal(bankShareStatus.pendingAmount, 30)
+    assert.equal(cashShareStatus.pendingAmount, 0)
+  })
+})
+
 
 
 

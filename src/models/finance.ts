@@ -164,6 +164,7 @@ export interface Reserve {
   iconKey: string
   active: boolean
   note?: string
+  specialPeriodId?: string | null
 }
 
 export type CreateReserveInput = Omit<Reserve, 'id' | 'currentAllocated'> & {

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import type { CreateReserveInput, Reserve, UpdateReserveInput } from '../models/finance'
+import type { CreateReserveInput, Reserve, SpecialPeriod, UpdateReserveInput } from '../models/finance'
 import { AppIcon, resolveIconKey } from '../ui/icons'
 import { IconPicker } from './IconPicker'
 
@@ -8,6 +8,7 @@ export interface ReserveInitialValues {
   targetAmount?: number | ''
   targetDate?: string
   iconKey?: string
+  specialPeriodId?: string | null
 }
 
 interface ReserveModalProps {
@@ -16,6 +17,7 @@ interface ReserveModalProps {
   reserve?: Reserve | null
   initialValues?: ReserveInitialValues | null
   freeSavings?: number
+  specialPeriods?: SpecialPeriod[]
   onSave: (data: CreateReserveInput | UpdateReserveInput, id?: string) => void
   onDelete?: (id: string) => void
 }
@@ -26,6 +28,7 @@ export function ReserveModal({
   reserve,
   initialValues,
   freeSavings,
+  specialPeriods = [],
   onSave,
   onDelete,
 }: ReserveModalProps) {
@@ -33,6 +36,7 @@ export function ReserveModal({
   const [targetAmount, setTargetAmount] = useState('')
   const [targetDate, setTargetDate] = useState('')
   const [iconKey, setIconKey] = useState('sparkles')
+  const [specialPeriodId, setSpecialPeriodId] = useState<string>('')
   const [confirmDelete, setConfirmDelete] = useState(false)
 
   const isEditing = Boolean(reserve)
@@ -43,6 +47,7 @@ export function ReserveModal({
       setTargetAmount(String(reserve.targetAmount).replace('.', ','))
       setTargetDate(reserve.targetDate)
       setIconKey(resolveIconKey(reserve.iconKey, 'sparkles'))
+      setSpecialPeriodId(reserve.specialPeriodId ?? '')
       setConfirmDelete(false)
     } else if (initialValues) {
       setName(initialValues.name ?? '')
@@ -55,12 +60,14 @@ export function ReserveModal({
       )
       setTargetDate(initialValues.targetDate ?? '')
       setIconKey(resolveIconKey(initialValues.iconKey, 'sparkles'))
+      setSpecialPeriodId(initialValues.specialPeriodId ?? '')
       setConfirmDelete(false)
     } else {
       setName('')
       setTargetAmount('')
       setTargetDate('')
       setIconKey('sparkles')
+      setSpecialPeriodId('')
       setConfirmDelete(false)
     }
   }, [reserve, initialValues, open])
@@ -73,6 +80,7 @@ export function ReserveModal({
     if (!name.trim() || isNaN(numericTarget) || numericTarget <= 0 || !targetDate) return
 
     const sanitizedKey = resolveIconKey(iconKey, 'sparkles')
+    const finalSpecialPeriodId = specialPeriodId.trim() ? specialPeriodId.trim() : null
 
     if (isEditing && reserve) {
       onSave(
@@ -81,6 +89,7 @@ export function ReserveModal({
           targetAmount: numericTarget,
           targetDate,
           iconKey: sanitizedKey,
+          specialPeriodId: finalSpecialPeriodId,
         },
         reserve.id
       )
@@ -92,6 +101,7 @@ export function ReserveModal({
         targetDate,
         iconKey: sanitizedKey,
         active: true,
+        specialPeriodId: finalSpecialPeriodId || undefined,
       })
     }
     onClose()
@@ -149,6 +159,23 @@ export function ReserveModal({
                 value={targetDate}
                 onChange={(e) => setTargetDate(e.target.value)}
               />
+            </label>
+          </div>
+
+          <div className="form-group">
+            <label>
+              Periodo especial asociado (opcional)
+              <select
+                value={specialPeriodId}
+                onChange={(e) => setSpecialPeriodId(e.target.value)}
+              >
+                <option value="">Ninguno</option>
+                {specialPeriods.map((sp) => (
+                  <option key={sp.id} value={sp.id}>
+                    {sp.name} ({sp.startDate} - {sp.endDate})
+                  </option>
+                ))}
+              </select>
             </label>
           </div>
 

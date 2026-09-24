@@ -207,6 +207,7 @@ export function toDbReserve(r: Reserve, userId: string) {
     icon_key: r.iconKey || 'target',
     active: r.active,
     note: r.note || null,
+    special_period_id: r.specialPeriodId || null,
   }
 }
 
@@ -220,6 +221,7 @@ export function fromDbReserve(row: Record<string, unknown>): Reserve {
     iconKey: String(row.icon_key || 'target'),
     active: Boolean(row.active),
     note: row.note ? String(row.note) : undefined,
+    specialPeriodId: row.special_period_id ? String(row.special_period_id) : undefined,
   }
 }
 

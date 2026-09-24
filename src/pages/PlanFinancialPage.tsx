@@ -289,6 +289,32 @@ export function PlanFinancialPage({
                       <div>
                         <strong>{reserve.name}</strong>
                         <span className="goal-deadline">Previsto: {reserve.targetDate}</span>
+                        {(() => {
+                          const linkedPeriod = reserve.specialPeriodId
+                            ? finance.specialPeriods?.find((p) => p.id === reserve.specialPeriodId)
+                            : null
+                          if (!linkedPeriod) return null
+                          return (
+                            <span
+                              className="reserve-period-badge"
+                              style={{
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: 4,
+                                fontSize: '0.75rem',
+                                color: 'var(--text-muted, #64748b)',
+                                backgroundColor: 'var(--bg-card-light, #f1f5f9)',
+                                padding: '2px 8px',
+                                borderRadius: 6,
+                                marginTop: 4,
+                                fontWeight: 500,
+                              }}
+                            >
+                              <AppIcon name="calendar" size={12} />
+                              Periodo: {linkedPeriod.name}
+                            </span>
+                          )
+                        })()}
                       </div>
                     </div>
                     <span className={`goal-badge ${isCovered ? 'completed' : ''}`}>
@@ -349,6 +375,7 @@ export function PlanFinancialPage({
                 typeof period.expectedExtraBudget === 'number' && !isNaN(period.expectedExtraBudget)
               const hasPositiveAmount = hasAmount && period.expectedExtraBudget! > 0
               const isZeroAmount = hasAmount && period.expectedExtraBudget === 0
+              const linkedReserves = (finance.reserves || []).filter((r) => r.specialPeriodId === period.id)
 
               return (
                 <div
@@ -385,6 +412,24 @@ export function PlanFinancialPage({
                       : 'Periodo especial sin estimación económica definida.'}
                     {period.note ? ` (${period.note})` : ''}
                   </p>
+                  {linkedReserves.length > 0 && (
+                    <div
+                      style={{
+                        marginTop: 8,
+                        fontSize: '0.8rem',
+                        color: 'var(--text-muted, #64748b)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 6,
+                      }}
+                    >
+                      <AppIcon name="target" size={13} color="var(--primary, #059669)" />
+                      <span>
+                        <strong>Reservas vinculadas ({linkedReserves.length}):</strong>{' '}
+                        {linkedReserves.map((r) => r.name).join(', ')}
+                      </span>
+                    </div>
+                  )}
                 </div>
               )
             })}
@@ -487,6 +532,7 @@ export function PlanFinancialPage({
           setEditingPeriod(null)
         }}
         period={editingPeriod}
+        reserves={finance.reserves}
         onSave={handleSavePeriod}
         onDelete={finance.deleteSpecialPeriod}
       />
@@ -599,6 +645,7 @@ export function PlanFinancialPage({
         }}
         initialValues={reserveInitialValues}
         freeSavings={finance.totals.freeSavings || 0}
+        specialPeriods={finance.specialPeriods}
         onSave={(data) => {
           finance.addReserve(data as CreateReserveInput)
           setReserveModalOpen(false)
