@@ -385,6 +385,22 @@ export function selectExpenseShareStatus(
 }
 
 /**
+ * Detecta cuotas compartidas (ExpenseShare) huérfanas cuyo gasto origen
+ * no existe ni en transacciones bancarias ni en transacciones de efectivo.
+ */
+export function selectOrphanExpenseShares(
+  expenseShares: ExpenseShare[] = [],
+  transactions: Transaction[] = [],
+  cashTransactions: CashTransaction[] = []
+): ExpenseShare[] {
+  const txIds = new Set(transactions.map((t) => t.id))
+  const cashIds = new Set(cashTransactions.map((c) => c.id))
+  return expenseShares.filter(
+    (s) => !txIds.has(s.expenseTransactionId) && !cashIds.has(s.expenseTransactionId)
+  )
+}
+
+/**
  * Pendiente total por recuperar de todas las partes de gastos compartidos (excluyendo la cuota propia).
  */
 export function selectPendingReimbursements(
@@ -394,6 +410,11 @@ export function selectPendingReimbursements(
 ): number {
   const externalShares = shares.filter((s) => !s.isPayerShare)
   const total = externalShares.reduce((sum, share) => {
+    const parentTx =
+      transactions.find((t) => t.id === share.expenseTransactionId) ||
+      cashTransactions.find((c) => c.id === share.expenseTransactionId)
+    if (!parentTx) return sum // Defensa: ignorar cuota huérfana
+
     const { pendingAmount } = selectExpenseShareStatus(share, transactions, cashTransactions)
     return sum + pendingAmount
   }, 0)
@@ -465,12 +486,14 @@ export function selectPendingDebtors(
   const externalShares = shares.filter((s) => !s.isPayerShare)
 
   externalShares.forEach((s) => {
+    const tx =
+      transactions.find((t) => t.id === s.expenseTransactionId) ||
+      cashTransactions.find((c) => c.id === s.expenseTransactionId)
+    if (!tx) return // Defensa: ignorar cuota cuyo gasto origen no existe
+
     const { pendingAmount } = selectExpenseShareStatus(s, transactions, cashTransactions)
     if (pendingAmount > 0) {
       const key = s.contactId || s.participantName.toLowerCase().trim()
-      const tx =
-        transactions.find((t) => t.id === s.expenseTransactionId) ||
-        cashTransactions.find((c) => c.id === s.expenseTransactionId)
       const existing = map.get(key) ?? {
         contactId: s.contactId,
         name: s.participantName,
@@ -482,8 +505,8 @@ export function selectPendingDebtors(
       existing.pendingShares.push({
         share: s,
         pendingAmount,
-        expenseDescription: tx?.description || 'Gasto compartido',
-        expenseDate: tx?.date || s.createdAt || new Date().toISOString(),
+        expenseDescription: tx.description || 'Gasto compartido',
+        expenseDate: tx.date || s.createdAt || new Date().toISOString(),
       })
       map.set(key, existing)
     }
@@ -512,18 +535,20 @@ export function selectSettledReimbursements(
   }[] = []
 
   externalShares.forEach((s) => {
+    const tx =
+      transactions.find((t) => t.id === s.expenseTransactionId) ||
+      cashTransactions.find((c) => c.id === s.expenseTransactionId)
+    if (!tx) return // Defensa: ignorar cuota cuyo gasto origen no existe
+
     const status = selectExpenseShareStatus(s, transactions, cashTransactions)
     if (status.status === 'received') {
-      const tx =
-        transactions.find((t) => t.id === s.expenseTransactionId) ||
-        cashTransactions.find((c) => c.id === s.expenseTransactionId)
       const lastReimb = status.reimbursements[status.reimbursements.length - 1]
       settledList.push({
         share: s,
         participantName: s.participantName,
         amount: s.expectedAmount,
-        expenseDescription: tx?.description || 'Gasto compartido',
-        settledDate: lastReimb?.date || tx?.date || s.createdAt || new Date().toISOString(),
+        expenseDescription: tx.description || 'Gasto compartido',
+        settledDate: lastReimb?.date || tx.date || s.createdAt || new Date().toISOString(),
       })
     }
   })

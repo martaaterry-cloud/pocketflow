@@ -3859,6 +3859,23 @@ input:checked + .slider:before {
   font-size: 13px;
   cursor: pointer;
   color: var(--text-main);
+  user-select: none;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.checkbox-row input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+  cursor: pointer;
+  margin: 0;
+}
+
+.checkbox-row span {
+  flex: 1;
+  min-width: 0;
+  line-height: 1.35;
 }
 
 .participant-input-row {
@@ -3867,6 +3884,7 @@ input:checked + .slider:before {
   width: 100%;
   min-width: 0;
   box-sizing: border-box;
+  align-items: center;
 }
 
 .participant-input-row input {

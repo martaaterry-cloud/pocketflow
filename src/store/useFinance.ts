@@ -68,6 +68,7 @@ import {
   selectPendingReimbursements,
   selectExpenseShareDetails,
   selectPendingDebtors,
+  selectOrphanExpenseShares,
   splitExpenseEqually,
 } from '../utils/sharedExpenseSelectors'
 import { getSupabase } from '../services/supabase/supabaseClient'
@@ -766,6 +767,7 @@ export function useFinance(storage: StorageAdapter = defaultAppStorage) {
   const deleteTransaction = useCallback(
     (id: string) => {
       const txToDelete = state.transactions.find((t) => t.id === id)
+      const sharesToDelete = (state.expenseShares ?? []).filter((s) => s.expenseTransactionId === id)
       const remainingShares = (state.expenseShares ?? []).filter(
         (s) => s.expenseTransactionId !== id
       )
@@ -801,6 +803,11 @@ export function useFinance(storage: StorageAdapter = defaultAppStorage) {
       dispatchSync('transaction', 'delete', id, { id }, (sb, uid) =>
         syncDeleteTransaction(sb, uid, id)
       )
+      sharesToDelete.forEach((share) => {
+        dispatchSync('expense_share', 'delete', share.id, { id: share.id }, (sb, uid) =>
+          syncDeleteExpenseShare(sb, uid, share.id)
+        )
+      })
       if (updatedRecToSync) {
         const rToSync: RecurringPayment = updatedRecToSync
         dispatchSync('recurring', 'update', rToSync.id, rToSync, (sb, uid) =>
@@ -2567,6 +2574,24 @@ export function useFinance(storage: StorageAdapter = defaultAppStorage) {
   const restoreState = useCallback(
     async (newState: PersistedState) => {
       const txs = newState.transactions ?? []
+      const cashTxs = newState.cashTransactions ?? []
+      const rawShares = newState.expenseShares ?? []
+
+      // Detección y purga segura de huérfanos confirmados tras reconciliación completa
+      const orphans = selectOrphanExpenseShares(rawShares, txs, cashTxs)
+      if (orphans.length > 0) {
+        orphans.forEach((orphan) => {
+          console.warn(
+            `[Integrity] Removing confirmed orphan expense share: ${orphan.id} (${orphan.participantName}, ${orphan.expectedAmount} €)`
+          )
+          dispatchSync('expense_share', 'delete', orphan.id, { id: orphan.id }, (sb, uid) =>
+            syncDeleteExpenseShare(sb, uid, orphan.id)
+          )
+        })
+      }
+
+      const cleanShares = rawShares.filter((s) => !orphans.some((o) => o.id === s.id))
+
       const accountsWithInitial = (newState.accounts ?? initialFinanceState.accounts).map((acc) =>
         ensureAccountInitialBalance(acc, txs)
       )
@@ -2583,13 +2608,13 @@ export function useFinance(storage: StorageAdapter = defaultAppStorage) {
         profile: newState.profile ?? initialFinanceState.profile,
         variableExpenseEstimates: newState.variableExpenseEstimates ?? [],
         sharedContacts: newState.sharedContacts ?? [],
-        expenseShares: newState.expenseShares ?? [],
-        cashTransactions: newState.cashTransactions ?? [],
+        expenseShares: cleanShares,
+        cashTransactions: cashTxs,
       }
       setState(completeState)
       await storage.save(completeState)
     },
-    [storage]
+    [storage, dispatchSync]
   )
 
   const getFullState = useCallback((): PersistedState => {

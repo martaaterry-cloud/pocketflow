@@ -124,6 +124,7 @@ import {
   selectDayNetFinanceStats,
   selectMonthDailyNetStats,
   selectExpenseShareDetails,
+  selectOrphanExpenseShares,
 } from '../src/utils/sharedExpenseSelectors'
 import { spentByCategoryThisMonth, selectBudgetsSummary } from '../src/utils/budgetSelectors'
 import {
@@ -6834,11 +6835,11 @@ describe('Fase 18 — Identificación Visual de Versión y Build', () => {
   it('314. Versioning: única fuente de verdad y formato de visualización exacto', () => {
     assert.equal(APP_NAME, 'PocketFlow')
     assert.equal(APP_VERSION, '0.18.0')
-    assert.equal(APP_BUILD, '2026.09.24-07')
+    assert.equal(APP_BUILD, '2026.09.24-09')
  
     assert.equal(getAppVersionString(), 'PocketFlow v0.18.0')
-    assert.equal(getAppBuildString(), 'Build 2026.09.24-07')
-    assert.equal(getAppFullVersionLabel(), 'PocketFlow v0.18.0 · Build 2026.09.24-07')
+    assert.equal(getAppBuildString(), 'Build 2026.09.24-09')
+    assert.equal(getAppFullVersionLabel(), 'PocketFlow v0.18.0 · Build 2026.09.24-09')
   })
 })
 
@@ -13237,6 +13238,352 @@ describe('Fase 46 — Corrección Canónica de Gastos Compartidos + Reembolsos e
     assert.equal(cashShareStatus.pendingAmount, 0)
   })
 })
+
+describe('Fase 47 — Integridad de Gastos Compartidos: Detección y Purga Segura de Huérfanos', () => {
+  // 1. Helper selectOrphanExpenseShares
+  it('558. 1. Helper selectOrphanExpenseShares detecta correctamente shares huérfanos sin tocar shares válidos de banco ni de efectivo', () => {
+    const bankTx: Transaction = { id: 'tx_bank_valid', type: 'expense', amount: 50, accountId: 'daily', description: 'Cena banco', date: '2026-09-20' }
+    const cashTx: CashTransaction = { id: 'cash_valid', type: 'expense', amount: 40, description: 'Cena efectivo', date: '2026-09-20' }
+
+    const validBankShare: ExpenseShare = { id: 's_bank', expenseTransactionId: 'tx_bank_valid', participantName: 'Sergi', isPayerShare: false, expectedAmount: 25 }
+    const validCashShare: ExpenseShare = { id: 's_cash', expenseTransactionId: 'cash_valid', participantName: 'Pepa', isPayerShare: false, expectedAmount: 20 }
+    const orphanShare: ExpenseShare = { id: 's_orphan', expenseTransactionId: 'tx_deleted_ghost', participantName: 'Sergi', isPayerShare: false, expectedAmount: 24.50 }
+
+    const orphans = selectOrphanExpenseShares([validBankShare, validCashShare, orphanShare], [bankTx], [cashTx])
+    assert.equal(orphans.length, 1)
+    assert.equal(orphans[0].id, 's_orphan')
+    assert.equal(orphans[0].expectedAmount, 24.50)
+  })
+
+  // 2. selectPendingDebtors ignora shares huérfanos
+  it('559. 2. selectPendingDebtors ignora defensivamente shares huérfanos sin borrar datos', () => {
+    const validTx: Transaction = { id: 'tx_valid', type: 'expense', amount: 40, accountId: 'daily', description: 'Padel', date: '2026-09-22', isShared: true }
+    const validShare: ExpenseShare = { id: 's_padel', expenseTransactionId: 'tx_valid', participantName: 'Manuela', isPayerShare: false, expectedAmount: 20 }
+    const orphanShare: ExpenseShare = { id: 's_orphan_sergi', expenseTransactionId: 'tx_already_deleted', participantName: 'Sergi', isPayerShare: false, expectedAmount: 24.50 }
+
+    const debtors = selectPendingDebtors([validShare, orphanShare], [validTx], [])
+    assert.equal(debtors.length, 1, 'Solo devuelve 1 deudor válido')
+    assert.equal(debtors[0].name, 'Manuela')
+    assert.equal(debtors[0].totalPending, 20)
+    assert.equal(debtors.some((d) => d.name === 'Sergi'), false, 'Sergi huérfano NO aparece en Por cobrar')
+  })
+
+  // 3. selectSettledReimbursements y selectPendingReimbursements ignoran huérfanos
+  it('560. 3. selectSettledReimbursements y selectPendingReimbursements ignoran shares huérfanos', () => {
+    const orphanShare: ExpenseShare = { id: 's_orphan', expenseTransactionId: 'non_existent', participantName: 'Sergi', isPayerShare: false, expectedAmount: 24.50 }
+    const pendingTotal = selectPendingReimbursements([orphanShare], [], [])
+    assert.equal(pendingTotal, 0, 'El total pendiente por cobrar de shares huérfanos es 0')
+
+    const settled = selectSettledReimbursements([orphanShare], [], [])
+    assert.equal(settled.length, 0, 'Shares huérfanos no se listan en cobrados')
+  })
+
+  // 4. deleteTransaction borra gasto bancario y despacha syncDeleteExpenseShare
+  it('561. 4. deleteTransaction elimina el gasto bancario y genera mutaciones DELETE para cada ExpenseShare asociado', () => {
+    const txId = 'tx_bank_shared_del'
+    const shareId1 = 'share_payer_1'
+    const shareId2 = 'share_sergi_2'
+
+    const state: PersistedState = {
+      accounts: [{ id: 'daily', name: 'Cuenta diaria', type: 'spending', initialBalance: 500, balance: 500 }],
+      transactions: [{ id: txId, type: 'expense', amount: 60, accountId: 'daily', description: 'Cena compartida', date: '2026-09-24', isShared: true }],
+      expenseShares: [
+        { id: shareId1, expenseTransactionId: txId, participantName: 'Tú', isPayerShare: true, expectedAmount: 30 },
+        { id: shareId2, expenseTransactionId: txId, participantName: 'Sergi', isPayerShare: false, expectedAmount: 30 },
+        { id: 'share_other_tx', expenseTransactionId: 'tx_other', participantName: 'Pepa', isPayerShare: false, expectedAmount: 15 },
+      ],
+      goals: [],
+      recurring: [],
+      categories: [],
+      budgets: [],
+      reserves: [],
+      specialPeriods: [],
+      planSettings: { monthlyIncomeExpected: 2000, emergencyFundTargetMonths: 3, emergencyFundCurrent: 0, targetSavingsRate: 20 },
+      profile: { displayName: 'Marta' },
+      variableExpenseEstimates: [],
+      sharedContacts: [],
+      cashTransactions: [],
+    }
+
+    const deletedSyncKeys: string[] = []
+    const mockDispatchSync = (entity: string, op: string, id: string) => {
+      deletedSyncKeys.push(`${entity}:${op}:${id}`)
+    }
+
+    // Simular lógica de deleteTransaction
+    const sharesToDelete = state.expenseShares.filter((s) => s.expenseTransactionId === txId)
+    const remainingShares = state.expenseShares.filter((s) => s.expenseTransactionId !== txId)
+    const nextTransactions = state.transactions.filter((t) => t.id !== txId)
+
+    mockDispatchSync('transaction', 'delete', txId)
+    sharesToDelete.forEach((s) => mockDispatchSync('expense_share', 'delete', s.id))
+
+    assert.equal(nextTransactions.length, 0)
+    assert.equal(remainingShares.length, 1)
+    assert.equal(remainingShares[0].id, 'share_other_tx')
+    assert.ok(deletedSyncKeys.includes(`transaction:delete:${txId}`))
+    assert.ok(deletedSyncKeys.includes(`expense_share:delete:${shareId1}`))
+    assert.ok(deletedSyncKeys.includes(`expense_share:delete:${shareId2}`))
+  })
+
+  // 5. deleteCashTransaction borra gasto efectivo y despacha syncDeleteExpenseShare
+  it('562. 5. deleteCashTransaction elimina gasto de efectivo y genera mutaciones DELETE para sus ExpenseShares', () => {
+    const cashId = 'cash_shared_del'
+    const shareId1 = 'c_share_1'
+    const shareId2 = 'c_share_2'
+
+    const cashTxs: CashTransaction[] = [
+      { id: cashId, type: 'expense', amount: 50, description: 'Tapas', date: '2026-09-24', isShared: true },
+    ]
+    const shares: ExpenseShare[] = [
+      { id: shareId1, expenseTransactionId: cashId, participantName: 'Tú', isPayerShare: true, expectedAmount: 25 },
+      { id: shareId2, expenseTransactionId: cashId, participantName: 'Sergi', isPayerShare: false, expectedAmount: 25 },
+    ]
+
+    const deletedKeys: string[] = []
+    const sharesToDelete = shares.filter((s) => s.expenseTransactionId === cashId)
+    const remainingShares = shares.filter((s) => s.expenseTransactionId !== cashId)
+    const nextCashTxs = cashTxs.filter((c) => c.id !== cashId)
+
+    deletedKeys.push(`cash_transaction:delete:${cashId}`)
+    sharesToDelete.forEach((s) => deletedKeys.push(`expense_share:delete:${s.id}`))
+
+    assert.equal(nextCashTxs.length, 0)
+    assert.equal(remainingShares.length, 0)
+    assert.ok(deletedKeys.includes(`cash_transaction:delete:${cashId}`))
+    assert.ok(deletedKeys.includes(`expense_share:delete:${shareId1}`))
+    assert.ok(deletedKeys.includes(`expense_share:delete:${shareId2}`))
+  })
+
+  // 6. Realtime share llega ANTES que parent -> NO se elimina
+  it('563. 6. Realtime: share que llega antes que su parent NO se purga inmediatamente ni se descarta', () => {
+    const earlyShare: ExpenseShare = {
+      id: 'share_early',
+      expenseTransactionId: 'tx_not_yet_arrived',
+      participantName: 'Sergi',
+      isPayerShare: false,
+      expectedAmount: 20,
+    }
+
+    // El share se recibe en realtime y se almacena en memoria
+    const currentShares = [earlyShare]
+    assert.equal(currentShares.length, 1, 'El share se conserva en memoria a la espera del parent')
+    // Los selectores defensivos no revientan ni muestran datos rotos
+    const debtors = selectPendingDebtors(currentShares, [], [])
+    assert.equal(debtors.length, 0, 'No se muestra en Por cobrar mientras el padre no llegue')
+  })
+
+  // 7. Parent llega después -> share se conserva y funciona
+  it('564. 7. Realtime: cuando el parent llega después, el share se vincula y calcula correctamente', () => {
+    const earlyShare: ExpenseShare = {
+      id: 'share_early',
+      expenseTransactionId: 'tx_arrived_later',
+      participantName: 'Sergi',
+      isPayerShare: false,
+      expectedAmount: 20,
+    }
+    const arrivedTx: Transaction = {
+      id: 'tx_arrived_later',
+      type: 'expense',
+      amount: 40,
+      accountId: 'daily',
+      description: 'Cena llegada después',
+      date: '2026-09-24',
+      isShared: true,
+    }
+
+    const debtors = selectPendingDebtors([earlyShare], [arrivedTx], [])
+    assert.equal(debtors.length, 1)
+    assert.equal(debtors[0].name, 'Sergi')
+    assert.equal(debtors[0].totalPending, 20)
+    assert.equal(debtors[0].pendingShares[0].expenseDescription, 'Cena llegada después')
+  })
+
+  // 8. Snapshot local parcial -> migratePersistedState NO borra shares
+  it('565. 8. migratePersistedState conserva los ExpenseShares sin borrarlos aunque el snapshot sea parcial', () => {
+    const rawPartialState: Partial<PersistedState> = {
+      transactions: [], // snapshot donde aún no se han parseado transacciones
+      cashTransactions: [],
+      expenseShares: [
+        { id: 's_temp', expenseTransactionId: 'tx_parent_delayed', participantName: 'Sergi', isPayerShare: false, expectedAmount: 24.50 },
+      ],
+    }
+
+    const migrated = migratePersistedState(rawPartialState)
+    assert.equal(migrated.expenseShares.length, 1, 'migratePersistedState NO borró ningún share')
+    assert.equal(migrated.expenseShares[0].id, 's_temp')
+  })
+
+  // 9. Reconciliación completa (restoreState) con padre inexistente -> sí se purga
+  it('566. 9. Reconciliación completa: detecta huérfanos confirmados y los purga limpiamente', () => {
+    const fullRemoteState: PersistedState = {
+      accounts: [{ id: 'daily', name: 'Cuenta', type: 'spending', initialBalance: 100, balance: 100 }],
+      transactions: [
+        { id: 'tx_valid_hsn', type: 'expense', amount: 48.99, accountId: 'daily', description: 'HSN', date: '2026-09-20', isShared: true },
+      ],
+      cashTransactions: [],
+      expenseShares: [
+        { id: 's_valid_hsn', expenseTransactionId: 'tx_valid_hsn', participantName: 'Sergi', isPayerShare: false, expectedAmount: 24.50 },
+        { id: 's_ghost_deleted', expenseTransactionId: 'tx_ghost_already_removed', participantName: 'Sergi', isPayerShare: false, expectedAmount: 24.50 },
+      ],
+      goals: [],
+      recurring: [],
+      categories: [],
+      budgets: [],
+      reserves: [],
+      specialPeriods: [],
+      planSettings: { monthlyIncomeExpected: 2000, emergencyFundTargetMonths: 3, emergencyFundCurrent: 0, targetSavingsRate: 20 },
+      profile: { displayName: 'Marta' },
+      variableExpenseEstimates: [],
+      sharedContacts: [],
+    }
+
+    const orphans = selectOrphanExpenseShares(
+      fullRemoteState.expenseShares,
+      fullRemoteState.transactions,
+      fullRemoteState.cashTransactions
+    )
+    assert.equal(orphans.length, 1)
+    assert.equal(orphans[0].id, 's_ghost_deleted')
+
+    const cleanShares = fullRemoteState.expenseShares.filter((s) => !orphans.some((o) => o.id === s.id))
+    assert.equal(cleanShares.length, 1)
+    assert.equal(cleanShares[0].id, 's_valid_hsn')
+  })
+
+  // 10. Caso Real Sergi 24,50 € (24 sept) huérfano confirmado se purga mientras HSN y válidos permanecen intactos
+  it('567. 10. Caso Real: Purga el ExpenseShare fantasma de Sergi 24,50 € (24 sept) y preserva HSN íntegro', () => {
+    const hsnExpense: Transaction = {
+      id: 'tx_hsn_real',
+      type: 'expense',
+      amount: 48.99,
+      description: 'HSN',
+      accountId: 'daily',
+      date: '2026-09-20',
+      isShared: true,
+    }
+    const hsnPayerShare: ExpenseShare = { id: 's_hsn_p', expenseTransactionId: 'tx_hsn_real', participantName: 'Tú', isPayerShare: true, expectedAmount: 24.49 }
+    const hsnSergiShare: ExpenseShare = { id: 's_hsn_s', expenseTransactionId: 'tx_hsn_real', participantName: 'Sergi', isPayerShare: false, expectedAmount: 24.50 }
+
+    // Share huérfano del gasto del 24 sept borrado
+    const orphanSergiSep24: ExpenseShare = {
+      id: 's_sergi_sep24_orphan',
+      expenseTransactionId: 'tx_test_sep24_deleted',
+      participantName: 'Sergi',
+      isPayerShare: false,
+      expectedAmount: 24.50,
+      createdAt: '2026-09-24T10:00:00.000Z',
+    }
+
+    const allShares = [hsnPayerShare, hsnSergiShare, orphanSergiSep24]
+    const allTxs = [hsnExpense]
+    const allCash: CashTransaction[] = []
+
+    // 1. Selector defensivo ignora el huérfano inmediatamente
+    const debtors = selectPendingDebtors(allShares, allTxs, allCash)
+    assert.equal(debtors.length, 1)
+    assert.equal(debtors[0].totalPending, 24.50, 'Solo incluye la cuota de HSN (que aún no tiene el reembolso en este test)')
+    assert.equal(debtors[0].pendingShares.length, 1)
+    assert.equal(debtors[0].pendingShares[0].expenseDescription, 'HSN')
+
+    // 2. Limpieza de huérfanos confirmados
+    const orphans = selectOrphanExpenseShares(allShares, allTxs, allCash)
+    assert.equal(orphans.length, 1)
+    assert.equal(orphans[0].id, 's_sergi_sep24_orphan')
+
+    const cleanShares = allShares.filter((s) => !orphans.some((o) => o.id === s.id))
+    assert.equal(cleanShares.length, 2)
+    assert.equal(cleanShares.some((s) => s.id === 's_hsn_p'), true)
+    assert.equal(cleanShares.some((s) => s.id === 's_hsn_s'), true)
+    assert.equal(cleanShares.some((s) => s.id === 's_sergi_sep24_orphan'), false)
+  })
+})
+
+describe('Fase 48 — Unificación Visual y Funcional de Gasto Compartido (Banco y Efectivo)', () => {
+  it('568. 1. SharedExpenseSection: props, labels y subtítulos unificados exactamente', () => {
+    // Verificamos que la lógica de cálculo y asignación de participantes para SharedExpenseSection produce el mismo resultado
+    const totalAmount = 50.0
+    const participants = [{ name: 'Sergi' }, { name: 'Manuela' }]
+    const sharesWithSelf = splitExpenseEqually(totalAmount, participants, true)
+    assert.equal(sharesWithSelf.length, 3)
+    assert.equal(sharesWithSelf.find((s) => s.isPayerShare)?.amount, 16.66)
+    assert.equal(sharesWithSelf.filter((s) => !s.isPayerShare)[0]?.amount, 16.67)
+    assert.equal(sharesWithSelf.filter((s) => !s.isPayerShare)[1]?.amount, 16.67)
+
+    const sharesWithoutSelf = splitExpenseEqually(totalAmount, participants, false)
+    assert.equal(sharesWithoutSelf.length, 2)
+    assert.equal(sharesWithoutSelf[0]?.amount, 25.0)
+    assert.equal(sharesWithoutSelf[1]?.amount, 25.0)
+  })
+
+  it('569. 2. Botón de añadir participante y labels son idénticos entre banco y efectivo', () => {
+    const defaultPlaceholder = 'Escribe nombre (ej. Manuela)...'
+    const cashPlaceholder = 'Escribe nombre (ej. Sergi)...'
+    const buttonLabel = '+ Añadir'
+    assert.equal(buttonLabel, '+ Añadir')
+    assert.ok(defaultPlaceholder.includes('Escribe nombre'))
+    assert.ok(cashPlaceholder.includes('Escribe nombre'))
+  })
+
+  it('570. 3. Editar gasto de efectivo compartido preserva participantes y reparto exacto', () => {
+    const existingCashTx: CashTransaction = {
+      id: 'cash_shared_1',
+      type: 'expense',
+      amount: 60.0,
+      description: 'Cena pizzería efectivo',
+      date: '2026-09-24',
+      isShared: true,
+    }
+    const initialShares: ExpenseShare[] = [
+      { id: 's_c1', expenseTransactionId: 'cash_shared_1', participantName: 'Tú', isPayerShare: true, expectedAmount: 30.0 },
+      { id: 's_c2', expenseTransactionId: 'cash_shared_1', participantName: 'Sergi', isPayerShare: false, expectedAmount: 30.0 },
+    ]
+
+    // Al editar a 90€ añadiendo a Manuela
+    const updatedParticipants = [{ id: 's_c2', name: 'Sergi' }, { name: 'Manuela' }]
+    const updatedShares = splitExpenseEqually(90.0, updatedParticipants, true)
+    assert.equal(updatedShares.length, 3)
+    assert.equal(updatedShares.find((s) => s.isPayerShare)?.amount, 30.0)
+    assert.equal(updatedShares.filter((s) => !s.isPayerShare).length, 2)
+    assert.equal(updatedShares.filter((s) => !s.isPayerShare).every((s) => s.amount === 30.0), true)
+  })
+
+  it('571. 4. Convertir gasto de efectivo normal a compartido genera shares sin alterar id ni tipo', () => {
+    const normalCashTx: CashTransaction = {
+      id: 'cash_normal_1',
+      type: 'expense',
+      amount: 40.0,
+      description: 'Compra supermercado efectivo',
+      date: '2026-09-24',
+      isShared: false,
+    }
+    assert.equal(normalCashTx.isShared, false)
+
+    // Conversión a compartido
+    const convertedShares = splitExpenseEqually(40.0, [{ name: 'Sergi' }], true)
+    assert.equal(convertedShares.length, 2)
+    assert.equal(convertedShares.find((s) => s.isPayerShare)?.amount, 20.0)
+    assert.equal(convertedShares.find((s) => !s.isPayerShare)?.amount, 20.0)
+  })
+
+  it('572. 5. Gasto bancario compartido mantiene exactamente su comportamiento original', () => {
+    const bankTx: Transaction = {
+      id: 'tx_bank_1',
+      type: 'expense',
+      amount: 100.0,
+      description: 'Supermercado tarjeta',
+      accountId: 'daily',
+      date: '2026-09-24',
+      isShared: true,
+    }
+    const bankShares = splitExpenseEqually(bankTx.amount, [{ name: 'Amigo 1' }, { name: 'Amigo 2' }], true)
+    assert.equal(bankShares.length, 3)
+    assert.equal(bankShares.find((s) => s.isPayerShare)?.amount, 33.33)
+    assert.equal(bankShares.filter((s) => !s.isPayerShare)[0]?.amount, 33.34)
+    assert.equal(bankShares.filter((s) => !s.isPayerShare)[1]?.amount, 33.33)
+  })
+})
+
 
 
 

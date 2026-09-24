@@ -16,6 +16,7 @@ import type {
 import { money } from '../utils/money'
 import { splitExpenseEqually } from '../utils/sharedExpenseSelectors'
 import { AppIcon } from '../ui/icons'
+import { SharedExpenseSection } from './SharedExpenseSection'
 
 interface AddTransactionModalProps {
   open: boolean
@@ -706,94 +707,21 @@ export function AddTransactionModal({
 
         {/* Sección Gasto Compartido (discreta, OFF por defecto) */}
         {type === 'expense' && (
-          <div className="shared-expense-section">
-            <div className="shared-toggle-row">
-              <div className="shared-toggle-text">
-                <strong>Gasto compartido</strong>
-                <span>Repartir con amigos y registrar quién te debe</span>
-              </div>
-              <label className="switch-label">
-                <input
-                  type="checkbox"
-                  checked={isShared}
-                  onChange={(e) => handleToggleShared(e.target.checked)}
-                />
-                <span className="switch-slider" />
-              </label>
-            </div>
-
-            {isShared && (
-              <div className="shared-config-box">
-                <label className="checkbox-row">
-                  <input
-                    type="checkbox"
-                    checked={selfParticipates}
-                    onChange={(e) => setSelfParticipates(e.target.checked)}
-                  />
-                  <span>Yo también participo en este gasto</span>
-                </label>
-
-                <div className="participant-input-row">
-                  <input
-                    type="text"
-                    placeholder="Escribe nombre (ej. Manuela)..."
-                    value={newParticipantInput}
-                    onChange={(e) => setNewParticipantInput(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') {
-                        e.preventDefault()
-                        handleAddParticipant()
-                      }
-                    }}
-                    list="shared-contacts-list"
-                  />
-                  <datalist id="shared-contacts-list">
-                    {sharedContacts.map((c) => (
-                      <option key={c.id} value={c.displayName} />
-                    ))}
-                  </datalist>
-                  <button
-                    type="button"
-                    className="secondary-button add-participant-btn"
-                    onClick={() => handleAddParticipant()}
-                  >
-                    + Añadir
-                  </button>
-                </div>
-
-                {participants.length > 0 && (
-                  <div className="participant-chips">
-                    {participants.map((p, idx) => (
-                      <span className="participant-chip" key={idx}>
-                        {p.name}
-                        <button
-                          type="button"
-                          onClick={() => handleRemoveParticipant(idx)}
-                          aria-label={`Quitar ${p.name}`}
-                        >
-                          ×
-                        </button>
-                      </span>
-                    ))}
-                  </div>
-                )}
-
-                {computedShares.length > 0 && (
-                  <div className="split-preview">
-                    <span className="split-preview-title">Reparto exacto de céntimos:</span>
-                    <div className="split-preview-list">
-                      {computedShares.map((s, idx) => (
-                        <div className="split-preview-item" key={idx}>
-                          <span>{s.participantName}</span>
-                          <strong>{money(s.amount)}</strong>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
+          <SharedExpenseSection
+            isShared={isShared}
+            onToggleShared={handleToggleShared}
+            selfParticipates={selfParticipates}
+            onToggleSelfParticipates={setSelfParticipates}
+            newParticipantInput={newParticipantInput}
+            onNewParticipantInputChange={setNewParticipantInput}
+            onAddParticipant={handleAddParticipant}
+            participants={participants}
+            onRemoveParticipant={handleRemoveParticipant}
+            sharedContacts={sharedContacts}
+            computedShares={computedShares}
+            datalistId="shared-contacts-list"
+            placeholder="Escribe nombre (ej. Manuela)..."
+          />
         )}
 
         <div className="form-group">
