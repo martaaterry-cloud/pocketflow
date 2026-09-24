@@ -106,6 +106,11 @@ import {
   getAppFullVersionLabel,
 } from '../src/version'
 import {
+  toUnifiedMovements,
+  filterUnifiedMovements,
+  calculateUnifiedMovementStats,
+} from '../src/utils/unifiedMovementSelectors'
+import {
   splitExpenseEqually,
   selectGrossExpenses,
   selectGrossExpensesForPeriod,
@@ -6835,11 +6840,11 @@ describe('Fase 18 — Identificación Visual de Versión y Build', () => {
   it('314. Versioning: única fuente de verdad y formato de visualización exacto', () => {
     assert.equal(APP_NAME, 'PocketFlow')
     assert.equal(APP_VERSION, '0.18.0')
-    assert.equal(APP_BUILD, '2026.09.24-09')
+    assert.equal(APP_BUILD, '2026.09.24-10')
  
     assert.equal(getAppVersionString(), 'PocketFlow v0.18.0')
-    assert.equal(getAppBuildString(), 'Build 2026.09.24-09')
-    assert.equal(getAppFullVersionLabel(), 'PocketFlow v0.18.0 · Build 2026.09.24-09')
+    assert.equal(getAppBuildString(), 'Build 2026.09.24-10')
+    assert.equal(getAppFullVersionLabel(), 'PocketFlow v0.18.0 · Build 2026.09.24-10')
   })
 })
 
@@ -13583,6 +13588,189 @@ describe('Fase 48 — Unificación Visual y Funcional de Gasto Compartido (Banco
     assert.equal(bankShares.filter((s) => !s.isPayerShare)[1]?.amount, 33.33)
   })
 })
+
+describe('Fase 49 — Unificación de Historial en Movimientos y Calendario (Banco + Efectivo)', () => {
+  const sampleCategories: Category[] = [
+    { id: 'supermarket', name: 'Supermercado', color: '#16a34a', icon: 'shopping-cart' },
+    { id: 'leisure', name: 'Ocio y Restaurantes', color: '#f59e0b', icon: 'coffee' },
+    { id: 'atm', name: 'Cajero', color: '#0284c7', icon: 'banknote' },
+  ]
+
+  const bankTx1: Transaction = {
+    id: 'tx_b1',
+    type: 'expense',
+    amount: 15.0,
+    description: 'Consum',
+    accountId: 'daily',
+    categoryId: 'supermarket',
+    date: '2026-09-24T12:00:00.000Z',
+  }
+
+  const bankWithdrawal: Transaction = {
+    id: 'tx_atm_1',
+    type: 'expense',
+    amount: 110.0,
+    description: 'Retirada cajero',
+    accountId: 'daily',
+    categoryId: 'atm',
+    specialType: 'cash_withdrawal',
+    date: '2026-09-23T10:00:00.000Z',
+  }
+
+  const cashTx1: CashTransaction = {
+    id: 'cash_1',
+    type: 'expense',
+    amount: 6.0,
+    description: 'Café',
+    categoryId: 'leisure',
+    date: '2026-09-24T14:00:00.000Z',
+  }
+
+  const cashReimbursement: CashTransaction = {
+    id: 'cash_reimb_1',
+    type: 'income',
+    amount: 20.0,
+    description: 'Reembolso Sergi',
+    date: '2026-09-24T16:00:00.000Z',
+    bankTransactionId: 'tx_some_shared_expense',
+  }
+
+  const cashWithdrawalLinked: CashTransaction = {
+    id: 'cash_linked_atm',
+    type: 'income',
+    amount: 110.0,
+    description: 'Retirada de cajero',
+    date: '2026-09-23T10:00:00.000Z',
+    bankTransactionId: 'tx_atm_1',
+  }
+
+  const cashAdjustment: CashTransaction = {
+    id: 'cash_adj_1',
+    type: 'adjustment',
+    amount: -7.0,
+    description: 'Ajuste de efectivo (discrepancia)',
+    date: '2026-09-24T18:00:00.000Z',
+  }
+
+  it('573. 1. Movimientos: toUnifiedMovements combina banco + efectivo por fecha descendente', () => {
+    const unified = toUnifiedMovements(
+      [bankTx1, bankWithdrawal],
+      [cashTx1, cashReimbursement, cashWithdrawalLinked, cashAdjustment]
+    )
+
+    assert.equal(unified.length, 6)
+    // El más reciente es del 24 a las 18:00 (cashAdjustment)
+    assert.equal(unified[0].id, 'cash_adj_1')
+    assert.equal(unified[0].source, 'cash')
+    assert.equal(unified[0].isAdjustment, true)
+
+    // Comprueba que los orígenes y fechas están preservados
+    const bankItems = unified.filter((m) => m.source === 'bank')
+    const cashItems = unified.filter((m) => m.source === 'cash')
+    assert.equal(bankItems.length, 2)
+    assert.equal(cashItems.length, 4)
+  })
+
+  it('574. 2. Movimientos: filtro Banco excluye efectivo y filtro Efectivo excluye banco', () => {
+    const unified = toUnifiedMovements(
+      [bankTx1, bankWithdrawal],
+      [cashTx1, cashReimbursement, cashWithdrawalLinked, cashAdjustment]
+    )
+
+    const bankOnly = filterUnifiedMovements(unified, sampleCategories, { source: 'bank' })
+    assert.equal(bankOnly.length, 2)
+    assert.equal(bankOnly.every((m) => m.source === 'bank'), true)
+
+    const cashOnly = filterUnifiedMovements(unified, sampleCategories, { source: 'cash' })
+    assert.equal(cashOnly.length, 4)
+    assert.equal(cashOnly.every((m) => m.source === 'cash'), true)
+  })
+
+  it('575. 3. Movimientos: ajuste de efectivo se identifica como Ajuste', () => {
+    const unified = toUnifiedMovements([], [cashAdjustment])
+    assert.equal(unified.length, 1)
+    assert.equal(unified[0].isAdjustment, true)
+    assert.equal(unified[0].type, 'adjustment')
+    assert.equal(unified[0].amount, -7.0)
+
+    const stats = calculateUnifiedMovementStats(unified)
+    assert.equal(stats.expenses, 0, 'Ajuste NO cuenta como gasto')
+    assert.equal(stats.incomes, 0, 'Ajuste NO cuenta como ingreso')
+    assert.equal(stats.adjustments, -7.0)
+  })
+
+  it('576. 4. Movimientos: retirada de cajero vinculada a entrada de efectivo se identifica como transferencia', () => {
+    const unified = toUnifiedMovements([bankWithdrawal], [cashWithdrawalLinked])
+    assert.equal(unified.length, 2)
+
+    const bankMove = unified.find((m) => m.id === 'tx_atm_1')
+    const cashMove = unified.find((m) => m.id === 'cash_linked_atm')
+
+    assert.equal(bankMove?.isCashWithdrawal, true)
+    assert.equal(cashMove?.isLinkedCashWithdrawal, true)
+
+    // Filtro por transferencias incluye ambos
+    const transfers = filterUnifiedMovements(unified, sampleCategories, { type: 'transfer' })
+    assert.equal(transfers.length, 2)
+  })
+
+  it('577. 5. Movimientos: búsqueda por texto encuentra movimientos de efectivo', () => {
+    const unified = toUnifiedMovements([bankTx1], [cashTx1, cashReimbursement])
+
+    const searchCafe = filterUnifiedMovements(unified, sampleCategories, { search: 'café' })
+    assert.equal(searchCafe.length, 1)
+    assert.equal(searchCafe[0].id, 'cash_1')
+
+    const searchSergi = filterUnifiedMovements(unified, sampleCategories, { search: 'Sergi' })
+    assert.equal(searchSergi.length, 1)
+    assert.equal(searchSergi[0].id, 'cash_reimb_1')
+  })
+
+  it('578. 6. Calendario: cálculo diario combina consumo bancario y efectivo sin duplicar retirada de cajero', () => {
+    // 24 sept: Consum (15 € banco) + Café (6 € cash) -> 21 € consumo
+    // 23 sept: Retirada cajero (110 €) + Entrada vinculada (110 €) -> 0 € consumo económico
+    const txs = [bankTx1, bankWithdrawal]
+    const cash = [cashTx1, cashReimbursement, cashWithdrawalLinked, cashAdjustment]
+
+    const statsSep24 = selectDayNetFinanceStats(txs, 2026, 8, 24, cash)
+    assert.equal(statsSep24.netExpenses, 21.0, '15 € banco + 6 € cash = 21 €')
+    assert.equal(statsSep24.reimbursements, 20.0, '20 € recibidos de reembolso')
+
+    const statsSep23 = selectDayNetFinanceStats(txs, 2026, 8, 23, cash)
+    assert.equal(statsSep23.netExpenses, 0, 'Retirada de cajero vinculada a efectivo no cuenta como consumo del día')
+  })
+
+  it('579. 7. Calendario: selectMonthDailyNetStats genera mapa correcto para todos los días', () => {
+    const txs = [bankTx1, bankWithdrawal]
+    const cash = [cashTx1, cashReimbursement, cashWithdrawalLinked, cashAdjustment]
+
+    const monthMap = selectMonthDailyNetStats(txs, 2026, 8, cash)
+    const day24 = monthMap.get(24)
+    assert.ok(day24)
+    assert.equal(day24.netExpenses, 21.0)
+    assert.equal(day24.reimbursements, 20.0)
+
+    // El día 23 no tiene consumo económico (solo retirada de cajero vinculada)
+    const day23 = monthMap.get(23)
+    assert.equal(day23, undefined, 'Día sin consumo económico ni ingresos reales no se marca con gastos')
+  })
+
+  it('580. 8. Invariantes: Saldo bancario y de efectivo físico mantienen sus fórmulas canónicas', () => {
+    const accounts: Account[] = [
+      { id: 'daily', name: 'Diaria', type: 'spending', initialBalance: 500, balance: 375 },
+    ]
+    const cash = [cashWithdrawalLinked, cashTx1, cashReimbursement, cashAdjustment]
+    // Cash balance = +110 - 6 + 20 - 7 = 117 €
+    const totalCash = selectCashBalance(cash)
+    assert.equal(totalCash, 117.0)
+
+    const totalMoney = selectTotalAvailableMoney(accounts, cash)
+    assert.equal(totalMoney.bank, 375)
+    assert.equal(totalMoney.cash, 117.0)
+    assert.equal(totalMoney.total, 492.0)
+  })
+})
+
 
 
 

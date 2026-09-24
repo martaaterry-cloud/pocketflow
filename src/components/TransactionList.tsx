@@ -2,9 +2,25 @@ import { useState, useMemo, useEffect } from 'react'
 import type { CashTransaction, Category, ExpenseShare, Transaction } from '../models/finance'
 import { SwipeableTransactionRow } from './SwipeableTransactionRow'
 import { selectExpenseShareStatus } from '../utils/sharedExpenseSelectors'
+import { toUnifiedMovements, type UnifiedMovement } from '../utils/unifiedMovementSelectors'
+
+export interface TransactionListProps {
+  movements?: UnifiedMovement[]
+  transactions?: Transaction[]
+  categories: Category[]
+  expenseShares?: ExpenseShare[]
+  cashTransactions?: CashTransaction[]
+  allTransactions?: Transaction[]
+  limit?: number
+  onSelect?: (transaction: Transaction | CashTransaction) => void
+  onEdit?: (transaction: Transaction | CashTransaction) => void
+  onDelete?: (transaction: Transaction) => void
+  onDeleteCash?: (transaction: CashTransaction) => void
+}
 
 export function TransactionList({
-  transactions,
+  movements,
+  transactions = [],
   categories,
   expenseShares = [],
   cashTransactions = [],
@@ -13,20 +29,16 @@ export function TransactionList({
   onSelect,
   onEdit,
   onDelete,
-}: {
-  transactions: Transaction[]
-  categories: Category[]
-  expenseShares?: ExpenseShare[]
-  cashTransactions?: CashTransaction[]
-  allTransactions?: Transaction[]
-  limit?: number
-  onSelect?: (transaction: Transaction) => void
-  onEdit?: (transaction: Transaction) => void
-  onDelete?: (transaction: Transaction) => void
-}) {
+  onDeleteCash,
+}: TransactionListProps) {
   const [openRowId, setOpenRowId] = useState<string | null>(null)
 
-  const rows = limit ? transactions.slice(0, limit) : transactions
+  const items: UnifiedMovement[] = useMemo(() => {
+    if (movements) return movements
+    return toUnifiedMovements(transactions, cashTransactions, expenseShares)
+  }, [movements, transactions, cashTransactions, expenseShares])
+
+  const rows = limit ? items.slice(0, limit) : items
 
   // Cerrar fila abierta al hacer tap fuera de cualquier fila deslizable
   useEffect(() => {
@@ -69,25 +81,25 @@ export function TransactionList({
 
   return (
     <div className="transaction-list">
-      {rows.map((t) => {
-        const isShared = Boolean(t.isShared || (expenseShares && expenseShares.some((s) => s.expenseTransactionId === t.id)))
-        const pendingToRecover = pendingByTx.get(t.id)
+      {rows.map((m) => {
+        const pendingToRecover = pendingByTx.get(m.id)
 
         return (
           <SwipeableTransactionRow
-            key={t.id}
-            transaction={t}
+            key={m.id}
+            movement={m}
             categories={categories}
-            isShared={isShared}
+            isShared={m.isShared}
             pendingToRecover={pendingToRecover}
-            isOpen={openRowId === t.id}
+            isOpen={openRowId === m.id}
             onOpenChange={(open) => {
-              if (open) setOpenRowId(t.id)
-              else if (openRowId === t.id) setOpenRowId(null)
+              if (open) setOpenRowId(m.id)
+              else if (openRowId === m.id) setOpenRowId(null)
             }}
             onSelect={onSelect}
             onEdit={onEdit}
             onDelete={onDelete}
+            onDeleteCash={onDeleteCash}
           />
         )
       })}

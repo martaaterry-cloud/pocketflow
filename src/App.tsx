@@ -429,13 +429,15 @@ export default function App() {
     setIsActionSheetOpen(true)
   }
 
-  const handleSelectTransaction = (tx: Transaction) => {
+  const handleSelectTransaction = (tx: Transaction | CashTransaction) => {
     if (tx.isShared) {
       setSelectedSharedTx(tx)
-    } else {
+    } else if ('accountId' in tx) {
       setSelectedTx(tx)
       setModalDefaultType(tx.type)
       setIsModalOpen(true)
+    } else {
+      setEditingCashTx(tx)
     }
   }
 

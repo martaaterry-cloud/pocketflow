@@ -1,13 +1,20 @@
 import { useMemo, useState } from 'react'
 import { TransactionList } from '../components/TransactionList'
 import { DeleteTransactionModal } from '../components/DeleteTransactionModal'
-import type { Transaction, TransactionType } from '../models/finance'
+import type { CashTransaction, Transaction, TransactionType } from '../models/finance'
 import type { ReturnTypeFinance } from '../types'
 import { money } from '../utils/money'
 import { AppIcon } from '../ui/icons'
+import {
+  toUnifiedMovements,
+  filterUnifiedMovements,
+  calculateUnifiedMovementStats,
+  type MovementSource,
+} from '../utils/unifiedMovementSelectors'
 
 type FilterType = 'all' | TransactionType
 type IncomeSubFilter = 'all' | 'income' | 'reimbursement'
+type SourceFilter = 'all' | MovementSource
 
 export function MovementsPage({
   finance,
@@ -16,43 +23,42 @@ export function MovementsPage({
 }: {
   finance: ReturnTypeFinance
   onAdd: () => void
-  onSelectTransaction?: (tx: Transaction) => void
+  onSelectTransaction?: (tx: Transaction | CashTransaction) => void
 }) {
+  const [sourceFilter, setSourceFilter] = useState<SourceFilter>('all')
   const [filter, setFilter] = useState<FilterType>('all')
   const [incomeSubFilter, setIncomeSubFilter] = useState<IncomeSubFilter>('all')
   const [search, setSearch] = useState('')
   const [txToDelete, setTxToDelete] = useState<Transaction | null>(null)
 
-  const filteredTransactions = useMemo(() => {
-    return finance.transactions.filter((tx) => {
-      const matchesType = filter === 'all' || tx.type === filter
+  // 1. Cronología completa combinada (Banco + Efectivo)
+  const allUnifiedMovements = useMemo(() => {
+    return toUnifiedMovements(
+      finance.transactions ?? [],
+      finance.cashTransactions ?? [],
+      finance.expenseShares ?? []
+    )
+  }, [finance.transactions, finance.cashTransactions, finance.expenseShares])
 
-      let matchesSub = true
-      if (filter === 'income' && incomeSubFilter !== 'all') {
-        const isReimbursement = tx.incomeKind === 'reimbursement'
-        matchesSub = incomeSubFilter === 'reimbursement' ? isReimbursement : !isReimbursement
-      }
+  // 2. Conteo por origen
+  const totalAllCount = allUnifiedMovements.length
+  const totalBankCount = (finance.transactions ?? []).length
+  const totalCashCount = (finance.cashTransactions ?? []).length
 
-      const matchesSearch =
-        !search.trim() ||
-        tx.description.toLowerCase().includes(search.toLowerCase().trim()) ||
-        finance.categories.find((c) => c.id === tx.categoryId)?.name.toLowerCase().includes(search.toLowerCase().trim())
-      return matchesType && matchesSub && matchesSearch
+  // 3. Filtrado completo y búsqueda
+  const filteredMovements = useMemo(() => {
+    return filterUnifiedMovements(allUnifiedMovements, finance.categories ?? [], {
+      source: sourceFilter,
+      type: filter,
+      incomeSubFilter,
+      search,
     })
-  }, [finance.transactions, finance.categories, filter, incomeSubFilter, search])
+  }, [allUnifiedMovements, finance.categories, sourceFilter, filter, incomeSubFilter, search])
 
+  // 4. Estadísticas del conjunto filtrado
   const stats = useMemo(() => {
-    const expenses = filteredTransactions.filter((t) => t.type === 'expense').reduce((s, t) => s + t.amount, 0)
-    const incomes = filteredTransactions.filter((t) => t.type === 'income').reduce((s, t) => s + t.amount, 0)
-    const realIncomes = filteredTransactions
-      .filter((t) => t.type === 'income' && t.incomeKind !== 'reimbursement')
-      .reduce((s, t) => s + t.amount, 0)
-    const reimbursements = filteredTransactions
-      .filter((t) => t.type === 'income' && t.incomeKind === 'reimbursement')
-      .reduce((s, t) => s + t.amount, 0)
-
-    return { expenses, incomes, realIncomes, reimbursements }
-  }, [filteredTransactions])
+    return calculateUnifiedMovementStats(filteredMovements)
+  }, [filteredMovements])
 
   return (
     <main className="page">
@@ -80,13 +86,39 @@ export function MovementsPage({
         )}
       </div>
 
-      <div className="filter-pills">
+      {/* Selector de Origen: Todos | Banco | Efectivo */}
+      <div className="filter-pills source-pills">
+        <button
+          type="button"
+          className={sourceFilter === 'all' ? 'active' : ''}
+          onClick={() => setSourceFilter('all')}
+        >
+          Todos ({totalAllCount})
+        </button>
+        <button
+          type="button"
+          className={sourceFilter === 'bank' ? 'active' : ''}
+          onClick={() => setSourceFilter('bank')}
+        >
+          Banco ({totalBankCount})
+        </button>
+        <button
+          type="button"
+          className={sourceFilter === 'cash' ? 'active' : ''}
+          onClick={() => setSourceFilter('cash')}
+        >
+          Efectivo ({totalCashCount})
+        </button>
+      </div>
+
+      {/* Selector de Tipo: Todos | Gastos | Ingresos | Transferencias */}
+      <div className="filter-pills type-pills" style={{ marginTop: 6 }}>
         <button
           type="button"
           className={filter === 'all' ? 'active' : ''}
           onClick={() => setFilter('all')}
         >
-          Todos ({finance.transactions.length})
+          Todos
         </button>
         <button
           type="button"
@@ -102,18 +134,20 @@ export function MovementsPage({
         >
           Ingresos
         </button>
-        <button
-          type="button"
-          className={filter === 'transfer' ? 'active' : ''}
-          onClick={() => setFilter('transfer')}
-        >
-          Transferencias
-        </button>
+        {sourceFilter !== 'cash' && (
+          <button
+            type="button"
+            className={filter === 'transfer' ? 'active' : ''}
+            onClick={() => setFilter('transfer')}
+          >
+            Transferencias
+          </button>
+        )}
       </div>
 
       {/* Subfiltro discreto para Ingresos */}
       {filter === 'income' && (
-        <div className="filter-pills sub-pills" style={{ marginTop: 8 }}>
+        <div className="filter-pills sub-pills" style={{ marginTop: 6 }}>
           <button
             type="button"
             className={incomeSubFilter === 'all' ? 'active' : ''}
@@ -151,21 +185,34 @@ export function MovementsPage({
         ) : filter === 'expense' ? (
           <span>Total gastos: <strong>−{money(stats.expenses)}</strong></span>
         ) : (
-          <span>Mostrando {filteredTransactions.length} movimientos</span>
+          <span>Mostrando {filteredMovements.length} movimientos</span>
         )}
       </div>
 
       <section className="section">
-        <TransactionList
-          transactions={filteredTransactions}
-          categories={finance.categories}
-          expenseShares={finance.expenseShares}
-          cashTransactions={finance.cashTransactions}
-          allTransactions={finance.transactions}
-          onSelect={onSelectTransaction}
-          onEdit={onSelectTransaction}
-          onDelete={(t) => setTxToDelete(t)}
-        />
+        {filteredMovements.length === 0 ? (
+          <div className="empty-state" style={{ padding: '32px 20px', textAlign: 'center' }}>
+            <p className="muted" style={{ margin: 0 }}>
+              {sourceFilter === 'cash'
+                ? 'No hay movimientos en efectivo'
+                : sourceFilter === 'bank'
+                ? 'No hay movimientos bancarios'
+                : 'No hay movimientos para mostrar.'}
+            </p>
+          </div>
+        ) : (
+          <TransactionList
+            movements={filteredMovements}
+            categories={finance.categories}
+            expenseShares={finance.expenseShares}
+            cashTransactions={finance.cashTransactions}
+            allTransactions={finance.transactions}
+            onSelect={onSelectTransaction}
+            onEdit={onSelectTransaction}
+            onDelete={(t) => setTxToDelete(t)}
+            onDeleteCash={(c) => finance.deleteCashTransaction(c.id)}
+          />
+        )}
       </section>
 
       {/* Modal de confirmación de eliminación con soporte de vínculo a efectivo */}

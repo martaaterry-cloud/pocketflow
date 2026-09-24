@@ -36,7 +36,7 @@ export function HomePage({
 }: {
   finance: ReturnTypeFinance
   onAdd: () => void
-  onSelectTransaction?: (tx: Transaction) => void
+  onSelectTransaction?: (tx: Transaction | CashTransaction) => void
   onSelectSharedExpense?: (tx: Transaction | CashTransaction) => void
   onNavigateToVariableEstimates?: () => void
   onNavigateToReceivables?: () => void

@@ -677,6 +677,15 @@ export function selectDayNetFinanceStats(
   day: number,
   cashTransactions: CashTransaction[] = []
 ): DayNetStats {
+  const withdrawalTxIds = new Set(
+    transactions.filter((t) => t.specialType === 'cash_withdrawal').map((t) => t.id)
+  )
+  const linkedBankWithdrawalIds = new Set(
+    cashTransactions
+      .filter((c) => c.type === 'income' && Boolean(c.bankTransactionId) && withdrawalTxIds.has(c.bankTransactionId as string))
+      .map((c) => c.bankTransactionId as string)
+  )
+
   let grossExpenses = 0
   let netExpenses = 0
   let realIncome = 0
@@ -686,6 +695,10 @@ export function selectDayNetFinanceStats(
     const d = new Date(t.date)
     if (d.getFullYear() === year && d.getMonth() === month && d.getDate() === day) {
       if (t.type === 'expense') {
+        // Si es una retirada de cajero vinculada a efectivo, no computa como consumo económico
+        if (linkedBankWithdrawalIds.has(t.id)) {
+          return
+        }
         grossExpenses += t.amount
         const linked = selectLinkedReimbursementsForExpense(t.id, transactions, cashTransactions)
         const net = Math.max(0, Math.round((t.amount - linked) * 100) / 100)
@@ -700,13 +713,27 @@ export function selectDayNetFinanceStats(
     }
   })
 
-  // Reembolsos recibidos en efectivo en este día
+  // Movimientos de efectivo en este día
   cashTransactions.forEach((c) => {
     const d = new Date(c.date)
     if (d.getFullYear() === year && d.getMonth() === month && d.getDate() === day) {
-      if (c.type === 'income' && Boolean(c.bankTransactionId)) {
-        reimbursements += c.amount
+      if (c.type === 'expense') {
+        grossExpenses += c.amount
+        const linked = selectLinkedReimbursementsForExpense(c.id, transactions, cashTransactions)
+        const net = Math.max(0, Math.round((c.amount - linked) * 100) / 100)
+        netExpenses += net
+      } else if (c.type === 'income') {
+        if (Boolean(c.bankTransactionId)) {
+          if (!withdrawalTxIds.has(c.bankTransactionId as string)) {
+            // Reembolso recibido en efectivo
+            reimbursements += c.amount
+          }
+        } else {
+          // Ingreso directo en efectivo
+          realIncome += c.amount
+        }
       }
+      // 'adjustment' no se suma a gastos ni ingresos
     }
   })
 
@@ -736,6 +763,15 @@ export function selectMonthDailyNetStats(
 ): Map<number, DayNetStats> {
   const map = new Map<number, DayNetStats>()
   const daysInMonth = new Date(year, month + 1, 0).getDate()
+
+  const withdrawalTxIds = new Set(
+    transactions.filter((t) => t.specialType === 'cash_withdrawal').map((t) => t.id)
+  )
+  const linkedBankWithdrawalIds = new Set(
+    cashTransactions
+      .filter((c) => c.type === 'income' && Boolean(c.bankTransactionId) && withdrawalTxIds.has(c.bankTransactionId as string))
+      .map((c) => c.bankTransactionId as string)
+  )
 
   const txsByDay = new Map<number, Transaction[]>()
   transactions.forEach((t) => {
@@ -769,6 +805,9 @@ export function selectMonthDailyNetStats(
 
     dayTxs.forEach((t) => {
       if (t.type === 'expense') {
+        if (linkedBankWithdrawalIds.has(t.id)) {
+          return
+        }
         grossExpenses += t.amount
         const linked = selectLinkedReimbursementsForExpense(t.id, transactions, cashTransactions)
         const net = Math.max(0, Math.round((t.amount - linked) * 100) / 100)
@@ -783,8 +822,19 @@ export function selectMonthDailyNetStats(
     })
 
     dayCash.forEach((c) => {
-      if (c.type === 'income' && Boolean(c.bankTransactionId)) {
-        reimbursements += c.amount
+      if (c.type === 'expense') {
+        grossExpenses += c.amount
+        const linked = selectLinkedReimbursementsForExpense(c.id, transactions, cashTransactions)
+        const net = Math.max(0, Math.round((c.amount - linked) * 100) / 100)
+        netExpenses += net
+      } else if (c.type === 'income') {
+        if (Boolean(c.bankTransactionId)) {
+          if (!withdrawalTxIds.has(c.bankTransactionId as string)) {
+            reimbursements += c.amount
+          }
+        } else {
+          realIncome += c.amount
+        }
       }
     })
 

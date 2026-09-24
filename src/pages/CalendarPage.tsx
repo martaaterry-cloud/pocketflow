@@ -1,13 +1,14 @@
 import { useMemo, useState } from 'react'
-import type { Transaction } from '../models/finance'
+import type { CashTransaction, Transaction } from '../models/finance'
 import type { ReturnTypeFinance } from '../types'
 import { money } from '../utils/money'
 import { AppIcon } from '../ui/icons'
 import {
-  selectNetPersonalExpensesForPeriod,
   selectMonthDailyNetStats,
   selectDayNetFinanceStats,
 } from '../utils/sharedExpenseSelectors'
+import { selectTotalEconomicConsumptionForPeriod } from '../utils/cashSelectors'
+import { toUnifiedMovements, type UnifiedMovement } from '../utils/unifiedMovementSelectors'
 
 const weekdays = ['L', 'M', 'X', 'J', 'V', 'S', 'D']
 
@@ -16,7 +17,7 @@ export function CalendarPage({
   onSelectTransaction,
 }: {
   finance: ReturnTypeFinance
-  onSelectTransaction?: (tx: Transaction) => void
+  onSelectTransaction?: (tx: Transaction | CashTransaction) => void
 }) {
   const [currentDate, setCurrentDate] = useState(() => new Date())
   const [selectedDay, setSelectedDay] = useState(() => new Date().getDate())
@@ -43,38 +44,50 @@ export function CalendarPage({
     setSelectedDay(today.getDate())
   }
 
+  // 1. Estadísticas diarias del mes unificando Banco + Efectivo
   const monthDataByDay = useMemo(() => {
     return selectMonthDailyNetStats(
-      finance.transactions,
+      finance.transactions ?? [],
       year,
       month,
       finance.cashTransactions ?? []
     )
   }, [finance.transactions, month, year, finance.cashTransactions])
 
-  const selectedRows = useMemo(() => {
-    return finance.transactions.filter((t) => {
-      const d = new Date(t.date)
+  // 2. Movimientos unificados del día seleccionado (Banco + Efectivo)
+  const allUnifiedMovements = useMemo(() => {
+    return toUnifiedMovements(
+      finance.transactions ?? [],
+      finance.cashTransactions ?? [],
+      finance.expenseShares ?? []
+    )
+  }, [finance.transactions, finance.cashTransactions, finance.expenseShares])
+
+  const selectedDayMovements = useMemo(() => {
+    return allUnifiedMovements.filter((m) => {
+      const d = new Date(m.date)
       return (
         d.getFullYear() === year &&
         d.getMonth() === month &&
         d.getDate() === selectedDay
       )
     })
-  }, [finance.transactions, year, month, selectedDay])
+  }, [allUnifiedMovements, year, month, selectedDay])
 
+  // 3. Consumo económico total del mes (Banco + Efectivo sin doble conteo de cajero)
   const monthTotalExpenses = useMemo(() => {
-    return selectNetPersonalExpensesForPeriod(
-      finance.transactions,
+    return selectTotalEconomicConsumptionForPeriod(
+      finance.transactions ?? [],
+      finance.cashTransactions ?? [],
       currentDate,
-      'month',
-      finance.cashTransactions ?? []
-    )
+      'month'
+    ).totalEconomicConsumption
   }, [finance.transactions, currentDate, finance.cashTransactions])
 
+  // 4. Estadísticas del día seleccionado
   const selectedDayStats = useMemo(() => {
     return selectDayNetFinanceStats(
-      finance.transactions,
+      finance.transactions ?? [],
       year,
       month,
       selectedDay,
@@ -137,7 +150,7 @@ export function CalendarPage({
                 {hasIncome && (
                   <span
                     className="calendar-income-indicator"
-                    title={`Ingresos/Reembolsos`}
+                    title="Ingresos / Reembolsos"
                   />
                 )}
               </button>
@@ -167,43 +180,86 @@ export function CalendarPage({
                 )}
               </span>
             )}
-            {selectedDayStats.realIncome > 0 && <span className="positive">Ingresos: <strong>+{money(selectedDayStats.realIncome)}</strong></span>}
-            {selectedDayStats.reimbursements > 0 && <span style={{ color: '#8b5cf6' }}>Reembolsos: <strong>+{money(selectedDayStats.reimbursements)}</strong></span>}
+            {selectedDayStats.realIncome > 0 && (
+              <span className="positive">
+                Ingresos: <strong>+{money(selectedDayStats.realIncome)}</strong>
+              </span>
+            )}
+            {selectedDayStats.reimbursements > 0 && (
+              <span style={{ color: '#8b5cf6' }}>
+                Reembolsos: <strong>+{money(selectedDayStats.reimbursements)}</strong>
+              </span>
+            )}
           </div>
         )}
 
-        {selectedRows.length ? (
+        {selectedDayMovements.length ? (
           <div className="transaction-list">
-            {selectedRows.map((t) => {
-              const isIncome = t.type === 'income'
-              const isReimbursement = isIncome && t.incomeKind === 'reimbursement'
-              const isTransfer = t.type === 'transfer'
+            {selectedDayMovements.map((m) => {
+              const isIncome = m.type === 'income'
+              const isReimbursement = m.isReimbursement
+              const isTransfer = m.type === 'transfer' || m.isCashWithdrawal || m.isLinkedCashWithdrawal
+              const isAdjustment = m.isAdjustment
 
               return (
                 <div
                   className="mini-row clickable"
-                  key={t.id}
-                  onClick={() => onSelectTransaction?.(t)}
+                  key={m.id}
+                  onClick={() => onSelectTransaction?.(m.originalTransaction)}
                   role="button"
                   tabIndex={0}
                 >
-                  <div>
-                    <strong>{t.description}</strong>
-                    <span>
-                      {isTransfer
-                        ? 'Transferencia'
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 2, minWidth: 0 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                      <strong>{m.description}</strong>
+
+                      {/* Badges de origen */}
+                      {m.source === 'bank' && m.isCashWithdrawal && (
+                        <span className="pill-withdrawal">Cajero · Banco → Efectivo</span>
+                      )}
+                      {m.source === 'bank' && !m.isCashWithdrawal && (
+                        <span className="pill-source bank">Banco</span>
+                      )}
+                      {m.source === 'cash' && m.isLinkedCashWithdrawal && (
+                        <span className="pill-source cash-linked">Desde Banco</span>
+                      )}
+                      {m.source === 'cash' && !m.isLinkedCashWithdrawal && !m.isAdjustment && (
+                        <span className="pill-source cash">Efectivo</span>
+                      )}
+                      {isAdjustment && (
+                        <span className="pill-source adjustment">Ajuste</span>
+                      )}
+
+                      {isReimbursement && <span className="pill-reimbursement">Reembolso</span>}
+                      {m.isShared && <span className="pill-shared completed">Compartido</span>}
+                    </div>
+
+                    <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                      {m.isCashWithdrawal
+                        ? 'Retirada de cajero'
+                        : m.isLinkedCashWithdrawal
+                        ? 'Entrada vinculada desde Banco'
+                        : isAdjustment
+                        ? 'Ajuste de efectivo'
+                        : isTransfer
+                        ? 'Transferencia interna'
                         : isReimbursement
-                        ? 'Reembolso recibido'
+                        ? `Reembolso recibido (${m.source === 'cash' ? 'efectivo' : 'banco'})`
                         : isIncome
-                        ? 'Ingreso'
-                        : t.giftRecipient
-                        ? `Regalo · ${t.giftRecipient}`
+                        ? `Ingreso (${m.source === 'cash' ? 'efectivo' : 'banco'})`
+                        : m.giftRecipient
+                        ? `Regalo · ${m.giftRecipient}`
                         : 'Gasto'}
                     </span>
                   </div>
+
                   <strong
                     className={`expense-amount ${
-                      isReimbursement
+                      isAdjustment
+                        ? m.amount >= 0
+                          ? 'positive'
+                          : 'negative'
+                        : isReimbursement
                         ? 'positive reimbursement'
                         : isIncome
                         ? 'positive'
@@ -212,8 +268,16 @@ export function CalendarPage({
                         : ''
                     }`}
                   >
-                    {isIncome ? '+' : isTransfer ? '↔ ' : '−'}
-                    {money(t.amount)}
+                    {isAdjustment
+                      ? m.amount >= 0
+                        ? `+${money(m.amount)}`
+                        : money(m.amount)
+                      : isIncome
+                      ? '+'
+                      : isTransfer
+                      ? '↔ '
+                      : '−'}
+                    {!isAdjustment && money(m.amount)}
                   </strong>
                 </div>
               )

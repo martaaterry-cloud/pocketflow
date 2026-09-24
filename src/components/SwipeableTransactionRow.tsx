@@ -1,5 +1,6 @@
 import React, { useRef, useState, useEffect } from 'react'
-import type { Category, Transaction } from '../models/finance'
+import type { Category, CashTransaction, Transaction } from '../models/finance'
+import type { UnifiedMovement } from '../utils/unifiedMovementSelectors'
 import { money, shortDate } from '../utils/money'
 import { AppIcon } from '../ui/icons'
 
@@ -7,18 +8,21 @@ export const SWIPE_MAX_REVEAL = 66 // Desplazamiento máximo visual (~64-68px)
 export const SWIPE_THRESHOLD = 33  // Umbral proporcional para snap abierto (~33px)
 
 interface SwipeableTransactionRowProps {
-  transaction: Transaction
+  movement?: UnifiedMovement
+  transaction?: Transaction
   categories: Category[]
   isShared?: boolean
   pendingToRecover?: number
-  onSelect?: (t: Transaction) => void
-  onEdit?: (t: Transaction) => void
+  onSelect?: (t: Transaction | CashTransaction) => void
+  onEdit?: (t: Transaction | CashTransaction) => void
   onDelete?: (t: Transaction) => void
+  onDeleteCash?: (c: CashTransaction) => void
   isOpen?: boolean
   onOpenChange?: (open: boolean) => void
 }
 
 export function SwipeableTransactionRow({
+  movement,
   transaction: t,
   categories,
   isShared,
@@ -26,6 +30,7 @@ export function SwipeableTransactionRow({
   onSelect,
   onEdit,
   onDelete,
+  onDeleteCash,
   isOpen = false,
   onOpenChange,
 }: SwipeableTransactionRowProps) {
@@ -41,10 +46,36 @@ export function SwipeableTransactionRow({
   const hasMovedRef = useRef(false)
   const pointerIdRef = useRef<number | null>(null)
 
-  const category = categories.find((c) => c.id === t.categoryId)
-  const isTransfer = t.type === 'transfer'
-  const isIncome = t.type === 'income'
-  const isReimbursement = isIncome && t.incomeKind === 'reimbursement'
+  const item: UnifiedMovement = movement ?? {
+    id: t!.id,
+    source: 'bank',
+    type: t!.type,
+    amount: t!.amount,
+    date: t!.date,
+    description: t!.description,
+    categoryId: t!.categoryId,
+    note: t!.note,
+    accountId: t!.accountId,
+    toAccountId: t!.toAccountId,
+    incomeKind: t!.incomeKind,
+    expenseNature: t!.expenseNature,
+    giftRecipient: t!.giftRecipient,
+    isShared: Boolean(isShared),
+    isCashWithdrawal: t!.specialType === 'cash_withdrawal',
+    isLinkedCashWithdrawal: false,
+    isReimbursement: t!.type === 'income' && t!.incomeKind === 'reimbursement',
+    isAdjustment: false,
+    originalTransaction: t!,
+  }
+
+  const category = categories.find((c) => c.id === item.categoryId)
+  const isTransfer = item.type === 'transfer'
+  const isIncome = item.type === 'income'
+  const isReimbursement = item.isReimbursement
+  const isAdjustment = item.isAdjustment
+  const isCashWithdrawal = item.isCashWithdrawal
+  const isLinkedCashWithdrawal = item.isLinkedCashWithdrawal
+  const sharedFlag = isShared ?? item.isShared
 
   // Sincronizar SOLO cuando isOpen cambia externamente y NO estamos arrastrando
   useEffect(() => {
@@ -155,7 +186,7 @@ export function SwipeableTransactionRow({
         onOpenChange?.(false)
       } else {
         // Si estaba cerrada, abrir detalle de la transacción
-        onSelect?.(t)
+        onSelect?.(item.originalTransaction)
       }
       return
     }
@@ -202,16 +233,16 @@ export function SwipeableTransactionRow({
               setTranslateX(0)
               currentTranslateRef.current = 0
               onOpenChange?.(false)
-              onEdit(t)
+              onEdit(item.originalTransaction)
             }}
-            aria-label={`Editar ${t.description}`}
+            aria-label={`Editar ${item.description}`}
             tabIndex={translateX > 0 ? 0 : -1}
           >
             <AppIcon name="pencil" size={15} color="#ffffff" />
             <span>Editar</span>
           </button>
         )}
-        {onDelete && (
+        {(onDelete || onDeleteCash) && (
           <button
             type="button"
             className="swipe-action-button delete"
@@ -220,9 +251,13 @@ export function SwipeableTransactionRow({
               setTranslateX(0)
               currentTranslateRef.current = 0
               onOpenChange?.(false)
-              onDelete(t)
+              if (item.source === 'cash') {
+                onDeleteCash?.(item.originalTransaction as CashTransaction)
+              } else {
+                onDelete?.(item.originalTransaction as Transaction)
+              }
             }}
-            aria-label={`Eliminar ${t.description}`}
+            aria-label={`Eliminar ${item.description}`}
             tabIndex={translateX < 0 ? 0 : -1}
           >
             <AppIcon name="trash-2" size={15} color="#ffffff" />
@@ -243,7 +278,9 @@ export function SwipeableTransactionRow({
         onPointerUp={handlePointerUp}
         onPointerCancel={handlePointerCancel}
         onClick={(e) => {
-          if (hasMovedRef.current) {
+          if (!hasMovedRef.current) {
+            onSelect?.(item.originalTransaction)
+          } else {
             e.stopPropagation()
           }
         }}
@@ -251,7 +288,11 @@ export function SwipeableTransactionRow({
         <div
           className="category-dot"
           style={{
-            background: isTransfer
+            background: isAdjustment
+              ? '#3b82f6'
+              : isCashWithdrawal || isLinkedCashWithdrawal
+              ? '#0284c7'
+              : isTransfer
               ? '#768ca5'
               : isReimbursement
               ? '#8b70a0'
@@ -260,7 +301,11 @@ export function SwipeableTransactionRow({
               : category?.color ?? '#bbb',
           }}
         >
-          {isTransfer ? (
+          {isAdjustment ? (
+            <AppIcon name="scale" size={15} color="#fff" />
+          ) : isCashWithdrawal || isLinkedCashWithdrawal ? (
+            <AppIcon name="banknote" size={15} color="#fff" />
+          ) : isTransfer ? (
             <AppIcon name="arrow-left-right" size={15} color="#fff" />
           ) : isReimbursement ? (
             <AppIcon name="refresh-cw" size={15} color="#fff" />
@@ -273,12 +318,30 @@ export function SwipeableTransactionRow({
 
         <div className="transaction-main">
           <div className="transaction-title-row">
-            <strong>{t.description}</strong>
-            {t.specialType === 'cash_withdrawal' && <span className="pill-withdrawal">Cajero</span>}
-            {t.expenseNature === 'fixed' && <span className="pill-nature fixed">Fijo</span>}
-            {t.expenseNature === 'extraordinary' && <span className="pill-nature extraordinary">Extraordinario</span>}
+            <strong>{item.description}</strong>
+
+            {/* Badges de origen */}
+            {item.source === 'bank' && isCashWithdrawal && (
+              <span className="pill-withdrawal">Cajero · Banco → Efectivo</span>
+            )}
+            {item.source === 'bank' && !isCashWithdrawal && (
+              <span className="pill-source bank">Banco</span>
+            )}
+            {item.source === 'cash' && isLinkedCashWithdrawal && (
+              <span className="pill-source cash-linked">Desde Banco</span>
+            )}
+            {item.source === 'cash' && !isLinkedCashWithdrawal && !isAdjustment && (
+              <span className="pill-source cash">Efectivo</span>
+            )}
+            {isAdjustment && (
+              <span className="pill-source adjustment">Ajuste</span>
+            )}
+
+            {/* Badges de características */}
+            {item.expenseNature === 'fixed' && <span className="pill-nature fixed">Fijo</span>}
+            {item.expenseNature === 'extraordinary' && <span className="pill-nature extraordinary">Extraordinario</span>}
             {isReimbursement && <span className="pill-reimbursement">Reembolso</span>}
-            {isShared && (
+            {sharedFlag && (
               <span className={`pill-shared ${pendingToRecover && pendingToRecover > 0 ? 'pending' : 'completed'}`}>
                 {pendingToRecover && pendingToRecover > 0
                   ? `Faltan ${money(pendingToRecover)}`
@@ -287,28 +350,50 @@ export function SwipeableTransactionRow({
             )}
           </div>
           <span>
-            {t.specialType === 'cash_withdrawal'
+            {isCashWithdrawal
               ? `Efectivo / Cajero (${category?.name ?? 'Otros'})`
+              : isLinkedCashWithdrawal
+              ? 'Entrada vinculada desde Banco'
+              : isAdjustment
+              ? 'Ajuste de efectivo'
               : isTransfer
               ? 'Transferencia interna'
               : isReimbursement
-              ? 'Reembolso recibido'
+              ? `Reembolso recibido (${item.source === 'cash' ? 'efectivo' : 'banco'})`
               : isIncome
-              ? 'Ingreso'
-              : t.giftRecipient
-              ? `Regalo · ${t.giftRecipient}`
+              ? `Ingreso (${item.source === 'cash' ? 'efectivo' : 'banco'})`
+              : item.giftRecipient
+              ? `Regalo · ${item.giftRecipient}`
               : category?.name ?? 'Otros'}{' '}
-            · {shortDate(t.date)}
+            · {shortDate(item.date)}
           </span>
         </div>
 
         <strong
           className={`transaction-amount ${
-            isReimbursement ? 'positive reimbursement' : isIncome ? 'positive' : isTransfer ? 'transfer' : ''
+            isAdjustment
+              ? item.amount >= 0
+                ? 'positive'
+                : 'negative'
+              : isReimbursement
+              ? 'positive reimbursement'
+              : isIncome
+              ? 'positive'
+              : isTransfer || isCashWithdrawal || isLinkedCashWithdrawal
+              ? 'transfer'
+              : ''
           }`}
         >
-          {isIncome ? '+' : isTransfer ? '↔ ' : '−'}
-          {money(t.amount)}
+          {isAdjustment
+            ? item.amount >= 0
+              ? `+${money(item.amount)}`
+              : money(item.amount)
+            : isIncome
+            ? '+'
+            : isTransfer || isCashWithdrawal || isLinkedCashWithdrawal
+            ? '↔ '
+            : '−'}
+          {!isAdjustment && money(item.amount)}
         </strong>
       </div>
     </div>

@@ -208,21 +208,21 @@ export function CategoryDetailModal({
                     isShared={isShared}
                     onSelect={(tx) => {
                       onClose()
-                      onSelectTransaction?.(tx)
+                      onSelectTransaction?.(tx as Transaction)
                     }}
                     onEdit={
                       onEditTransaction
                         ? (tx) => {
                             onClose()
-                            onEditTransaction(tx)
+                            onEditTransaction(tx as Transaction)
                           }
                         : undefined
                     }
                     onDelete={
                       onDeleteTransaction
-                        ? (tx) => {
+                        ? () => {
                             onClose()
-                            onDeleteTransaction(tx)
+                            onDeleteTransaction(t)
                           }
                         : undefined
                     }
