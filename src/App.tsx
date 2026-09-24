@@ -164,7 +164,7 @@ export default function App() {
           true
         )
       } catch (err) {
-        console.warn('[Supabase] Error en sincronización inicial:', err)
+        console.error('[Supabase] Error en sincronización inicial:', err)
         setSyncStatus(typeof navigator !== 'undefined' && !navigator.onLine ? 'offline' : 'error')
       } finally {
         isInitialSyncInProgressRef.current = false

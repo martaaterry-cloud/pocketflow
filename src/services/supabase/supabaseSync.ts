@@ -485,21 +485,33 @@ export async function fetchRemoteState(
     supabase.from('cash_transactions').select('*').eq('user_id', userId).order('date', { ascending: false }),
   ])
 
-  // Comprobar errores en CADA query para evitar borrado accidental de datos locales
-  if (accountsRes.error) throw new Error(`[Sync] Error leyendo accounts: ${accountsRes.error.message}`)
-  if (categoriesRes.error) throw new Error(`[Sync] Error leyendo categories: ${categoriesRes.error.message}`)
-  if (txsRes.error) throw new Error(`[Sync] Error leyendo transactions: ${txsRes.error.message}`)
-  if (budgetsRes.error) throw new Error(`[Sync] Error leyendo budgets: ${budgetsRes.error.message}`)
-  if (goalsRes.error) throw new Error(`[Sync] Error leyendo savings_goals: ${goalsRes.error.message}`)
-  if (reservesRes.error) throw new Error(`[Sync] Error leyendo reserves: ${reservesRes.error.message}`)
-  if (recurringRes.error) throw new Error(`[Sync] Error leyendo recurring_payments: ${recurringRes.error.message}`)
-  if (periodsRes.error) throw new Error(`[Sync] Error leyendo special_periods: ${periodsRes.error.message}`)
-  if (settingsRes.error) throw new Error(`[Sync] Error leyendo settings: ${settingsRes.error.message}`)
-  if (profileRes.error) throw new Error(`[Sync] Error leyendo profiles: ${profileRes.error.message}`)
-  if (estimatesRes.error) throw new Error(`[Sync] Error leyendo variable_expense_estimates: ${estimatesRes.error.message}`)
-  if (contactsRes.error) throw new Error(`[Sync] Error leyendo shared_contacts: ${contactsRes.error.message}`)
-  if (sharesRes.error) throw new Error(`[Sync] Error leyendo expense_shares: ${sharesRes.error.message}`)
-  if (cashRes.error) throw new Error(`[Sync] Error leyendo cash_transactions: ${cashRes.error.message}`)
+  // Comprobar errores en CADA query con logging detallado para diagnóstico transparente
+  const checkQueryError = (tableName: string, res: { error: any }) => {
+    if (res.error) {
+      console.error(`[SYNC][${tableName}][fetch]`, {
+        code: res.error.code,
+        message: res.error.message,
+        details: res.error.details,
+        hint: res.error.hint,
+      })
+      throw new Error(`[Sync] Error leyendo ${tableName}: ${res.error.message}`)
+    }
+  }
+
+  checkQueryError('accounts', accountsRes)
+  checkQueryError('categories', categoriesRes)
+  checkQueryError('transactions', txsRes)
+  checkQueryError('budgets', budgetsRes)
+  checkQueryError('savings_goals', goalsRes)
+  checkQueryError('reserves', reservesRes)
+  checkQueryError('recurring_payments', recurringRes)
+  checkQueryError('special_periods', periodsRes)
+  checkQueryError('financial_plan_settings', settingsRes)
+  checkQueryError('profiles', profileRes)
+  checkQueryError('variable_expense_estimates', estimatesRes)
+  checkQueryError('shared_contacts', contactsRes)
+  checkQueryError('expense_shares', sharesRes)
+  checkQueryError('cash_transactions', cashRes)
 
   // Si no hay cuentas remotas, la base de datos de este usuario está virgen
   if (!accountsRes.data || accountsRes.data.length === 0) {
