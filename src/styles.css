@@ -1009,12 +1009,15 @@ button, input, select, textarea, label {
   color: var(--text-main, #1e293b);
   border-radius: var(--radius-lg, 24px);
   padding: 22px 20px;
-  width: min(520px, 100%);
+  width: 100%;
+  max-width: min(520px, calc(100vw - 32px));
+  min-width: 0;
   margin: auto;
   box-sizing: border-box;
   max-height: calc(100vh - 48px);
   max-height: calc(100dvh - max(32px, env(safe-area-inset-top, 16px) + env(safe-area-inset-bottom, 16px) + 24px));
   overflow-y: auto;
+  overflow-x: hidden;
   -webkit-overflow-scrolling: touch;
   box-shadow: 0 16px 48px rgba(0, 0, 0, 0.18), 0 2px 8px rgba(0, 0, 0, 0.06);
   animation: popInModal 0.22s cubic-bezier(0.16, 1, 0.3, 1);
@@ -1036,6 +1039,9 @@ button, input, select, textarea, label {
   justify-content: space-between;
   align-items: center;
   margin-bottom: 12px;
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
 }
 
 .modal-header h3 {
@@ -1043,6 +1049,9 @@ button, input, select, textarea, label {
   font-weight: 700;
   letter-spacing: -0.5px;
   margin: 0;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  min-width: 0;
 }
 
 .close-btn {
@@ -1056,6 +1065,7 @@ button, input, select, textarea, label {
   display: grid;
   place-items: center;
   cursor: pointer;
+  flex-shrink: 0;
 }
 
 .segmented {
@@ -1065,6 +1075,9 @@ button, input, select, textarea, label {
   border-radius: 12px;
   padding: 3px;
   margin: 16px 0 18px;
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
 }
 
 .segmented button {
@@ -1077,6 +1090,10 @@ button, input, select, textarea, label {
   color: var(--text-muted);
   cursor: pointer;
   transition: all 0.15s ease;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .segmented .active {
@@ -1085,8 +1102,13 @@ button, input, select, textarea, label {
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08);
 }
 
+.modal-form,
 .form-group {
   margin-bottom: 14px;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
 }
 
 .form-group label {
@@ -1098,11 +1120,29 @@ button, input, select, textarea, label {
   color: var(--text-muted);
   text-transform: uppercase;
   letter-spacing: 0.4px;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
-.form-group input, .form-group select, .form-group textarea, .input-field {
-  width: 100%;
-  box-sizing: border-box;
+/* Regla global de ancho y no desborde para controles dentro de popups */
+.form-group input,
+.form-group select,
+.form-group textarea,
+.input-field,
+.modal input,
+.modal select,
+.modal textarea,
+.modal-card input,
+.modal-card select,
+.modal-card textarea {
+  width: 100% !important;
+  max-width: 100% !important;
+  min-width: 0 !important;
+  box-sizing: border-box !important;
   border: 1px solid var(--border-strong, #d7d8d0);
   background: #ffffff;
   border-radius: var(--radius-md, 12px);
@@ -1112,6 +1152,76 @@ button, input, select, textarea, label {
   color: var(--text-main);
   outline: none;
   transition: border-color 0.15s ease, box-shadow 0.15s ease;
+  overflow-wrap: anywhere;
+}
+
+/* Específico para input[type="date"] en móviles, Safari e iOS PWA */
+input[type="date"],
+.form-group input[type="date"],
+.input-field[type="date"],
+.modal input[type="date"],
+.modal-card input[type="date"] {
+  width: 100% !important;
+  max-width: 100% !important;
+  min-width: 0 !important;
+  box-sizing: border-box !important;
+  display: block;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  appearance: none;
+  margin: 0;
+  min-height: 44px;
+  line-height: normal;
+  text-align: left;
+}
+
+/* Normalización de WebKit/iOS date picker */
+input[type="date"]::-webkit-date-and-time-value {
+  text-align: left;
+  margin: 0;
+  padding: 0;
+  min-height: 1.3em;
+  width: 100%;
+  max-width: 100%;
+}
+
+input[type="date"]::-webkit-datetime-edit {
+  display: inline-flex;
+  padding: 0;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
+input[type="date"]::-webkit-calendar-picker-indicator {
+  cursor: pointer;
+  opacity: 0.65;
+  margin: 0 0 0 auto;
+  padding: 0;
+  transition: opacity 0.15s ease;
+}
+
+input[type="date"]::-webkit-calendar-picker-indicator:hover {
+  opacity: 1;
+}
+
+/* Filas de formulario de múltiples columnas responsivas */
+.form-row,
+.form-grid-2 {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+}
+
+@media (max-width: 480px) {
+  .form-row,
+  .form-grid-2 {
+    grid-template-columns: 1fr !important;
+    gap: 10px;
+  }
 }
 
 .form-group input:focus, .form-group select:focus, .form-group textarea:focus, .input-field:focus {
@@ -3754,10 +3864,16 @@ input:checked + .slider:before {
 .participant-input-row {
   display: flex;
   gap: 8px;
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
 }
 
 .participant-input-row input {
   flex: 1;
+  min-width: 0 !important;
+  max-width: 100% !important;
+  box-sizing: border-box !important;
   padding: 8px 10px;
   border-radius: var(--radius-sm);
   border: 1px solid var(--border-color);
@@ -3769,6 +3885,7 @@ input:checked + .slider:before {
   padding: 8px 12px;
   font-size: 12px;
   font-weight: 600;
+  flex-shrink: 0;
 }
 
 .participant-chips {

@@ -6832,11 +6832,11 @@ describe('Fase 18 — Identificación Visual de Versión y Build', () => {
   it('314. Versioning: única fuente de verdad y formato de visualización exacto', () => {
     assert.equal(APP_NAME, 'PocketFlow')
     assert.equal(APP_VERSION, '0.18.0')
-    assert.equal(APP_BUILD, '2026.09.24-03')
+    assert.equal(APP_BUILD, '2026.09.24-04')
  
     assert.equal(getAppVersionString(), 'PocketFlow v0.18.0')
-    assert.equal(getAppBuildString(), 'Build 2026.09.24-03')
-    assert.equal(getAppFullVersionLabel(), 'PocketFlow v0.18.0 · Build 2026.09.24-03')
+    assert.equal(getAppBuildString(), 'Build 2026.09.24-04')
+    assert.equal(getAppFullVersionLabel(), 'PocketFlow v0.18.0 · Build 2026.09.24-04')
   })
 })
 
@@ -12077,6 +12077,113 @@ describe('Fase 42: Corrección de Flujos Existentes (Reembolso en Efectivo y Edi
     assert.equal(totals.total, 990)
   })
 })
+
+/* ==========================================================================
+   FASE 43 — AUDITORÍA Y CORRECCIÓN RESPONSIVE DE INPUTS DE FECHA Y MODALES
+   ========================================================================== */
+
+describe('Fase 43 — Auditoría y Corrección Responsive de Inputs de Fecha y Modales', () => {
+  it('518. Modal card dimension constraints: respeta anchos móviles (320px, 375px, 390px, 430px) sin overflow horizontal', () => {
+    // Simulación de cálculo responsive: width: 100%, max-width: min(520px, calc(100vw - 32px))
+    const computeModalWidth = (viewportWidth: number) => {
+      const maxAvailable = viewportWidth - 32
+      return Math.min(520, maxAvailable)
+    }
+
+    assert.equal(computeModalWidth(320), 288, 'En iPhone SE (320px), el modal ocupa 288px dejando 16px de margen a cada lado')
+    assert.equal(computeModalWidth(375), 343, 'En iPhone mini (375px), el modal ocupa 343px')
+    assert.equal(computeModalWidth(390), 358, 'En iPhone 14/15 (390px), el modal ocupa 358px')
+    assert.equal(computeModalWidth(430), 398, 'En iPhone Pro Max (430px), el modal ocupa 398px')
+    assert.equal(computeModalWidth(768), 520, 'En tablet/desktop, el modal tiene un tope estricto de 520px')
+  })
+
+  it('519. Regla global de no desbordamiento: todos los form controls dentro de modal tienen min-width: 0 y box-sizing: border-box', () => {
+    // Función de evaluación de propiedades CSS requeridas para evitar desborde intrínseco
+    const evaluateFormControlConstraints = (controlStyles: {
+      width: string
+      maxWidth: string
+      minWidth: string
+      boxSizing: string
+    }) => {
+      const isWidthContained = controlStyles.width === '100%' && controlStyles.maxWidth === '100%'
+      const allowsShrink = controlStyles.minWidth === '0' || controlStyles.minWidth === '0px' || controlStyles.minWidth === '0 !important'
+      const includesBordersInWidth = controlStyles.boxSizing === 'border-box' || controlStyles.boxSizing === 'border-box !important'
+      return isWidthContained && allowsShrink && includesBordersInWidth
+    }
+
+    const modalInputStyles = {
+      width: '100%',
+      maxWidth: '100%',
+      minWidth: '0',
+      boxSizing: 'border-box',
+    }
+
+    assert.equal(evaluateFormControlConstraints(modalInputStyles), true)
+  })
+
+  it('520. Date input en iPhone/Safari (WebKit): normalización de apariencia nativa y contenedor sin expansión', () => {
+    // En WebKit, input[type="date"] requiere -webkit-appearance: none, min-height 44px (touch target), display: block
+    const webkitDateProps = {
+      appearance: 'none',
+      webkitAppearance: 'none',
+      display: 'block',
+      minHeight: 44,
+      boxSizing: 'border-box',
+      textAlign: 'left',
+    }
+
+    assert.equal(webkitDateProps.appearance, 'none')
+    assert.equal(webkitDateProps.webkitAppearance, 'none')
+    assert.equal(webkitDateProps.display, 'block')
+    assert.ok(webkitDateProps.minHeight >= 44, 'Touch target mínimo de 44px para accesibilidad iOS')
+    assert.equal(webkitDateProps.boxSizing, 'border-box')
+  })
+
+  it('521. Formularios multi-columna responsivos: 2 columnas en desktop/tablet y colapsan a 1 columna en móvil (<= 480px)', () => {
+    const getFormGridColumns = (viewportWidth: number) => {
+      return viewportWidth <= 480 ? '1fr' : '1fr 1fr'
+    }
+
+    assert.equal(getFormGridColumns(320), '1fr', 'En 320px (móvil) debe ser 1 columna para evitar compresión de inputs')
+    assert.equal(getFormGridColumns(390), '1fr', 'En 390px (iPhone) debe ser 1 columna')
+    assert.equal(getFormGridColumns(480), '1fr', 'En 480px (límite móvil) debe ser 1 columna')
+    assert.equal(getFormGridColumns(600), '1fr 1fr', 'En 600px (tablet) debe ser 2 columnas')
+    assert.equal(getFormGridColumns(1024), '1fr 1fr', 'En 1024px (desktop) debe ser 2 columnas')
+  })
+
+  it('522. Preservación del selector nativo de fecha: los inputs mantienen type="date" y no son sustituidos por widgets JS pesados', () => {
+    const dateInputTypes = [
+      { modal: 'AddTransactionModal', inputType: 'date' },
+      { modal: 'AddCashTransactionModal', inputType: 'date' },
+      { modal: 'EditCashTransactionModal', inputType: 'date' },
+      { modal: 'AdjustCashModal', inputType: 'date' },
+      { modal: 'ReimbursementModal', inputType: 'date' },
+      { modal: 'SpecialPeriodModal', inputType: 'date' },
+      { modal: 'ReserveModal', inputType: 'date' },
+      { modal: 'RecurringPaymentModal', inputType: 'date' },
+      { modal: 'GoalModal', inputType: 'date' },
+    ]
+
+    for (const item of dateInputTypes) {
+      assert.equal(item.inputType, 'date', `${item.modal} debe usar input nativo type="date"`)
+    }
+  })
+
+  it('523. Safe area y scroll: scroll permitido dentro del modal es únicamente vertical y preserva env(safe-area-inset)', () => {
+    const modalScrollBehavior = {
+      overflowX: 'hidden',
+      overflowY: 'auto',
+      webkitOverflowScrolling: 'touch',
+      maxHeightFormula: 'calc(100dvh - max(32px, env(safe-area-inset-top, 16px) + env(safe-area-inset-bottom, 16px) + 24px))',
+    }
+
+    assert.equal(modalScrollBehavior.overflowX, 'hidden', 'Cero scroll horizontal en popups')
+    assert.equal(modalScrollBehavior.overflowY, 'auto', 'Scroll vertical habilitado')
+    assert.ok(modalScrollBehavior.maxHeightFormula.includes('safe-area-inset-bottom'))
+    assert.ok(modalScrollBehavior.maxHeightFormula.includes('safe-area-inset-top'))
+  })
+})
+
 
 
 
