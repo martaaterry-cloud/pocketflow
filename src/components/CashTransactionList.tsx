@@ -153,7 +153,7 @@ export function CashTransactionList({
                         fontWeight: 600,
                       }}
                     >
-                      Cajero
+                      Desde Banco
                     </span>
                   )}
                 </span>

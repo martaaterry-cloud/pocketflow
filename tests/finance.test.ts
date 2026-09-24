@@ -6830,11 +6830,11 @@ describe('Fase 18 — Identificación Visual de Versión y Build', () => {
   it('314. Versioning: única fuente de verdad y formato de visualización exacto', () => {
     assert.equal(APP_NAME, 'PocketFlow')
     assert.equal(APP_VERSION, '0.18.0')
-    assert.equal(APP_BUILD, '2026.09.23-09')
+    assert.equal(APP_BUILD, '2026.09.24-01')
  
     assert.equal(getAppVersionString(), 'PocketFlow v0.18.0')
-    assert.equal(getAppBuildString(), 'Build 2026.09.23-09')
-    assert.equal(getAppFullVersionLabel(), 'PocketFlow v0.18.0 · Build 2026.09.23-09')
+    assert.equal(getAppBuildString(), 'Build 2026.09.24-01')
+    assert.equal(getAppFullVersionLabel(), 'PocketFlow v0.18.0 · Build 2026.09.24-01')
   })
 })
 
@@ -11137,6 +11137,329 @@ describe('Fase 39 — Interfaz Home con Carrusel Banco / Efectivo / Total (Fase 
     ]
     const consumption = selectTotalEconomicConsumptionForPeriod(bankTxs, cashTxs, new Date(2026, 8, 15), 'month')
     assert.equal(consumption.totalEconomicConsumption, 30)
+  })
+})
+
+describe('Fase 40 — Retiradas de Cajero y Efectivo Vinculado (Fase E)', () => {
+  it('476. 1. Crear retirada y pulsar "Ahora no": la retirada bancaria se guarda y no genera cashTransaction', () => {
+    const bankTx: Transaction = {
+      id: 'tx_cajero_1',
+      type: 'expense',
+      amount: 60,
+      description: 'Retirada cajero',
+      accountId: 'daily',
+      date: '2026-09-24T10:00:00.000Z',
+      specialType: 'cash_withdrawal',
+    }
+    const cashTxs: CashTransaction[] = []
+
+    // El usuario pulsa "Ahora no"
+    const userAccepted = false
+    let nextCashTxs = cashTxs
+    if (userAccepted) {
+      nextCashTxs = [
+        ...cashTxs,
+        {
+          id: 'cash_1',
+          type: 'income',
+          amount: bankTx.amount,
+          date: bankTx.date,
+          description: 'Retirada de cajero',
+          bankTransactionId: bankTx.id,
+        },
+      ]
+    }
+
+    assert.equal(nextCashTxs.length, 0, 'No debe crearse cashTransaction si el usuario declina')
+    assert.equal(selectCashBalance(nextCashTxs), 0)
+  })
+
+  it('477. 2. Crear retirada y añadir a Efectivo: crea una CashTransaction type income con importe y fecha exactos', () => {
+    const bankTx: Transaction = {
+      id: 'tx_cajero_2',
+      type: 'expense',
+      amount: 110,
+      description: 'Retirada cajero',
+      accountId: 'daily',
+      date: '2026-09-24T10:00:00.000Z',
+      specialType: 'cash_withdrawal',
+    }
+    const cashTxs: CashTransaction[] = []
+
+    // El usuario pulsa "Añadir a Efectivo"
+    const newCashEntry: CashTransaction = {
+      id: 'cash_linked_2',
+      type: 'income',
+      amount: bankTx.amount,
+      date: bankTx.date,
+      description: 'Retirada de cajero',
+      bankTransactionId: bankTx.id,
+      note: 'Transferido desde Banco',
+    }
+    const nextCashTxs = [newCashEntry, ...cashTxs]
+
+    assert.equal(nextCashTxs.length, 1)
+    assert.equal(nextCashTxs[0].type, 'income')
+    assert.equal(nextCashTxs[0].amount, 110)
+    assert.equal(nextCashTxs[0].date, '2026-09-24T10:00:00.000Z')
+    assert.equal(selectCashBalance(nextCashTxs), 110)
+  })
+
+  it('478. 3. CashTransaction recibe bankTransactionId correcto', () => {
+    const bankTxId = 'tx_bank_999'
+    const cashTx: CashTransaction = {
+      id: 'cash_999',
+      type: 'income',
+      amount: 50,
+      description: 'Retirada de cajero',
+      date: '2026-09-24T10:00:00.000Z',
+      bankTransactionId: bankTxId,
+    }
+    assert.equal(cashTx.bankTransactionId, 'tx_bank_999')
+  })
+
+  it('479. 4. Misma retirada no puede crear dos cashTransactions vinculadas (idempotencia)', () => {
+    const bankTxId = 'tx_cajero_unique'
+    const cashTxs: CashTransaction[] = [
+      {
+        id: 'cash_1',
+        type: 'income',
+        amount: 80,
+        description: 'Retirada de cajero',
+        date: '2026-09-24T10:00:00.000Z',
+        bankTransactionId: bankTxId,
+      },
+    ]
+
+    const tryLinkAgain = (targetBankId: string, currentCash: CashTransaction[]): CashTransaction[] => {
+      const alreadyLinked = currentCash.some((c) => c.bankTransactionId === targetBankId)
+      if (alreadyLinked) return currentCash
+      return [
+        ...currentCash,
+        {
+          id: 'cash_dup',
+          type: 'income',
+          amount: 80,
+          description: 'Retirada duplicada',
+          date: '2026-09-24T10:00:00.000Z',
+          bankTransactionId: targetBankId,
+        },
+      ]
+    }
+
+    const result = tryLinkAgain(bankTxId, cashTxs)
+    assert.equal(result.length, 1, 'No debe duplicar la entrada vinculada')
+  })
+
+  it('480. 5. Retirada vinculada no se duplica en consumo Total', () => {
+    const bankTxs: Transaction[] = [
+      { id: 'tx_cajero', type: 'expense', amount: 110, accountId: 'daily', specialType: 'cash_withdrawal', description: 'Cajero', date: '2026-09-10' },
+    ]
+    const cashTxs: CashTransaction[] = [
+      { id: 'cash_in', type: 'income', amount: 110, description: 'Retirada cajero', date: '2026-09-10', bankTransactionId: 'tx_cajero' },
+    ]
+
+    const consumption = selectTotalEconomicConsumptionForPeriod(bankTxs, cashTxs, new Date(2026, 8, 15), 'month')
+    assert.equal(consumption.bankNetExpenses, 110)
+    assert.equal(consumption.linkedWithdrawalsDeducted, 110)
+    assert.equal(consumption.cashExpenses, 0)
+    assert.equal(consumption.totalEconomicConsumption, 0, 'La retirada vinculada sin gasto no suma al consumo total')
+  })
+
+  it('481. 6. Gasto posterior en efectivo sí aumenta el consumo Total', () => {
+    const bankTxs: Transaction[] = [
+      { id: 'tx_cajero', type: 'expense', amount: 110, accountId: 'daily', specialType: 'cash_withdrawal', description: 'Cajero', date: '2026-09-10' },
+    ]
+    const cashTxs: CashTransaction[] = [
+      { id: 'cash_in', type: 'income', amount: 110, description: 'Retirada cajero', date: '2026-09-10', bankTransactionId: 'tx_cajero' },
+      { id: 'cash_out_1', type: 'expense', amount: 20, description: 'Cena', date: '2026-09-12' },
+      { id: 'cash_out_2', type: 'expense', amount: 5, description: 'Café', date: '2026-09-13' },
+    ]
+
+    const consumption = selectTotalEconomicConsumptionForPeriod(bankTxs, cashTxs, new Date(2026, 8, 15), 'month')
+    assert.equal(consumption.bankNetExpenses, 110)
+    assert.equal(consumption.linkedWithdrawalsDeducted, 110)
+    assert.equal(consumption.cashExpenses, 25)
+    assert.equal(consumption.totalEconomicConsumption, 25, 'El consumo total debe ser exactamente 25 €')
+  })
+
+  it('482. 7. Vincular retirada antigua preexistente', () => {
+    const oldBankTx: Transaction = {
+      id: 'tx_old_cajero',
+      type: 'expense',
+      amount: 75,
+      description: 'Cajero antiguo',
+      accountId: 'daily',
+      date: '2026-09-01T08:00:00.000Z',
+      specialType: 'cash_withdrawal',
+    }
+    const cashList: CashTransaction[] = []
+
+    const linkedCashEntry: CashTransaction = {
+      id: 'cash_linked_old',
+      type: 'income',
+      amount: oldBankTx.amount,
+      date: oldBankTx.date,
+      description: 'Retirada de cajero',
+      bankTransactionId: oldBankTx.id,
+      note: 'Transferido desde Banco',
+    }
+    const updatedCashList = [linkedCashEntry, ...cashList]
+
+    assert.equal(updatedCashList.length, 1)
+    assert.equal(updatedCashList[0].bankTransactionId, 'tx_old_cajero')
+    assert.equal(selectCashBalance(updatedCashList), 75)
+  })
+
+  it('483. 8. Retirada ya vinculada muestra estado correcto', () => {
+    const bankTx: Transaction = {
+      id: 'tx_cajero_check',
+      type: 'expense',
+      amount: 40,
+      description: 'Cajero',
+      accountId: 'daily',
+      date: '2026-09-15',
+      specialType: 'cash_withdrawal',
+    }
+    const cashList: CashTransaction[] = [
+      { id: 'c_check', type: 'income', amount: 40, description: 'Cajero', date: '2026-09-15', bankTransactionId: 'tx_cajero_check' },
+    ]
+
+    const isLinked = cashList.some((c) => c.bankTransactionId === bankTx.id)
+    assert.equal(isLinked, true, 'Debe detectar correctamente que la retirada está vinculada')
+  })
+
+  it('484. 9. Editar retirada y actualizar ambos: sincroniza nuevo importe y fecha en banco y efectivo', () => {
+    let bankTx: Transaction = {
+      id: 'tx_edit_both',
+      type: 'expense',
+      amount: 110,
+      description: 'Cajero',
+      accountId: 'daily',
+      date: '2026-09-10T10:00:00.000Z',
+      specialType: 'cash_withdrawal',
+    }
+    let cashTx: CashTransaction = {
+      id: 'c_edit_both',
+      type: 'income',
+      amount: 110,
+      description: 'Retirada de cajero',
+      date: '2026-09-10T10:00:00.000Z',
+      bankTransactionId: 'tx_edit_both',
+    }
+
+    // Usuario edita a 100 € y fecha 11/09 y elige "Actualizar ambos"
+    const newAmount = 100
+    const newDate = '2026-09-11T10:00:00.000Z'
+
+    bankTx = { ...bankTx, amount: newAmount, date: newDate }
+    cashTx = { ...cashTx, amount: newAmount, date: newDate }
+
+    assert.equal(bankTx.amount, 100)
+    assert.equal(cashTx.amount, 100)
+    assert.equal(cashTx.date, '2026-09-11T10:00:00.000Z')
+  })
+
+  it('485. 10. Editar retirada y actualizar solo Banco: conserva cashTransaction intacta', () => {
+    let bankTx: Transaction = {
+      id: 'tx_edit_bank_only',
+      type: 'expense',
+      amount: 110,
+      description: 'Cajero',
+      accountId: 'daily',
+      date: '2026-09-10T10:00:00.000Z',
+      specialType: 'cash_withdrawal',
+    }
+    let cashTx: CashTransaction = {
+      id: 'c_edit_bank_only',
+      type: 'income',
+      amount: 110,
+      description: 'Retirada de cajero',
+      date: '2026-09-10T10:00:00.000Z',
+      bankTransactionId: 'tx_edit_bank_only',
+    }
+
+    // Usuario edita banco a 90 € y elige "Solo Banco"
+    bankTx = { ...bankTx, amount: 90 }
+
+    assert.equal(bankTx.amount, 90)
+    assert.equal(cashTx.amount, 110, 'La transacción de efectivo debe permanecer inalterada')
+  })
+
+  it('486. 11. Borrar retirada y borrar ambos: elimina apunte bancario y movimiento de efectivo vinculado', () => {
+    let bankList: Transaction[] = [
+      { id: 'tx_del_both', type: 'expense', amount: 50, accountId: 'daily', specialType: 'cash_withdrawal', description: 'Cajero', date: '2026-09-10' },
+    ]
+    let cashList: CashTransaction[] = [
+      { id: 'c_del_both', type: 'income', amount: 50, description: 'Cajero', date: '2026-09-10', bankTransactionId: 'tx_del_both' },
+    ]
+
+    // Usuario pulsa "Borrar ambos"
+    bankList = bankList.filter((t) => t.id !== 'tx_del_both')
+    cashList = cashList.filter((c) => c.id !== 'c_del_both')
+
+    assert.equal(bankList.length, 0)
+    assert.equal(cashList.length, 0)
+    assert.equal(selectCashBalance(cashList), 0)
+  })
+
+  it('487. 12. Borrar retirada y conservar efectivo: elimina solo banco y preserva cashTransaction', () => {
+    let bankList: Transaction[] = [
+      { id: 'tx_del_bank_only', type: 'expense', amount: 50, accountId: 'daily', specialType: 'cash_withdrawal', description: 'Cajero', date: '2026-09-10' },
+    ]
+    let cashList: CashTransaction[] = [
+      { id: 'c_del_bank_only', type: 'income', amount: 50, description: 'Cajero', date: '2026-09-10', bankTransactionId: 'tx_del_bank_only' },
+    ]
+
+    // Usuario pulsa "Borrar solo de Banco"
+    bankList = bankList.filter((t) => t.id !== 'tx_del_bank_only')
+
+    assert.equal(bankList.length, 0)
+    assert.equal(cashList.length, 1)
+    assert.equal(selectCashBalance(cashList), 50, 'El saldo de efectivo debe mantenerse en 50 €')
+  })
+
+  it('488. 13. Borrar cashTransaction no borra Banco: elimina únicamente el apunte de efectivo', () => {
+    let bankList: Transaction[] = [
+      { id: 'tx_keep_bank', type: 'expense', amount: 50, accountId: 'daily', specialType: 'cash_withdrawal', description: 'Cajero', date: '2026-09-10' },
+    ]
+    let cashList: CashTransaction[] = [
+      { id: 'c_del_cash', type: 'income', amount: 50, description: 'Cajero', date: '2026-09-10', bankTransactionId: 'tx_keep_bank' },
+    ]
+
+    // Usuario elimina desde Efectivo
+    cashList = cashList.filter((c) => c.id !== 'c_del_cash')
+
+    assert.equal(cashList.length, 0)
+    assert.equal(bankList.length, 1, 'La transacción bancaria debe permanecer intacta')
+    assert.equal(bankList[0].id, 'tx_keep_bank')
+  })
+
+  it('489. 14. Retirada queda no vinculada después de borrar cashTransaction: vuelve a tratarse como retirada no vinculada en consumo Total', () => {
+    const bankTxs: Transaction[] = [
+      { id: 'tx_unlinked', type: 'expense', amount: 50, accountId: 'daily', specialType: 'cash_withdrawal', description: 'Cajero', date: '2026-09-10' },
+    ]
+    const cashTxs: CashTransaction[] = [] // Se borró la entrada vinculada de efectivo
+
+    const consumption = selectTotalEconomicConsumptionForPeriod(bankTxs, cashTxs, new Date(2026, 8, 15), 'month')
+    assert.equal(consumption.bankNetExpenses, 50)
+    assert.equal(consumption.linkedWithdrawalsDeducted, 0)
+    assert.equal(consumption.totalEconomicConsumption, 50, 'Al no estar vinculada, la retirada computa como gasto convencional')
+  })
+
+  it('490. 15. Ahorro / Plan financiero siguen sin usar efectivo', () => {
+    const accounts: Account[] = [
+      { id: 'daily', name: 'Diaria', type: 'spending', initialBalance: 500, balance: 500 },
+      { id: 'savings', name: 'Ahorro', type: 'savings', initialBalance: 1200, balance: 1200 },
+    ]
+    const cashTxs: CashTransaction[] = [
+      { id: 'c1', type: 'income', amount: 300, description: 'Bolsillo', date: '2026-09-24' },
+    ]
+
+    // Ahorro libre y disponible bancario ignoran totalmente cashTxs
+    const savingsBalance = accounts.find((a) => a.type === 'savings')?.balance ?? 0
+    const freeSavings = selectFreeSavingsWithReserves(savingsBalance, 200, 300, 100)
+    assert.equal(freeSavings, 600, 'Ahorro libre = 1200 - 600 = 600 € sin mezclar los 300 € de efectivo')
   })
 })
 

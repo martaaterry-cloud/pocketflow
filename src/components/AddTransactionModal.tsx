@@ -8,6 +8,9 @@ import type {
   SharedContact,
   SpecialMovementType,
   Transaction,
+  CashTransaction,
+  CreateCashTransactionInput,
+  UpdateCashTransactionInput,
 } from '../models/finance'
 import { money } from '../utils/money'
 import { splitExpenseEqually } from '../utils/sharedExpenseSelectors'
@@ -20,15 +23,20 @@ interface AddTransactionModalProps {
   categories: Category[]
   transactions?: Transaction[]
   sharedContacts?: SharedContact[]
+  cashTransactions?: CashTransaction[]
   defaultType?: 'expense' | 'income' | 'transfer'
   initialTransaction?: Transaction | null
-  onAdd?: (value: CreateTransactionInput) => void
+  onAdd?: (value: CreateTransactionInput) => Transaction | void
   onAddShared?: (
     value: CreateTransactionInput,
     shares: { participantName: string; contactId?: string; isPayerShare: boolean; expectedAmount: number }[]
   ) => void
   onUpdate?: (id: string, value: Partial<CreateTransactionInput>) => void
   onDelete?: (id: string) => void
+  onAddCashTransaction?: (input: CreateCashTransactionInput) => void
+  onUpdateCashTransaction?: (id: string, patch: UpdateCashTransactionInput) => void
+  onDeleteCashTransaction?: (id: string) => void
+  onPromptWithdrawalLink?: (tx: Transaction) => void
 }
 
 interface ParticipantEntry {
@@ -45,12 +53,17 @@ export function AddTransactionModal({
   categories,
   transactions = [],
   sharedContacts = [],
+  cashTransactions = [],
   defaultType = 'expense',
   initialTransaction,
   onAdd,
   onAddShared,
   onUpdate,
   onDelete,
+  onAddCashTransaction,
+  onUpdateCashTransaction,
+  onDeleteCashTransaction,
+  onPromptWithdrawalLink,
 }: AddTransactionModalProps) {
   const isEditing = Boolean(initialTransaction)
 
@@ -65,10 +78,19 @@ export function AddTransactionModal({
   const [note, setNote] = useState('')
   const [confirmDelete, setConfirmDelete] = useState(false)
 
+  // Sub-modal / Confirmación de edición de retirada vinculada
+  const [pendingLinkedUpdatePayload, setPendingLinkedUpdatePayload] = useState<CreateTransactionInput | null>(null)
+
   // Estados para Tipo Especial y Naturaleza
   const [isCashWithdrawal, setIsCashWithdrawal] = useState(false)
   const [expenseNature, setExpenseNature] = useState<ExpenseNature>('variable')
   const [giftRecipient, setGiftRecipient] = useState('')
+
+  // Identificar si la transacción actual tiene un movimiento de efectivo vinculado
+  const linkedCashTx = useMemo(() => {
+    if (!initialTransaction || initialTransaction.specialType !== 'cash_withdrawal') return undefined
+    return cashTransactions.find((c) => c.bankTransactionId === initialTransaction.id)
+  }, [initialTransaction, cashTransactions])
 
   // Destinatarios usados previamente en transacciones de regalos
   const previousRecipients = useMemo(() => {
@@ -112,6 +134,7 @@ export function AddTransactionModal({
       setExpenseNature(initialTransaction.expenseNature || 'variable')
       setGiftRecipient(initialTransaction.giftRecipient ?? '')
       setConfirmDelete(false)
+      setPendingLinkedUpdatePayload(null)
     } else {
       setType(defaultType)
       setIncomeKind('income')
@@ -131,6 +154,7 @@ export function AddTransactionModal({
       setParticipants([])
       setNewParticipantInput('')
       setConfirmDelete(false)
+      setPendingLinkedUpdatePayload(null)
     }
   }, [initialTransaction, accounts, categories, open, defaultType])
 
@@ -176,13 +200,11 @@ export function AddTransactionModal({
     const rawName = (nameToAdd || newParticipantInput).trim()
     if (!rawName) return
 
-    // Comprobar si ya está en la lista
     if (participants.some((p) => p.name.toLowerCase() === rawName.toLowerCase())) {
       setNewParticipantInput('')
       return
     }
 
-    // Buscar si existe en contactos compartidos
     const matchedContact = sharedContacts.find(
       (c) => c.displayName.toLowerCase() === rawName.toLowerCase()
     )
@@ -202,13 +224,30 @@ export function AddTransactionModal({
     setParticipants(participants.filter((_, i) => i !== index))
   }
 
+  const handleLinkExistingWithdrawal = () => {
+    if (!initialTransaction || !onAddCashTransaction) return
+    const alreadyLinked = cashTransactions.some((c) => c.bankTransactionId === initialTransaction.id)
+    if (alreadyLinked) return
+
+    onAddCashTransaction({
+      type: 'income',
+      amount: initialTransaction.amount,
+      date: initialTransaction.date,
+      description: 'Retirada de cajero',
+      bankTransactionId: initialTransaction.id,
+      note: 'Transferido desde Banco',
+    })
+  }
+
   const submit = () => {
     if (!numericAmount || numericAmount <= 0) return
     if (!description.trim()) return
     if (!accountId) return
     if (type === 'transfer' && (!toAccountId || toAccountId === accountId)) return
 
-    const isGiftsCategory = type === 'expense' && (categoryId === 'gifts' || categories.find((c) => c.id === categoryId)?.name.toLowerCase().includes('regalo'))
+    const isGiftsCategory =
+      type === 'expense' &&
+      (categoryId === 'gifts' || categories.find((c) => c.id === categoryId)?.name.toLowerCase().includes('regalo'))
 
     const payload: CreateTransactionInput = {
       type,
@@ -227,6 +266,15 @@ export function AddTransactionModal({
     }
 
     if (isEditing && initialTransaction && onUpdate) {
+      // Si la retirada está vinculada y ha cambiado el importe o la fecha, preguntar
+      if (linkedCashTx) {
+        const amountChanged = numericAmount !== initialTransaction.amount
+        const dateChanged = date !== initialTransaction.date.slice(0, 10)
+        if (amountChanged || dateChanged) {
+          setPendingLinkedUpdatePayload(payload)
+          return
+        }
+      }
       onUpdate(initialTransaction.id, payload)
     } else if (type === 'expense' && isShared && onAddShared && computedShares.length > 0) {
       const sharesInput = computedShares.map((s) => ({
@@ -237,14 +285,36 @@ export function AddTransactionModal({
       }))
       onAddShared(payload, sharesInput)
     } else if (onAdd) {
-      onAdd(payload)
+      const created = onAdd(payload)
+      if (created && payload.type === 'expense' && payload.specialType === 'cash_withdrawal' && onPromptWithdrawalLink) {
+        onPromptWithdrawalLink(created)
+      }
     }
     onClose()
   }
 
-  const handleDelete = () => {
+  const executeLinkedUpdate = (updateCash: boolean) => {
+    if (!pendingLinkedUpdatePayload || !initialTransaction || !onUpdate) return
+
+    onUpdate(initialTransaction.id, pendingLinkedUpdatePayload)
+
+    if (updateCash && linkedCashTx && onUpdateCashTransaction) {
+      onUpdateCashTransaction(linkedCashTx.id, {
+        amount: pendingLinkedUpdatePayload.amount,
+        date: pendingLinkedUpdatePayload.date,
+      })
+    }
+
+    setPendingLinkedUpdatePayload(null)
+    onClose()
+  }
+
+  const handleDelete = (deleteBoth: boolean = false) => {
     if (initialTransaction && onDelete) {
       onDelete(initialTransaction.id)
+      if (deleteBoth && linkedCashTx && onDeleteCashTransaction) {
+        onDeleteCashTransaction(linkedCashTx.id)
+      }
       onClose()
     }
   }
@@ -465,6 +535,67 @@ export function AddTransactionModal({
                 <small>Registra la salida en cuenta sin obligar a anotar cada gasto en metálico</small>
               </span>
             </label>
+
+            {/* Banner de estado de vínculo con Efectivo en edición */}
+            {isEditing && isCashWithdrawal && (
+              <div style={{ marginTop: 8 }}>
+                {linkedCashTx ? (
+                  <div
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 8,
+                      padding: '10px 14px',
+                      borderRadius: 'var(--radius-md, 12px)',
+                      background: 'rgba(34, 197, 94, 0.1)',
+                      border: '1px solid rgba(34, 197, 94, 0.25)',
+                      color: '#16a34a',
+                      fontSize: '0.86rem',
+                    }}
+                  >
+                    <AppIcon name="banknote" size={18} />
+                    <div style={{ flex: 1 }}>
+                      <strong>Registrado en Efectivo (+{money(linkedCashTx.amount)})</strong>
+                      <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
+                        Movimiento vinculado sin duplicidad en consumo total
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <div
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      gap: 8,
+                      padding: '10px 14px',
+                      borderRadius: 'var(--radius-md, 12px)',
+                      background: 'rgba(37, 99, 235, 0.08)',
+                      border: '1px solid rgba(37, 99, 235, 0.2)',
+                      fontSize: '0.86rem',
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, color: '#2563eb' }}>
+                      <AppIcon name="banknote" size={16} />
+                      <span>No está añadida a Efectivo</span>
+                    </div>
+                    <button
+                      type="button"
+                      className="primary-button"
+                      style={{
+                        padding: '6px 12px',
+                        fontSize: '0.82rem',
+                        borderRadius: 9999,
+                        background: '#2563eb',
+                      }}
+                      onClick={handleLinkExistingWithdrawal}
+                    >
+                      + Añadir a Efectivo
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         )}
 
@@ -488,7 +619,6 @@ export function AddTransactionModal({
 
             {isShared && (
               <div className="shared-config-box">
-                {/* Checkbox Yo participo */}
                 <label className="checkbox-row">
                   <input
                     type="checkbox"
@@ -498,7 +628,6 @@ export function AddTransactionModal({
                   <span>Yo también participo en este gasto</span>
                 </label>
 
-                {/* Añadir personas */}
                 <div className="participant-input-row">
                   <input
                     type="text"
@@ -527,7 +656,6 @@ export function AddTransactionModal({
                   </button>
                 </div>
 
-                {/* Chips de participantes añadidos */}
                 {participants.length > 0 && (
                   <div className="participant-chips">
                     {participants.map((p, idx) => (
@@ -545,7 +673,6 @@ export function AddTransactionModal({
                   </div>
                 )}
 
-                {/* Previsualización del reparto con céntimos exactos */}
                 {computedShares.length > 0 && (
                   <div className="split-preview">
                     <span className="split-preview-title">Reparto exacto de céntimos:</span>
@@ -606,6 +733,55 @@ export function AddTransactionModal({
           </label>
         </div>
 
+        {/* Modal / Diálogo de confirmación para actualización de retirada vinculada */}
+        {pendingLinkedUpdatePayload && linkedCashTx && (
+          <div
+            className="modal-backdrop"
+            style={{ zIndex: 1100 }}
+            onClick={() => setPendingLinkedUpdatePayload(null)}
+          >
+            <div
+              className="modal-card"
+              onClick={(e) => e.stopPropagation()}
+              style={{ maxWidth: 440, padding: 24 }}
+            >
+              <h4 style={{ margin: '0 0 10px', fontSize: '1.15rem', fontWeight: 700 }}>
+                Actualizar movimiento vinculado
+              </h4>
+              <p style={{ margin: '0 0 16px', color: 'var(--text-muted)', fontSize: '0.92rem', lineHeight: 1.5 }}>
+                Esta retirada está vinculada a Efectivo. ¿Quieres actualizar también la entrada de efectivo de{' '}
+                <strong>{money(linkedCashTx.amount)}</strong> a <strong>{money(pendingLinkedUpdatePayload.amount)}</strong>?
+              </p>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                <button
+                  type="button"
+                  className="primary-button"
+                  style={{ width: '100%', padding: '12px', background: '#16a34a' }}
+                  onClick={() => executeLinkedUpdate(true)}
+                >
+                  Actualizar ambos (Banco y Efectivo)
+                </button>
+                <button
+                  type="button"
+                  className="secondary-button"
+                  style={{ width: '100%', padding: '12px' }}
+                  onClick={() => executeLinkedUpdate(false)}
+                >
+                  Solo Banco
+                </button>
+                <button
+                  type="button"
+                  className="secondary-button"
+                  style={{ width: '100%', padding: '10px', background: 'transparent', border: 'none', color: 'var(--text-muted)' }}
+                  onClick={() => setPendingLinkedUpdatePayload(null)}
+                >
+                  Cancelar
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
         <div className="modal-actions">
           <button type="button" className="primary-button" onClick={submit}>
             {isEditing ? 'Guardar cambios' : 'Añadir movimiento'}
@@ -623,18 +799,53 @@ export function AddTransactionModal({
                 </button>
               ) : (
                 <div className="confirm-delete-box">
-                  <p>¿Seguro que quieres eliminar este movimiento? El saldo se revertirá automáticamente.</p>
-                  <div className="confirm-delete-actions">
-                    <button type="button" className="danger-button" onClick={handleDelete}>
-                      Sí, eliminar
-                    </button>
-                    <button
-                      type="button"
-                      className="secondary-button"
-                      onClick={() => setConfirmDelete(false)}
-                    >
-                      Cancelar
-                    </button>
+                  <p>
+                    {linkedCashTx
+                      ? `Esta retirada tiene un movimiento vinculado en Efectivo (+${money(linkedCashTx.amount)}).`
+                      : '¿Seguro que quieres eliminar este movimiento? El saldo se revertirá automáticamente.'}
+                  </p>
+                  <div className="confirm-delete-actions" style={{ flexDirection: linkedCashTx ? 'column' : 'row' }}>
+                    {linkedCashTx ? (
+                      <>
+                        <button
+                          type="button"
+                          className="danger-button"
+                          style={{ width: '100%', padding: '10px' }}
+                          onClick={() => handleDelete(true)}
+                        >
+                          Borrar ambos (Banco y Efectivo)
+                        </button>
+                        <button
+                          type="button"
+                          className="secondary-button"
+                          style={{ width: '100%', padding: '10px' }}
+                          onClick={() => handleDelete(false)}
+                        >
+                          Borrar solo de Banco
+                        </button>
+                        <button
+                          type="button"
+                          className="secondary-button"
+                          style={{ width: '100%', padding: '8px', background: 'transparent', border: 'none' }}
+                          onClick={() => setConfirmDelete(false)}
+                        >
+                          Cancelar
+                        </button>
+                      </>
+                    ) : (
+                      <>
+                        <button type="button" className="danger-button" onClick={() => handleDelete(false)}>
+                          Sí, eliminar
+                        </button>
+                        <button
+                          type="button"
+                          className="secondary-button"
+                          onClick={() => setConfirmDelete(false)}
+                        >
+                          Cancelar
+                        </button>
+                      </>
+                    )}
                   </div>
                 </div>
               )}

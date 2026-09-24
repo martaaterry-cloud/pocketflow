@@ -7,6 +7,7 @@ import { AdjustCashModal } from '../components/AdjustCashModal'
 import { EditCashTransactionModal } from '../components/EditCashTransactionModal'
 import { CashTransactionList } from '../components/CashTransactionList'
 import { TotalDonutChart } from '../components/TotalDonutChart'
+import { DeleteTransactionModal } from '../components/DeleteTransactionModal'
 import type { Category, Transaction, CashTransaction } from '../models/finance'
 import type { ReturnTypeFinance } from '../types'
 import { money } from '../utils/money'
@@ -641,7 +642,7 @@ export function HomePage({
                   className="cash-action-btn adjust"
                   onClick={() => setIsAdjustCashModalOpen(true)}
                 >
-                  <AppIcon name="scale" size={15} /> Ajustar
+                  <AppIcon name="scale" size={15} /> Corregir saldo
                 </button>
               </div>
             </section>
@@ -813,36 +814,18 @@ export function HomePage({
         onDelete={(id) => finance.deleteCashTransaction(id)}
       />
 
-      {/* Modal de confirmación de eliminación bancaria */}
-      {txToDelete && (
-        <div className="modal-backdrop" onClick={() => setTxToDelete(null)} role="dialog" aria-modal="true">
-          <div className="modal-card" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 440 }}>
-            <h3 style={{ margin: '0 0 10px', fontSize: '1.2rem', fontWeight: 700 }}>¿Eliminar movimiento?</h3>
-            <p className="description" style={{ margin: '0 0 20px', color: 'var(--text-muted)', fontSize: '0.92rem', lineHeight: 1.5 }}>
-              ¿Seguro que quieres eliminar <strong>{txToDelete.description}</strong> ({money(txToDelete.amount)})? Esta acción no se puede deshacer.
-            </p>
-            <div className="modal-actions horizontal" style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
-              <button
-                type="button"
-                className="secondary-button"
-                onClick={() => setTxToDelete(null)}
-              >
-                Cancelar
-              </button>
-              <button
-                type="button"
-                className="danger-button"
-                onClick={() => {
-                  finance.deleteTransaction(txToDelete.id)
-                  setTxToDelete(null)
-                }}
-              >
-                Eliminar
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      {/* Modal de confirmación de eliminación bancaria con soporte de vínculo efectivo */}
+      <DeleteTransactionModal
+        open={Boolean(txToDelete)}
+        transaction={txToDelete}
+        cashTransactions={finance.cashTransactions}
+        onClose={() => setTxToDelete(null)}
+        onDeleteBankOnly={(id) => finance.deleteTransaction(id)}
+        onDeleteBoth={(bankId, cashId) => {
+          finance.deleteTransaction(bankId)
+          finance.deleteCashTransaction(cashId)
+        }}
+      />
 
       {/* Modal de Detalle de Categoría Bancaria */}
       <CategoryDetailModal

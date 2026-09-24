@@ -2,10 +2,12 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { App as CapacitorApp } from '@capacitor/app'
 import type { User } from '@supabase/supabase-js'
 import { AddTransactionModal } from './components/AddTransactionModal'
+import { CashWithdrawalLinkModal } from './components/CashWithdrawalLinkModal'
 import { QuickActionSheet } from './components/QuickActionSheet'
 import { ReimbursementModal } from './components/ReimbursementModal'
 import { SharedExpenseDetailModal } from './components/SharedExpenseDetailModal'
 import type { Transaction } from './models/finance'
+import { money } from './utils/money'
 import { CalendarPage } from './pages/CalendarPage'
 import { HomePage } from './pages/HomePage'
 import { LoginPage } from './pages/LoginPage'
@@ -30,6 +32,7 @@ export default function App() {
   const [moreSubView, setMoreSubView] = useState<MoreSubView>('menu')
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [selectedTx, setSelectedTx] = useState<Transaction | null>(null)
+  const [pendingWithdrawalToLink, setPendingWithdrawalToLink] = useState<Transaction | null>(null)
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null)
 
   // Autenticación Supabase
@@ -644,12 +647,40 @@ export default function App() {
         categories={finance.categories}
         transactions={finance.transactions}
         sharedContacts={finance.sharedContacts}
+        cashTransactions={finance.cashTransactions}
         defaultType={modalDefaultType}
         initialTransaction={selectedTx}
         onAdd={finance.addTransaction}
         onAddShared={finance.addSharedExpense}
         onUpdate={finance.updateTransaction}
         onDelete={finance.deleteTransaction}
+        onAddCashTransaction={finance.addCashTransaction}
+        onUpdateCashTransaction={finance.updateCashTransaction}
+        onDeleteCashTransaction={finance.deleteCashTransaction}
+        onPromptWithdrawalLink={(tx) => setPendingWithdrawalToLink(tx)}
+      />
+
+      <CashWithdrawalLinkModal
+        open={Boolean(pendingWithdrawalToLink)}
+        transaction={pendingWithdrawalToLink}
+        onClose={() => setPendingWithdrawalToLink(null)}
+        onConfirm={(tx) => {
+          const alreadyLinked = (finance.cashTransactions ?? []).some(
+            (c) => c.bankTransactionId === tx.id
+          )
+          if (!alreadyLinked) {
+            finance.addCashTransaction({
+              type: 'income',
+              amount: tx.amount,
+              date: tx.date,
+              description: 'Retirada de cajero',
+              bankTransactionId: tx.id,
+              note: 'Transferido desde Banco',
+            })
+            showToast(`${money(tx.amount)} añadidos a Efectivo`, 'success')
+          }
+          setPendingWithdrawalToLink(null)
+        }}
       />
     </div>
   )

@@ -356,7 +356,7 @@ export function useFinance(storage: StorageAdapter = defaultAppStorage) {
      ========================================================================== */
 
   const addTransaction = useCallback(
-    (input: CreateTransactionInput) => {
+    (input: CreateTransactionInput): Transaction => {
       const newTx: Transaction = {
         ...input,
         id: crypto.randomUUID(),
@@ -372,6 +372,7 @@ export function useFinance(storage: StorageAdapter = defaultAppStorage) {
       dispatchSync('transaction', 'insert', newTx.id, newTx, (sb, uid) =>
         syncInsertTransaction(sb, uid, newTx)
       )
+      return newTx
     },
     [state, commit, dispatchSync]
   )
