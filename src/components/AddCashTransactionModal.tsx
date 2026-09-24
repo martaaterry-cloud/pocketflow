@@ -71,9 +71,18 @@ export function AddCashTransactionModal({
 
   return (
     <div className="modal-backdrop" onClick={onClose} role="dialog" aria-modal="true">
-      <div className="modal-card" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 440 }}>
+      <div
+        className="modal-card"
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          maxWidth: 440,
+          width: '100%',
+          padding: '24px 20px',
+          boxSizing: 'border-box',
+        }}
+      >
         <div className="modal-header-row" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-          <h3 style={{ margin: 0, fontSize: '1.25rem', fontWeight: 700 }}>
+          <h3 style={{ margin: 0, fontSize: '1.25rem', fontWeight: 700, color: 'var(--text-main)' }}>
             {isIncome ? 'Nueva entrada de efectivo' : 'Nueva salida de efectivo'}
           </h3>
           <button type="button" className="btn-icon-subtle" onClick={onClose} aria-label="Cerrar modal">
@@ -81,42 +90,84 @@ export function AddCashTransactionModal({
           </button>
         </div>
 
-        {/* Selector de Tipo Entrada / Salida */}
-        <div className="segmented-tabs" style={{ marginBottom: 20 }}>
+        {/* Selector de Tipo Entrada / Salida (Segmented Control) */}
+        <div
+          style={{
+            display: 'grid',
+            gridTemplateColumns: '1fr 1fr',
+            background: 'var(--bg-app, #ecece7)',
+            borderRadius: 12,
+            padding: 4,
+            marginBottom: 18,
+            gap: 4,
+            width: '100%',
+            boxSizing: 'border-box',
+          }}
+        >
           <button
             type="button"
-            className={`tab-btn ${type === 'income' ? 'active' : ''}`}
             onClick={() => {
               setType('income')
               setError(null)
             }}
+            style={{
+              border: 'none',
+              padding: '10px 12px',
+              borderRadius: 9,
+              fontSize: '0.92rem',
+              fontWeight: 600,
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: 8,
+              transition: 'all 0.15s ease',
+              background: type === 'income' ? '#ffffff' : 'transparent',
+              color: type === 'income' ? '#16a34a' : 'var(--text-muted)',
+              boxShadow: type === 'income' ? '0 2px 6px rgba(0,0,0,0.08)' : 'none',
+            }}
           >
-            <AppIcon name="plus" size={15} /> Entrada (+€)
+            <AppIcon name="plus" size={16} /> Entrada
           </button>
           <button
             type="button"
-            className={`tab-btn ${type === 'expense' ? 'active' : ''}`}
             onClick={() => {
               setType('expense')
               setError(null)
             }}
+            style={{
+              border: 'none',
+              padding: '10px 12px',
+              borderRadius: 9,
+              fontSize: '0.92rem',
+              fontWeight: 600,
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: 8,
+              transition: 'all 0.15s ease',
+              background: type === 'expense' ? '#ffffff' : 'transparent',
+              color: type === 'expense' ? '#dc2626' : 'var(--text-muted)',
+              boxShadow: type === 'expense' ? '0 2px 6px rgba(0,0,0,0.08)' : 'none',
+            }}
           >
-            <AppIcon name="minus" size={15} /> Salida (-€)
+            <AppIcon name="minus" size={16} /> Salida
           </button>
         </div>
 
         {error && (
-          <div className="error-banner" style={{ marginBottom: 16, padding: '10px 14px', borderRadius: 10, background: '#fee2e2', color: '#991b1b', fontSize: '0.88rem' }}>
+          <div className="error-banner" style={{ marginBottom: 16, padding: '10px 14px', borderRadius: 10, background: '#fee2e2', color: '#991b1b', fontSize: '0.88rem', width: '100%', boxSizing: 'border-box' }}>
             {error}
           </div>
         )}
 
-        <form onSubmit={handleSubmit} className="modal-form" style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-          <div className="form-group">
-            <label htmlFor="cash-amount" style={{ fontSize: '0.86rem', fontWeight: 600, color: 'var(--text-muted)' }}>
+        <form onSubmit={handleSubmit} className="modal-form" style={{ display: 'flex', flexDirection: 'column', gap: 14, width: '100%' }}>
+          <div className="form-group" style={{ width: '100%', boxSizing: 'border-box' }}>
+            <label htmlFor="cash-amount" style={{ fontSize: '0.86rem', fontWeight: 600, color: 'var(--text-muted)', display: 'block', marginBottom: 6 }}>
               Importe (€) *
             </label>
-            <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+            <div style={{ position: 'relative', display: 'flex', alignItems: 'center', width: '100%' }}>
               <input
                 id="cash-amount"
                 type="text"
@@ -127,16 +178,24 @@ export function AddCashTransactionModal({
                 onChange={(e) => setAmount(e.target.value)}
                 required
                 className="input-field"
-                style={{ fontSize: '1.4rem', fontWeight: 700, paddingLeft: 14 }}
+                style={{
+                  width: '100%',
+                  fontSize: '1.4rem',
+                  fontWeight: 700,
+                  padding: '12px 38px 12px 14px',
+                  boxSizing: 'border-box',
+                  borderRadius: 'var(--radius-md, 12px)',
+                  border: '1px solid var(--border-strong, #d7d8d0)',
+                }}
               />
-              <span style={{ position: 'absolute', right: 16, fontSize: '1.2rem', fontWeight: 600, color: 'var(--text-muted)' }}>
+              <span style={{ position: 'absolute', right: 14, fontSize: '1.2rem', fontWeight: 600, color: 'var(--text-muted)', pointerEvents: 'none' }}>
                 €
               </span>
             </div>
           </div>
 
-          <div className="form-group">
-            <label htmlFor="cash-desc" style={{ fontSize: '0.86rem', fontWeight: 600, color: 'var(--text-muted)' }}>
+          <div className="form-group" style={{ width: '100%', boxSizing: 'border-box' }}>
+            <label htmlFor="cash-desc" style={{ fontSize: '0.86rem', fontWeight: 600, color: 'var(--text-muted)', display: 'block', marginBottom: 6 }}>
               Descripción *
             </label>
             <input
@@ -147,11 +206,19 @@ export function AddCashTransactionModal({
               onChange={(e) => setDescription(e.target.value)}
               required
               className="input-field"
+              style={{
+                width: '100%',
+                boxSizing: 'border-box',
+                padding: '12px 14px',
+                borderRadius: 'var(--radius-md, 12px)',
+                border: '1px solid var(--border-strong, #d7d8d0)',
+                fontSize: '0.95rem',
+              }}
             />
           </div>
 
-          <div className="form-group">
-            <label htmlFor="cash-date" style={{ fontSize: '0.86rem', fontWeight: 600, color: 'var(--text-muted)' }}>
+          <div className="form-group" style={{ width: '100%', boxSizing: 'border-box' }}>
+            <label htmlFor="cash-date" style={{ fontSize: '0.86rem', fontWeight: 600, color: 'var(--text-muted)', display: 'block', marginBottom: 6 }}>
               Fecha
             </label>
             <input
@@ -160,11 +227,19 @@ export function AddCashTransactionModal({
               value={date}
               onChange={(e) => setDate(e.target.value)}
               className="input-field"
+              style={{
+                width: '100%',
+                boxSizing: 'border-box',
+                padding: '12px 14px',
+                borderRadius: 'var(--radius-md, 12px)',
+                border: '1px solid var(--border-strong, #d7d8d0)',
+                fontSize: '0.95rem',
+              }}
             />
           </div>
 
-          <div className="form-group">
-            <label htmlFor="cash-cat" style={{ fontSize: '0.86rem', fontWeight: 600, color: 'var(--text-muted)' }}>
+          <div className="form-group" style={{ width: '100%', boxSizing: 'border-box' }}>
+            <label htmlFor="cash-cat" style={{ fontSize: '0.86rem', fontWeight: 600, color: 'var(--text-muted)', display: 'block', marginBottom: 6 }}>
               Categoría (opcional)
             </label>
             <select
@@ -172,6 +247,15 @@ export function AddCashTransactionModal({
               value={categoryId}
               onChange={(e) => setCategoryId(e.target.value)}
               className="input-field"
+              style={{
+                width: '100%',
+                boxSizing: 'border-box',
+                padding: '12px 14px',
+                borderRadius: 'var(--radius-md, 12px)',
+                border: '1px solid var(--border-strong, #d7d8d0)',
+                fontSize: '0.95rem',
+                background: '#ffffff',
+              }}
             >
               <option value="">Sin categoría / Ninguna</option>
               {categories.map((c) => (
@@ -182,8 +266,8 @@ export function AddCashTransactionModal({
             </select>
           </div>
 
-          <div className="form-group">
-            <label htmlFor="cash-note" style={{ fontSize: '0.86rem', fontWeight: 600, color: 'var(--text-muted)' }}>
+          <div className="form-group" style={{ width: '100%', boxSizing: 'border-box' }}>
+            <label htmlFor="cash-note" style={{ fontSize: '0.86rem', fontWeight: 600, color: 'var(--text-muted)', display: 'block', marginBottom: 6 }}>
               Nota adicional (opcional)
             </label>
             <textarea
@@ -191,20 +275,45 @@ export function AddCashTransactionModal({
               placeholder="Detalles sobre este movimiento físico..."
               value={note}
               onChange={(e) => setNote(e.target.value)}
-              rows={2}
+              rows={3}
               className="input-field"
-              style={{ resize: 'none' }}
+              style={{
+                width: '100%',
+                boxSizing: 'border-box',
+                padding: '12px 14px',
+                borderRadius: 'var(--radius-md, 12px)',
+                border: '1px solid var(--border-strong, #d7d8d0)',
+                fontSize: '0.92rem',
+                minHeight: 80,
+                resize: 'vertical',
+              }}
             />
           </div>
 
-          <div className="modal-actions horizontal" style={{ display: 'flex', gap: 10, marginTop: 8, justifyContent: 'flex-end' }}>
-            <button type="button" className="secondary-button" onClick={onClose}>
+          <div className="modal-actions horizontal" style={{ display: 'flex', gap: 12, marginTop: 8, justifyContent: 'flex-end', width: '100%' }}>
+            <button
+              type="button"
+              className="secondary-button"
+              onClick={onClose}
+              style={{
+                flex: 1,
+                minHeight: 44,
+                borderRadius: 'var(--radius-md, 12px)',
+                fontWeight: 600,
+              }}
+            >
               Cancelar
             </button>
             <button
               type="submit"
               className={isIncome ? 'primary-button' : 'danger-button'}
-              style={{ minWidth: 140 }}
+              style={{
+                flex: 1.3,
+                minHeight: 44,
+                borderRadius: 'var(--radius-md, 12px)',
+                fontWeight: 600,
+                background: isIncome ? '#16a34a' : '#dc2626',
+              }}
             >
               {isIncome ? 'Guardar entrada' : 'Guardar salida'}
             </button>

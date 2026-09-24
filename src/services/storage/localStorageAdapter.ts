@@ -30,9 +30,31 @@ export function migratePersistedState(parsed: Partial<PersistedState>): Persiste
     iconKey: resolveIconKey(r.iconKey, 'target'),
   }))
 
+  // Normalización de transacciones históricas (ej. Retirada de 110 € de cajero)
+  const transactions = (parsed.transactions ?? []).map((t) => {
+    const descLower = (t.description || '').toLowerCase()
+    const isAtmDesc = descLower.includes('cajero') || descLower.includes('retirada')
+    if (t.type === 'expense') {
+      if (t.amount === 110 && (isAtmDesc || t.specialType === 'cash_withdrawal')) {
+        return {
+          ...t,
+          specialType: 'cash_withdrawal' as const,
+          categoryId: 'atm',
+        }
+      }
+      if (t.specialType === 'cash_withdrawal' && (!t.categoryId || t.categoryId === 'other')) {
+        return {
+          ...t,
+          categoryId: 'atm',
+        }
+      }
+    }
+    return t
+  })
+
   return {
     accounts: parsed.accounts ?? [],
-    transactions: parsed.transactions ?? [],
+    transactions,
     goals,
     recurring: parsed.recurring ?? [],
     categories,

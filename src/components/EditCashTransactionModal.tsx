@@ -91,9 +91,18 @@ export function EditCashTransactionModal({
 
   return (
     <div className="modal-backdrop" onClick={onClose} role="dialog" aria-modal="true">
-      <div className="modal-card" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 440 }}>
+      <div
+        className="modal-card"
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          maxWidth: 440,
+          width: '100%',
+          padding: '24px 20px',
+          boxSizing: 'border-box',
+        }}
+      >
         <div className="modal-header-row" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-          <h3 style={{ margin: 0, fontSize: '1.25rem', fontWeight: 700 }}>
+          <h3 style={{ margin: 0, fontSize: '1.25rem', fontWeight: 700, color: 'var(--text-main)' }}>
             Editar movimiento de efectivo
           </h3>
           <button type="button" className="btn-icon-subtle" onClick={onClose} aria-label="Cerrar modal">
@@ -106,28 +115,38 @@ export function EditCashTransactionModal({
             <p style={{ margin: 0, color: 'var(--text-muted)', fontSize: '0.94rem', lineHeight: 1.5 }}>
               ¿Seguro que quieres eliminar este movimiento de <strong>{transaction.description}</strong> ({money(transaction.amount)})?
             </p>
-            <div className="modal-actions horizontal" style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 10 }}>
-              <button type="button" className="secondary-button" onClick={() => setConfirmDelete(false)}>
+            <div className="modal-actions horizontal" style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 10, width: '100%' }}>
+              <button
+                type="button"
+                className="secondary-button"
+                onClick={() => setConfirmDelete(false)}
+                style={{ flex: 1, minHeight: 44, borderRadius: 'var(--radius-md, 12px)', fontWeight: 600 }}
+              >
                 Cancelar
               </button>
-              <button type="button" className="danger-button" onClick={handleDelete}>
+              <button
+                type="button"
+                className="danger-button"
+                onClick={handleDelete}
+                style={{ flex: 1.2, minHeight: 44, borderRadius: 'var(--radius-md, 12px)', fontWeight: 600, background: '#dc2626' }}
+              >
                 Sí, eliminar
               </button>
             </div>
           </div>
         ) : (
-          <form onSubmit={handleSubmit} className="modal-form" style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+          <form onSubmit={handleSubmit} className="modal-form" style={{ display: 'flex', flexDirection: 'column', gap: 14, width: '100%' }}>
             {error && (
-              <div className="error-banner" style={{ padding: '10px 14px', borderRadius: 10, background: '#fee2e2', color: '#991b1b', fontSize: '0.88rem' }}>
+              <div className="error-banner" style={{ padding: '10px 14px', borderRadius: 10, background: '#fee2e2', color: '#991b1b', fontSize: '0.88rem', width: '100%', boxSizing: 'border-box' }}>
                 {error}
               </div>
             )}
 
-            <div className="form-group">
-              <label htmlFor="edit-cash-amount" style={{ fontSize: '0.86rem', fontWeight: 600, color: 'var(--text-muted)' }}>
+            <div className="form-group" style={{ width: '100%', boxSizing: 'border-box' }}>
+              <label htmlFor="edit-cash-amount" style={{ fontSize: '0.86rem', fontWeight: 600, color: 'var(--text-muted)', display: 'block', marginBottom: 6 }}>
                 Importe (€) *
               </label>
-              <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+              <div style={{ position: 'relative', display: 'flex', alignItems: 'center', width: '100%' }}>
                 <input
                   id="edit-cash-amount"
                   type="text"
@@ -136,16 +155,24 @@ export function EditCashTransactionModal({
                   onChange={(e) => setAmount(e.target.value)}
                   required
                   className="input-field"
-                  style={{ fontSize: '1.4rem', fontWeight: 700, paddingLeft: 14 }}
+                  style={{
+                    width: '100%',
+                    fontSize: '1.4rem',
+                    fontWeight: 700,
+                    padding: '12px 38px 12px 14px',
+                    boxSizing: 'border-box',
+                    borderRadius: 'var(--radius-md, 12px)',
+                    border: '1px solid var(--border-strong, #d7d8d0)',
+                  }}
                 />
-                <span style={{ position: 'absolute', right: 16, fontSize: '1.2rem', fontWeight: 600, color: 'var(--text-muted)' }}>
+                <span style={{ position: 'absolute', right: 14, fontSize: '1.2rem', fontWeight: 600, color: 'var(--text-muted)', pointerEvents: 'none' }}>
                   €
                 </span>
               </div>
             </div>
 
-            <div className="form-group">
-              <label htmlFor="edit-cash-desc" style={{ fontSize: '0.86rem', fontWeight: 600, color: 'var(--text-muted)' }}>
+            <div className="form-group" style={{ width: '100%', boxSizing: 'border-box' }}>
+              <label htmlFor="edit-cash-desc" style={{ fontSize: '0.86rem', fontWeight: 600, color: 'var(--text-muted)', display: 'block', marginBottom: 6 }}>
                 Descripción *
               </label>
               <input
@@ -155,11 +182,19 @@ export function EditCashTransactionModal({
                 onChange={(e) => setDescription(e.target.value)}
                 required
                 className="input-field"
+                style={{
+                  width: '100%',
+                  boxSizing: 'border-box',
+                  padding: '12px 14px',
+                  borderRadius: 'var(--radius-md, 12px)',
+                  border: '1px solid var(--border-strong, #d7d8d0)',
+                  fontSize: '0.95rem',
+                }}
               />
             </div>
 
-            <div className="form-group">
-              <label htmlFor="edit-cash-date" style={{ fontSize: '0.86rem', fontWeight: 600, color: 'var(--text-muted)' }}>
+            <div className="form-group" style={{ width: '100%', boxSizing: 'border-box' }}>
+              <label htmlFor="edit-cash-date" style={{ fontSize: '0.86rem', fontWeight: 600, color: 'var(--text-muted)', display: 'block', marginBottom: 6 }}>
                 Fecha
               </label>
               <input
@@ -168,12 +203,20 @@ export function EditCashTransactionModal({
                 value={date}
                 onChange={(e) => setDate(e.target.value)}
                 className="input-field"
+                style={{
+                  width: '100%',
+                  boxSizing: 'border-box',
+                  padding: '12px 14px',
+                  borderRadius: 'var(--radius-md, 12px)',
+                  border: '1px solid var(--border-strong, #d7d8d0)',
+                  fontSize: '0.95rem',
+                }}
               />
             </div>
 
             {type !== 'adjustment' && (
-              <div className="form-group">
-                <label htmlFor="edit-cash-cat" style={{ fontSize: '0.86rem', fontWeight: 600, color: 'var(--text-muted)' }}>
+              <div className="form-group" style={{ width: '100%', boxSizing: 'border-box' }}>
+                <label htmlFor="edit-cash-cat" style={{ fontSize: '0.86rem', fontWeight: 600, color: 'var(--text-muted)', display: 'block', marginBottom: 6 }}>
                   Categoría
                 </label>
                 <select
@@ -181,6 +224,15 @@ export function EditCashTransactionModal({
                   value={categoryId}
                   onChange={(e) => setCategoryId(e.target.value)}
                   className="input-field"
+                  style={{
+                    width: '100%',
+                    boxSizing: 'border-box',
+                    padding: '12px 14px',
+                    borderRadius: 'var(--radius-md, 12px)',
+                    border: '1px solid var(--border-strong, #d7d8d0)',
+                    fontSize: '0.95rem',
+                    background: '#ffffff',
+                  }}
                 >
                   <option value="">Sin categoría / Ninguna</option>
                   {categories.map((c) => (
@@ -192,35 +244,53 @@ export function EditCashTransactionModal({
               </div>
             )}
 
-            <div className="form-group">
-              <label htmlFor="edit-cash-note" style={{ fontSize: '0.86rem', fontWeight: 600, color: 'var(--text-muted)' }}>
+            <div className="form-group" style={{ width: '100%', boxSizing: 'border-box' }}>
+              <label htmlFor="edit-cash-note" style={{ fontSize: '0.86rem', fontWeight: 600, color: 'var(--text-muted)', display: 'block', marginBottom: 6 }}>
                 Nota adicional
               </label>
               <textarea
                 id="edit-cash-note"
                 value={note}
                 onChange={(e) => setNote(e.target.value)}
-                rows={2}
+                rows={3}
                 className="input-field"
-                style={{ resize: 'none' }}
+                style={{
+                  width: '100%',
+                  boxSizing: 'border-box',
+                  padding: '12px 14px',
+                  borderRadius: 'var(--radius-md, 12px)',
+                  border: '1px solid var(--border-strong, #d7d8d0)',
+                  fontSize: '0.92rem',
+                  minHeight: 80,
+                  resize: 'vertical',
+                }}
               />
             </div>
 
-            <div className="modal-actions horizontal" style={{ display: 'flex', gap: 10, marginTop: 8, justifyContent: 'space-between', alignItems: 'center' }}>
+            <div className="modal-actions horizontal" style={{ display: 'flex', gap: 10, marginTop: 8, justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
               <button
                 type="button"
                 className="danger-button text-only"
                 onClick={() => setConfirmDelete(true)}
-                style={{ display: 'flex', alignItems: 'center', gap: 6, color: '#dc2626', background: 'transparent', border: 'none', cursor: 'pointer', padding: '8px 0' }}
+                style={{ display: 'flex', alignItems: 'center', gap: 6, color: '#dc2626', background: 'transparent', border: 'none', cursor: 'pointer', padding: '8px 4px', fontSize: '0.9rem', fontWeight: 600 }}
               >
                 <AppIcon name="trash-2" size={16} /> Eliminar
               </button>
 
               <div style={{ display: 'flex', gap: 10 }}>
-                <button type="button" className="secondary-button" onClick={onClose}>
+                <button
+                  type="button"
+                  className="secondary-button"
+                  onClick={onClose}
+                  style={{ minHeight: 44, padding: '10px 18px', borderRadius: 'var(--radius-md, 12px)', fontWeight: 600 }}
+                >
                   Cancelar
                 </button>
-                <button type="submit" className="primary-button">
+                <button
+                  type="submit"
+                  className="primary-button"
+                  style={{ minHeight: 44, padding: '10px 20px', borderRadius: 'var(--radius-md, 12px)', fontWeight: 600 }}
+                >
                   Guardar
                 </button>
               </div>

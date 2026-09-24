@@ -5,6 +5,7 @@ import { CategoryDetailModal } from '../components/CategoryDetailModal'
 import { AddCashTransactionModal } from '../components/AddCashTransactionModal'
 import { AdjustCashModal } from '../components/AdjustCashModal'
 import { EditCashTransactionModal } from '../components/EditCashTransactionModal'
+import { CashActionSelectorModal } from '../components/CashActionSelectorModal'
 import { CashTransactionList } from '../components/CashTransactionList'
 import { TotalDonutChart } from '../components/TotalDonutChart'
 import { DeleteTransactionModal } from '../components/DeleteTransactionModal'
@@ -51,6 +52,7 @@ export function HomePage({
   const [selectedCategoryForDetail, setSelectedCategoryForDetail] = useState<Category | null>(null)
 
   // Estados vista Efectivo
+  const [isCashActionSelectorOpen, setIsCashActionSelectorOpen] = useState(false)
   const [isCashAddModalOpen, setIsCashAddModalOpen] = useState(false)
   const [cashAddModalType, setCashAddModalType] = useState<'income' | 'expense'>('expense')
   const [isAdjustCashModalOpen, setIsAdjustCashModalOpen] = useState(false)
@@ -160,32 +162,11 @@ export function HomePage({
         {activeHomeMode === 1 && (
           <button
             className="round-button"
-            onClick={() => {
-              setCashAddModalType('expense')
-              setIsCashAddModalOpen(true)
-            }}
-            aria-label="Añadir movimiento de efectivo"
+            onClick={() => setIsCashActionSelectorOpen(true)}
+            aria-label="Añadir en Efectivo"
           >
             <AppIcon name="plus" size={18} />
           </button>
-        )}
-
-        {activeHomeMode === 2 && (
-          <div
-            style={{
-              width: 38,
-              height: 38,
-              borderRadius: '50%',
-              background: 'rgba(0,0,0,0.04)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              color: 'var(--text-muted)',
-            }}
-            title="Visión global"
-          >
-            <AppIcon name="pie-chart" size={18} />
-          </div>
         )}
       </header>
 
@@ -614,37 +595,6 @@ export function HomePage({
                   <strong>+{money(cashMonthIncome)}</strong>
                 </div>
               </div>
-
-              {/* Acciones rápidas de Efectivo */}
-              <div className="cash-quick-actions">
-                <button
-                  type="button"
-                  className="cash-action-btn income"
-                  onClick={() => {
-                    setCashAddModalType('income')
-                    setIsCashAddModalOpen(true)
-                  }}
-                >
-                  <AppIcon name="plus" size={15} /> Entrada
-                </button>
-                <button
-                  type="button"
-                  className="cash-action-btn expense"
-                  onClick={() => {
-                    setCashAddModalType('expense')
-                    setIsCashAddModalOpen(true)
-                  }}
-                >
-                  <AppIcon name="minus" size={15} /> Salida
-                </button>
-                <button
-                  type="button"
-                  className="cash-action-btn adjust"
-                  onClick={() => setIsAdjustCashModalOpen(true)}
-                >
-                  <AppIcon name="scale" size={15} /> Corregir saldo
-                </button>
-              </div>
             </section>
 
             {/* Gastos por categoría en Efectivo */}
@@ -786,6 +736,23 @@ export function HomePage({
           </div>
         )}
       </div>
+
+      {/* Selector de Acciones de Efectivo */}
+      <CashActionSelectorModal
+        open={isCashActionSelectorOpen}
+        onClose={() => setIsCashActionSelectorOpen(false)}
+        onSelectIncome={() => {
+          setCashAddModalType('income')
+          setIsCashAddModalOpen(true)
+        }}
+        onSelectExpense={() => {
+          setCashAddModalType('expense')
+          setIsCashAddModalOpen(true)
+        }}
+        onSelectAdjust={() => {
+          setIsAdjustCashModalOpen(true)
+        }}
+      />
 
       {/* Modales de Efectivo */}
       <AddCashTransactionModal

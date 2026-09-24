@@ -31,6 +31,7 @@ export const categories: Category[] = [
   { id: 'clothes', name: 'Ropa', color: '#C7AFD7', icon: 'shirt', iconKey: 'shirt' },
   { id: 'subscriptions', name: 'Suscripciones', color: '#D5C38E', icon: 'refresh-cw', iconKey: 'refresh-cw' },
   { id: 'sport', name: 'Deporte', color: '#9FC9C4', icon: 'dumbbell', iconKey: 'dumbbell' },
+  { id: 'atm', name: 'Cajero', color: '#10B981', icon: 'banknote', iconKey: 'banknote' },
   { id: 'other', name: 'Otros', color: '#B9B9B9', icon: 'ellipsis', iconKey: 'ellipsis' },
 ]
 

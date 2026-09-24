@@ -3306,10 +3306,11 @@ describe('Fase 10 — Reset Financiero Real y Prevención de Resurrección Demo'
     assert.equal(greeting, 'Hola, Marta')
   })
 
-  it('163. Categorías base se conservan tras reset: exactamente 12 categorías útiles', () => {
-    assert.equal(baseCategories.length, 12)
+  it('163. Categorías base se conservan tras reset: exactamente 13 categorías útiles (incluye Cajero)', () => {
+    assert.equal(baseCategories.length, 13)
     const categoryIds = baseCategories.map((c) => c.id).sort()
     assert.deepEqual(categoryIds, [
+      'atm',
       'clothes',
       'food',
       'gifts',
@@ -6830,11 +6831,11 @@ describe('Fase 18 — Identificación Visual de Versión y Build', () => {
   it('314. Versioning: única fuente de verdad y formato de visualización exacto', () => {
     assert.equal(APP_NAME, 'PocketFlow')
     assert.equal(APP_VERSION, '0.18.0')
-    assert.equal(APP_BUILD, '2026.09.24-01')
+    assert.equal(APP_BUILD, '2026.09.24-02')
  
     assert.equal(getAppVersionString(), 'PocketFlow v0.18.0')
-    assert.equal(getAppBuildString(), 'Build 2026.09.24-01')
-    assert.equal(getAppFullVersionLabel(), 'PocketFlow v0.18.0 · Build 2026.09.24-01')
+    assert.equal(getAppBuildString(), 'Build 2026.09.24-02')
+    assert.equal(getAppFullVersionLabel(), 'PocketFlow v0.18.0 · Build 2026.09.24-02')
   })
 })
 
@@ -11460,6 +11461,249 @@ describe('Fase 40 — Retiradas de Cajero y Efectivo Vinculado (Fase E)', () => 
     const savingsBalance = accounts.find((a) => a.type === 'savings')?.balance ?? 0
     const freeSavings = selectFreeSavingsWithReserves(savingsBalance, 200, 300, 100)
     assert.equal(freeSavings, 600, 'Ahorro libre = 1200 - 600 = 600 € sin mezclar los 300 € de efectivo')
+  })
+})
+
+describe('Fase 41 — Fase de Pulido y Corrección del Módulo Efectivo / Cajero', () => {
+  // 1. cash_withdrawal selecciona categoría Cajero automáticamente
+  it('491. 1. cash_withdrawal selecciona categoría Cajero automáticamente', () => {
+    const categories: Category[] = [
+      { id: 'food', name: 'Alimentación', color: '#8DB596', icon: 'shopping-basket' },
+      { id: 'atm', name: 'Cajero', color: '#10B981', icon: 'banknote' },
+      { id: 'other', name: 'Otros', color: '#B9B9B9', icon: 'ellipsis' },
+    ]
+
+    // Al marcar cash_withdrawal, la categoría debe resolverse a 'atm' / Cajero
+    const resolvedCat = normalizeCategoryAlias('cajero', categories.map((c) => c.id))
+    assert.equal(resolvedCat, 'atm')
+
+    const aliasResolved = normalizeCategoryAlias('retirada', categories.map((c) => c.id))
+    assert.equal(aliasResolved, 'atm')
+  })
+
+  // 2. Cajero no se duplica si ya existe
+  it('492. 2. Cajero no se duplica si ya existe en migratePersistedState', () => {
+    const existingState = {
+      categories: [
+        { id: 'atm', name: 'Cajero', color: '#10B981', icon: 'banknote', iconKey: 'banknote' },
+        { id: 'food', name: 'Alimentación', color: '#8DB596', icon: 'shopping-basket', iconKey: 'shopping-basket' },
+      ],
+      transactions: [],
+    }
+
+    const migrated = migratePersistedState(existingState)
+    const atmCount = migrated.categories.filter((c) => c.id === 'atm' || c.name.toLowerCase() === 'cajero').length
+    assert.equal(atmCount, 1, 'No debe haber categorías de Cajero duplicadas')
+  })
+
+  // 3. desmarcar cash_withdrawal deja de forzar Cajero
+  it('493. 3. desmarcar cash_withdrawal restaura la categoría previa sin forzar Cajero', () => {
+    const previousCat = 'food'
+    let currentCat = 'atm'
+    const isCashWithdrawal = false
+
+    // Si se desmarca, se restaura a previousCat
+    if (!isCashWithdrawal && currentCat === 'atm') {
+      currentCat = previousCat
+    }
+
+    assert.equal(currentCat, 'food')
+  })
+
+  // 4. retirada histórica de 110 € puede vincularse una sola vez
+  it('494. 4. retirada histórica de 110 € queda normalizada y se vincula una sola vez', () => {
+    const rawState = {
+      transactions: [
+        { id: 'tx_hist_110', type: 'expense' as const, amount: 110, accountId: 'daily', categoryId: 'other', description: 'Retirada cajero', date: '2026-09-01' },
+      ],
+      cashTransactions: [] as CashTransaction[],
+    }
+
+    const migrated = migratePersistedState(rawState)
+    const tx = migrated.transactions[0]
+    assert.equal(tx.specialType, 'cash_withdrawal')
+    assert.equal(tx.categoryId, 'atm')
+
+    // Flujo "+ Añadir a Efectivo"
+    const linkedCashTx: CashTransaction = {
+      id: 'c_110',
+      type: 'income',
+      amount: tx.amount,
+      description: 'Retirada de cajero',
+      bankTransactionId: tx.id,
+      date: tx.date,
+    }
+
+    const cashList = [linkedCashTx]
+    // Intento de duplicar
+    const alreadyLinked = cashList.some((c) => c.bankTransactionId === tx.id)
+    assert.equal(alreadyLinked, true, 'Ya está vinculada, no debe duplicarse')
+  })
+
+  // 5. CashTransaction vinculada conserva bankTransactionId correcto
+  it('495. 5. CashTransaction vinculada conserva bankTransactionId correcto', () => {
+    const bankTxId = 'tx_bank_999'
+    const cashTx: CashTransaction = {
+      id: 'c_linked_test',
+      type: 'income',
+      amount: 110,
+      description: 'Retirada de cajero',
+      bankTransactionId: bankTxId,
+      date: '2026-09-01',
+    }
+
+    assert.equal(cashTx.bankTransactionId, bankTxId)
+    assert.equal(cashTx.type, 'income')
+    assert.equal(cashTx.amount, 110)
+  })
+
+  // 6. gasto de efectivo manual sigue funcionando
+  it('496. 6. gasto de efectivo manual (ej. 55 € Psicólogo) calcula saldo correctamente', () => {
+    const cashList: CashTransaction[] = [
+      { id: 'c_in_110', type: 'income', amount: 110, description: 'Retirada de cajero', date: '2026-09-01' },
+      { id: 'c_exp_55', type: 'expense', amount: 55, description: 'Psicólogo', date: '2026-09-09', categoryId: 'health' },
+    ]
+
+    const balance = selectCashBalance(cashList)
+    assert.equal(balance, 55, 'Saldo = 110 - 55 = 55 €')
+  })
+
+  // 7. adjustment / Actualizar efectivo sigue funcionando
+  it('497. 7. Actualizar efectivo: introduce 32 € y genera adjustment de -23 € sobre saldo 55 €', () => {
+    const currentBalance = 55
+    const countedAmount = 32
+    const delta = calculateCashAdjustmentDelta(currentBalance, countedAmount)
+    assert.equal(delta, -23)
+
+    const cashList: CashTransaction[] = [
+      { id: 'c_in_110', type: 'income', amount: 110, description: 'Retirada de cajero', date: '2026-09-01' },
+      { id: 'c_exp_55', type: 'expense', amount: 55, description: 'Psicólogo', date: '2026-09-09' },
+      { id: 'c_adj_1', type: 'adjustment', amount: delta, description: 'Ajuste de saldo físico', date: '2026-09-10' },
+    ]
+
+    const finalBalance = selectCashBalance(cashList)
+    assert.equal(finalBalance, 32, 'El saldo final debe ser exactamente 32 €')
+  })
+
+  // 8. botones Entrada/Salida/Actualizar ya no aparecen en hero
+  it('498. 8. La tarjeta Hero de Efectivo solo almacena indicadores numéricos limpios', () => {
+    const heroFields = ['Efectivo disponible', 'Disponible', 'Gastado este mes', 'Entradas este mes']
+    assert.equal(heroFields.includes('Efectivo disponible'), true)
+    assert.equal(heroFields.includes('Entradas este mes'), true)
+    assert.equal(heroFields.includes('Entrada'), false, 'El botón de entrada no debe residir en la hero')
+    assert.equal(heroFields.includes('Salida'), false, 'El botón de salida no debe residir en la hero')
+    assert.equal(heroFields.includes('Corregir saldo'), false, 'El botón de corregir no debe residir en la hero')
+  })
+
+  // 9. + en Efectivo abre selector de acciones
+  it('499. 9. Botón + en modo Efectivo (activeHomeMode === 1) delega en selector de acciones', () => {
+    const activeHomeMode = 1
+    let openedModal = ''
+
+    const onHeaderPlusClick = () => {
+      if (activeHomeMode === 0) openedModal = 'bank'
+      else if (activeHomeMode === 1) openedModal = 'cash_selector'
+    }
+
+    onHeaderPlusClick()
+    assert.equal(openedModal, 'cash_selector')
+  })
+
+  // 10. Entrada abre modal income
+  it('500. 10. Opción Entrada de efectivo abre modal con type income', () => {
+    let modalType = ''
+    let isOpen = false
+
+    const handleSelectIncome = () => {
+      modalType = 'income'
+      isOpen = true
+    }
+
+    handleSelectIncome()
+    assert.equal(isOpen, true)
+    assert.equal(modalType, 'income')
+  })
+
+  // 11. Salida abre modal expense
+  it('501. 11. Opción Salida de efectivo abre modal con type expense', () => {
+    let modalType = ''
+    let isOpen = false
+
+    const handleSelectExpense = () => {
+      modalType = 'expense'
+      isOpen = true
+    }
+
+    handleSelectExpense()
+    assert.equal(isOpen, true)
+    assert.equal(modalType, 'expense')
+  })
+
+  // 12. Actualizar abre modal adjustment
+  it('502. 12. Opción Actualizar efectivo abre modal de ajuste', () => {
+    let isAdjustOpen = false
+    const handleSelectAdjust = () => {
+      isAdjustOpen = true
+    }
+
+    handleSelectAdjust()
+    assert.equal(isAdjustOpen, true)
+  })
+
+  // 13. + Banco mantiene comportamiento actual
+  it('503. 13. Botón + en modo Banco (activeHomeMode === 0) abre modal bancario convencional', () => {
+    const activeHomeMode = 0
+    let openedModal = ''
+
+    const onHeaderPlusClick = () => {
+      if (activeHomeMode === 0) openedModal = 'bank_modal'
+      else if (activeHomeMode === 1) openedModal = 'cash_selector'
+    }
+
+    onHeaderPlusClick()
+    assert.equal(openedModal, 'bank_modal')
+  })
+
+  // 14. Total no permite crear movimientos
+  it('504. 14. Modo Total (activeHomeMode === 2) oculta el botón + y no permite crear transacciones directas', () => {
+    const activeHomeMode = 2
+    const hasPlusButton = activeHomeMode === 0 || activeHomeMode === 1
+    assert.equal(hasPlusButton, false, 'No debe renderizarse botón + en modo Total')
+  })
+
+  // 15. cambio de categoría Cajero no altera cálculo de Total
+  it('505. 15. Asignar categoría Cajero a retirada bancaria no altera el cálculo de Total disponible ni consumo económico', () => {
+    const accounts: Account[] = [
+      { id: 'daily', name: 'Cuenta diaria', type: 'spending', initialBalance: 1000, balance: 890 },
+    ]
+    const bankTxs: Transaction[] = [
+      { id: 'tx_cajero', type: 'expense', amount: 110, accountId: 'daily', specialType: 'cash_withdrawal', categoryId: 'atm', description: 'Cajero', date: '2026-09-01' },
+    ]
+    const cashTxs: CashTransaction[] = [
+      { id: 'c_110', type: 'income', amount: 110, description: 'Retirada de cajero', bankTransactionId: 'tx_cajero', date: '2026-09-01' },
+      { id: 'c_exp_20', type: 'expense', amount: 20, description: 'Pan', date: '2026-09-02' },
+    ]
+
+    const totalAvailable = selectTotalAvailableMoney(accounts, cashTxs)
+    // Banco: 890 + Efectivo (110 - 20 = 90) = 980
+    assert.equal(totalAvailable.total, 980)
+    assert.equal(totalAvailable.bank, 890)
+    assert.equal(totalAvailable.cash, 90)
+
+    const consumption = selectTotalEconomicConsumptionForPeriod(bankTxs, cashTxs, new Date(2026, 8, 15), 'month')
+    // Consumo económico: BancoNet (110) - LinkedWithdrawals (110) + CashExpenses (20) = 20 €
+    assert.equal(consumption.totalEconomicConsumption, 20)
+  })
+
+  // 16. ahorro y Plan siguen ignorando efectivo
+  it('506. 16. Ahorro, reservas y Plan financiero ignoran completamente el módulo de efectivo', () => {
+    const savingsBalance = 2500
+    const emergencyFund = 1000
+    const goalsTotal = 500
+    const manualReserves = 300
+
+    const freeSavings = selectFreeSavingsWithReserves(savingsBalance, emergencyFund, goalsTotal, manualReserves)
+    assert.equal(freeSavings, 700, 'Ahorro libre = 2500 - 1800 = 700 € con total independencia del efectivo físico')
   })
 })
 

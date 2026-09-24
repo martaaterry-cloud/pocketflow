@@ -62,7 +62,16 @@ export function AdjustCashModal({
 
   return (
     <div className="modal-backdrop" onClick={onClose} role="dialog" aria-modal="true">
-      <div className="modal-card" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 440 }}>
+      <div
+        className="modal-card"
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          maxWidth: 440,
+          width: '100%',
+          padding: '24px 20px',
+          boxSizing: 'border-box',
+        }}
+      >
         <div className="modal-header-row" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
             <div
@@ -75,12 +84,13 @@ export function AdjustCashModal({
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
+                flexShrink: 0,
               }}
             >
               <AppIcon name="scale" size={20} />
             </div>
             <h3 style={{ margin: 0, fontSize: '1.25rem', fontWeight: 700 }}>
-              Ajustar efectivo
+              Actualizar efectivo
             </h3>
           </div>
           <button type="button" className="btn-icon-subtle" onClick={onClose} aria-label="Cerrar modal">
@@ -88,9 +98,14 @@ export function AdjustCashModal({
           </button>
         </div>
 
-        <p style={{ margin: '0 0 16px', fontSize: '0.92rem', color: 'var(--text-muted)', lineHeight: 1.5 }}>
-          ¿Cuánto efectivo tienes ahora mismo físicamente? PocketFlow creará un ajuste con la diferencia sin que tengas que registrar cada gasto olvidado.
-        </p>
+        <div style={{ marginBottom: 16 }}>
+          <h4 style={{ margin: '0 0 6px', fontSize: '1.02rem', fontWeight: 600, color: 'var(--text-main)' }}>
+            ¿Cuánto efectivo tienes ahora?
+          </h4>
+          <p style={{ margin: 0, fontSize: '0.88rem', color: 'var(--text-muted)', lineHeight: 1.45 }}>
+            Introduce lo que has contado físicamente. PocketFlow ajustará la diferencia automáticamente.
+          </p>
+        </div>
 
         {/* Comparativa visual de saldos */}
         <div
@@ -103,6 +118,8 @@ export function AdjustCashModal({
             display: 'flex',
             flexDirection: 'column',
             gap: 8,
+            boxSizing: 'border-box',
+            width: '100%',
           }}
         >
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -135,17 +152,17 @@ export function AdjustCashModal({
         </div>
 
         {error && (
-          <div className="error-banner" style={{ marginBottom: 16, padding: '10px 14px', borderRadius: 10, background: '#fee2e2', color: '#991b1b', fontSize: '0.88rem' }}>
+          <div className="error-banner" style={{ marginBottom: 16, padding: '10px 14px', borderRadius: 10, background: '#fee2e2', color: '#991b1b', fontSize: '0.88rem', width: '100%', boxSizing: 'border-box' }}>
             {error}
           </div>
         )}
 
-        <form onSubmit={handleSubmit} className="modal-form" style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-          <div className="form-group">
-            <label htmlFor="adjust-counted" style={{ fontSize: '0.86rem', fontWeight: 600, color: 'var(--text-muted)' }}>
+        <form onSubmit={handleSubmit} className="modal-form" style={{ display: 'flex', flexDirection: 'column', gap: 14, width: '100%' }}>
+          <div className="form-group" style={{ width: '100%', boxSizing: 'border-box' }}>
+            <label htmlFor="adjust-counted" style={{ fontSize: '0.86rem', fontWeight: 600, color: 'var(--text-muted)', display: 'block', marginBottom: 6 }}>
               Efectivo contado físicamente (€) *
             </label>
-            <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+            <div style={{ position: 'relative', display: 'flex', alignItems: 'center', width: '100%' }}>
               <input
                 id="adjust-counted"
                 type="text"
@@ -156,16 +173,24 @@ export function AdjustCashModal({
                 onChange={(e) => setCountedAmount(e.target.value)}
                 required
                 className="input-field"
-                style={{ fontSize: '1.4rem', fontWeight: 700, paddingLeft: 14 }}
+                style={{
+                  width: '100%',
+                  fontSize: '1.4rem',
+                  fontWeight: 700,
+                  padding: '12px 38px 12px 14px',
+                  boxSizing: 'border-box',
+                  borderRadius: 'var(--radius-md, 12px)',
+                  border: '1px solid var(--border-strong, #d7d8d0)',
+                }}
               />
-              <span style={{ position: 'absolute', right: 16, fontSize: '1.2rem', fontWeight: 600, color: 'var(--text-muted)' }}>
+              <span style={{ position: 'absolute', right: 14, fontSize: '1.2rem', fontWeight: 600, color: 'var(--text-muted)', pointerEvents: 'none' }}>
                 €
               </span>
             </div>
           </div>
 
-          <div className="form-group">
-            <label htmlFor="adjust-date" style={{ fontSize: '0.86rem', fontWeight: 600, color: 'var(--text-muted)' }}>
+          <div className="form-group" style={{ width: '100%', boxSizing: 'border-box' }}>
+            <label htmlFor="adjust-date" style={{ fontSize: '0.86rem', fontWeight: 600, color: 'var(--text-muted)', display: 'block', marginBottom: 6 }}>
               Fecha
             </label>
             <input
@@ -174,11 +199,19 @@ export function AdjustCashModal({
               value={date}
               onChange={(e) => setDate(e.target.value)}
               className="input-field"
+              style={{
+                width: '100%',
+                boxSizing: 'border-box',
+                padding: '12px 14px',
+                borderRadius: 'var(--radius-md, 12px)',
+                border: '1px solid var(--border-strong, #d7d8d0)',
+                fontSize: '0.95rem',
+              }}
             />
           </div>
 
-          <div className="form-group">
-            <label htmlFor="adjust-note" style={{ fontSize: '0.86rem', fontWeight: 600, color: 'var(--text-muted)' }}>
+          <div className="form-group" style={{ width: '100%', boxSizing: 'border-box' }}>
+            <label htmlFor="adjust-note" style={{ fontSize: '0.86rem', fontWeight: 600, color: 'var(--text-muted)', display: 'block', marginBottom: 6 }}>
               Nota o motivo (opcional)
             </label>
             <textarea
@@ -186,22 +219,47 @@ export function AdjustCashModal({
               placeholder="Ej. Conteo semanal de billetera..."
               value={note}
               onChange={(e) => setNote(e.target.value)}
-              rows={2}
+              rows={3}
               className="input-field"
-              style={{ resize: 'none' }}
+              style={{
+                width: '100%',
+                boxSizing: 'border-box',
+                padding: '12px 14px',
+                borderRadius: 'var(--radius-md, 12px)',
+                border: '1px solid var(--border-strong, #d7d8d0)',
+                fontSize: '0.92rem',
+                minHeight: 80,
+                resize: 'vertical',
+              }}
             />
           </div>
 
-          <div className="modal-actions horizontal" style={{ display: 'flex', gap: 10, marginTop: 8, justifyContent: 'flex-end' }}>
-            <button type="button" className="secondary-button" onClick={onClose}>
+          <div className="modal-actions horizontal" style={{ display: 'flex', gap: 12, marginTop: 8, justifyContent: 'flex-end', width: '100%' }}>
+            <button
+              type="button"
+              className="secondary-button"
+              onClick={onClose}
+              style={{
+                flex: 1,
+                minHeight: 44,
+                borderRadius: 'var(--radius-md, 12px)',
+                fontWeight: 600,
+              }}
+            >
               Cancelar
             </button>
             <button
               type="submit"
               className="primary-button"
-              style={{ minWidth: 140 }}
+              style={{
+                flex: 1.3,
+                minHeight: 44,
+                borderRadius: 'var(--radius-md, 12px)',
+                fontWeight: 600,
+                background: '#2563eb',
+              }}
             >
-              Guardar ajuste
+              Actualizar efectivo
             </button>
           </div>
         </form>

@@ -24,6 +24,14 @@ export const CATEGORY_ALIAS_MAP: Record<string, string> = {
   general: 'other',
   default: 'other',
 
+  // Alias de Cajero / Retiradas de efectivo
+  atm: 'atm',
+  cajero: 'atm',
+  cajeros: 'atm',
+  retirada: 'atm',
+  retiradas: 'atm',
+  efectivo: 'atm',
+
   // Alias de Alimentación
   food: 'food',
   comida: 'food',

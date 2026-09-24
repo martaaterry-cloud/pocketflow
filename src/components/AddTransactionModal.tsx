@@ -83,6 +83,7 @@ export function AddTransactionModal({
 
   // Estados para Tipo Especial y Naturaleza
   const [isCashWithdrawal, setIsCashWithdrawal] = useState(false)
+  const [prevCategoryId, setPrevCategoryId] = useState<string>('')
   const [expenseNature, setExpenseNature] = useState<ExpenseNature>('variable')
   const [giftRecipient, setGiftRecipient] = useState('')
 
@@ -124,13 +125,20 @@ export function AddTransactionModal({
       setIncomeKind(initialTransaction.incomeKind || 'income')
       setAmount(String(initialTransaction.amount).replace('.', ','))
       setDescription(initialTransaction.description)
-      setCategoryId(initialTransaction.categoryId ?? categories[0]?.id ?? '')
+      const initialIsWithdrawal = initialTransaction.specialType === 'cash_withdrawal'
+      setIsCashWithdrawal(initialIsWithdrawal)
+      const atmCat = categories.find((c) => c.id === 'atm' || c.name.toLowerCase() === 'cajero')
+      if (initialIsWithdrawal) {
+        setCategoryId(initialTransaction.categoryId ?? atmCat?.id ?? 'atm')
+      } else {
+        setCategoryId(initialTransaction.categoryId ?? categories[0]?.id ?? '')
+      }
+      setPrevCategoryId(initialTransaction.categoryId && initialTransaction.categoryId !== 'atm' ? initialTransaction.categoryId : categories[0]?.id ?? '')
       setAccountId(initialTransaction.accountId)
       setToAccountId(initialTransaction.toAccountId ?? accounts.find((a) => a.id !== initialTransaction.accountId)?.id ?? '')
       setDate(initialTransaction.date.slice(0, 10))
       setNote(initialTransaction.note ?? '')
       setIsShared(Boolean(initialTransaction.isShared))
-      setIsCashWithdrawal(initialTransaction.specialType === 'cash_withdrawal')
       setExpenseNature(initialTransaction.expenseNature || 'variable')
       setGiftRecipient(initialTransaction.giftRecipient ?? '')
       setConfirmDelete(false)
@@ -141,6 +149,7 @@ export function AddTransactionModal({
       setAmount('')
       setDescription('')
       setCategoryId(categories[0]?.id ?? '')
+      setPrevCategoryId(categories[0]?.id ?? '')
       setAccountId(accounts.find((a) => a.type === 'spending')?.id ?? accounts[0]?.id ?? '')
       setToAccountId(accounts.find((a) => a.type === 'savings')?.id ?? accounts[1]?.id ?? '')
       setDate(new Date().toISOString().slice(0, 10))
@@ -524,9 +533,22 @@ export function AddTransactionModal({
                 type="checkbox"
                 checked={isCashWithdrawal}
                 onChange={(e) => {
-                  setIsCashWithdrawal(e.target.checked)
-                  if (e.target.checked && (!description || description === 'Mercadona' || description === 'Cena')) {
-                    setDescription('Retirada cajero')
+                  const checked = e.target.checked
+                  setIsCashWithdrawal(checked)
+                  if (checked) {
+                    if (!description || description === 'Mercadona' || description === 'Cena') {
+                      setDescription('Retirada cajero')
+                    }
+                    if (categoryId !== 'atm') {
+                      setPrevCategoryId(categoryId)
+                    }
+                    const atmCat = categories.find((c) => c.id === 'atm' || c.name.toLowerCase() === 'cajero')
+                    setCategoryId(atmCat?.id ?? 'atm')
+                  } else {
+                    const atmCat = categories.find((c) => c.id === 'atm' || c.name.toLowerCase() === 'cajero')
+                    if (categoryId === 'atm' || (atmCat && categoryId === atmCat.id)) {
+                      setCategoryId(prevCategoryId || categories[0]?.id || '')
+                    }
                   }
                 }}
               />
