@@ -646,8 +646,12 @@ button, input, select, textarea, label {
 .calendar-card {
   background: var(--bg-card);
   border-radius: var(--radius-lg);
-  padding: 20px;
+  padding: 16px 12px;
   box-shadow: var(--shadow-sm);
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  overflow: hidden;
 }
 
 .calendar-nav {
@@ -690,8 +694,11 @@ button, input, select, textarea, label {
 
 .calendar-grid {
   display: grid;
-  grid-template-columns: repeat(7, 1fr);
-  gap: 6px;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  width: 100%;
+  min-width: 0;
+  gap: 4px;
+  box-sizing: border-box;
 }
 
 .calendar-grid.weekdays {
@@ -702,8 +709,16 @@ button, input, select, textarea, label {
   margin: 10px 0 6px;
 }
 
+.calendar-grid.weekdays span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .calendar-empty-cell {
   height: 48px;
+  min-width: 0;
 }
 
 .calendar-day-btn {
@@ -712,26 +727,40 @@ button, input, select, textarea, label {
   background: transparent;
   border-radius: var(--radius-sm);
   height: 48px;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  padding: 2px 1px;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 2px;
+  gap: 1px;
   cursor: pointer;
   transition: background 0.15s ease;
+  box-sizing: border-box;
 }
 
 .calendar-day-btn b {
   font-size: 13px;
   font-weight: 600;
+  line-height: 1.1;
+  min-width: 0;
+  max-width: 100%;
 }
 
 .calendar-day-btn small {
-  font-size: 8.5px;
+  font-size: 7.5px;
   color: var(--accent-red);
   font-weight: 600;
-  letter-spacing: -0.3px;
+  letter-spacing: -0.4px;
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+  line-height: 1;
+  display: block;
 }
 
 .calendar-income-indicator {
@@ -3852,58 +3881,92 @@ input:checked + .slider:before {
   gap: 10px;
 }
 
-.checkbox-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 13px;
-  cursor: pointer;
-  color: var(--text-main);
-  user-select: none;
-  width: 100%;
-  box-sizing: border-box;
+.shared-expense-section .checkbox-row,
+.modal .shared-expense-section .checkbox-row,
+.modal-card .shared-expense-section .checkbox-row {
+  display: flex !important;
+  align-items: center !important;
+  gap: 8px !important;
+  font-size: 13px !important;
+  cursor: pointer !important;
+  color: var(--text-main) !important;
+  user-select: none !important;
+  width: 100% !important;
+  min-width: 0 !important;
+  box-sizing: border-box !important;
 }
 
-.checkbox-row input[type="checkbox"] {
-  width: 18px;
-  height: 18px;
-  flex-shrink: 0;
-  cursor: pointer;
-  margin: 0;
+.shared-expense-section .checkbox-row input[type="checkbox"],
+.modal .shared-expense-section .checkbox-row input[type="checkbox"],
+.modal-card .shared-expense-section .checkbox-row input[type="checkbox"] {
+  width: 18px !important;
+  height: 18px !important;
+  min-width: 18px !important;
+  max-width: 18px !important;
+  flex: 0 0 18px !important;
+  flex-shrink: 0 !important;
+  padding: 0 !important;
+  margin: 0 !important;
+  border: none !important;
+  border-radius: 4px !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  outline: none !important;
+  cursor: pointer !important;
+  accent-color: var(--accent-dark, #22241f) !important;
+  -webkit-appearance: checkbox !important;
+  appearance: checkbox !important;
 }
 
-.checkbox-row span {
-  flex: 1;
-  min-width: 0;
-  line-height: 1.35;
+.shared-expense-section .checkbox-row span,
+.modal .shared-expense-section .checkbox-row span,
+.modal-card .shared-expense-section .checkbox-row span {
+  flex: 1 1 auto !important;
+  min-width: 0 !important;
+  white-space: normal !important;
+  overflow-wrap: normal !important;
+  word-break: normal !important;
+  font-size: 13px !important;
+  line-height: 1.35 !important;
+  color: var(--text-main) !important;
 }
 
-.participant-input-row {
-  display: flex;
-  gap: 8px;
-  width: 100%;
-  min-width: 0;
-  box-sizing: border-box;
-  align-items: center;
+.shared-expense-section .participant-input-row,
+.modal .shared-expense-section .participant-input-row,
+.modal-card .shared-expense-section .participant-input-row {
+  display: flex !important;
+  gap: 8px !important;
+  width: 100% !important;
+  min-width: 0 !important;
+  box-sizing: border-box !important;
+  align-items: center !important;
 }
 
-.participant-input-row input {
-  flex: 1;
+.shared-expense-section .participant-input-row input,
+.modal .shared-expense-section .participant-input-row input,
+.modal-card .shared-expense-section .participant-input-row input {
+  flex: 1 1 auto !important;
+  width: auto !important;
   min-width: 0 !important;
   max-width: 100% !important;
   box-sizing: border-box !important;
-  padding: 8px 10px;
-  border-radius: var(--radius-sm);
-  border: 1px solid var(--border-color);
-  font-size: 13px;
+  padding: 8px 10px !important;
+  border-radius: var(--radius-sm, 10px) !important;
+  border: 1px solid var(--border-strong, #d7d8d0) !important;
+  font-size: 13px !important;
+  margin: 0 !important;
 }
 
-.add-participant-btn {
-  white-space: nowrap;
-  padding: 8px 12px;
-  font-size: 12px;
-  font-weight: 600;
-  flex-shrink: 0;
+.shared-expense-section .add-participant-btn,
+.modal .shared-expense-section .add-participant-btn,
+.modal-card .shared-expense-section .add-participant-btn {
+  white-space: nowrap !important;
+  padding: 8px 12px !important;
+  font-size: 12px !important;
+  font-weight: 600 !important;
+  flex: 0 0 auto !important;
+  flex-shrink: 0 !important;
+  margin: 0 !important;
 }
 
 .participant-chips {
