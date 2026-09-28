@@ -44,30 +44,34 @@ jobs:
           fi
 
       - name: Setup Node.js (Capacitor)
-        if: steps:detect.outputs.framework == 'capacitor'
+        if: steps.detect.outputs.framework == 'capacitor'
         uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: 'npm'
 
       - name: Install dependencies (Capacitor)
-        if: steps:detect.outputs.framework == 'capacitor'
+        if: steps.detect.outputs.framework == 'capacitor'
         run: npm ci
 
       - name: Build web assets (Capacitor)
-        if: steps:detect.outputs.framework == 'capacitor'
+        if: steps.detect.outputs.framework == 'capacitor'
         env:
-          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL || vars.VITE_SUPABASE_URL || 'https://xcarqzopfaozxugfhslo.supabase.co' }}
-          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY || vars.VITE_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InhjYXJxem9wZmFvenh1Z2Zoc2xvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODgyNTUyMjUsImV4cCI6MjEwMzgzMTIyNX0.-P30LrQ_-sE0rFtomrRGxdHXX9QJ2JPsoqc6oklTOUU' }}
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL || 'https://xcarqzopfaozxugfhslo.supabase.co' }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InhjYXJxem9wZmFvenh1Z2Zoc2xvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODgyNTUyMjUsImV4cCI6MjEwMzgzMTIyNX0.-P30LrQ_-sE0rFtomrRGxdHXX9QJ2JPsoqc6oklTOUU' }}
         run: npm run build
 
       - name: Sync Capacitor iOS
-        if: steps:detect.outputs.framework == 'capacitor'
+        if: steps.detect.outputs.framework == 'capacitor'
         run: npx cap sync ios
 
       - name: Select Xcode version
         run: |
-          sudo xcode-select -s /Applications/Xcode_15.4.app || sudo xcode-select -s /Applications/Xcode_16.0.app || true
+          if [ -d "/Applications/Xcode_15.4.app" ]; then
+            sudo xcode-select -s /Applications/Xcode_15.4.app
+          elif [ -d "/Applications/Xcode_16.0.app" ]; then
+            sudo xcode-select -s /Applications/Xcode_16.0.app
+          fi
           xcodebuild -version
 
       - name: Build iOS App with Xcode
