@@ -19,6 +19,7 @@ import { AppIcon } from './ui/icons'
 import { useFinance } from './store/useFinance'
 import { usePwaUpdate } from './hooks/usePwaUpdate'
 import { PwaUpdateBanner } from './components/PwaUpdateBanner'
+import { scrollToTop } from './utils/scroll'
 import { cleanUrlQueryParams, createDeepLinkDeduplicator, parseShortcutUrl } from './utils/deepLink'
 import { getSupabase } from './services/supabase/supabaseClient'
 import { createCleanInitialState, fetchRemoteState, syncMissingDefaultCategories, uploadStateToSupabase } from './services/supabase/supabaseSync'
@@ -498,14 +499,17 @@ export default function App() {
           onNavigateToVariableEstimates={() => {
             setMoreSubView('variable_estimates')
             setTab('more')
+            scrollToTop()
           }}
           onNavigateToReceivables={() => {
             setMoreSubView('receivables')
             setTab('more')
+            scrollToTop()
           }}
           onNavigateToPlan={() => {
             setMoreSubView('plan')
             setTab('more')
+            scrollToTop()
           }}
         />
       )}
@@ -527,8 +531,12 @@ export default function App() {
         <MorePage
           finance={finance}
           user={user}
-          initialSubView={moreSubView}
-          onNavigateToSavings={() => setTab('savings')}
+          subView={moreSubView}
+          onSubViewChange={setMoreSubView}
+          onNavigateToSavings={() => {
+            setTab('savings')
+            scrollToTop()
+          }}
           onRecordReimbursement={(shareId) => {
             setReimbursementShareId(shareId)
             setIsReimbursementModalOpen(true)
@@ -543,7 +551,10 @@ export default function App() {
         <button
           type="button"
           className={tab === 'home' ? 'active' : ''}
-          onClick={() => setTab('home')}
+          onClick={() => {
+            setTab('home')
+            scrollToTop()
+          }}
         >
           <span className="nav-icon"><AppIcon name="home" size={20} /></span>
           <span className="nav-label">Inicio</span>
@@ -551,7 +562,10 @@ export default function App() {
         <button
           type="button"
           className={tab === 'movements' ? 'active' : ''}
-          onClick={() => setTab('movements')}
+          onClick={() => {
+            setTab('movements')
+            scrollToTop()
+          }}
         >
           <span className="nav-icon"><AppIcon name="receipt" size={20} /></span>
           <span className="nav-label">Movimientos</span>
@@ -559,7 +573,10 @@ export default function App() {
         <button
           type="button"
           className={tab === 'calendar' ? 'active' : ''}
-          onClick={() => setTab('calendar')}
+          onClick={() => {
+            setTab('calendar')
+            scrollToTop()
+          }}
         >
           <span className="nav-icon"><AppIcon name="calendar" size={20} /></span>
           <span className="nav-label">Calendario</span>
@@ -567,7 +584,10 @@ export default function App() {
         <button
           type="button"
           className={tab === 'savings' ? 'active' : ''}
-          onClick={() => setTab('savings')}
+          onClick={() => {
+            setTab('savings')
+            scrollToTop()
+          }}
         >
           <span className="nav-icon"><AppIcon name="piggy-bank" size={20} /></span>
           <span className="nav-label">Ahorro</span>
@@ -576,8 +596,15 @@ export default function App() {
           type="button"
           className={tab === 'more' ? 'active' : ''}
           onClick={() => {
-            setMoreSubView('menu')
-            setTab('more')
+            if (tab === 'more') {
+              if (moreSubView !== 'menu') {
+                setMoreSubView('menu')
+              }
+            } else {
+              setMoreSubView('menu')
+              setTab('more')
+            }
+            scrollToTop()
           }}
         >
           <span className="nav-icon"><AppIcon name="more-horizontal" size={20} /></span>

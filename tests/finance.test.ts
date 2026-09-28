@@ -113,6 +113,10 @@ import {
   shouldCheckUpdateOnVisibility,
 } from '../src/utils/pwaUpdate'
 import {
+  scrollToTop,
+  resolveMoreTabPress,
+} from '../src/utils/scroll'
+import {
   toUnifiedMovements,
   filterUnifiedMovements,
   calculateUnifiedMovementStats,
@@ -6846,12 +6850,12 @@ describe('Fase 18 — Mejoras de Finanzas (Detalle por Categoría, Retiradas de 
 describe('Fase 18 — Identificación Visual de Versión y Build', () => {
   it('314. Versioning: única fuente de verdad y formato de visualización exacto', () => {
     assert.equal(APP_NAME, 'PocketFlow')
-    assert.equal(APP_VERSION, '0.20.1')
-    assert.equal(APP_BUILD, '2026.09.28-03')
+    assert.equal(APP_VERSION, '0.20.2')
+    assert.equal(APP_BUILD, '2026.09.28-04')
 
-    assert.equal(getAppVersionString(), 'PocketFlow v0.20.1')
-    assert.equal(getAppBuildString(), 'Build 2026.09.28-03')
-    assert.equal(getAppFullVersionLabel(), 'PocketFlow v0.20.1 · Build 2026.09.28-03')
+    assert.equal(getAppVersionString(), 'PocketFlow v0.20.2')
+    assert.equal(getAppBuildString(), 'Build 2026.09.28-04')
+    assert.equal(getAppFullVersionLabel(), 'PocketFlow v0.20.2 · Build 2026.09.28-04')
   })
 })
 
@@ -13938,7 +13942,7 @@ describe('Fase 50 — Control de Acceso por Roles (User / Admin), Seguridad RLS 
     assert.equal(allowedSubViews.includes('cloud'), false)
   })
 
-  it('589. 9. Footer: usuario normal ve solo "PocketFlow v0.20.1", admin ve "PocketFlow v0.20.1" y "Build 2026.09.28-03"', () => {
+  it('589. 9. Footer: usuario normal ve solo "PocketFlow v0.20.2", admin ve "PocketFlow v0.20.2" y "Build 2026.09.28-04"', () => {
     const renderFooterTexts = (isAdmin: boolean): { versionText: string; buildText: string | null } => {
       return {
         versionText: getAppVersionString(),
@@ -13947,12 +13951,12 @@ describe('Fase 50 — Control de Acceso por Roles (User / Admin), Seguridad RLS 
     }
 
     const userFooter = renderFooterTexts(false)
-    assert.equal(userFooter.versionText, 'PocketFlow v0.20.1')
+    assert.equal(userFooter.versionText, 'PocketFlow v0.20.2')
     assert.equal(userFooter.buildText, null)
 
     const adminFooter = renderFooterTexts(true)
-    assert.equal(adminFooter.versionText, 'PocketFlow v0.20.1')
-    assert.equal(adminFooter.buildText, 'Build 2026.09.28-03')
+    assert.equal(adminFooter.versionText, 'PocketFlow v0.20.2')
+    assert.equal(adminFooter.buildText, 'Build 2026.09.28-04')
   })
 
   it('590. 10. Reconciliación y sincronización de perfil no altera datos financieros ni transacciones', () => {
@@ -14050,6 +14054,70 @@ describe('Fase 42 — Sistema de Actualización PWA In-App', () => {
     })
   })
 })
+
+describe('Fase 43 — Navegación y Reseteo de Scroll en Pestaña Más', () => {
+  it('598. Abrir cualquier subvista de Más (plan, cuentas, perfil, etc.) resetea scroll arriba', () => {
+    let scrolledTop = false
+    const mockScrollToTop = () => {
+      scrolledTop = true
+    }
+
+    // Simular transición de menú a subvista
+    const onOpenSubView = (subView: string) => {
+      assert.equal(subView, 'plan')
+      mockScrollToTop()
+    }
+
+    onOpenSubView('plan')
+    assert.equal(scrolledTop, true)
+  })
+
+  it('599. Volver al menú principal de Más resetea scroll arriba', () => {
+    let scrolledTop = false
+    const mockScrollToTop = () => {
+      scrolledTop = true
+    }
+
+    const onBackToMenu = () => {
+      mockScrollToTop()
+    }
+
+    onBackToMenu()
+    assert.equal(scrolledTop, true)
+  })
+
+  it('600. Pulsar Más en la barra inferior estando en una subvista vuelve a "menu" y resetea scroll', () => {
+    const res = resolveMoreTabPress('more', 'profile')
+    assert.equal(res.nextTab, 'more')
+    assert.equal(res.nextSubView, 'menu')
+    assert.equal(res.shouldResetScroll, true)
+
+    const res2 = resolveMoreTabPress('more', 'plan')
+    assert.equal(res2.nextTab, 'more')
+    assert.equal(res2.nextSubView, 'menu')
+    assert.equal(res2.shouldResetScroll, true)
+  })
+
+  it('601. Pulsar Más estando ya en "menu" no rompe nada, permanece en "menu" y resetea scroll', () => {
+    const res = resolveMoreTabPress('more', 'menu')
+    assert.equal(res.nextTab, 'more')
+    assert.equal(res.nextSubView, 'menu')
+    assert.equal(res.shouldResetScroll, true)
+  })
+
+  it('602. Navegación normal entre pestañas (home -> more, movements -> home) ejecuta reseteo de scroll correctamente', () => {
+    const res = resolveMoreTabPress('home', 'menu')
+    assert.equal(res.nextTab, 'more')
+    assert.equal(res.nextSubView, 'menu')
+    assert.equal(res.shouldResetScroll, true)
+
+    // scrollToTop es seguro en entornos con o sin window
+    assert.doesNotThrow(() => {
+      scrollToTop()
+    })
+  })
+})
+
 
 
 

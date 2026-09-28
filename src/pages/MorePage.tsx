@@ -15,6 +15,7 @@ import { ReceivablesPage } from './ReceivablesPage'
 import { selectPendingDebtors } from '../utils/sharedExpenseSelectors'
 import { useEdgeSwipeBack } from '../hooks/useEdgeSwipeBack'
 import { getAppVersionString, getAppBuildString } from '../version'
+import { scrollToTop } from '../utils/scroll'
 
 import type { Transaction } from '../models/finance'
 
@@ -33,7 +34,9 @@ export type MoreSubView =
 export function MorePage({
   finance,
   user,
+  subView: controlledSubView,
   initialSubView = 'menu',
+  onSubViewChange,
   onNavigateToSavings,
   onRecordReimbursement,
   onSelectTransaction,
@@ -42,20 +45,30 @@ export function MorePage({
 }: {
   finance: ReturnTypeFinance
   user?: User | null
+  subView?: MoreSubView
   initialSubView?: MoreSubView
+  onSubViewChange?: (subView: MoreSubView) => void
   onNavigateToSavings?: () => void
   onRecordReimbursement?: (shareId: string) => void
   onSelectTransaction?: (tx: Transaction) => void
   onToast?: (message: string, type?: 'success' | 'error') => void
   onSignOut?: () => void
 }) {
-  const [subView, setSubView] = useState<MoreSubView>(initialSubView)
+  const [internalSubView, setInternalSubView] = useState<MoreSubView>(controlledSubView ?? initialSubView)
+
+  const subView = controlledSubView !== undefined ? controlledSubView : internalSubView
+
+  const setSubView = useCallback((next: MoreSubView) => {
+    setInternalSubView(next)
+    onSubViewChange?.(next)
+    scrollToTop()
+  }, [onSubViewChange])
 
   const isAdmin = finance.profile?.role === 'admin'
 
   const handleBackToMenu = useCallback(() => {
     setSubView('menu')
-  }, [])
+  }, [setSubView])
 
   // Hook global de Swipe Back desde el borde izquierdo en todas las subviews de Más
   useEdgeSwipeBack({
@@ -63,11 +76,19 @@ export function MorePage({
     enabled: subView !== 'menu',
   })
 
+  // Sincronizar si cambia controlledSubView o initialSubView
   useEffect(() => {
-    if (initialSubView) {
-      setSubView(initialSubView)
+    if (controlledSubView !== undefined) {
+      setInternalSubView(controlledSubView)
+    } else if (initialSubView) {
+      setInternalSubView(initialSubView)
     }
-  }, [initialSubView])
+  }, [controlledSubView, initialSubView])
+
+  // Resetear scroll siempre que cambie la subvista activa
+  useEffect(() => {
+    scrollToTop()
+  }, [subView])
 
   if (subView === 'profile') {
     return (
