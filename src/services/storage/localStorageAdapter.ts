@@ -62,7 +62,12 @@ export function migratePersistedState(parsed: Partial<PersistedState>): Persiste
     reserves,
     specialPeriods: parsed.specialPeriods ?? [],
     planSettings: parsed.planSettings ?? cleanPlanSettings,
-    profile: parsed.profile ? { displayName: String(parsed.profile.displayName ?? '') } : { displayName: '' },
+    profile: parsed.profile
+      ? {
+          displayName: String(parsed.profile.displayName ?? ''),
+          role: parsed.profile.role === 'admin' ? 'admin' : 'user',
+        }
+      : { displayName: '', role: 'user' },
     variableExpenseEstimates: parsed.variableExpenseEstimates ?? [],
     sharedContacts: parsed.sharedContacts ?? [],
     expenseShares: parsed.expenseShares ?? [],

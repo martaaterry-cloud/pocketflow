@@ -206,11 +206,14 @@ export interface FinancialPlanSettings {
 
 export type UpdatePlanSettingsInput = Partial<FinancialPlanSettings>
  
+export type UserRole = 'user' | 'admin'
+
 /**
  * Perfil privado del usuario para personalización y saludo.
  */
 export interface UserProfile {
   displayName: string
+  role?: UserRole
 }
 
 export type UpdateProfileInput = Partial<UserProfile>

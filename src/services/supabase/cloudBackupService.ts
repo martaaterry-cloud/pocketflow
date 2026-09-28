@@ -39,10 +39,13 @@ export function sanitizeStateForBackup(state: PersistedState): PersistedState {
     reserves: state.reserves ?? [],
     specialPeriods: state.specialPeriods ?? [],
     planSettings: state.planSettings,
-    profile: state.profile ? { displayName: state.profile.displayName } : undefined,
+    profile: state.profile
+      ? { displayName: state.profile.displayName, role: state.profile.role ?? 'user' }
+      : undefined,
     variableExpenseEstimates: state.variableExpenseEstimates ?? [],
     sharedContacts: state.sharedContacts ?? [],
     expenseShares: state.expenseShares ?? [],
+    cashTransactions: state.cashTransactions ?? [],
   }
 }
 
@@ -268,6 +271,9 @@ export async function restoreCloudBackup(
 
     // 2. Migrar y sanear datos a restaurar
     const cleanPayload = migratePersistedState(backupToRestore.payload)
+    if (cleanPayload.profile) {
+      cleanPayload.profile.role = currentState.profile?.role ?? 'user'
+    }
 
     // 3. Subir el estado restaurado a Supabase
     if (typeof navigator !== 'undefined' && navigator.onLine) {

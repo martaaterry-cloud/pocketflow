@@ -119,7 +119,7 @@ export function SettingsPage({
         {/* Identificación de Versión y Build */}
         <footer className="app-version-footer" style={{ marginTop: 20 }}>
           <span className="app-version-text">{getAppVersionString()}</span>
-          <small className="app-build-text">{getAppBuildString()}</small>
+          {finance.profile?.role === 'admin' && <small className="app-build-text">{getAppBuildString()}</small>}
         </footer>
       </form>
     </main>

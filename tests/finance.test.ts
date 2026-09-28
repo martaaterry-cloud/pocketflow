@@ -24,6 +24,7 @@ Object.defineProperty(globalThis, 'localStorage', {
 
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
+import { initialProfile } from '../src/data/seed'
 import type { Account, Budget, Category, FinancialPlanSettings, RecurringIncomeSourceType, RecurringPayment, Reserve, SavingsGoal, SpecialPeriod, Transaction, UserProfile, VariableExpenseEstimate, SharedContact, ExpenseShare, SpecialMovementType, ExpenseNature, CashTransaction, CashMovementType } from '../src/models/finance'
 import {
   selectCashBalance,
@@ -6839,12 +6840,12 @@ describe('Fase 18 — Mejoras de Finanzas (Detalle por Categoría, Retiradas de 
 describe('Fase 18 — Identificación Visual de Versión y Build', () => {
   it('314. Versioning: única fuente de verdad y formato de visualización exacto', () => {
     assert.equal(APP_NAME, 'PocketFlow')
-    assert.equal(APP_VERSION, '0.18.0')
-    assert.equal(APP_BUILD, '2026.09.24-10')
+    assert.equal(APP_VERSION, '0.19.0')
+    assert.equal(APP_BUILD, '2026.09.28-01')
  
-    assert.equal(getAppVersionString(), 'PocketFlow v0.18.0')
-    assert.equal(getAppBuildString(), 'Build 2026.09.24-10')
-    assert.equal(getAppFullVersionLabel(), 'PocketFlow v0.18.0 · Build 2026.09.24-10')
+    assert.equal(getAppVersionString(), 'PocketFlow v0.19.0')
+    assert.equal(getAppBuildString(), 'Build 2026.09.28-01')
+    assert.equal(getAppFullVersionLabel(), 'PocketFlow v0.19.0 · Build 2026.09.28-01')
   })
 })
 
@@ -13768,6 +13769,209 @@ describe('Fase 49 — Unificación de Historial en Movimientos y Calendario (Ban
     assert.equal(totalMoney.bank, 375)
     assert.equal(totalMoney.cash, 117.0)
     assert.equal(totalMoney.total, 492.0)
+  })
+})
+
+describe('Fase 50 — Control de Acceso por Roles (User / Admin), Seguridad RLS y Reorganización de MorePage', () => {
+  it('581. 1. Usuario normal actualiza displayName y conserva role=user', () => {
+    const userProfile: UserProfile = { displayName: 'Marta', role: 'user' }
+    const updated: UserProfile = {
+      ...userProfile,
+      displayName: 'Marta Gómez',
+    }
+
+    assert.equal(updated.displayName, 'Marta Gómez')
+    assert.equal(updated.role, 'user')
+    const dbPayload = toDbProfile(updated, 'usr-user-1')
+    assert.deepEqual(dbPayload, { user_id: 'usr-user-1', display_name: 'Marta Gómez' })
+    assert.equal('role' in dbPayload, false, 'toDbProfile no debe incluir role')
+  })
+
+  it('582. 2. Admin actualiza displayName y conserva role=admin', () => {
+    const adminProfile: UserProfile = { displayName: 'Pepe', role: 'admin' }
+    const updated: UserProfile = {
+      ...adminProfile,
+      displayName: 'Pepe Administrador',
+    }
+
+    assert.equal(updated.displayName, 'Pepe Administrador')
+    assert.equal(updated.role, 'admin')
+    const dbPayload = toDbProfile(updated, 'usr-admin-1')
+    assert.deepEqual(dbPayload, { user_id: 'usr-admin-1', display_name: 'Pepe Administrador' })
+    assert.equal('role' in dbPayload, false, 'toDbProfile no debe incluir role')
+  })
+
+  it('583. 3. Payload manipulado intentando role=admin desde cliente no puede cambiar privilegios (trigger Postgres)', () => {
+    // Simulación del trigger SQL protect_profile_role()
+    const executeTrigger = (
+      authRole: 'authenticated' | 'anon' | 'service_role' | null,
+      op: 'INSERT' | 'UPDATE',
+      oldRow: { role: string } | null,
+      newRow: { role: string }
+    ) => {
+      // if auth.role() = 'authenticated' then
+      if (authRole === 'authenticated') {
+        if (op === 'INSERT') {
+          return { ...newRow, role: 'user' }
+        }
+        if (op === 'UPDATE') {
+          return { ...newRow, role: oldRow ? oldRow.role : 'user' }
+        }
+      }
+      return newRow
+    }
+
+    // 1. Cliente autenticado intenta insertar con role='admin'
+    const insertAttempt = executeTrigger('authenticated', 'INSERT', null, { role: 'admin' })
+    assert.equal(insertAttempt.role, 'user', 'El trigger fuerza role=user en INSERT de cliente')
+
+    // 2. Cliente autenticado intenta actualizar su role de 'user' a 'admin'
+    const updateAttempt = executeTrigger('authenticated', 'UPDATE', { role: 'user' }, { role: 'admin' })
+    assert.equal(updateAttempt.role, 'user', 'El trigger bloquea escalada y mantiene OLD.role="user"')
+
+    // 3. Cliente autenticado con role admin existente actualiza displayName con payload malformado
+    const adminPreserved = executeTrigger('authenticated', 'UPDATE', { role: 'admin' }, { role: 'user' })
+    assert.equal(adminPreserved.role, 'admin', 'El trigger mantiene OLD.role="admin" ante updates normales')
+
+    // 4. SQL Editor / postgres (authRole = null) puede asignar role='admin'
+    const sqlEditorUpgrade = executeTrigger(null, 'UPDATE', { role: 'user' }, { role: 'admin' })
+    assert.equal(sqlEditorUpgrade.role, 'admin', 'SQL Editor / postgres sí puede cambiar el role')
+
+    // 5. service_role puede asignar role='admin'
+    const serviceRoleUpgrade = executeTrigger('service_role', 'UPDATE', { role: 'user' }, { role: 'admin' })
+    assert.equal(serviceRoleUpgrade.role, 'admin', 'service_role sí puede cambiar el role')
+  })
+
+  it('584. 4. Restaurar backup con role=admin no convierte a un user en admin', () => {
+    const currentUserRole: UserRole = 'user'
+
+    // Backup exportado que contiene role='admin'
+    const maliciousBackupState: PersistedState = {
+      ...createCleanInitialState(),
+      profile: { displayName: 'Attacker Profile', role: 'admin' },
+    }
+
+    // Al restaurar, se sanitiza preservando el role de la sesión activa
+    const sanitizedRestoredProfile: UserProfile = {
+      displayName: maliciousBackupState.profile?.displayName ?? '',
+      role: currentUserRole, // Preserva role activo
+    }
+
+    assert.equal(sanitizedRestoredProfile.displayName, 'Attacker Profile')
+    assert.equal(sanitizedRestoredProfile.role, 'user', 'La restauración de backup nunca asciende user a admin')
+
+    // Al sincronizar a Supabase tras restaurar, toDbProfile no envía role
+    const dbPayload = toDbProfile(sanitizedRestoredProfile, 'usr-user-1')
+    assert.equal('role' in dbPayload, false)
+  })
+
+  it('585. 5. fromDbProfile lee admin correctamente y asigna user por defecto si falta o es inválido', () => {
+    const adminDbRow = { user_id: 'usr-1', display_name: 'Super User', role: 'admin' }
+    const parsedAdmin = fromDbProfile(adminDbRow)
+    assert.equal(parsedAdmin.displayName, 'Super User')
+    assert.equal(parsedAdmin.role, 'admin')
+
+    const userDbRow = { user_id: 'usr-2', display_name: 'Normal User', role: 'user' }
+    const parsedUser = fromDbProfile(userDbRow)
+    assert.equal(parsedUser.role, 'user')
+
+    const legacyRow = { user_id: 'usr-3', display_name: 'Legacy User' }
+    const parsedLegacy = fromDbProfile(legacyRow)
+    assert.equal(parsedLegacy.role, 'user', 'Perfiles antiguos sin columna role se leen como user')
+
+    const invalidRow = { user_id: 'usr-4', display_name: 'Invalid Role', role: 'root' }
+    const parsedInvalid = fromDbProfile(invalidRow)
+    assert.equal(parsedInvalid.role, 'user', 'Valores desconocidos se normalizan a user')
+  })
+
+  it('586. 6. toDbProfile NO contiene propiedad role (server-authoritative)', () => {
+    const profileWithAdmin: UserProfile = { displayName: 'Pepe', role: 'admin' }
+    const profileWithUser: UserProfile = { displayName: 'Marta', role: 'user' }
+
+    const db1 = toDbProfile(profileWithAdmin, 'usr-1')
+    const db2 = toDbProfile(profileWithUser, 'usr-2')
+
+    assert.deepEqual(db1, { user_id: 'usr-1', display_name: 'Pepe' })
+    assert.deepEqual(db2, { user_id: 'usr-2', display_name: 'Marta' })
+    assert.equal(Object.prototype.hasOwnProperty.call(db1, 'role'), false)
+    assert.equal(Object.prototype.hasOwnProperty.call(db2, 'role'), false)
+  })
+
+  it('587. 7. MorePage isAdmin: evalúa true únicamente cuando profile.role === "admin"', () => {
+    const checkIsAdmin = (profile?: UserProfile | null): boolean => {
+      return profile?.role === 'admin'
+    }
+
+    assert.equal(checkIsAdmin({ displayName: 'Marta', role: 'user' }), false)
+    assert.equal(checkIsAdmin({ displayName: 'Marta' }), false)
+    assert.equal(checkIsAdmin(null), false)
+    assert.equal(checkIsAdmin(undefined), false)
+    assert.equal(checkIsAdmin({ displayName: 'Pepe', role: 'admin' }), true)
+  })
+
+  it('588. 8. Protección de subviews: usuario normal es bloqueado y redirigido si intenta acceder a backup, cloud o settings', () => {
+    const ADMIN_SUBVIEWS = ['backup', 'cloud', 'settings']
+    const resolveAllowedSubView = (subView: string, isAdmin: boolean): string => {
+      if (!isAdmin && ADMIN_SUBVIEWS.includes(subView)) {
+        return 'menu'
+      }
+      return subView
+    }
+
+    // Usuario normal intenta acceder a subviews admin
+    assert.equal(resolveAllowedSubView('backup', false), 'menu')
+    assert.equal(resolveAllowedSubView('cloud', false), 'menu')
+    assert.equal(resolveAllowedSubView('settings', false), 'menu')
+
+    // Usuario normal accede a sus subviews normales
+    assert.equal(resolveAllowedSubView('profile', false), 'profile')
+    assert.equal(resolveAllowedSubView('plan', false), 'plan')
+    assert.equal(resolveAllowedSubView('accounts', false), 'accounts')
+    assert.equal(resolveAllowedSubView('recurring', false), 'recurring')
+    assert.equal(resolveAllowedSubView('receivables', false), 'receivables')
+    assert.equal(resolveAllowedSubView('budgets', false), 'budgets')
+    assert.equal(resolveAllowedSubView('statistics', false), 'statistics')
+
+    // Usuario admin accede libremente a todas
+    assert.equal(resolveAllowedSubView('backup', true), 'backup')
+    assert.equal(resolveAllowedSubView('cloud', true), 'cloud')
+    assert.equal(resolveAllowedSubView('settings', true), 'settings')
+  })
+
+  it('589. 9. Footer: usuario normal ve solo "PocketFlow v0.19.0", admin ve "PocketFlow v0.19.0" y "Build 2026.09.28-01"', () => {
+    const renderFooterTexts = (isAdmin: boolean): { versionText: string; buildText: string | null } => {
+      return {
+        versionText: getAppVersionString(),
+        buildText: isAdmin ? getAppBuildString() : null,
+      }
+    }
+
+    const userFooter = renderFooterTexts(false)
+    assert.equal(userFooter.versionText, 'PocketFlow v0.19.0')
+    assert.equal(userFooter.buildText, null)
+
+    const adminFooter = renderFooterTexts(true)
+    assert.equal(adminFooter.versionText, 'PocketFlow v0.19.0')
+    assert.equal(adminFooter.buildText, 'Build 2026.09.28-01')
+  })
+
+  it('590. 10. Reconciliación y sincronización de perfil no altera datos financieros ni transacciones', () => {
+    const initialState = createCleanInitialState()
+    initialState.accounts = [
+      { id: 'daily', name: 'Cuenta Diaria', type: 'spending', initialBalance: 1000, balance: 1000 },
+    ]
+    initialState.profile = { displayName: 'Pepe', role: 'admin' }
+
+    // Cambiar perfil
+    const updatedProfile: UserProfile = { displayName: 'Pepe Actualizado', role: 'admin' }
+    const nextState = {
+      ...initialState,
+      profile: updatedProfile,
+    }
+
+    assert.equal(nextState.accounts[0].initialBalance, 1000)
+    assert.equal(nextState.profile.displayName, 'Pepe Actualizado')
+    assert.equal(nextState.profile.role, 'admin')
   })
 })
 

@@ -20,6 +20,7 @@ import {
   LAST_CLOUD_AUTO_BACKUP_KEY,
 } from '../services/supabase/cloudBackupService'
 import { uploadStateToSupabase } from '../services/supabase/supabaseSync'
+import type { PersistedState } from '../services/storage/storageAdapter'
 
 interface BackupPageProps {
   finance: FinanceStore
@@ -253,10 +254,18 @@ export function BackupPage({ finance, onBack, onToast }: BackupPageProps) {
         await createCloudBackup(supabase, user.id, finance.getFullState(), 'pre_restore')
       }
 
-      await finance.restoreState(pendingJsonRestore.state)
+      const stateToRestore: PersistedState = {
+        ...pendingJsonRestore.state,
+        profile: {
+          displayName: pendingJsonRestore.state.profile?.displayName ?? finance.profile?.displayName ?? '',
+          role: finance.profile?.role ?? 'user',
+        },
+      }
+
+      await finance.restoreState(stateToRestore)
 
       if (user && isOnline) {
-        await uploadStateToSupabase(supabase, user.id, pendingJsonRestore.state)
+        await uploadStateToSupabase(supabase, user.id, stateToRestore)
       }
 
       setPendingJsonRestore(null)

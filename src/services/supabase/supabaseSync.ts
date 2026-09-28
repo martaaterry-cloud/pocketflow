@@ -16,6 +16,7 @@ import type {
   ExpenseShare,
   RecurringSharingTemplate,
   UserProfile,
+  UserRole,
   VariableExpenseEstimate,
   CashTransaction,
   CashMovementType,
@@ -346,6 +347,7 @@ export function toDbProfile(p: UserProfile, userId: string) {
 export function fromDbProfile(row: Record<string, unknown>): UserProfile {
   return {
     displayName: String(row.display_name ?? ''),
+    role: (row.role === 'admin' ? 'admin' : 'user') as UserRole,
   }
 }
 
@@ -532,7 +534,7 @@ export async function fetchRemoteState(
     recurring: (recurringRes.data ?? []).map(fromDbRecurring),
     specialPeriods: (periodsRes.data ?? []).map(fromDbSpecialPeriod),
     planSettings: settingsRes.data ? fromDbPlanSettings(settingsRes.data) : undefined,
-    profile: profileRes.data ? fromDbProfile(profileRes.data) : { displayName: '' },
+    profile: profileRes.data ? fromDbProfile(profileRes.data) : { displayName: '', role: 'user' },
     variableExpenseEstimates: (estimatesRes.data ?? []).map(fromDbVariableExpenseEstimate),
     sharedContacts: (contactsRes.data ?? []).map(fromDbSharedContact),
     expenseShares: (sharesRes.data ?? []).map(fromDbExpenseShare),

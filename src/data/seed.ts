@@ -17,6 +17,7 @@ import type {
 
 export const initialProfile: UserProfile = {
   displayName: '',
+  role: 'user',
 }
 
 export const categories: Category[] = [

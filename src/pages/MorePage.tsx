@@ -34,6 +34,8 @@ export type MoreSubView =
   | 'backup'
   | 'cloud'
 
+const ADMIN_SUBVIEWS: MoreSubView[] = ['backup', 'cloud', 'settings']
+
 export function MorePage({
   finance,
   user,
@@ -55,6 +57,8 @@ export function MorePage({
 }) {
   const [subView, setSubView] = useState<MoreSubView>(initialSubView)
 
+  const isAdmin = finance.profile?.role === 'admin'
+
   const handleBackToMenu = useCallback(() => {
     setSubView('menu')
   }, [])
@@ -67,16 +71,30 @@ export function MorePage({
 
   useEffect(() => {
     if (initialSubView) {
-      setSubView(initialSubView)
+      if (!isAdmin && ADMIN_SUBVIEWS.includes(initialSubView)) {
+        setSubView('menu')
+      } else {
+        setSubView(initialSubView)
+      }
     }
-  }, [initialSubView])
+  }, [initialSubView, isAdmin])
+
+  useEffect(() => {
+    if (!isAdmin && ADMIN_SUBVIEWS.includes(subView)) {
+      setSubView('menu')
+    }
+  }, [isAdmin, subView])
+
+  if (ADMIN_SUBVIEWS.includes(subView) && !isAdmin) {
+    return null
+  }
 
   if (subView === 'profile') {
     return (
       <ProfilePage
         finance={finance}
         user={user ?? null}
-        onBack={() => setSubView('menu')}
+        onBack={handleBackToMenu}
         onToast={onToast}
       />
     )
@@ -87,7 +105,7 @@ export function MorePage({
       <CloudSettingsPage
         finance={finance}
         user={user ?? null}
-        onBack={() => setSubView('menu')}
+        onBack={handleBackToMenu}
         onToast={onToast ?? (() => {})}
         onSignOut={onSignOut ?? (() => {})}
       />
@@ -98,47 +116,47 @@ export function MorePage({
     return (
       <BackupPage
         finance={finance}
-        onBack={() => setSubView('menu')}
+        onBack={handleBackToMenu}
         onToast={onToast ?? (() => {})}
       />
     )
   }
 
   if (subView === 'accounts') {
-    return <AccountsPage finance={finance} onBack={() => setSubView('menu')} />
+    return <AccountsPage finance={finance} onBack={handleBackToMenu} />
   }
 
   if (subView === 'settings') {
-    return <SettingsPage finance={finance} onBack={() => setSubView('menu')} />
+    return <SettingsPage finance={finance} onBack={handleBackToMenu} />
   }
 
   if (subView === 'recurring') {
-    return <RecurringPaymentsPage finance={finance} onBack={() => setSubView('menu')} />
+    return <RecurringPaymentsPage finance={finance} onBack={handleBackToMenu} />
   }
 
   if (subView === 'variable_estimates') {
-    return <VariableEstimatesPage finance={finance} onBack={() => setSubView('menu')} />
+    return <VariableEstimatesPage finance={finance} onBack={handleBackToMenu} />
   }
 
   if (subView === 'receivables') {
     return (
       <ReceivablesPage
         finance={finance}
-        onBack={() => setSubView('menu')}
+        onBack={handleBackToMenu}
         onRecordReimbursement={onRecordReimbursement ?? (() => {})}
       />
     )
   }
 
   if (subView === 'budgets') {
-    return <BudgetsPage finance={finance} onBack={() => setSubView('menu')} />
+    return <BudgetsPage finance={finance} onBack={handleBackToMenu} />
   }
 
   if (subView === 'statistics') {
     return (
       <StatisticsPage
         finance={finance}
-        onBack={() => setSubView('menu')}
+        onBack={handleBackToMenu}
         onSelectTransaction={onSelectTransaction}
       />
     )
@@ -148,7 +166,7 @@ export function MorePage({
     return (
       <PlanFinancialPage
         finance={finance}
-        onBack={() => setSubView('menu')}
+        onBack={handleBackToMenu}
         onNavigateToRecurring={() => setSubView('recurring')}
         onNavigateToSavings={onNavigateToSavings}
       />
@@ -192,187 +210,214 @@ export function MorePage({
         )}
       </section>
 
-      {/* Menú de Opciones */}
-      <section className="menu-card">
-        <button type="button" onClick={() => setSubView('profile')}>
-          <span className="menu-icon">
-            <AppIcon name="user" size={18} />
-          </span>
-          <div>
-            <strong>Perfil</strong>
-            <small>{finance.profile?.displayName ? finance.profile.displayName : 'Nombre y usuario'}</small>
-          </div>
-          <b className="chevron">
-            <AppIcon name="chevron-right" size={16} />
-          </b>
-        </button>
+      {/* FINANZAS */}
+      <section className="menu-group">
+        <div className="menu-group-title">Finanzas</div>
+        <div className="menu-card">
+          {/* Plan Financiero */}
+          <button type="button" onClick={() => setSubView('plan')}>
+            <span className="menu-icon">
+              <AppIcon name="shield-check" size={18} />
+            </span>
+            <div>
+              <strong>Plan financiero</strong>
+              <small>Fondo de emergencia, reservas y estacionalidad</small>
+            </div>
+            <b className="chevron">
+              <AppIcon name="chevron-right" size={16} />
+            </b>
+          </button>
 
-        {/* Plan Financiero */}
-        <button type="button" onClick={() => setSubView('plan')}>
-          <span className="menu-icon">
-            <AppIcon name="shield-check" size={18} />
-          </span>
-          <div>
-            <strong>Plan financiero</strong>
-            <small>Fondo de emergencia, reservas y estacionalidad</small>
-          </div>
-          <b className="chevron">
-            <AppIcon name="chevron-right" size={16} />
-          </b>
-        </button>
+          {/* Cuentas */}
+          <button type="button" onClick={() => setSubView('accounts')}>
+            <span className="menu-icon">
+              <AppIcon name="credit-card" size={18} />
+            </span>
+            <div>
+              <strong>Cuentas</strong>
+              <small>Cuenta diaria, Ahorro y saldos derivados</small>
+            </div>
+            <b className="chevron">
+              <AppIcon name="chevron-right" size={16} />
+            </b>
+          </button>
 
-        <button type="button" onClick={() => setSubView('accounts')}>
-          <span className="menu-icon">
-            <AppIcon name="credit-card" size={18} />
-          </span>
-          <div>
-            <strong>Cuentas</strong>
-            <small>Cuenta diaria, Ahorro y saldos derivados</small>
-          </div>
-          <b className="chevron">
-            <AppIcon name="chevron-right" size={16} />
-          </b>
-        </button>
+          {/* Ahorro */}
+          <button
+            type="button"
+            onClick={() => {
+              if (onNavigateToSavings) {
+                onNavigateToSavings()
+              }
+            }}
+          >
+            <span className="menu-icon">
+              <AppIcon name="piggy-bank" size={18} />
+            </span>
+            <div>
+              <strong>Ahorro</strong>
+              <small>
+                Fondo de emergencia, metas y reservas · {money(finance.totals.savingsBalance)}
+              </small>
+            </div>
+            <b className="chevron">
+              <AppIcon name="chevron-right" size={16} />
+            </b>
+          </button>
 
-        <button
-          type="button"
-          onClick={() => {
-            if (onNavigateToSavings) {
-              onNavigateToSavings()
-            }
-          }}
-        >
-          <span className="menu-icon">
-            <AppIcon name="piggy-bank" size={18} />
-          </span>
-          <div>
-            <strong>Ahorro</strong>
-            <small>
-              Fondo de emergencia, metas y reservas · {money(finance.totals.savingsBalance)}
-            </small>
-          </div>
-          <b className="chevron">
-            <AppIcon name="chevron-right" size={16} />
-          </b>
-        </button>
+          {/* Recurrentes */}
+          <button type="button" onClick={() => setSubView('recurring')}>
+            <span className="menu-icon">
+              <AppIcon name="refresh-cw" size={18} />
+            </span>
+            <div>
+              <strong>Recurrentes</strong>
+              <small>
+                Pagos e ingresos programados
+              </small>
+            </div>
+            <b className="chevron">
+              <AppIcon name="chevron-right" size={16} />
+            </b>
+          </button>
 
-        <button type="button" onClick={() => setSubView('recurring')}>
-          <span className="menu-icon">
-            <AppIcon name="refresh-cw" size={18} />
-          </span>
-          <div>
-            <strong>Recurrentes</strong>
-            <small>
-              Pagos e ingresos programados
-            </small>
-          </div>
-          <b className="chevron">
-            <AppIcon name="chevron-right" size={16} />
-          </b>
-        </button>
+          {/* Gastos variables previstos */}
+          <button type="button" onClick={() => setSubView('variable_estimates')}>
+            <span className="menu-icon">
+              <AppIcon name="activity" size={18} />
+            </span>
+            <div>
+              <strong>Gastos variables previstos</strong>
+              <small>
+                {finance.variableExpenseEstimates?.length ?? 0} previstos · {money(finance.totals.variableEstimatesSummary?.totalEstimatedMonthly ?? 0)}/mes aprox.
+              </small>
+            </div>
+            <b className="chevron">
+              <AppIcon name="chevron-right" size={16} />
+            </b>
+          </button>
 
-        <button type="button" onClick={() => setSubView('variable_estimates')}>
-          <span className="menu-icon">
-            <AppIcon name="activity" size={18} />
-          </span>
-          <div>
-            <strong>Gastos variables previstos</strong>
-            <small>
-              {finance.variableExpenseEstimates?.length ?? 0} previstos · {money(finance.totals.variableEstimatesSummary?.totalEstimatedMonthly ?? 0)}/mes aprox.
-            </small>
-          </div>
-          <b className="chevron">
-            <AppIcon name="chevron-right" size={16} />
-          </b>
-        </button>
+          {/* Por cobrar */}
+          <button type="button" onClick={() => setSubView('receivables')}>
+            <span className="menu-icon" style={{ background: 'rgba(124, 58, 237, 0.1)', color: '#7c3aed' }}>
+              <AppIcon name="users" size={18} />
+            </span>
+            <div>
+              <strong>Por cobrar</strong>
+              <small>
+                {money(finance.totals.pendingReimbursements)} pendientes · {pendingDebtors.length} {pendingDebtors.length === 1 ? 'persona' : 'personas'}
+              </small>
+            </div>
+            <b className="chevron">
+              <AppIcon name="chevron-right" size={16} />
+            </b>
+          </button>
 
-        <button type="button" onClick={() => setSubView('receivables')}>
-          <span className="menu-icon" style={{ background: 'rgba(124, 58, 237, 0.1)', color: '#7c3aed' }}>
-            <AppIcon name="users" size={18} />
-          </span>
-          <div>
-            <strong>Por cobrar</strong>
-            <small>
-              {money(finance.totals.pendingReimbursements)} pendientes · {pendingDebtors.length} {pendingDebtors.length === 1 ? 'persona' : 'personas'}
-            </small>
-          </div>
-          <b className="chevron">
-            <AppIcon name="chevron-right" size={16} />
-          </b>
-        </button>
+          {/* Presupuestos */}
+          <button type="button" onClick={() => setSubView('budgets')}>
+            <span className="menu-icon">
+              <AppIcon name="target" size={18} />
+            </span>
+            <div>
+              <strong>Presupuestos</strong>
+              <small>
+                {finance.budgets.length} límites por categoría · {finance.totals.budgetsSummary.overallUsagePercentage}% consumido
+              </small>
+            </div>
+            <b className="chevron">
+              <AppIcon name="chevron-right" size={16} />
+            </b>
+          </button>
 
-        <button type="button" onClick={() => setSubView('budgets')}>
-          <span className="menu-icon">
-            <AppIcon name="target" size={18} />
-          </span>
-          <div>
-            <strong>Presupuestos</strong>
-            <small>
-              {finance.budgets.length} límites por categoría · {finance.totals.budgetsSummary.overallUsagePercentage}% consumido
-            </small>
-          </div>
-          <b className="chevron">
-            <AppIcon name="chevron-right" size={16} />
-          </b>
-        </button>
-
-        <button type="button" onClick={() => setSubView('statistics')}>
-          <span className="menu-icon">
-            <AppIcon name="chart-pie" size={18} />
-          </span>
-          <div>
-            <strong>Estadísticas</strong>
-            <small>Día, semana, mes y año con comparativas</small>
-          </div>
-          <b className="chevron">
-            <AppIcon name="chevron-right" size={16} />
-          </b>
-        </button>
-
-        <button type="button" onClick={() => setSubView('backup')}>
-          <span className="menu-icon">
-            <AppIcon name="cloud-upload" size={18} />
-          </span>
-          <div>
-            <strong>Copias de seguridad</strong>
-            <small>Copias en la nube y archivo JSON externo</small>
-          </div>
-          <b className="chevron">
-            <AppIcon name="chevron-right" size={16} />
-          </b>
-        </button>
-
-        <button type="button" onClick={() => setSubView('cloud')}>
-          <span className="menu-icon">
-            <AppIcon name="cloud" size={18} />
-          </span>
-          <div>
-            <strong>Nube y Atajo iPhone</strong>
-            <small>Sincronización Supabase y tokens de Atajos</small>
-          </div>
-          <b className="chevron">
-            <AppIcon name="chevron-right" size={16} />
-          </b>
-        </button>
-
-        <button type="button" onClick={() => setSubView('settings')}>
-          <span className="menu-icon">
-            <AppIcon name="settings" size={18} />
-          </span>
-          <div>
-            <strong>Ajustes</strong>
-            <small>Saldos iniciales y almacenamiento</small>
-          </div>
-          <b className="chevron">
-            <AppIcon name="chevron-right" size={16} />
-          </b>
-        </button>
+          {/* Estadísticas */}
+          <button type="button" onClick={() => setSubView('statistics')}>
+            <span className="menu-icon">
+              <AppIcon name="chart-pie" size={18} />
+            </span>
+            <div>
+              <strong>Estadísticas</strong>
+              <small>Día, semana, mes y año con comparativas</small>
+            </div>
+            <b className="chevron">
+              <AppIcon name="chevron-right" size={16} />
+            </b>
+          </button>
+        </div>
       </section>
+
+      {/* CUENTA */}
+      <section className="menu-group">
+        <div className="menu-group-title">Cuenta</div>
+        <div className="menu-card">
+          <button type="button" onClick={() => setSubView('profile')}>
+            <span className="menu-icon">
+              <AppIcon name="user" size={18} />
+            </span>
+            <div>
+              <strong>Perfil</strong>
+              <small>{finance.profile?.displayName ? finance.profile.displayName : 'Nombre y usuario'}</small>
+            </div>
+            <b className="chevron">
+              <AppIcon name="chevron-right" size={16} />
+            </b>
+          </button>
+        </div>
+      </section>
+
+      {/* ADMINISTRACIÓN (solo admin) */}
+      {isAdmin && (
+        <section className="menu-group">
+          <div className="menu-group-title">Administración</div>
+          <div className="menu-card">
+            {/* Copias de seguridad */}
+            <button type="button" onClick={() => setSubView('backup')}>
+              <span className="menu-icon">
+                <AppIcon name="cloud-upload" size={18} />
+              </span>
+              <div>
+                <strong>Copias de seguridad</strong>
+                <small>Copias en la nube y archivo JSON externo</small>
+              </div>
+              <b className="chevron">
+                <AppIcon name="chevron-right" size={16} />
+              </b>
+            </button>
+
+            {/* Nube y Atajo iPhone */}
+            <button type="button" onClick={() => setSubView('cloud')}>
+              <span className="menu-icon">
+                <AppIcon name="cloud" size={18} />
+              </span>
+              <div>
+                <strong>Nube y Atajo iPhone</strong>
+                <small>Sincronización Supabase y tokens de Atajos</small>
+              </div>
+              <b className="chevron">
+                <AppIcon name="chevron-right" size={16} />
+              </b>
+            </button>
+
+            {/* Ajustes técnicos */}
+            <button type="button" onClick={() => setSubView('settings')}>
+              <span className="menu-icon">
+                <AppIcon name="settings" size={18} />
+              </span>
+              <div>
+                <strong>Ajustes técnicos</strong>
+                <small>Saldos iniciales y almacenamiento</small>
+              </div>
+              <b className="chevron">
+                <AppIcon name="chevron-right" size={16} />
+              </b>
+            </button>
+          </div>
+        </section>
+      )}
 
       {/* Identificación de Versión y Build */}
       <footer className="app-version-footer">
         <span className="app-version-text">{getAppVersionString()}</span>
-        <small className="app-build-text">{getAppBuildString()}</small>
+        {isAdmin && <small className="app-build-text">{getAppBuildString()}</small>}
       </footer>
     </main>
   )
