@@ -1,0 +1,15 @@
+{
+  "project": "Pocketflow",
+  "platform": "ios",
+  "github": {
+    "owner": "martaaterry-cloud",
+    "repo": "pocketflow"
+  },
+  "ios": {
+    "path": "ios/App",
+    "scheme": "App",
+    "bundleId": "com.martaaterry.pocketflow",
+    "configuration": "Release"
+  },
+  "signing": false
+}
