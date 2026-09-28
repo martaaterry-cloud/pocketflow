@@ -4,12 +4,10 @@ import { money } from '../utils/money'
 import { AppIcon } from '../ui/icons'
 import type { User } from '@supabase/supabase-js'
 import { BackupPage } from './BackupPage'
-import { CloudSettingsPage } from './CloudSettingsPage'
 import { AccountsPage } from './AccountsPage'
 import { BudgetsPage } from './BudgetsPage'
 import { PlanFinancialPage } from './PlanFinancialPage'
 import { RecurringPaymentsPage } from './RecurringPaymentsPage'
-import { SettingsPage } from './SettingsPage'
 import { StatisticsPage } from './StatisticsPage'
 import { ProfilePage } from './ProfilePage'
 import { VariableEstimatesPage } from './VariableEstimatesPage'
@@ -24,7 +22,6 @@ export type MoreSubView =
   | 'menu'
   | 'profile'
   | 'accounts'
-  | 'settings'
   | 'recurring'
   | 'variable_estimates'
   | 'receivables'
@@ -32,9 +29,6 @@ export type MoreSubView =
   | 'statistics'
   | 'plan'
   | 'backup'
-  | 'cloud'
-
-const ADMIN_SUBVIEWS: MoreSubView[] = ['backup', 'cloud', 'settings']
 
 export function MorePage({
   finance,
@@ -71,23 +65,9 @@ export function MorePage({
 
   useEffect(() => {
     if (initialSubView) {
-      if (!isAdmin && ADMIN_SUBVIEWS.includes(initialSubView)) {
-        setSubView('menu')
-      } else {
-        setSubView(initialSubView)
-      }
+      setSubView(initialSubView)
     }
-  }, [initialSubView, isAdmin])
-
-  useEffect(() => {
-    if (!isAdmin && ADMIN_SUBVIEWS.includes(subView)) {
-      setSubView('menu')
-    }
-  }, [isAdmin, subView])
-
-  if (ADMIN_SUBVIEWS.includes(subView) && !isAdmin) {
-    return null
-  }
+  }, [initialSubView])
 
   if (subView === 'profile') {
     return (
@@ -96,18 +76,7 @@ export function MorePage({
         user={user ?? null}
         onBack={handleBackToMenu}
         onToast={onToast}
-      />
-    )
-  }
-
-  if (subView === 'cloud') {
-    return (
-      <CloudSettingsPage
-        finance={finance}
-        user={user ?? null}
-        onBack={handleBackToMenu}
-        onToast={onToast ?? (() => {})}
-        onSignOut={onSignOut ?? (() => {})}
+        onSignOut={onSignOut}
       />
     )
   }
@@ -124,10 +93,6 @@ export function MorePage({
 
   if (subView === 'accounts') {
     return <AccountsPage finance={finance} onBack={handleBackToMenu} />
-  }
-
-  if (subView === 'settings') {
-    return <SettingsPage finance={finance} onBack={handleBackToMenu} />
   }
 
   if (subView === 'recurring') {
@@ -349,6 +314,7 @@ export function MorePage({
       <section className="menu-group">
         <div className="menu-group-title">Cuenta</div>
         <div className="menu-card">
+          {/* Perfil */}
           <button type="button" onClick={() => setSubView('profile')}>
             <span className="menu-icon">
               <AppIcon name="user" size={18} />
@@ -361,58 +327,22 @@ export function MorePage({
               <AppIcon name="chevron-right" size={16} />
             </b>
           </button>
+
+          {/* Copias de seguridad */}
+          <button type="button" onClick={() => setSubView('backup')}>
+            <span className="menu-icon">
+              <AppIcon name="cloud-upload" size={18} />
+            </span>
+            <div>
+              <strong>Copias de seguridad</strong>
+              <small>Copias en la nube y archivo JSON externo</small>
+            </div>
+            <b className="chevron">
+              <AppIcon name="chevron-right" size={16} />
+            </b>
+          </button>
         </div>
       </section>
-
-      {/* ADMINISTRACIÓN (solo admin) */}
-      {isAdmin && (
-        <section className="menu-group">
-          <div className="menu-group-title">Administración</div>
-          <div className="menu-card">
-            {/* Copias de seguridad */}
-            <button type="button" onClick={() => setSubView('backup')}>
-              <span className="menu-icon">
-                <AppIcon name="cloud-upload" size={18} />
-              </span>
-              <div>
-                <strong>Copias de seguridad</strong>
-                <small>Copias en la nube y archivo JSON externo</small>
-              </div>
-              <b className="chevron">
-                <AppIcon name="chevron-right" size={16} />
-              </b>
-            </button>
-
-            {/* Nube y Atajo iPhone */}
-            <button type="button" onClick={() => setSubView('cloud')}>
-              <span className="menu-icon">
-                <AppIcon name="cloud" size={18} />
-              </span>
-              <div>
-                <strong>Nube y Atajo iPhone</strong>
-                <small>Sincronización Supabase y tokens de Atajos</small>
-              </div>
-              <b className="chevron">
-                <AppIcon name="chevron-right" size={16} />
-              </b>
-            </button>
-
-            {/* Ajustes técnicos */}
-            <button type="button" onClick={() => setSubView('settings')}>
-              <span className="menu-icon">
-                <AppIcon name="settings" size={18} />
-              </span>
-              <div>
-                <strong>Ajustes técnicos</strong>
-                <small>Saldos iniciales y almacenamiento</small>
-              </div>
-              <b className="chevron">
-                <AppIcon name="chevron-right" size={16} />
-              </b>
-            </button>
-          </div>
-        </section>
-      )}
 
       {/* Identificación de Versión y Build */}
       <footer className="app-version-footer">

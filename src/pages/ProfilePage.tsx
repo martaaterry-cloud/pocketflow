@@ -2,20 +2,24 @@ import { useState } from 'react'
 import type { ReturnTypeFinance } from '../types'
 import { AppIcon } from '../ui/icons'
 import type { User } from '@supabase/supabase-js'
+import { signOut } from '../services/supabase/supabaseClient'
 
 export function ProfilePage({
   finance,
   user,
   onBack,
   onToast,
+  onSignOut,
 }: {
   finance: ReturnTypeFinance
   user?: User | null
   onBack: () => void
   onToast?: (message: string, type?: 'success' | 'error') => void
+  onSignOut?: () => void
 }) {
   const [displayName, setDisplayName] = useState(finance.profile?.displayName ?? '')
   const [isSaving, setIsSaving] = useState(false)
+  const [isLoggingOut, setIsLoggingOut] = useState(false)
 
   const handleSave = (e: React.FormEvent) => {
     e.preventDefault()
@@ -31,6 +35,25 @@ export function ProfilePage({
       }
     } finally {
       setIsSaving(false)
+    }
+  }
+
+  const handleLogout = async () => {
+    setIsLoggingOut(true)
+    try {
+      await signOut()
+      if (onSignOut) {
+        onSignOut()
+      }
+      if (onToast) {
+        onToast('Sesión cerrada correctamente', 'success')
+      }
+    } catch {
+      if (onToast) {
+        onToast('Error al cerrar sesión', 'error')
+      }
+    } finally {
+      setIsLoggingOut(false)
     }
   }
 
@@ -85,6 +108,31 @@ export function ProfilePage({
 
           <button type="submit" className="save-button" disabled={isSaving}>
             Guardar cambios
+          </button>
+        </section>
+
+        <section className="settings-section" style={{ marginTop: 32 }}>
+          <h2>Sesión</h2>
+          <p className="settings-desc">
+            Cierra la sesión actual en este dispositivo.
+          </p>
+          <button
+            type="button"
+            className="danger-button"
+            onClick={handleLogout}
+            disabled={isLoggingOut}
+            style={{
+              marginTop: 12,
+              width: '100%',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: 8,
+              padding: '12px 16px',
+            }}
+          >
+            <AppIcon name="log-out" size={16} />
+            <span>{isLoggingOut ? 'Cerrando sesión...' : 'Cerrar sesión'}</span>
           </button>
         </section>
       </form>

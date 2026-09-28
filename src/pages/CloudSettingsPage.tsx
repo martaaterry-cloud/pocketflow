@@ -128,9 +128,6 @@ export function CloudSettingsPage({
           <span className="label">Conectado a Supabase</span>
           <strong className="value">{user?.email || 'Usuario autenticado'}</strong>
         </div>
-        <button type="button" className="btn btn-secondary btn-sm" onClick={handleLogout}>
-          Cerrar sesión
-        </button>
       </section>
 
       {/* Sección Atajo de iPhone */}

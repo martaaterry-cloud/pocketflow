@@ -6840,12 +6840,12 @@ describe('Fase 18 — Mejoras de Finanzas (Detalle por Categoría, Retiradas de 
 describe('Fase 18 — Identificación Visual de Versión y Build', () => {
   it('314. Versioning: única fuente de verdad y formato de visualización exacto', () => {
     assert.equal(APP_NAME, 'PocketFlow')
-    assert.equal(APP_VERSION, '0.19.0')
-    assert.equal(APP_BUILD, '2026.09.28-01')
+    assert.equal(APP_VERSION, '0.20.0')
+    assert.equal(APP_BUILD, '2026.09.28-02')
  
-    assert.equal(getAppVersionString(), 'PocketFlow v0.19.0')
-    assert.equal(getAppBuildString(), 'Build 2026.09.28-01')
-    assert.equal(getAppFullVersionLabel(), 'PocketFlow v0.19.0 · Build 2026.09.28-01')
+    assert.equal(getAppVersionString(), 'PocketFlow v0.20.0')
+    assert.equal(getAppBuildString(), 'Build 2026.09.28-02')
+    assert.equal(getAppFullVersionLabel(), 'PocketFlow v0.20.0 · Build 2026.09.28-02')
   })
 })
 
@@ -13909,36 +13909,30 @@ describe('Fase 50 — Control de Acceso por Roles (User / Admin), Seguridad RLS 
     assert.equal(checkIsAdmin({ displayName: 'Pepe', role: 'admin' }), true)
   })
 
-  it('588. 8. Protección de subviews: usuario normal es bloqueado y redirigido si intenta acceder a backup, cloud o settings', () => {
-    const ADMIN_SUBVIEWS = ['backup', 'cloud', 'settings']
-    const resolveAllowedSubView = (subView: string, isAdmin: boolean): string => {
-      if (!isAdmin && ADMIN_SUBVIEWS.includes(subView)) {
-        return 'menu'
-      }
-      return subView
-    }
+  it('588. 8. Estructura de MorePage: Copias de seguridad visible para todos en CUENTA, settings y cloud eliminados', () => {
+    const allowedSubViews = [
+      'menu',
+      'profile',
+      'accounts',
+      'recurring',
+      'variable_estimates',
+      'receivables',
+      'budgets',
+      'statistics',
+      'plan',
+      'backup',
+    ]
 
-    // Usuario normal intenta acceder a subviews admin
-    assert.equal(resolveAllowedSubView('backup', false), 'menu')
-    assert.equal(resolveAllowedSubView('cloud', false), 'menu')
-    assert.equal(resolveAllowedSubView('settings', false), 'menu')
+    // Tanto usuario normal como admin pueden acceder a backup y profile
+    assert.ok(allowedSubViews.includes('backup'))
+    assert.ok(allowedSubViews.includes('profile'))
 
-    // Usuario normal accede a sus subviews normales
-    assert.equal(resolveAllowedSubView('profile', false), 'profile')
-    assert.equal(resolveAllowedSubView('plan', false), 'plan')
-    assert.equal(resolveAllowedSubView('accounts', false), 'accounts')
-    assert.equal(resolveAllowedSubView('recurring', false), 'recurring')
-    assert.equal(resolveAllowedSubView('receivables', false), 'receivables')
-    assert.equal(resolveAllowedSubView('budgets', false), 'budgets')
-    assert.equal(resolveAllowedSubView('statistics', false), 'statistics')
-
-    // Usuario admin accede libremente a todas
-    assert.equal(resolveAllowedSubView('backup', true), 'backup')
-    assert.equal(resolveAllowedSubView('cloud', true), 'cloud')
-    assert.equal(resolveAllowedSubView('settings', true), 'settings')
+    // settings y cloud ya no forman parte de las subviews
+    assert.equal(allowedSubViews.includes('settings'), false)
+    assert.equal(allowedSubViews.includes('cloud'), false)
   })
 
-  it('589. 9. Footer: usuario normal ve solo "PocketFlow v0.19.0", admin ve "PocketFlow v0.19.0" y "Build 2026.09.28-01"', () => {
+  it('589. 9. Footer: usuario normal ve solo "PocketFlow v0.20.0", admin ve "PocketFlow v0.20.0" y "Build 2026.09.28-02"', () => {
     const renderFooterTexts = (isAdmin: boolean): { versionText: string; buildText: string | null } => {
       return {
         versionText: getAppVersionString(),
@@ -13947,12 +13941,12 @@ describe('Fase 50 — Control de Acceso por Roles (User / Admin), Seguridad RLS 
     }
 
     const userFooter = renderFooterTexts(false)
-    assert.equal(userFooter.versionText, 'PocketFlow v0.19.0')
+    assert.equal(userFooter.versionText, 'PocketFlow v0.20.0')
     assert.equal(userFooter.buildText, null)
 
     const adminFooter = renderFooterTexts(true)
-    assert.equal(adminFooter.versionText, 'PocketFlow v0.19.0')
-    assert.equal(adminFooter.buildText, 'Build 2026.09.28-01')
+    assert.equal(adminFooter.versionText, 'PocketFlow v0.20.0')
+    assert.equal(adminFooter.buildText, 'Build 2026.09.28-02')
   })
 
   it('590. 10. Reconciliación y sincronización de perfil no altera datos financieros ni transacciones', () => {
