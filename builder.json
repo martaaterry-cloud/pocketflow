@@ -9,7 +9,7 @@
     "path": "ios/App",
     "scheme": "App",
     "bundleId": "com.martaaterry.pocketflow",
-    "configuration": "Release"
-  },
-  "signing": false
+    "configuration": "Release",
+    "signing": false
+  }
 }
