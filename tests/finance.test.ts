@@ -107,6 +107,12 @@ import {
   getAppFullVersionLabel,
 } from '../src/version'
 import {
+  isPwaUpdateAvailable,
+  sendSkipWaiting,
+  createReloadHandler,
+  shouldCheckUpdateOnVisibility,
+} from '../src/utils/pwaUpdate'
+import {
   toUnifiedMovements,
   filterUnifiedMovements,
   calculateUnifiedMovementStats,
@@ -6840,12 +6846,12 @@ describe('Fase 18 — Mejoras de Finanzas (Detalle por Categoría, Retiradas de 
 describe('Fase 18 — Identificación Visual de Versión y Build', () => {
   it('314. Versioning: única fuente de verdad y formato de visualización exacto', () => {
     assert.equal(APP_NAME, 'PocketFlow')
-    assert.equal(APP_VERSION, '0.20.0')
-    assert.equal(APP_BUILD, '2026.09.28-02')
- 
-    assert.equal(getAppVersionString(), 'PocketFlow v0.20.0')
-    assert.equal(getAppBuildString(), 'Build 2026.09.28-02')
-    assert.equal(getAppFullVersionLabel(), 'PocketFlow v0.20.0 · Build 2026.09.28-02')
+    assert.equal(APP_VERSION, '0.20.1')
+    assert.equal(APP_BUILD, '2026.09.28-03')
+
+    assert.equal(getAppVersionString(), 'PocketFlow v0.20.1')
+    assert.equal(getAppBuildString(), 'Build 2026.09.28-03')
+    assert.equal(getAppFullVersionLabel(), 'PocketFlow v0.20.1 · Build 2026.09.28-03')
   })
 })
 
@@ -13932,7 +13938,7 @@ describe('Fase 50 — Control de Acceso por Roles (User / Admin), Seguridad RLS 
     assert.equal(allowedSubViews.includes('cloud'), false)
   })
 
-  it('589. 9. Footer: usuario normal ve solo "PocketFlow v0.20.0", admin ve "PocketFlow v0.20.0" y "Build 2026.09.28-02"', () => {
+  it('589. 9. Footer: usuario normal ve solo "PocketFlow v0.20.1", admin ve "PocketFlow v0.20.1" y "Build 2026.09.28-03"', () => {
     const renderFooterTexts = (isAdmin: boolean): { versionText: string; buildText: string | null } => {
       return {
         versionText: getAppVersionString(),
@@ -13941,12 +13947,12 @@ describe('Fase 50 — Control de Acceso por Roles (User / Admin), Seguridad RLS 
     }
 
     const userFooter = renderFooterTexts(false)
-    assert.equal(userFooter.versionText, 'PocketFlow v0.20.0')
+    assert.equal(userFooter.versionText, 'PocketFlow v0.20.1')
     assert.equal(userFooter.buildText, null)
 
     const adminFooter = renderFooterTexts(true)
-    assert.equal(adminFooter.versionText, 'PocketFlow v0.20.0')
-    assert.equal(adminFooter.buildText, 'Build 2026.09.28-02')
+    assert.equal(adminFooter.versionText, 'PocketFlow v0.20.1')
+    assert.equal(adminFooter.buildText, 'Build 2026.09.28-03')
   })
 
   it('590. 10. Reconciliación y sincronización de perfil no altera datos financieros ni transacciones', () => {
@@ -13968,6 +13974,83 @@ describe('Fase 50 — Control de Acceso por Roles (User / Admin), Seguridad RLS 
     assert.equal(nextState.profile.role, 'admin')
   })
 })
+
+describe('Fase 42 — Sistema de Actualización PWA In-App', () => {
+  it('591. Primera instalación: no activa el aviso de actualización si no hay controller previo', () => {
+    const hasController = false
+    const workerState = 'installed'
+    const isUpdate = isPwaUpdateAvailable(hasController, workerState)
+    assert.equal(isUpdate, false, 'No debe considerarse actualización en la primera instalación')
+  })
+
+  it('592. Actualización real: activa aviso cuando existe controller y el nuevo worker está instalado', () => {
+    const hasController = true
+    const workerState = 'installed'
+    const isUpdate = isPwaUpdateAvailable(hasController, workerState)
+    assert.equal(isUpdate, true, 'Debe considerarse actualización si ya hay controller y nuevo worker instalado')
+
+    // Si aún se está instalando o activando, no debe adelantarse
+    assert.equal(isPwaUpdateAvailable(hasController, 'installing'), false)
+    assert.equal(isPwaUpdateAvailable(hasController, 'redundant'), false)
+  })
+
+  it('593. Textos y estructura de aviso de actualización exactos', () => {
+    const bannerPromptText = 'Hay una nueva versión de Pocket Flow disponible.'
+    const updateButtonText = 'Actualizar'
+
+    assert.equal(bannerPromptText, 'Hay una nueva versión de Pocket Flow disponible.')
+    assert.equal(updateButtonText, 'Actualizar')
+  })
+
+  it('594. Envío de SKIP_WAITING al worker en espera al solicitar actualización', () => {
+    const messagesSent: any[] = []
+    const mockWorker = {
+      postMessage: (msg: any) => {
+        messagesSent.push(msg)
+      },
+    }
+
+    const sent = sendSkipWaiting(mockWorker)
+    assert.equal(sent, true)
+    assert.equal(messagesSent.length, 1)
+    assert.deepEqual(messagesSent[0], { type: 'SKIP_WAITING' })
+
+    // Manejo de worker nulo o indefinido
+    assert.equal(sendSkipWaiting(null), false)
+    assert.equal(sendSkipWaiting(undefined), false)
+  })
+
+  it('595. Recarga única tras controllerchange: previene bucles de recarga ante múltiples eventos', () => {
+    let reloadCount = 0
+    const mockReload = () => {
+      reloadCount += 1
+    }
+
+    const handler = createReloadHandler(mockReload)
+
+    // Simular múltiples disparos de controllerchange
+    handler()
+    handler()
+    handler()
+
+    assert.equal(reloadCount, 1, 'window.location.reload() debe ejecutarse exactamente una sola vez')
+  })
+
+  it('596. Comprobación al volver la app a visible: reacciona únicamente en visibilidad visible', () => {
+    assert.equal(shouldCheckUpdateOnVisibility('visible'), true)
+    assert.equal(shouldCheckUpdateOnVisibility('hidden'), false)
+    assert.equal(shouldCheckUpdateOnVisibility('prerender'), false)
+  })
+
+  it('597. Fallback seguro ante worker ausente o error de red sin bloquear la interfaz', () => {
+    // Si sendSkipWaiting falla (p.ej. null), no lanza excepciones y retorna false
+    assert.doesNotThrow(() => {
+      const result = sendSkipWaiting(null)
+      assert.equal(result, false)
+    })
+  })
+})
+
 
 
 

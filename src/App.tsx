@@ -17,6 +17,8 @@ import { MovementsPage } from './pages/MovementsPage'
 import { SavingsPage } from './pages/SavingsPage'
 import { AppIcon } from './ui/icons'
 import { useFinance } from './store/useFinance'
+import { usePwaUpdate } from './hooks/usePwaUpdate'
+import { PwaUpdateBanner } from './components/PwaUpdateBanner'
 import { cleanUrlQueryParams, createDeepLinkDeduplicator, parseShortcutUrl } from './utils/deepLink'
 import { getSupabase } from './services/supabase/supabaseClient'
 import { createCleanInitialState, fetchRemoteState, syncMissingDefaultCategories, uploadStateToSupabase } from './services/supabase/supabaseSync'
@@ -29,6 +31,7 @@ export type SyncStatus = 'connecting' | 'connected' | 'syncing' | 'up_to_date' |
 
 export default function App() {
   const finance = useFinance()
+  const { updateAvailable, isUpdating: isPwaUpdating, updateApp: handlePwaUpdate } = usePwaUpdate()
   const [tab, setTab] = useState<Tab>('home')
   const [moreSubView, setMoreSubView] = useState<MoreSubView>('menu')
   const [isModalOpen, setIsModalOpen] = useState(false)
@@ -581,6 +584,12 @@ export default function App() {
           <span className="nav-label">Más</span>
         </button>
       </nav>
+
+      <PwaUpdateBanner
+        show={updateAvailable}
+        isUpdating={isPwaUpdating}
+        onUpdate={handlePwaUpdate}
+      />
 
       {toast && (
         <div className={`toast-notification ${toast.type}`}>
