@@ -59,7 +59,7 @@ jobs:
         run: |
           if [ -f "node_modules/@capacitor/app/ios/Sources/AppPlugin/AppPlugin.swift" ]; then
             echo "Patching @capacitor/app AppPlugin.swift for Capacitor 8 Swift API..."
-            sed -i.bak 's/call\.reject("Unable to get App Info")/call.error("Unable to get App Info")/g' node_modules/@capacitor/app/ios/Sources/AppPlugin/AppPlugin.swift
+            sed -i.bak 's/call\.reject("Unable to get App Info")/call.reject("Unable to get App Info", nil, nil, nil)/g' node_modules/@capacitor/app/ios/Sources/AppPlugin/AppPlugin.swift
           fi
 
       - name: Build web assets (Capacitor)
