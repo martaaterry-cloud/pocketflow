@@ -3,6 +3,11 @@ import react from '@vitejs/plugin-react'
 
 export default defineConfig({
   plugins: [react()],
-  base: process.env.GITHUB_ACTIONS ? '/pocketflow/' : './',
+  base:
+    process.env.VITE_BUILD_TARGET === 'capacitor'
+      ? './'
+      : process.env.GITHUB_ACTIONS
+        ? '/pocketflow/'
+        : './',
 })
 
