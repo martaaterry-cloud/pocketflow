@@ -73,6 +73,15 @@ jobs:
         if: steps.detect.outputs.framework == 'capacitor'
         run: npx cap sync ios
 
+      - name: Ensure 1024x1024 AppIcon for Xcode
+        run: |
+          ICON_SRC="ios/App/App/Assets.xcassets/AppIcon.appiconset/AppIcon-512@2x.png"
+          ICON_DST="ios/App/App/Assets.xcassets/AppIcon.appiconset/AppIcon-1024.png"
+          if [ -f "$ICON_SRC" ]; then
+            echo "Generating 1024x1024 app icon using sips..."
+            sips -z 1024 1024 "$ICON_SRC" --out "$ICON_DST"
+          fi
+
       - name: Select Xcode version
         run: |
           if [ -d "/Applications/Xcode_16.0.app" ]; then
