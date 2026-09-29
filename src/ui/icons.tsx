@@ -94,6 +94,7 @@ export const ICON_MAP: Record<string, React.ComponentType<{ size?: number | stri
   emergency: Shield,
   'graduation-cap': GraduationCap,
   studies: GraduationCap,
+  education: GraduationCap,
   target: Target,
   goals: Target,
   sun: Sun,
@@ -252,5 +253,6 @@ export const CATEGORY_ICON_OPTIONS = [
   { key: 'house', label: 'Casa' },
   { key: 'gift', label: 'Regalos' },
   { key: 'laptop', label: 'Tecnología' },
+  { key: 'graduation-cap', label: 'Estudios / Formación' },
   { key: 'ellipsis', label: 'Otros' },
 ]

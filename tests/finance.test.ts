@@ -29,7 +29,7 @@ import * as path from 'node:path'
 import * as XLSX from 'xlsx'
 import { fileURLToPath } from 'node:url'
 import { getServiceWorkerCacheName, generateServiceWorkerCode, generateVersionJson, writeVersionJsonFile } from '../src/utils/swGenerator'
-import { initialProfile } from '../src/data/seed'
+import { initialProfile, categories, categories as baseCategories, cleanPlanSettings, planSettings } from '../src/data/seed'
 import type { Account, Budget, Category, FinancialPlanSettings, RecurringIncomeSourceType, RecurringPayment, Reserve, SavingsGoal, SpecialPeriod, Transaction, UserProfile, VariableExpenseEstimate, SharedContact, ExpenseShare, SpecialMovementType, ExpenseNature, CashTransaction, CashMovementType } from '../src/models/finance'
 import {
   selectCashBalance,
@@ -3382,12 +3382,13 @@ describe('Fase 10 — Reset Financiero Real y Prevención de Resurrección Demo'
     assert.equal(greeting, 'Hola, Marta')
   })
 
-  it('163. Categorías base se conservan tras reset: exactamente 13 categorías útiles (incluye Cajero)', () => {
-    assert.equal(baseCategories.length, 13)
+  it('163. Categorías base se conservan tras reset: exactamente 14 categorías útiles (incluye Cajero y Estudios / Formación)', () => {
+    assert.equal(baseCategories.length, 14)
     const categoryIds = baseCategories.map((c) => c.id).sort()
     assert.deepEqual(categoryIds, [
       'atm',
       'clothes',
+      'education',
       'food',
       'gifts',
       'health',
@@ -6906,12 +6907,12 @@ describe('Fase 18 — Mejoras de Finanzas (Detalle por Categoría, Retiradas de 
 describe('Fase 18 — Identificación Visual de Versión y Build', () => {
   it('314. Versioning: única fuente de verdad y formato de visualización exacto', () => {
     assert.equal(APP_NAME, 'PocketFlow')
-    assert.equal(APP_VERSION, '0.24.1')
-    assert.equal(APP_BUILD, '2026.09.29-12')
+    assert.equal(APP_VERSION, '0.24.2')
+    assert.equal(APP_BUILD, '2026.09.29-13')
 
-    assert.equal(getAppVersionString(), 'PocketFlow v0.24.1')
-    assert.equal(getAppBuildString(), 'Build 2026.09.29-12')
-    assert.equal(getAppFullVersionLabel(), 'PocketFlow v0.24.1 · Build 2026.09.29-12')
+    assert.equal(getAppVersionString(), 'PocketFlow v0.24.2')
+    assert.equal(getAppBuildString(), 'Build 2026.09.29-13')
+    assert.equal(getAppFullVersionLabel(), 'PocketFlow v0.24.2 · Build 2026.09.29-13')
   })
 })
 
@@ -14007,12 +14008,12 @@ describe('Fase 50 — Control de Acceso por Roles (User / Admin), Seguridad RLS 
     }
 
     const userFooter = renderFooterTexts(false)
-    assert.equal(userFooter.versionText, 'PocketFlow v0.24.1')
+    assert.equal(userFooter.versionText, 'PocketFlow v0.24.2')
     assert.equal(userFooter.buildText, null)
 
     const adminFooter = renderFooterTexts(true)
-    assert.equal(adminFooter.versionText, 'PocketFlow v0.24.1')
-    assert.equal(adminFooter.buildText, 'Build 2026.09.29-12')
+    assert.equal(adminFooter.versionText, 'PocketFlow v0.24.2')
+    assert.equal(adminFooter.buildText, 'Build 2026.09.29-13')
   })
 
   it('590. 10. Reconciliación y sincronización de perfil no altera datos financieros ni transacciones', () => {
@@ -14513,7 +14514,7 @@ describe('Fase 52 — Versionado Automático y Robusto del Service Worker PWA', 
   it('613. 1. CACHE_NAME del Service Worker incluye exactamente APP_VERSION y APP_BUILD actuales', () => {
     const expectedCacheName = `pocketflow-v${APP_VERSION}-${APP_BUILD}`
     assert.equal(getServiceWorkerCacheName(APP_VERSION, APP_BUILD), expectedCacheName)
-    assert.equal(expectedCacheName, 'pocketflow-v0.24.1-2026.09.29-12')
+    assert.equal(expectedCacheName, 'pocketflow-v0.24.2-2026.09.29-13')
 
     const swCode = generateServiceWorkerCode(APP_VERSION, APP_BUILD)
     assert.ok(swCode.includes(`const CACHE_NAME = '${expectedCacheName}'`))
@@ -17185,7 +17186,7 @@ describe('Fase 61 — Detección Fiable de Versión Remota y Actualizaciones PWA
   it('683. 7. si SW no actualiza pero remote es nuevo -> devuelve problem o available, nunca falso up-to-date', async () => {
     const mockFetch = async () => ({
       ok: true,
-      json: async () => ({ version: '0.24.2', build: '2026.09.29-13' }),
+      json: async () => ({ version: '0.25.0', build: '2026.09.30-01' }),
     }) as any
 
     const fakeReg = {
@@ -17221,17 +17222,139 @@ describe('Fase 61 — Detección Fiable de Versión Remota y Actualizaciones PWA
     assert.ok(swCode.includes('return false'))
 
     const versionData = JSON.parse(generateVersionJson(APP_VERSION, APP_BUILD))
-    assert.equal(versionData.version, '0.24.1')
-    assert.equal(versionData.build, '2026.09.29-12')
+    assert.equal(versionData.version, '0.24.2')
+    assert.equal(versionData.build, '2026.09.29-13')
   })
 
   // Test 10: Diagnóstico completo collectPwaDiagnosticInfo
   it('686. 10. collectPwaDiagnosticInfo recopila estado de versión local, remota y controller', async () => {
     const info = await collectPwaDiagnosticInfo(null, '/pocketflow/')
-    assert.equal(info.localVersion, '0.24.1')
-    assert.equal(info.localBuild, '2026.09.29-12')
+    assert.equal(info.localVersion, '0.24.2')
+    assert.equal(info.localBuild, '2026.09.29-13')
     assert.equal(info.basePath, '/pocketflow/')
     assert.ok(typeof info.lastCheckedAt === 'string')
+  })
+})
+
+describe('Fase 62 — Categoría Canónica "Estudios / Formación" (education)', () => {
+  // Test 1: education existe una sola vez en seed y estado limpio
+  it('687. 1. education existe una sola vez con nombre, iconKey y color canónico', () => {
+    const seedCategories = initialProfile ? categories : []
+    const eduCats = seedCategories.filter((c) => c.id === 'education')
+    assert.equal(eduCats.length, 1, 'Debe haber exactamente 1 categoría education')
+    assert.equal(eduCats[0].name, 'Estudios / Formación')
+    assert.equal(eduCats[0].iconKey, 'graduation-cap')
+    assert.equal(eduCats[0].color, '#818CF8')
+  })
+
+  // Test 2: usuario existente recibe education sin perder categorías existentes
+  it('688. 2. usuario existente recibe education sin perder sus categorías previas ni personalizaciones', () => {
+    const existingUserState: Partial<PersistedState> = {
+      categories: [
+        { id: 'food', name: 'Alimentación', color: '#8DB596', icon: 'shopping-basket', iconKey: 'shopping-basket' },
+        { id: 'custom_leisure', name: 'Mis Salidas', color: '#123456', icon: 'ticket', iconKey: 'ticket' },
+      ],
+      transactions: [],
+    }
+
+    const migrated = migratePersistedState(existingUserState)
+    const eduCat = migrated.categories.find((c) => c.id === 'education')
+    assert.ok(eduCat, 'La categoría education debe añadirse automáticamente')
+    assert.equal(eduCat?.name, 'Estudios / Formación')
+    assert.equal(eduCat?.iconKey, 'graduation-cap')
+
+    // Conserva las categorías previas intactas
+    assert.ok(migrated.categories.some((c) => c.id === 'food'))
+    assert.ok(migrated.categories.some((c) => c.id === 'custom_leisure' && c.name === 'Mis Salidas'))
+  })
+
+  // Test 3: alias "estudios" -> education
+  it('689. 3. alias "estudios" -> education', () => {
+    const validIds = ['food', 'education', 'other']
+    assert.equal(normalizeCategoryAlias('estudios', validIds), 'education')
+    assert.equal(normalizeCategoryAlias('estudio', validIds), 'education')
+    assert.equal(normalizeCategoryAlias('Estudios / Formación', validIds), 'education')
+    assert.equal(normalizeCategoryAlias('formación', validIds), 'education')
+    assert.equal(normalizeCategoryAlias('formacion', validIds), 'education')
+  })
+
+  // Test 4: alias "academia de inglés" -> education
+  it('690. 4. alias "academia de inglés" -> education', () => {
+    const validIds = ['food', 'education', 'other']
+    assert.equal(normalizeCategoryAlias('academia de inglés', validIds), 'education')
+    assert.equal(normalizeCategoryAlias('academia de ingles', validIds), 'education')
+    assert.equal(normalizeCategoryAlias('academia', validIds), 'education')
+    assert.equal(normalizeCategoryAlias('inglés', validIds), 'education')
+    assert.equal(normalizeCategoryAlias('ingles', validIds), 'education')
+    assert.equal(normalizeCategoryAlias('clases de inglés', validIds), 'education')
+    assert.equal(normalizeCategoryAlias('curso', validIds), 'education')
+    assert.equal(normalizeCategoryAlias('cursos', validIds), 'education')
+  })
+
+  // Test 5: alias "B2" -> education
+  it('691. 5. alias "B2", "examen b2", "universidad", "master" -> education', () => {
+    const validIds = ['food', 'education', 'other']
+    assert.equal(normalizeCategoryAlias('B2', validIds), 'education')
+    assert.equal(normalizeCategoryAlias('examen b2', validIds), 'education')
+    assert.equal(normalizeCategoryAlias('universidad', validIds), 'education')
+    assert.equal(normalizeCategoryAlias('máster', validIds), 'education')
+    assert.equal(normalizeCategoryAlias('libros', validIds), 'education')
+  })
+
+  // Test 6: restore no duplica education
+  it('692. 6. restore no duplica education si ya estaba presente en el backup', () => {
+    const stateWithEdu: PersistedState = {
+      accounts: [],
+      transactions: [],
+      categories: [
+        { id: 'education', name: 'Estudios / Formación', color: '#818CF8', icon: 'graduation-cap', iconKey: 'graduation-cap' },
+        { id: 'food', name: 'Alimentación', color: '#8DB596', icon: 'shopping-basket', iconKey: 'shopping-basket' },
+      ],
+      goals: [],
+      recurring: [],
+      budgets: [],
+      reserves: [],
+      specialPeriods: [],
+      planSettings: { monthlyIncome: 0, targetSavingsType: 'percentage', targetSavingsValue: 0, emergencyFundTargetType: 'months', emergencyFundTargetValue: 0, emergencyFundCurrent: 0, essentialCategoryIds: [] },
+      profile: { displayName: '', role: 'user' },
+      variableExpenseEstimates: [],
+      sharedContacts: [],
+      expenseShares: [],
+      cashTransactions: [],
+    }
+
+    const backup = createBackupPayload(stateWithEdu)
+    const validation = validateBackupPayload(backup)
+    assert.equal(validation.valid, true)
+    if (validation.valid) {
+      const restored = validation.state
+      const eduCount = restored.categories.filter((c) => c.id === 'education').length
+      assert.equal(eduCount, 1, 'No debe duplicar la categoría education tras restaurar')
+    }
+  })
+
+  // Test 7: no se marca automáticamente como esencial
+  it('693. 7. education no se marca automáticamente como esencial en cleanPlanSettings ni en planSettings por defecto', () => {
+    assert.equal(cleanPlanSettings.essentialCategoryIds.includes('education'), false)
+    assert.equal(planSettings.essentialCategoryIds.includes('education'), false)
+  })
+
+  // Test 8: generateVersionJson genera 0.24.2 / 2026.09.29-13
+  it('694. 8. build genera version.json 0.24.2 / 2026.09.29-13', () => {
+    const versionJsonStr = generateVersionJson(APP_VERSION, APP_BUILD)
+    const parsed = JSON.parse(versionJsonStr)
+    assert.equal(parsed.version, '0.24.2')
+    assert.equal(parsed.build, '2026.09.29-13')
+    assert.equal(parsed.name, 'PocketFlow')
+  })
+
+  // Test 9: no rompe actualización PWA (0.24.1 local -> 0.24.2 remoto detecta available)
+  it('695. 9. Actualización PWA: detecta transición 0.24.1 local a 0.24.2 remoto como available', () => {
+    const localVersion = '0.24.1'
+    const localBuild = '2026.09.29-12'
+    const remoteInfo = { version: '0.24.2', build: '2026.09.29-13' }
+
+    assert.equal(isRemoteVersionNewer(remoteInfo, localVersion, localBuild), true)
   })
 })
 
