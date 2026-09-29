@@ -71,6 +71,8 @@ export function MorePage({
         const result = await onCheckForUpdate()
         if (result === 'available') {
           onToast?.('Nueva versión encontrada. Actualizando…', 'success')
+        } else if (result === 'problem') {
+          onToast?.('Hay una versión nueva, pero Safari todavía no ha activado la actualización.', 'error')
         } else if (result === 'up-to-date') {
           onToast?.('Pocket Flow ya está actualizado.', 'success')
         } else if (result === 'error') {

@@ -2,6 +2,9 @@ import { useEffect, useRef, useState, useCallback } from 'react'
 import {
   createReloadHandler,
   checkServiceWorkerUpdate,
+  fetchRemoteVersion,
+  isRemoteVersionNewer,
+  getAppBaseUrl,
   devLog,
   type PwaUpdateCheckResult,
 } from '../utils/pwaUpdate'
@@ -49,6 +52,9 @@ export function usePwaUpdate(): PwaUpdateState {
       if (result === 'available') {
         setUpdateAvailable(true)
         setIsUpdating(true)
+      } else if (result === 'problem') {
+        setUpdateAvailable(true)
+        setIsUpdating(false)
       }
 
       return result
@@ -91,21 +97,36 @@ export function usePwaUpdate(): PwaUpdateState {
 
     const registerSW = async () => {
       try {
-        devLog('[PWA] registering Service Worker with updateViaCache: none')
+        const basePath = getAppBaseUrl()
+        const swUrl = basePath.endsWith('/') ? `${basePath}sw.js` : `${basePath}/sw.js`
+        const scope = basePath.endsWith('/') ? basePath : `${basePath}/`
+        devLog(`[PWA] registering Service Worker at ${swUrl} with scope ${scope}`)
+
         // Registrar con updateViaCache: 'none' para obligar a Safari/iOS y browsers a consultar la red
-        const reg = await navigator.serviceWorker.register('./sw.js', {
+        const reg = await navigator.serviceWorker.register(swUrl, {
+          scope,
           updateViaCache: 'none',
         })
         registrationRef.current = reg
 
-        // Si ya hay un worker instalándose o esperando (que se auto-activará por skipWaiting)
+        // 1. Verificación remota inicial independiente
+        fetchRemoteVersion(basePath).then((remote) => {
+          if (isRemoteVersionNewer(remote)) {
+            devLog('[PWA] remote version is newer on initial registration check')
+            setUpdateAvailable(true)
+            setIsUpdating(true)
+            reg.update().catch(() => {})
+          }
+        }).catch(() => {})
+
+        // 2. Si ya hay un worker instalándose o esperando (que se auto-activará por skipWaiting)
         if (reg.waiting || reg.installing) {
           devLog('[PWA] active worker detected on registration')
           setUpdateAvailable(true)
           setIsUpdating(true)
         }
 
-        // Escuchar cuando se descubre un nuevo worker
+        // 3. Escuchar cuando se descubre un nuevo worker
         reg.addEventListener('updatefound', () => {
           devLog('[PWA] updatefound on registration')
           setUpdateAvailable(true)
@@ -124,7 +145,7 @@ export function usePwaUpdate(): PwaUpdateState {
     // Comprobar actualización automáticamente cuando la app vuelve a primer plano
     // (soporta visibilitychange, pageshow y focus para PWA standalone en iOS)
     let lastForegroundCheck = 0
-    const triggerForegroundCheck = () => {
+    const triggerForegroundCheck = async () => {
       const now = Date.now()
       // Limitar a máximo una comprobación cada 5 segundos al cambiar de foco
       if (now - lastForegroundCheck < 5000) return
@@ -132,6 +153,13 @@ export function usePwaUpdate(): PwaUpdateState {
 
       if (document.visibilityState === 'visible') {
         devLog('[PWA] foreground event triggered update check')
+        const remote = await fetchRemoteVersion(getAppBaseUrl())
+        if (isRemoteVersionNewer(remote)) {
+          devLog('[PWA] remote is newer during foreground check')
+          setUpdateAvailable(true)
+          setIsUpdating(true)
+        }
+
         if (registrationRef.current) {
           registrationRef.current.update().catch(() => {})
         } else if (

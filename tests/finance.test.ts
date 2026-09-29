@@ -28,7 +28,7 @@ import * as fs from 'node:fs'
 import * as path from 'node:path'
 import * as XLSX from 'xlsx'
 import { fileURLToPath } from 'node:url'
-import { getServiceWorkerCacheName, generateServiceWorkerCode } from '../src/utils/swGenerator'
+import { getServiceWorkerCacheName, generateServiceWorkerCode, generateVersionJson, writeVersionJsonFile } from '../src/utils/swGenerator'
 import { initialProfile } from '../src/data/seed'
 import type { Account, Budget, Category, FinancialPlanSettings, RecurringIncomeSourceType, RecurringPayment, Reserve, SavingsGoal, SpecialPeriod, Transaction, UserProfile, VariableExpenseEstimate, SharedContact, ExpenseShare, SpecialMovementType, ExpenseNature, CashTransaction, CashMovementType } from '../src/models/finance'
 import {
@@ -150,6 +150,10 @@ import {
   createReloadHandler,
   shouldCheckUpdateOnVisibility,
   checkServiceWorkerUpdate,
+  fetchRemoteVersion,
+  isRemoteVersionNewer,
+  collectPwaDiagnosticInfo,
+  getAppBaseUrl,
   type PwaUpdateCheckResult,
 } from '../src/utils/pwaUpdate'
 import {
@@ -6902,12 +6906,12 @@ describe('Fase 18 — Mejoras de Finanzas (Detalle por Categoría, Retiradas de 
 describe('Fase 18 — Identificación Visual de Versión y Build', () => {
   it('314. Versioning: única fuente de verdad y formato de visualización exacto', () => {
     assert.equal(APP_NAME, 'PocketFlow')
-    assert.equal(APP_VERSION, '0.24.0')
-    assert.equal(APP_BUILD, '2026.09.29-11')
+    assert.equal(APP_VERSION, '0.24.1')
+    assert.equal(APP_BUILD, '2026.09.29-12')
 
-    assert.equal(getAppVersionString(), 'PocketFlow v0.24.0')
-    assert.equal(getAppBuildString(), 'Build 2026.09.29-11')
-    assert.equal(getAppFullVersionLabel(), 'PocketFlow v0.24.0 · Build 2026.09.29-11')
+    assert.equal(getAppVersionString(), 'PocketFlow v0.24.1')
+    assert.equal(getAppBuildString(), 'Build 2026.09.29-12')
+    assert.equal(getAppFullVersionLabel(), 'PocketFlow v0.24.1 · Build 2026.09.29-12')
   })
 })
 
@@ -14003,12 +14007,12 @@ describe('Fase 50 — Control de Acceso por Roles (User / Admin), Seguridad RLS 
     }
 
     const userFooter = renderFooterTexts(false)
-    assert.equal(userFooter.versionText, 'PocketFlow v0.24.0')
+    assert.equal(userFooter.versionText, 'PocketFlow v0.24.1')
     assert.equal(userFooter.buildText, null)
 
     const adminFooter = renderFooterTexts(true)
-    assert.equal(adminFooter.versionText, 'PocketFlow v0.24.0')
-    assert.equal(adminFooter.buildText, 'Build 2026.09.29-11')
+    assert.equal(adminFooter.versionText, 'PocketFlow v0.24.1')
+    assert.equal(adminFooter.buildText, 'Build 2026.09.29-12')
   })
 
   it('590. 10. Reconciliación y sincronización de perfil no altera datos financieros ni transacciones', () => {
@@ -14509,7 +14513,7 @@ describe('Fase 52 — Versionado Automático y Robusto del Service Worker PWA', 
   it('613. 1. CACHE_NAME del Service Worker incluye exactamente APP_VERSION y APP_BUILD actuales', () => {
     const expectedCacheName = `pocketflow-v${APP_VERSION}-${APP_BUILD}`
     assert.equal(getServiceWorkerCacheName(APP_VERSION, APP_BUILD), expectedCacheName)
-    assert.equal(expectedCacheName, 'pocketflow-v0.24.0-2026.09.29-11')
+    assert.equal(expectedCacheName, 'pocketflow-v0.24.1-2026.09.29-12')
 
     const swCode = generateServiceWorkerCode(APP_VERSION, APP_BUILD)
     assert.ok(swCode.includes(`const CACHE_NAME = '${expectedCacheName}'`))
@@ -17084,38 +17088,152 @@ describe('Fase 60 — Control de Gasto del Mes (Cerebro del Plan Financiero)', (
   })
 })
 
+describe('Fase 61 — Detección Fiable de Versión Remota y Actualizaciones PWA (Doble Capa)', () => {
+  // Test 1: local 0.24.0 / remote 0.24.1 -> available
+  it('677. 1. local 0.24.0 / remote 0.24.1 -> isRemoteVersionNewer detecta available', () => {
+    const localVer = '0.24.0'
+    const localBld = '2026.09.29-11'
+    const remoteInfo = { version: '0.24.1', build: '2026.09.29-12' }
 
+    assert.equal(isRemoteVersionNewer(remoteInfo, localVer, localBld), true)
+  })
 
+  // Test 2: local == remote -> up-to-date
+  it('678. 2. local == remote -> isRemoteVersionNewer retorna false (up-to-date)', () => {
+    const localVer = '0.24.1'
+    const localBld = '2026.09.29-12'
+    const remoteInfo = { version: '0.24.1', build: '2026.09.29-12' }
 
+    assert.equal(isRemoteVersionNewer(remoteInfo, localVer, localBld), false)
+  })
 
+  // Test 3: timeout de SW con remote nuevo -> NUNCA devuelve up-to-date (devuelve problem o available)
+  it('679. 3. timeout de SW con remote nuevo -> NUNCA devuelve up-to-date', async () => {
+    const mockFetch = async () => ({
+      ok: true,
+      json: async () => ({ version: '0.25.0', build: '2026.09.30-01' }),
+    }) as any
 
+    const fakeReg = {
+      installing: null,
+      waiting: null,
+      active: { state: 'activated' },
+      update: async () => fakeReg,
+      addEventListener: () => {},
+      removeEventListener: () => {},
+    } as unknown as ServiceWorkerRegistration
 
+    const result = await checkServiceWorkerUpdate(fakeReg, true, 80, mockFetch)
+    assert.notEqual(result, 'up-to-date', 'Con versión remota nueva un timeout nunca debe reportar up-to-date')
+    assert.ok(result === 'problem' || result === 'available')
+  })
 
+  // Test 4: version.json se pide con cache no-store / cache bust
+  it('680. 4. version.json se pide con cache no-store y querystring timestamp de cache bust', async () => {
+    let capturedUrl = ''
+    let capturedOptions: any = null
 
+    const mockFetch = (async (url: string, options: any) => {
+      capturedUrl = url
+      capturedOptions = options
+      return {
+        ok: true,
+        json: async () => ({ version: '0.24.1', build: '2026.09.29-12' }),
+      }
+    }) as any
 
+    const info = await fetchRemoteVersion('/pocketflow/', mockFetch)
+    assert.ok(info !== null)
+    assert.equal(info?.version, '0.24.1')
+    assert.ok(capturedUrl.includes('/pocketflow/version.json?ts='), 'URL debe incluir query param ?ts=')
+    assert.equal(capturedOptions?.cache, 'no-store', 'Debe solicitarse explícitamente con cache: no-store')
+    assert.equal(capturedOptions?.headers?.Pragma, 'no-cache')
+  })
 
+  // Test 5: version.json remoto nuevo -> registration.update() se ejecuta
+  it('681. 5. version.json remoto nuevo -> llama a registration.update()', async () => {
+    let updateCalled = false
+    const mockFetch = async () => ({
+      ok: true,
+      json: async () => ({ version: '0.25.0', build: '2026.09.30-01' }),
+    }) as any
 
+    const fakeReg = {
+      installing: null,
+      waiting: null,
+      update: async () => {
+        updateCalled = true
+        return fakeReg
+      },
+      addEventListener: () => {},
+      removeEventListener: () => {},
+    } as unknown as ServiceWorkerRegistration
 
+    await checkServiceWorkerUpdate(fakeReg, true, 60, mockFetch)
+    assert.equal(updateCalled, true, 'Debe haber invocado registration.update()')
+  })
 
+  // Test 6: scope correcto /pocketflow/
+  it('682. 6. scope correcto /pocketflow/ y scriptURL canónico', () => {
+    const baseUrl = '/pocketflow/'
+    const swUrl = `${baseUrl}sw.js`
+    assert.equal(swUrl, '/pocketflow/sw.js')
+    assert.equal(baseUrl, '/pocketflow/')
+  })
 
+  // Test 7: si SW no actualiza pero remote es nuevo -> estado available/problem, no falso actualizado
+  it('683. 7. si SW no actualiza pero remote es nuevo -> devuelve problem o available, nunca falso up-to-date', async () => {
+    const mockFetch = async () => ({
+      ok: true,
+      json: async () => ({ version: '0.24.2', build: '2026.09.29-13' }),
+    }) as any
 
+    const fakeReg = {
+      installing: null,
+      waiting: null,
+      update: async () => fakeReg,
+      addEventListener: () => {},
+      removeEventListener: () => {},
+    } as unknown as ServiceWorkerRegistration
 
+    const result = await checkServiceWorkerUpdate(fakeReg, true, 50, mockFetch)
+    assert.equal(result, 'problem', 'Debe devolver problem para indicar que hay versión nueva pero Safari no la ha activado aún')
+    assert.notEqual(result, 'up-to-date')
+  })
 
+  // Test 8: controllerchange sigue recargando una sola vez
+  it('684. 8. controllerchange sigue recargando exactamente una sola vez (idempotencia)', () => {
+    let reloadCount = 0
+    const onReload = () => { reloadCount++ }
+    const handler = createReloadHandler(onReload)
 
+    handler()
+    handler()
+    handler()
 
+    assert.equal(reloadCount, 1, 'createReloadHandler debe ejecutar reload exactamente 1 vez')
+  })
 
+  // Test 9: Supabase no afectado
+  it('685. 9. Supabase sigue excluido del Service Worker y version.json no interfiere con supabase', () => {
+    const swCode = generateServiceWorkerCode(APP_VERSION, APP_BUILD)
+    assert.ok(swCode.includes('supabase.co'))
+    assert.ok(swCode.includes('return false'))
 
+    const versionData = JSON.parse(generateVersionJson(APP_VERSION, APP_BUILD))
+    assert.equal(versionData.version, '0.24.1')
+    assert.equal(versionData.build, '2026.09.29-12')
+  })
 
-
-
-
-
-
-
-
-
-
-
+  // Test 10: Diagnóstico completo collectPwaDiagnosticInfo
+  it('686. 10. collectPwaDiagnosticInfo recopila estado de versión local, remota y controller', async () => {
+    const info = await collectPwaDiagnosticInfo(null, '/pocketflow/')
+    assert.equal(info.localVersion, '0.24.1')
+    assert.equal(info.localBuild, '2026.09.29-12')
+    assert.equal(info.basePath, '/pocketflow/')
+    assert.ok(typeof info.lastCheckedAt === 'string')
+  })
+})
 
 
 

@@ -165,3 +165,40 @@ export function writeServiceWorkerFile(
   fs.writeFileSync(targetPath, code, 'utf-8')
   return code
 }
+
+/**
+ * Metadata del archivo version.json público para comprobación de versiones independiente.
+ */
+export interface VersionJsonMetadata {
+  version: string
+  build: string
+  name: string
+  generatedAt: string
+}
+
+/**
+ * Genera el JSON canónico para version.json.
+ */
+export function generateVersionJson(version: string = APP_VERSION, build: string = APP_BUILD): string {
+  const meta: VersionJsonMetadata = {
+    version,
+    build,
+    name: 'PocketFlow',
+    generatedAt: new Date().toISOString(),
+  }
+  return JSON.stringify(meta, null, 2)
+}
+
+/**
+ * Escribe el archivo version.json en la ruta especificada (por defecto public/version.json).
+ */
+export function writeVersionJsonFile(
+  targetPath = path.resolve(process.cwd(), 'public', 'version.json'),
+  version = APP_VERSION,
+  build = APP_BUILD
+): string {
+  const content = generateVersionJson(version, build)
+  fs.mkdirSync(path.dirname(targetPath), { recursive: true })
+  fs.writeFileSync(targetPath, content, 'utf-8')
+  return content
+}
