@@ -2,8 +2,8 @@ import { useEffect, useRef, useState, useCallback } from 'react'
 import {
   createReloadHandler,
   isPwaUpdateAvailable,
-  sendSkipWaiting,
   checkServiceWorkerUpdate,
+  activatePwaUpdate,
   devLog,
   type PwaUpdateCheckResult,
 } from '../utils/pwaUpdate'
@@ -11,7 +11,7 @@ import {
 export interface PwaUpdateState {
   updateAvailable: boolean
   isUpdating: boolean
-  updateApp: () => void
+  updateApp: () => Promise<boolean>
   checkForUpdate: () => Promise<PwaUpdateCheckResult>
 }
 
@@ -22,37 +22,40 @@ export function usePwaUpdate(): PwaUpdateState {
   const waitingWorkerRef = useRef<ServiceWorker | null>(null)
   const activeCheckPromiseRef = useRef<Promise<PwaUpdateCheckResult> | null>(null)
 
-  const updateApp = useCallback(async () => {
+  const updateApp = useCallback(async (): Promise<boolean> => {
     setIsUpdating(true)
     devLog('[PWA] updateApp triggered')
 
-    // 1. Obtener registro fresco y worker en espera
-    let worker = waitingWorkerRef.current
-    if (!worker && registrationRef.current?.waiting) {
-      worker = registrationRef.current.waiting
-    }
-    if (!worker && typeof navigator !== 'undefined' && 'serviceWorker' in navigator && typeof navigator.serviceWorker.getRegistration === 'function') {
-      try {
-        const reg = await navigator.serviceWorker.getRegistration()
-        if (reg?.waiting) {
-          worker = reg.waiting
-        }
-      } catch {
-        // Ignorar
-      }
-    }
+    try {
+      const result = await activatePwaUpdate({
+        registration: registrationRef.current,
+        waitingWorker: waitingWorkerRef.current,
+        getFreshRegistration: async () => {
+          if (
+            typeof navigator !== 'undefined' &&
+            'serviceWorker' in navigator &&
+            typeof navigator.serviceWorker.getRegistration === 'function'
+          ) {
+            const fresh = await navigator.serviceWorker.getRegistration()
+            if (fresh) {
+              registrationRef.current = fresh
+            }
+            return fresh
+          }
+          return registrationRef.current
+        },
+      })
 
-    if (worker) {
-      devLog('[PWA] sending SKIP_WAITING to waiting worker')
-      waitingWorkerRef.current = worker
-      sendSkipWaiting(worker)
-      // La recarga ocurrirá de forma segura cuando se dispare el evento 'controllerchange'
-    } else {
-      devLog('[PWA] no waiting worker found to activate, checking update')
-      if (registrationRef.current) {
-        registrationRef.current.update().catch(() => {})
+      if (!result.success) {
+        devLog('[PWA] updateApp failed:', result.error)
+        setIsUpdating(false)
+        return false
       }
+      return true
+    } catch (err) {
+      devLog('[PWA] unexpected error in updateApp:', err)
       setIsUpdating(false)
+      return false
     }
   }, [])
 

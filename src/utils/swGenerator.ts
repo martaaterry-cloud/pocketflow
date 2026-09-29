@@ -32,7 +32,11 @@ const PRECACHE_URLS = [
 
 self.addEventListener('message', (event) => {
   if (event.data?.type === 'SKIP_WAITING') {
-    self.skipWaiting()
+    if (typeof event.waitUntil === 'function') {
+      event.waitUntil(self.skipWaiting())
+    } else {
+      self.skipWaiting()
+    }
   }
 })
 
@@ -52,9 +56,12 @@ self.addEventListener('activate', (event) => {
         Promise.all(
           cacheNames
             .filter((name) => name !== CACHE_NAME)
-            .map((name) => caches.delete(name))
+            .map((name) => caches.delete(name).catch(() => false))
         )
       )
+      .catch((err) => {
+        console.warn('[SW] Error clearing old caches:', err)
+      })
       .then(() => self.clients.claim())
   )
 })

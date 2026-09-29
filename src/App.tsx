@@ -33,7 +33,7 @@ export type SyncStatus = 'connecting' | 'connected' | 'syncing' | 'up_to_date' |
 
 export default function App() {
   const finance = useFinance()
-  const { updateAvailable, isUpdating: isPwaUpdating, updateApp: handlePwaUpdate, checkForUpdate } = usePwaUpdate()
+  const { updateAvailable, isUpdating: isPwaUpdating, updateApp, checkForUpdate } = usePwaUpdate()
   const [tab, setTab] = useState<Tab>('home')
   const [moreSubView, setMoreSubView] = useState<MoreSubView>('menu')
   const [isModalOpen, setIsModalOpen] = useState(false)
@@ -58,6 +58,13 @@ export default function App() {
   const showToast = (message: string, type: 'success' | 'error' = 'success') => {
     setToast({ message, type })
     setTimeout(() => setToast(null), 2500)
+  }
+
+  const handlePwaUpdate = async () => {
+    const success = await updateApp()
+    if (!success) {
+      showToast('No se pudo completar la actualización. Inténtalo de nuevo.', 'error')
+    }
   }
 
   // 1. Verificar sesión persistente de Supabase al arrancar

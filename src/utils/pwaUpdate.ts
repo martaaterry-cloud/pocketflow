@@ -28,6 +28,41 @@ export function devLog(...args: unknown[]): void {
 }
 
 /**
+ * Determina si un worker es válido y está en espera instalado.
+ * Rechaza trabajadores redundantes, activándose, activados o inválidos.
+ */
+export function isWorkerWaiting(worker?: WorkerWithMessage | ServiceWorker | null): boolean {
+  if (!worker || typeof worker.postMessage !== 'function') {
+    return false
+  }
+  return worker.state === 'installed'
+}
+
+/**
+ * Localiza el Service Worker en espera con orden de prioridad estricto:
+ * 1. freshRegistration.waiting (si worker.state === 'installed')
+ * 2. currentRegistration.waiting (si worker.state === 'installed')
+ * 3. fallbackWorker SOLO como último recurso si worker.state === 'installed'
+ * Nunca devuelve trabajadores redundantes, en activación o activados.
+ */
+export function findWaitingWorker(
+  freshRegistration?: ServiceWorkerRegistration | null,
+  currentRegistration?: ServiceWorkerRegistration | null,
+  fallbackWorker?: WorkerWithMessage | ServiceWorker | null
+): ServiceWorker | WorkerWithMessage | null {
+  if (isWorkerWaiting(freshRegistration?.waiting)) {
+    return freshRegistration!.waiting!
+  }
+  if (isWorkerWaiting(currentRegistration?.waiting)) {
+    return currentRegistration!.waiting!
+  }
+  if (isWorkerWaiting(fallbackWorker)) {
+    return fallbackWorker!
+  }
+  return null
+}
+
+/**
  * Determina si una instalación de service worker corresponde a una actualización real
  * (existe un controlador previo activo) o si es la primera instalación (no hay controlador).
  */
@@ -57,6 +92,151 @@ export function createReloadHandler(reloadFn: () => void = () => window.location
       reloadFn()
     }
   }
+}
+
+export interface ActivatePwaUpdateOptions {
+  getFreshRegistration?: () => Promise<ServiceWorkerRegistration | null | undefined>
+  registration?: ServiceWorkerRegistration | null
+  waitingWorker?: WorkerWithMessage | ServiceWorker | null
+  onReload?: () => void
+  timeoutMs?: number
+  pollIntervalMs?: number
+  serviceWorkerContainer?: {
+    addEventListener?: (type: string, listener: () => void) => void
+    removeEventListener?: (type: string, listener: () => void) => void
+  }
+}
+
+/**
+ * Flujo robusto de activación con timeout y polling para evitar bloqueos infinitos (iOS/Safari WebKit).
+ */
+export async function activatePwaUpdate(
+  options: ActivatePwaUpdateOptions = {}
+): Promise<{ success: boolean; error?: string }> {
+  const {
+    getFreshRegistration = () => {
+      if (typeof navigator !== 'undefined' && 'serviceWorker' in navigator && typeof navigator.serviceWorker.getRegistration === 'function') {
+        return navigator.serviceWorker.getRegistration()
+      }
+      return Promise.resolve(null)
+    },
+    registration = null,
+    waitingWorker = null,
+    onReload = () => {
+      if (typeof window !== 'undefined' && typeof window.location?.reload === 'function') {
+        window.location.reload()
+      }
+    },
+    timeoutMs = 5000,
+    pollIntervalMs = 350,
+    serviceWorkerContainer = typeof navigator !== 'undefined' && 'serviceWorker' in navigator ? navigator.serviceWorker : undefined,
+  } = options
+
+  // 1. Obtener SIEMPRE primero un registro fresco
+  let freshReg: ServiceWorkerRegistration | null = null
+  try {
+    const reg = await getFreshRegistration()
+    if (reg) freshReg = reg
+  } catch (err) {
+    devLog('[PWA] Error fetching fresh registration during activation:', err)
+  }
+
+  // 2. Prioridad estricta para localizar el waiting worker
+  const targetWorker = findWaitingWorker(freshReg, registration, waitingWorker)
+
+  if (!targetWorker) {
+    devLog('[PWA] No valid waiting worker (state === installed) found for activation')
+    return { success: false, error: 'No valid waiting worker found' }
+  }
+
+  // 3. Crear recarga segura y única
+  const reloadOnce = createReloadHandler(() => {
+    devLog('[PWA] executing reload once after activation')
+    onReload()
+  })
+
+  return new Promise<{ success: boolean; error?: string }>((resolve) => {
+    let finished = false
+    let pollTimer: ReturnType<typeof setInterval> | null = null
+    let timeoutTimer: ReturnType<typeof setTimeout> | null = null
+    let controllerChangeListener: (() => void) | null = null
+
+    const cleanup = () => {
+      if (pollTimer) {
+        clearInterval(pollTimer)
+        pollTimer = null
+      }
+      if (timeoutTimer) {
+        clearTimeout(timeoutTimer)
+        timeoutTimer = null
+      }
+      if (controllerChangeListener && serviceWorkerContainer && typeof serviceWorkerContainer.removeEventListener === 'function') {
+        serviceWorkerContainer.removeEventListener('controllerchange', controllerChangeListener)
+        controllerChangeListener = null
+      }
+    }
+
+    const finishSuccess = () => {
+      if (!finished) {
+        finished = true
+        cleanup()
+        reloadOnce()
+        resolve({ success: true })
+      }
+    }
+
+    const finishFailed = (error: string) => {
+      if (!finished) {
+        finished = true
+        cleanup()
+        resolve({ success: false, error })
+      }
+    }
+
+    // A. Escuchar controllerchange
+    if (serviceWorkerContainer && typeof serviceWorkerContainer.addEventListener === 'function') {
+      controllerChangeListener = () => {
+        devLog('[PWA] controllerchange event fired during activation')
+        finishSuccess()
+      }
+      serviceWorkerContainer.addEventListener('controllerchange', controllerChangeListener)
+    }
+
+    // B. Polling periódico de respaldo (para Safari/iOS WebKit si no lanza controllerchange)
+    pollTimer = setInterval(async () => {
+      if (finished) return
+      try {
+        const checkReg = await getFreshRegistration()
+        // Si el waiting worker desapareció y el worker activo está en estado 'activated'
+        if (checkReg && !checkReg.waiting && checkReg.active && checkReg.active.state === 'activated') {
+          devLog('[PWA] polling confirmed waiting worker disappeared and active worker is activated')
+          finishSuccess()
+        }
+      } catch (err) {
+        devLog('[PWA] polling error during activation:', err)
+      }
+    }, pollIntervalMs)
+
+    // C. Timeout de seguridad (5 segundos por defecto)
+    timeoutTimer = setTimeout(() => {
+      if (!finished) {
+        devLog('[PWA] activation timeout reached (5s) without worker completion')
+        finishFailed('No se pudo completar la actualización. Inténtalo de nuevo.')
+      }
+    }, timeoutMs)
+
+    // D. Enviar SKIP_WAITING
+    try {
+      devLog('[PWA] sending SKIP_WAITING to target worker')
+      const sent = sendSkipWaiting(targetWorker)
+      if (!sent) {
+        finishFailed('Failed to send SKIP_WAITING')
+      }
+    } catch (err) {
+      devLog('[PWA] error sending SKIP_WAITING:', err)
+      finishFailed(err instanceof Error ? err.message : 'Error sending SKIP_WAITING')
+    }
+  })
 }
 
 /**

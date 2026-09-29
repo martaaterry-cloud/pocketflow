@@ -1,5 +1,5 @@
-// PocketFlow Service Worker v0.23.0 (2026.09.29-07)
-const CACHE_NAME = 'pocketflow-v0.23.0-2026.09.29-07'
+// PocketFlow Service Worker v0.23.1 (2026.09.29-08)
+const CACHE_NAME = 'pocketflow-v0.23.1-2026.09.29-08'
 
 // Recursos estáticos iniciales a cachear
 const PRECACHE_URLS = [
@@ -14,7 +14,11 @@ const PRECACHE_URLS = [
 
 self.addEventListener('message', (event) => {
   if (event.data?.type === 'SKIP_WAITING') {
-    self.skipWaiting()
+    if (typeof event.waitUntil === 'function') {
+      event.waitUntil(self.skipWaiting())
+    } else {
+      self.skipWaiting()
+    }
   }
 })
 
@@ -34,9 +38,12 @@ self.addEventListener('activate', (event) => {
         Promise.all(
           cacheNames
             .filter((name) => name !== CACHE_NAME)
-            .map((name) => caches.delete(name))
+            .map((name) => caches.delete(name).catch(() => false))
         )
       )
+      .catch((err) => {
+        console.warn('[SW] Error clearing old caches:', err)
+      })
       .then(() => self.clients.claim())
   )
 })
