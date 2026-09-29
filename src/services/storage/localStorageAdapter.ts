@@ -4,8 +4,12 @@ import {
   categories as defaultCategories,
 } from '../../data/seed'
 import type { PersistedState, StorageAdapter } from './storageAdapter'
-
-const STORAGE_KEY = 'pocketflow:v1'
+import {
+  getLocalStorage,
+  getUserStorageKey,
+  isValidUserId,
+  LEGACY_STORAGE_KEY,
+} from './userStorageKeys'
 
 export function migratePersistedState(parsed: Partial<PersistedState>): PersistedState {
   // Migración de iconos de categorías y metas
@@ -76,15 +80,32 @@ export function migratePersistedState(parsed: Partial<PersistedState>): Persiste
 }
 
 export class LocalStorageAdapter implements StorageAdapter {
-  private key: string
+  private key: string | null
 
-  constructor(key: string = STORAGE_KEY) {
-    this.key = key
+  constructor(keyOrUserId?: string | null) {
+    if (keyOrUserId) {
+      if (keyOrUserId.startsWith('pocketflow:') || keyOrUserId.includes(':')) {
+        this.key = keyOrUserId
+      } else if (isValidUserId(keyOrUserId)) {
+        this.key = getUserStorageKey(keyOrUserId, 'state')
+      } else {
+        this.key = keyOrUserId
+      }
+    } else {
+      this.key = null
+    }
+  }
+
+  getKey(): string | null {
+    return this.key
   }
 
   async load(): Promise<PersistedState | null> {
+    if (!this.key) return null
     try {
-      const raw = localStorage.getItem(this.key)
+      const storage = getLocalStorage()
+      if (!storage) return null
+      const raw = storage.getItem(this.key)
       if (!raw) return null
       const parsed = JSON.parse(raw) as Partial<PersistedState>
       if (!parsed || typeof parsed !== 'object') return null
@@ -96,20 +117,30 @@ export class LocalStorageAdapter implements StorageAdapter {
   }
 
   async save(state: PersistedState): Promise<void> {
+    if (!this.key) return
     try {
-      localStorage.setItem(this.key, JSON.stringify(state))
+      const storage = getLocalStorage()
+      if (!storage) return
+      storage.setItem(this.key, JSON.stringify(state))
     } catch (error) {
       console.error('[LocalStorageAdapter] Error guardando datos en localStorage:', error)
     }
   }
 
   async clear(): Promise<void> {
+    if (!this.key) return
     try {
-      localStorage.removeItem(this.key)
+      const storage = getLocalStorage()
+      if (!storage) return
+      storage.removeItem(this.key)
     } catch (error) {
       console.error('[LocalStorageAdapter] Error limpiando datos en localStorage:', error)
     }
   }
 }
 
-export const defaultStorage = new LocalStorageAdapter()
+export function createLocalStorageAdapter(userId?: string | null): LocalStorageAdapter {
+  return new LocalStorageAdapter(userId)
+}
+
+export const defaultStorage = new LocalStorageAdapter(LEGACY_STORAGE_KEY)

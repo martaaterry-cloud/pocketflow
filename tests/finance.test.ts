@@ -43,7 +43,7 @@ import { RECURRING_INCOME_SOURCE_LABELS } from '../src/models/finance'
 import { calculateAccountBalance, reconcileAccounts } from '../src/utils/balance'
 import { money } from '../src/utils/money'
 import type { PersistedState, StorageAdapter } from '../src/services/storage/storageAdapter'
-import { LocalStorageAdapter, migratePersistedState } from '../src/services/storage/localStorageAdapter'
+import { LocalStorageAdapter, createLocalStorageAdapter, migratePersistedState } from '../src/services/storage/localStorageAdapter'
 import { IndexedDbAdapter } from '../src/services/storage/indexedDbAdapter'
 import { resolveIconKey } from '../src/ui/icons'
 import { SWIPE_MAX_REVEAL, SWIPE_THRESHOLD } from '../src/components/SwipeableTransactionRow'
@@ -68,7 +68,40 @@ import {
   calculateBackupSummary,
   AUTO_BACKUP_INTERVAL_DAYS,
   MAX_AUTO_BACKUPS_RETENTION,
+  getLastCloudAutoBackupDate,
+  setLastCloudAutoBackupDate,
 } from '../src/services/supabase/cloudBackupService'
+import {
+  getUserStorageKey,
+  getUserDbName,
+  getLocalStorage,
+  isValidUserId,
+  getLegacyMigratedUserId,
+  isLegacyMigrated,
+  isLegacyMigratedTo,
+  hasLegacyLocalStorageData,
+  migrateLegacyDataToUser,
+  LEGACY_STORAGE_KEY,
+  LEGACY_OFFLINE_QUEUE_KEY,
+  LEGACY_LAST_CLOUD_AUTO_BACKUP_KEY,
+  LEGACY_LAST_BACKUP_DATE_KEY,
+  LEGACY_LAST_EXCEL_EXPORT_DATE_KEY,
+  LEGACY_MIGRATION_MARKER_KEY,
+} from '../src/services/storage/userStorageKeys'
+import {
+  getOfflineQueue,
+  saveOfflineQueue,
+  enqueueOfflineMutation,
+  flushOfflineQueue,
+  clearOfflineQueue,
+  getPendingMutationsCount,
+} from '../src/services/supabase/offlineQueue'
+import {
+  getLastBackupDate,
+  setLastBackupDate,
+  getLastExcelExportDate,
+  setLastExcelExportDate,
+} from '../src/utils/backup'
 import {
   calculateMonthlyEstimate,
   calculateRealSpentForEstimate,
@@ -1985,8 +2018,9 @@ describe('Fase 6 — PWA, Atajos Web, Copias de Seguridad y Persistencia', () =>
     assert.ok(idbLoaded !== null)
     assert.equal(idbLoaded?.accounts.length, initialFinanceState.accounts.length)
 
-    // @ts-expect-error Limpieza
-    delete globalThis.localStorage
+    // Limpieza
+    // @ts-expect-error Restaurar mock global
+    globalThis.localStorage = mockStorageInstance
   })
 })
 
@@ -6850,12 +6884,12 @@ describe('Fase 18 — Mejoras de Finanzas (Detalle por Categoría, Retiradas de 
 describe('Fase 18 — Identificación Visual de Versión y Build', () => {
   it('314. Versioning: única fuente de verdad y formato de visualización exacto', () => {
     assert.equal(APP_NAME, 'PocketFlow')
-    assert.equal(APP_VERSION, '0.20.2')
-    assert.equal(APP_BUILD, '2026.09.28-04')
+    assert.equal(APP_VERSION, '0.21.0')
+    assert.equal(APP_BUILD, '2026.09.29-01')
 
-    assert.equal(getAppVersionString(), 'PocketFlow v0.20.2')
-    assert.equal(getAppBuildString(), 'Build 2026.09.28-04')
-    assert.equal(getAppFullVersionLabel(), 'PocketFlow v0.20.2 · Build 2026.09.28-04')
+    assert.equal(getAppVersionString(), 'PocketFlow v0.21.0')
+    assert.equal(getAppBuildString(), 'Build 2026.09.29-01')
+    assert.equal(getAppFullVersionLabel(), 'PocketFlow v0.21.0 · Build 2026.09.29-01')
   })
 })
 
@@ -13942,7 +13976,7 @@ describe('Fase 50 — Control de Acceso por Roles (User / Admin), Seguridad RLS 
     assert.equal(allowedSubViews.includes('cloud'), false)
   })
 
-  it('589. 9. Footer: usuario normal ve solo "PocketFlow v0.20.2", admin ve "PocketFlow v0.20.2" y "Build 2026.09.28-04"', () => {
+  it('589. 9. Footer: usuario normal ve solo "PocketFlow v0.21.0", admin ve "PocketFlow v0.21.0" y "Build 2026.09.29-01"', () => {
     const renderFooterTexts = (isAdmin: boolean): { versionText: string; buildText: string | null } => {
       return {
         versionText: getAppVersionString(),
@@ -13951,12 +13985,12 @@ describe('Fase 50 — Control de Acceso por Roles (User / Admin), Seguridad RLS 
     }
 
     const userFooter = renderFooterTexts(false)
-    assert.equal(userFooter.versionText, 'PocketFlow v0.20.2')
+    assert.equal(userFooter.versionText, 'PocketFlow v0.21.0')
     assert.equal(userFooter.buildText, null)
 
     const adminFooter = renderFooterTexts(true)
-    assert.equal(adminFooter.versionText, 'PocketFlow v0.20.2')
-    assert.equal(adminFooter.buildText, 'Build 2026.09.28-04')
+    assert.equal(adminFooter.versionText, 'PocketFlow v0.21.0')
+    assert.equal(adminFooter.buildText, 'Build 2026.09.29-01')
   })
 
   it('590. 10. Reconciliación y sincronización de perfil no altera datos financieros ni transacciones', () => {
@@ -14117,6 +14151,342 @@ describe('Fase 43 — Navegación y Reseteo de Scroll en Pestaña Más', () => {
     })
   })
 })
+
+describe('Fase 51 — Aislamiento Estricto por Usuario en Almacenamiento Local, IndexedDB y Offline Queue', () => {
+  const userA = 'f47ac10b-58cc-4372-a567-0e02b2c3d479'
+  const userB = 'a12bc34d-67ef-8901-b234-1c23d4e5f678'
+  const userMarta = 'marta-uuid-1111-2222-3333-444455556666'
+  const userOther = 'other-uuid-7777-8888-9999-000011112222'
+
+  it('603. 1. Keys y DB names aislados por UUID de usuario', () => {
+    assert.equal(getUserStorageKey(userA, 'state'), `pocketflow:${userA}:state`)
+    assert.equal(getUserStorageKey(userB, 'state'), `pocketflow:${userB}:state`)
+    assert.notEqual(getUserStorageKey(userA, 'state'), getUserStorageKey(userB, 'state'))
+
+    assert.equal(getUserStorageKey(userA, 'offline-queue'), `pocketflow:${userA}:offline-queue`)
+    assert.equal(getUserStorageKey(userB, 'offline-queue'), `pocketflow:${userB}:offline-queue`)
+
+    assert.equal(getUserStorageKey(userA, 'last-cloud-backup'), `pocketflow:${userA}:last-cloud-backup`)
+    assert.equal(getUserStorageKey(userA, 'last-backup'), `pocketflow:${userA}:last-backup`)
+    assert.equal(getUserStorageKey(userA, 'last-excel-export'), `pocketflow:${userA}:last-excel-export`)
+
+    assert.equal(getUserDbName(userA), `pocketflow_db_${userA}`)
+    assert.equal(getUserDbName(userB), `pocketflow_db_${userB}`)
+    assert.notEqual(getUserDbName(userA), getUserDbName(userB))
+  })
+
+  it('604. 2. Aislamiento de lectura y escritura entre Usuario A y Usuario B', async () => {
+    const adapterA = new LocalStorageAdapter(userA)
+    const adapterB = new LocalStorageAdapter(userB)
+
+    const stateA: PersistedState = {
+      ...createCleanInitialState(),
+      accounts: [{ id: 'daily', name: 'Cuenta de A', type: 'spending', initialBalance: 5000, balance: 5000 }],
+      transactions: [{ id: 'tx-a1', type: 'expense', amount: 50, accountId: 'daily', description: 'Compra A', date: '2026-09-29T10:00:00' }],
+    }
+
+    const stateB: PersistedState = {
+      ...createCleanInitialState(),
+      accounts: [{ id: 'daily', name: 'Cuenta de B', type: 'spending', initialBalance: 120, balance: 120 }],
+      transactions: [{ id: 'tx-b1', type: 'expense', amount: 15, accountId: 'daily', description: 'Compra B', date: '2026-09-29T11:00:00' }],
+    }
+
+    // Usuario A guarda sus datos
+    await adapterA.save(stateA)
+
+    // Usuario B no ve los datos de A
+    const loadedBInitial = await adapterB.load()
+    assert.equal(loadedBInitial, null)
+
+    // Usuario B guarda sus datos
+    await adapterB.save(stateB)
+
+    // Usuario A lee y sigue teniendo exactamente sus datos
+    const loadedA = await adapterA.load()
+    assert.ok(loadedA)
+    assert.equal(loadedA?.accounts[0].name, 'Cuenta de A')
+    assert.equal(loadedA?.accounts[0].initialBalance, 5000)
+    assert.equal(loadedA?.transactions[0].description, 'Compra A')
+
+    // Usuario B lee y tiene exactamente sus datos
+    const loadedB = await adapterB.load()
+    assert.ok(loadedB)
+    assert.equal(loadedB?.accounts[0].name, 'Cuenta de B')
+    assert.equal(loadedB?.accounts[0].initialBalance, 120)
+    assert.equal(loadedB?.transactions[0].description, 'Compra B')
+  })
+
+  it('605. 3. Cola Offline aislada por userId', () => {
+    clearOfflineQueue(userA)
+    clearOfflineQueue(userB)
+
+    assert.equal(getPendingMutationsCount(userA), 0)
+    assert.equal(getPendingMutationsCount(userB), 0)
+
+    // Encolar mutación para usuario A
+    enqueueOfflineMutation(userA, {
+      entity: 'transaction',
+      action: 'insert',
+      data: { id: 'tx-offline-a', amount: 25, description: 'Gasto A offline' },
+    })
+
+    assert.equal(getPendingMutationsCount(userA), 1)
+    assert.equal(getPendingMutationsCount(userB), 0)
+
+    const queueA = getOfflineQueue(userA)
+    const queueB = getOfflineQueue(userB)
+
+    assert.equal(queueA.length, 1)
+    assert.equal(queueA[0].userId, userA)
+    assert.equal(queueB.length, 0)
+
+    // Limpiar cola de A no afecta a B
+    clearOfflineQueue(userA)
+    assert.equal(getPendingMutationsCount(userA), 0)
+  })
+
+  it('606. 4. flushOfflineQueue ignora y rechaza mutaciones foráneas de otro usuario', async () => {
+    clearOfflineQueue(userB)
+
+    // Crear cola para userB que contenga accidentalmente un item con userId de userA
+    const taintedQueue = [
+      {
+        id: 'mut-valid-b',
+        entity: 'transaction' as const,
+        action: 'insert' as const,
+        data: { id: 'tx-b-clean', amount: 10, description: 'Gasto B' },
+        timestamp: Date.now(),
+        userId: userB,
+      },
+      {
+        id: 'mut-tainted-a',
+        entity: 'transaction' as const,
+        action: 'insert' as const,
+        data: { id: 'tx-a-foreign', amount: 999, description: 'Gasto A no permitido' },
+        timestamp: Date.now(),
+        userId: userA, // Usuario foráneo
+      },
+    ]
+
+    saveOfflineQueue(userB, taintedQueue)
+    assert.equal(getPendingMutationsCount(userB), 2)
+
+    const executedUpserts: unknown[] = []
+    const mockSupabase: any = {
+      from: (table: string) => ({
+        upsert: async (row: any) => {
+          executedUpserts.push({ table, row })
+          return { error: null }
+        },
+        delete: () => ({ eq: () => ({ eq: async () => ({ error: null }) }) }),
+      }),
+    }
+
+    const res = await flushOfflineQueue(mockSupabase, userB)
+    assert.equal(res.successCount, 1)
+    // El elemento de userA fue ignorado y no ejecutado
+    assert.equal(executedUpserts.length, 1)
+    assert.equal((executedUpserts[0] as any).row.id, 'tx-b-clean')
+  })
+
+  it('607. 5. Ciclo de sesión: Login A -> Logout -> Login B -> Logout -> Login A restaura datos sin fugas', async () => {
+    const userSessionA = 'session-user-a-1111-2222'
+    const userSessionB = 'session-user-b-3333-4444'
+
+    const storageA = new LocalStorageAdapter(userSessionA)
+    const storageB = new LocalStorageAdapter(userSessionB)
+
+    const stateA: PersistedState = {
+      ...createCleanInitialState(),
+      accounts: [{ id: 'daily', name: 'Banco A', type: 'spending', initialBalance: 3500, balance: 3500 }],
+      transactions: [{ id: 'tx-a-session', type: 'expense', amount: 75, accountId: 'daily', description: 'Restaurante A', date: '2026-09-29T12:00:00' }],
+    }
+    await storageA.save(stateA)
+
+    // 1. Simular inicio de sesión Usuario A
+    let currentSessionUser: string | null = userSessionA
+    let currentAdapter = new LocalStorageAdapter(currentSessionUser)
+    let inMemoryState = await currentAdapter.load()
+    assert.equal(inMemoryState?.accounts[0].initialBalance, 3500)
+
+    // 2. Simular Logout de Usuario A
+    currentSessionUser = null
+    currentAdapter = new LocalStorageAdapter(null)
+    inMemoryState = createCleanInitialState() // Memoria reseteada a estado limpio
+    assert.equal(inMemoryState.transactions.length, 0)
+    assert.equal(inMemoryState.accounts[0]?.initialBalance ?? 0, 0)
+
+    // 3. Simular Login de Usuario B (sin datos previos)
+    currentSessionUser = userSessionB
+    currentAdapter = new LocalStorageAdapter(currentSessionUser)
+    const loadedB = await currentAdapter.load()
+    assert.equal(loadedB, null) // No tiene datos de A
+
+    // Usuario B crea datos propios
+    const stateB: PersistedState = {
+      ...createCleanInitialState(),
+      accounts: [{ id: 'daily', name: 'Banco B', type: 'spending', initialBalance: 200, balance: 200 }],
+      transactions: [{ id: 'tx-b-session', type: 'expense', amount: 20, accountId: 'daily', description: 'Café B', date: '2026-09-29T13:00:00' }],
+    }
+    await storageB.save(stateB)
+
+    // 4. Logout de Usuario B
+    currentSessionUser = null
+    inMemoryState = createCleanInitialState()
+
+    // 5. Re-Login de Usuario A
+    currentSessionUser = userSessionA
+    currentAdapter = new LocalStorageAdapter(currentSessionUser)
+    const restoredA = await currentAdapter.load()
+    assert.ok(restoredA)
+    assert.equal(restoredA?.accounts[0].name, 'Banco A')
+    assert.equal(restoredA?.accounts[0].initialBalance, 3500)
+    assert.equal(restoredA?.transactions[0].description, 'Restaurante A')
+  })
+
+  it('608. 6. Migración legacy conservadora para Marta (primer usuario autenticado)', () => {
+    const storage = getLocalStorage()!
+    assert.ok(storage)
+
+    // 1. Preparar datos legacy antiguos sin namespace
+    storage.removeItem(LEGACY_MIGRATION_MARKER_KEY)
+    storage.removeItem(getUserStorageKey(userMarta, 'state'))
+    storage.removeItem(getUserStorageKey(userMarta, 'offline-queue'))
+    storage.removeItem(getUserStorageKey(userMarta, 'last-backup'))
+    storage.removeItem(getUserStorageKey(userMarta, 'last-excel-export'))
+    storage.removeItem(getUserStorageKey(userMarta, 'last-cloud-backup'))
+
+    const legacyState = JSON.stringify({
+      accounts: [{ id: 'daily', name: 'Cuenta Marta Original', type: 'spending', initialBalance: 1250, balance: 1250 }],
+      transactions: [{ id: 'tx-marta-1', type: 'expense', amount: 48.99, accountId: 'daily', description: 'Compra HSN Marta', date: '2026-09-24T10:00:00' }],
+    })
+    const legacyQueue = JSON.stringify([{ id: 'mut-marta', entity: 'transaction', action: 'insert', data: { id: 'tx-m' } }])
+    const legacyCloud = '2026-09-22T08:00:00.000Z'
+    const legacyBackup = '2026-09-23T09:00:00.000Z'
+    const legacyExcel = '2026-09-24T10:00:00.000Z'
+
+    storage.setItem(LEGACY_STORAGE_KEY, legacyState)
+    storage.setItem(LEGACY_OFFLINE_QUEUE_KEY, legacyQueue)
+    storage.setItem(LEGACY_LAST_CLOUD_AUTO_BACKUP_KEY, legacyCloud)
+    storage.setItem(LEGACY_LAST_BACKUP_DATE_KEY, legacyBackup)
+    storage.setItem(LEGACY_LAST_EXCEL_EXPORT_DATE_KEY, legacyExcel)
+
+    assert.equal(hasLegacyLocalStorageData(), true)
+    assert.equal(isLegacyMigrated(), false)
+
+    // 2. Ejecutar migración para Marta
+    const result = migrateLegacyDataToUser(userMarta)
+    assert.equal(result.migrated, true)
+    assert.equal(result.reason, 'success')
+
+    // 3. Comprobar que los datos se copiaron al namespace nuevo
+    const migratedStateRaw = storage.getItem(getUserStorageKey(userMarta, 'state'))
+    assert.ok(migratedStateRaw)
+    const parsedMigrated = JSON.parse(migratedStateRaw!)
+    assert.equal(parsedMigrated.accounts[0].name, 'Cuenta Marta Original')
+    assert.equal(parsedMigrated.transactions[0].description, 'Compra HSN Marta')
+
+    assert.equal(storage.getItem(getUserStorageKey(userMarta, 'offline-queue')), legacyQueue)
+    assert.equal(storage.getItem(getUserStorageKey(userMarta, 'last-cloud-backup')), legacyCloud)
+    assert.equal(storage.getItem(getUserStorageKey(userMarta, 'last-backup')), legacyBackup)
+    assert.equal(storage.getItem(getUserStorageKey(userMarta, 'last-excel-export')), legacyExcel)
+
+    // 4. Marca de migración registrada
+    assert.equal(getLegacyMigratedUserId(), userMarta)
+    assert.equal(isLegacyMigratedTo(userMarta), true)
+
+    // 5. Los datos legacy se conservan íntegros (conservador)
+    assert.equal(storage.getItem(LEGACY_STORAGE_KEY), legacyState)
+  })
+
+  it('609. 7. Migración legacy solo corre una vez y no se aplica a usuarios posteriores', () => {
+    const storage = getLocalStorage()!
+    assert.ok(storage)
+
+    // Asegurar que la marca ya apunta a Marta
+    assert.equal(getLegacyMigratedUserId(), userMarta)
+
+    // Nuevo usuario intenta migrar
+    const result = migrateLegacyDataToUser(userOther)
+    assert.equal(result.migrated, false)
+    assert.equal(result.reason, 'migrated_to_different_user')
+
+    // El storage de userOther no contiene los datos de Marta
+    const otherState = storage.getItem(getUserStorageKey(userOther, 'state'))
+    assert.equal(otherState, null)
+  })
+
+  it('610. 8. Metadatos de backups y exportaciones (JSON, Excel, Cloud) aislados por usuario', () => {
+    const dateBackupA = '2026-09-29T08:00:00.000Z'
+    const dateExcelA = '2026-09-29T08:15:00.000Z'
+    const dateCloudA = '2026-09-29T08:30:00.000Z'
+
+    const dateBackupB = '2026-09-29T09:00:00.000Z'
+    const dateExcelB = '2026-09-29T09:15:00.000Z'
+    const dateCloudB = '2026-09-29T09:30:00.000Z'
+
+    setLastBackupDate(userA, dateBackupA)
+    setLastExcelExportDate(userA, dateExcelA)
+    setLastCloudAutoBackupDate(userA, dateCloudA)
+
+    setLastBackupDate(userB, dateBackupB)
+    setLastExcelExportDate(userB, dateExcelB)
+    setLastCloudAutoBackupDate(userB, dateCloudB)
+
+    assert.equal(getLastBackupDate(userA), dateBackupA)
+    assert.equal(getLastExcelExportDate(userA), dateExcelA)
+    assert.equal(getLastCloudAutoBackupDate(userA), dateCloudA)
+
+    assert.equal(getLastBackupDate(userB), dateBackupB)
+    assert.equal(getLastExcelExportDate(userB), dateExcelB)
+    assert.equal(getLastCloudAutoBackupDate(userB), dateCloudB)
+  })
+
+  it('611. 9. Defensas de seguridad ante userId null/undefined/inválido', () => {
+    assert.equal(isValidUserId(null), false)
+    assert.equal(isValidUserId(undefined), false)
+    assert.equal(isValidUserId(''), false)
+    assert.equal(isValidUserId('   '), false)
+    assert.equal(isValidUserId('null'), false)
+    assert.equal(isValidUserId('undefined'), false)
+    assert.equal(isValidUserId('valid-uuid-123'), true)
+
+    assert.throws(() => getUserStorageKey(null, 'state'), /valid userId/)
+    assert.throws(() => getUserStorageKey(undefined, 'state'), /valid userId/)
+    assert.throws(() => getUserDbName(''), /valid userId/)
+
+    clearOfflineQueue(null)
+    assert.deepEqual(getOfflineQueue(null), [])
+    assert.deepEqual(getOfflineQueue(undefined), [])
+    assert.equal(getPendingMutationsCount(null), 0)
+
+    // No debe lanzar excepción ni escribir al pasar null
+    assert.doesNotThrow(() => {
+      enqueueOfflineMutation(null, { entity: 'budget', action: 'insert', data: {} })
+      clearOfflineQueue(undefined)
+    })
+  })
+
+  it('612. 10. Integración con adaptadores de persistencia y consistencia completa', async () => {
+    const adapter = createLocalStorageAdapter(userA)
+    assert.equal(adapter.getKey(), `pocketflow:${userA}:state`)
+
+    const payloadState = {
+      ...createCleanInitialState(),
+      profile: { displayName: 'Usuario A', role: 'admin' as const },
+    }
+
+    await adapter.save(payloadState)
+    const read = await adapter.load()
+    assert.equal(read?.profile?.displayName, 'Usuario A')
+    assert.equal(read?.profile?.role, 'admin')
+
+    await adapter.clear()
+    const afterClear = await adapter.load()
+    assert.equal(afterClear, null)
+  })
+})
+
 
 
 

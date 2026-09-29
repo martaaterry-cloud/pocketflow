@@ -4,6 +4,12 @@ import type { BackupSummary } from '../../utils/backup'
 import { CURRENT_BACKUP_VERSION } from '../../utils/backup'
 import { uploadStateToSupabase } from './supabaseSync'
 import { migratePersistedState } from '../storage/localStorageAdapter'
+import {
+  getLocalStorage,
+  getUserStorageKey,
+  isValidUserId,
+  LEGACY_LAST_CLOUD_AUTO_BACKUP_KEY,
+} from '../storage/userStorageKeys'
 
 export type CloudBackupReason = 'auto' | 'manual' | 'pre_restore'
 
@@ -22,7 +28,35 @@ export const AUTO_BACKUP_INTERVAL_DAYS = 7
 export const MAX_AUTO_BACKUPS_RETENTION = 8
 export const APP_VERSION = '1.0.0'
 
-export const LAST_CLOUD_AUTO_BACKUP_KEY = 'pocketflow:lastCloudAutoBackupAt'
+export const LAST_CLOUD_AUTO_BACKUP_KEY = LEGACY_LAST_CLOUD_AUTO_BACKUP_KEY
+
+export function getLastCloudAutoBackupDate(userId?: string | null): string | null {
+  const storage = getLocalStorage()
+  if (!storage) return null
+  try {
+    if (isValidUserId(userId)) {
+      const namespaced = storage.getItem(getUserStorageKey(userId, 'last-cloud-backup'))
+      if (namespaced) return namespaced
+    }
+    return storage.getItem(LEGACY_LAST_CLOUD_AUTO_BACKUP_KEY)
+  } catch {
+    return null
+  }
+}
+
+export function setLastCloudAutoBackupDate(userId: string | null | undefined, createdAt: string): void {
+  const storage = getLocalStorage()
+  if (!storage) return
+  try {
+    if (isValidUserId(userId)) {
+      storage.setItem(getUserStorageKey(userId, 'last-cloud-backup'), createdAt)
+    } else {
+      storage.setItem(LEGACY_LAST_CLOUD_AUTO_BACKUP_KEY, createdAt)
+    }
+  } catch (err) {
+    console.warn('[CloudBackup] Error guardando fecha de backup automático:', err)
+  }
+}
 
 /**
  * Desinfecta y estructura el estado financiero asegurando que no contenga
@@ -125,9 +159,7 @@ export async function createCloudBackup(
 
     // Si es automático, actualizar marca de tiempo local y podar retención
     if (reason === 'auto') {
-      if (typeof localStorage !== 'undefined') {
-        localStorage.setItem(LAST_CLOUD_AUTO_BACKUP_KEY, createdAt)
-      }
+      setLastCloudAutoBackupDate(userId, createdAt)
       await pruneOldAutoBackups(supabase, userId, MAX_AUTO_BACKUPS_RETENTION)
     }
 
@@ -212,7 +244,7 @@ export async function performAutoBackupIfNeeded(
   isOnline: boolean,
   isHydratedAndReconciled: boolean
 ): Promise<CloudBackupRecord | null> {
-  if (!isOnline || !isHydratedAndReconciled || !userId) {
+  if (!isOnline || !isHydratedAndReconciled || !isValidUserId(userId)) {
     return null
   }
 
@@ -226,7 +258,7 @@ export async function performAutoBackupIfNeeded(
       .order('created_at', { ascending: false })
       .limit(1)
 
-    const lastAutoIso = data?.[0]?.created_at ?? (typeof localStorage !== 'undefined' ? localStorage.getItem(LAST_CLOUD_AUTO_BACKUP_KEY) : null)
+    const lastAutoIso = data?.[0]?.created_at ?? getLastCloudAutoBackupDate(userId)
 
     if (shouldPerformAutoBackup(lastAutoIso)) {
       return await createCloudBackup(supabase, userId, state, 'auto')

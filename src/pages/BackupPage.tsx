@@ -6,6 +6,7 @@ import {
   generateExcelWorkbook,
   getLastBackupDate,
   getLastExcelExportDate,
+  setLastExcelExportDate,
   shareOrDownloadBackup,
   shareOrDownloadExcel,
   validateBackupPayload,
@@ -17,7 +18,7 @@ import {
   listCloudBackups,
   restoreCloudBackup,
   type CloudBackupRecord,
-  LAST_CLOUD_AUTO_BACKUP_KEY,
+  getLastCloudAutoBackupDate,
 } from '../services/supabase/cloudBackupService'
 import { uploadStateToSupabase } from '../services/supabase/supabaseSync'
 import type { PersistedState } from '../services/storage/storageAdapter'
@@ -29,8 +30,9 @@ interface BackupPageProps {
 }
 
 export function BackupPage({ finance, onBack, onToast }: BackupPageProps) {
-  const [lastExternalBackup, setLastExternalBackup] = useState<string | null>(getLastBackupDate)
-  const [lastExcelExport, setLastExcelExport] = useState<string | null>(getLastExcelExportDate)
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null)
+  const [lastExternalBackup, setLastExternalBackup] = useState<string | null>(null)
+  const [lastExcelExport, setLastExcelExport] = useState<string | null>(null)
   const [cloudBackups, setCloudBackups] = useState<CloudBackupRecord[]>([])
   const [selectedCloudBackup, setSelectedCloudBackup] = useState<CloudBackupRecord | null>(null)
   const [pendingJsonRestore, setPendingJsonRestore] = useState<BackupValidationSuccess | null>(null)
@@ -42,6 +44,15 @@ export function BackupPage({ finance, onBack, onToast }: BackupPageProps) {
   const [hasCloudError, setHasCloudError] = useState(false)
   const [isOnline, setIsOnline] = useState(() => (typeof navigator !== 'undefined' ? navigator.onLine : true))
   const fileInputRef = useRef<HTMLInputElement>(null)
+
+  useEffect(() => {
+    void getCurrentUser().then((u) => {
+      const uid = u?.id ?? null
+      setCurrentUserId(uid)
+      setLastExternalBackup(getLastBackupDate(uid))
+      setLastExcelExport(getLastExcelExportDate(uid))
+    })
+  }, [])
 
   useEffect(() => {
     const handleOnline = () => setIsOnline(true)
@@ -78,8 +89,7 @@ export function BackupPage({ finance, onBack, onToast }: BackupPageProps) {
 
   const latestAutoBackup = cloudBackups.find((b) => b.reason === 'auto')
   const lastAutoDate =
-    latestAutoBackup?.created_at ??
-    (typeof localStorage !== 'undefined' ? localStorage.getItem(LAST_CLOUD_AUTO_BACKUP_KEY) : null)
+    latestAutoBackup?.created_at ?? getLastCloudAutoBackupDate(currentUserId)
 
   const getProtectionStatus = () => {
     if (hasCloudError) return { label: 'Error', badgeClass: 'error' }
@@ -93,7 +103,7 @@ export function BackupPage({ finance, onBack, onToast }: BackupPageProps) {
       setIsExporting(true)
       const fullState = finance.getFullState()
       const payload = createBackupPayload(fullState)
-      const ok = await shareOrDownloadBackup(payload)
+      const ok = await shareOrDownloadBackup(payload, currentUserId)
       if (ok) {
         setLastExternalBackup(payload.exportedAt)
         onToast('Copia de seguridad exportada correctamente', 'success')
@@ -118,9 +128,7 @@ export function BackupPage({ finance, onBack, onToast }: BackupPageProps) {
       const ok = await shareOrDownloadExcel(workbook, `pocketflow-analisis-${dateStr}.xlsx`)
       if (ok) {
         setLastExcelExport(nowIso)
-        if (typeof localStorage !== 'undefined') {
-          localStorage.setItem('pocketflow:lastExcelExportAt', nowIso)
-        }
+        setLastExcelExportDate(currentUserId, nowIso)
         onToast('Informe Excel exportado correctamente', 'success')
       } else {
         onToast('No se pudo completar la exportación a Excel', 'error')

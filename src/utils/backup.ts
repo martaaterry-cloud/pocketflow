@@ -1,11 +1,18 @@
 import type { PersistedState } from '../services/storage/storageAdapter'
 import { migratePersistedState } from '../services/storage/localStorageAdapter'
-import { APP_BUILD, APP_VERSION } from '../version'
+import { APP_BUILD } from '../version'
+import {
+  getLocalStorage,
+  getUserStorageKey,
+  isValidUserId,
+  LEGACY_LAST_BACKUP_DATE_KEY,
+  LEGACY_LAST_EXCEL_EXPORT_DATE_KEY,
+} from '../services/storage/userStorageKeys'
 
 export const BACKUP_APP_IDENTIFIER = 'Pocketflow'
 export const CURRENT_BACKUP_VERSION = 1
-export const LAST_BACKUP_DATE_KEY = 'pocketflow:lastBackupAt'
-export const LAST_EXCEL_EXPORT_DATE_KEY = 'pocketflow:lastExcelExportAt'
+export const LAST_BACKUP_DATE_KEY = LEGACY_LAST_BACKUP_DATE_KEY
+export const LAST_EXCEL_EXPORT_DATE_KEY = LEGACY_LAST_EXCEL_EXPORT_DATE_KEY
 
 export interface PocketflowBackup {
   app: string
@@ -72,6 +79,7 @@ export function createBackupPayload(state: PersistedState, now = new Date()): Po
       variableExpenseEstimates: state.variableExpenseEstimates ?? [],
       sharedContacts: state.sharedContacts ?? [],
       expenseShares: state.expenseShares ?? [],
+      cashTransactions: state.cashTransactions ?? [],
     },
   }
 }
@@ -136,15 +144,13 @@ export function validateBackupPayload(raw: unknown): BackupValidationResult {
  * Descarga o comparte el archivo de backup en iOS/Windows.
  * Usa Web Share API con File si está soportado (iPhone Archivos/iCloud) o descarga directa vía Blob.
  */
-export async function shareOrDownloadBackup(backup: PocketflowBackup): Promise<boolean> {
+export async function shareOrDownloadBackup(backup: PocketflowBackup, userId?: string | null): Promise<boolean> {
   const jsonStr = JSON.stringify(backup, null, 2)
   const dateStr = backup.exportedAt.slice(0, 10)
   const fileName = `pocketflow-backup-${dateStr}.json`
 
-  // Guardar fecha de última copia exportada en localStorage
-  if (typeof localStorage !== 'undefined') {
-    localStorage.setItem(LAST_BACKUP_DATE_KEY, backup.exportedAt)
-  }
+  // Guardar fecha de última copia exportada en localStorage (namespaced si userId está presente)
+  setLastBackupDate(userId, backup.exportedAt)
 
   const blob = new Blob([jsonStr], { type: 'application/json' })
 
@@ -186,19 +192,63 @@ export async function shareOrDownloadBackup(backup: PocketflowBackup): Promise<b
 }
 
 /**
- * Lee la fecha de la última copia de seguridad exportada.
+ * Lee la fecha de la última copia de seguridad exportada por usuario.
  */
-export function getLastBackupDate(): string | null {
-  if (typeof localStorage === 'undefined') return null
-  return localStorage.getItem(LAST_BACKUP_DATE_KEY)
+export function getLastBackupDate(userId?: string | null): string | null {
+  const storage = getLocalStorage()
+  if (!storage) return null
+  if (isValidUserId(userId)) {
+    const namespaced = storage.getItem(getUserStorageKey(userId, 'last-backup'))
+    if (namespaced) return namespaced
+  }
+  return storage.getItem(LAST_BACKUP_DATE_KEY)
 }
 
 /**
- * Lee la fecha de la última exportación de Excel.
+ * Guarda la fecha de la última copia de seguridad exportada.
  */
-export function getLastExcelExportDate(): string | null {
-  if (typeof localStorage === 'undefined') return null
-  return localStorage.getItem(LAST_EXCEL_EXPORT_DATE_KEY)
+export function setLastBackupDate(userId: string | null | undefined, iso: string): void {
+  const storage = getLocalStorage()
+  if (!storage) return
+  try {
+    if (isValidUserId(userId)) {
+      storage.setItem(getUserStorageKey(userId, 'last-backup'), iso)
+    } else {
+      storage.setItem(LAST_BACKUP_DATE_KEY, iso)
+    }
+  } catch (err) {
+    console.warn('[Backup] Error guardando fecha de backup:', err)
+  }
+}
+
+/**
+ * Lee la fecha de la última exportación de Excel por usuario.
+ */
+export function getLastExcelExportDate(userId?: string | null): string | null {
+  const storage = getLocalStorage()
+  if (!storage) return null
+  if (isValidUserId(userId)) {
+    const namespaced = storage.getItem(getUserStorageKey(userId, 'last-excel-export'))
+    if (namespaced) return namespaced
+  }
+  return storage.getItem(LAST_EXCEL_EXPORT_DATE_KEY)
+}
+
+/**
+ * Guarda la fecha de la última exportación de Excel por usuario.
+ */
+export function setLastExcelExportDate(userId: string | null | undefined, iso: string): void {
+  const storage = getLocalStorage()
+  if (!storage) return
+  try {
+    if (isValidUserId(userId)) {
+      storage.setItem(getUserStorageKey(userId, 'last-excel-export'), iso)
+    } else {
+      storage.setItem(LAST_EXCEL_EXPORT_DATE_KEY, iso)
+    }
+  } catch (err) {
+    console.warn('[Backup] Error guardando fecha de exportación Excel:', err)
+  }
 }
 
 // Re-exportar utilidades de Excel

@@ -50,8 +50,9 @@ import type {
   UpdateCashTransactionInput,
 } from '../models/finance'
 import { selectCashBalance, createCashAdjustmentInput } from '../utils/cashSelectors'
-import { defaultAppStorage } from '../services/storage/indexedDbAdapter'
+import { defaultAppStorage, createIndexedDbAdapter } from '../services/storage/indexedDbAdapter'
 import { defaultStorage } from '../services/storage/localStorageAdapter'
+import { isValidUserId } from '../services/storage/userStorageKeys'
 import type { PersistedState, StorageAdapter } from '../services/storage/storageAdapter'
 import { selectBudgetsSummary } from '../utils/budgetSelectors'
 import { ensureAccountInitialBalance, reconcileAccounts } from '../utils/balance'
@@ -167,55 +168,19 @@ export const demoFinanceState: PersistedState = {
 export const initialFinanceState: PersistedState = demoFinanceState
 
 export function useFinance(storage: StorageAdapter = defaultAppStorage) {
+  const isCustomStorage = storage !== defaultAppStorage
+  const activeStorageRef = useRef<StorageAdapter | null>(isCustomStorage ? storage : null)
+
   const [state, setState] = useState<PersistedState>(() => {
-    try {
-      const raw = localStorage.getItem('pocketflow:v1')
-      if (raw) {
-        const parsed = JSON.parse(raw) as Partial<PersistedState>
-        // Detección estricta de datos demo/antiguos en localStorage para prevenir resurrecciones
-        const hasLegacyDemo =
-          (parsed.transactions ?? []).some(
-            (t) => t.id === 't1' || t.description === 'Mercadona' || (t.id && /^t[1-7]$/.test(t.id))
-          ) ||
-          (parsed.accounts ?? []).some(
-            (a) => a.initialBalance === 791.16 || a.initialBalance === 1120
-          )
-
-        if (!hasLegacyDemo) {
-          const rawTxs = parsed.transactions ?? []
-          const rawAccounts = (parsed.accounts ?? cleanAccounts).map((acc) =>
-            ensureAccountInitialBalance(acc, rawTxs)
-          )
-
-          return {
-            accounts: rawAccounts,
-            transactions: rawTxs,
-            goals: parsed.goals ?? [],
-            recurring: parsed.recurring ?? [],
-            categories: parsed.categories ?? seedCategories,
-            budgets: parsed.budgets ?? [],
-            reserves: parsed.reserves ?? [],
-            specialPeriods: parsed.specialPeriods ?? [],
-            planSettings: parsed.planSettings ?? cleanPlanSettings,
-            profile: parsed.profile ?? initialProfile,
-            variableExpenseEstimates: parsed.variableExpenseEstimates ?? [],
-            sharedContacts: parsed.sharedContacts ?? [],
-            expenseShares: parsed.expenseShares ?? [],
-            cashTransactions: parsed.cashTransactions ?? [],
-          }
-        }
-      }
-    } catch {
-      // ignore parse errors
-    }
     return cleanInitialFinanceState
   })
 
   const [storageHydrated, setStorageHydrated] = useState(false)
   const [syncUserId, setSyncUserId] = useState<string | null>(null)
 
-  // Carga asíncrona mediante el StorageAdapter
+  // Carga asíncrona cuando se suministra un StorageAdapter personalizado (ej. en tests)
   useEffect(() => {
+    if (!isCustomStorage) return
     let mounted = true
     storage
       .load()
@@ -247,13 +212,13 @@ export function useFinance(storage: StorageAdapter = defaultAppStorage) {
         setStorageHydrated(true)
       })
       .catch((err) => {
-        console.warn('[Pocketflow] Error cargando almacenamiento:', err)
+        console.warn('[Pocketflow] Error cargando almacenamiento personalizado:', err)
         if (mounted) setStorageHydrated(true)
       })
     return () => {
       mounted = false
     }
-  }, [storage])
+  }, [isCustomStorage, storage])
 
   const onSyncStatusChangeRef = useRef<((status: 'syncing' | 'up_to_date' | 'offline' | 'error') => void) | null>(null)
 
@@ -264,8 +229,71 @@ export function useFinance(storage: StorageAdapter = defaultAppStorage) {
     []
   )
 
-  const setSyncUser = useCallback((userId: string | null) => {
-    setSyncUserId(userId)
+  const setSyncUser = useCallback(
+    (userId: string | null) => {
+      if (!isValidUserId(userId)) {
+        setSyncUserId(null)
+        if (!isCustomStorage) {
+          activeStorageRef.current = null
+          // Limpiar el estado en memoria de la sesión actual (aislamiento total en logout)
+          setState(cleanInitialFinanceState)
+          setStorageHydrated(true)
+        }
+        return
+      }
+
+      const cleanUid = userId.trim()
+      setSyncUserId(cleanUid)
+
+      if (!isCustomStorage) {
+        setStorageHydrated(false)
+        const userAdapter = createIndexedDbAdapter(cleanUid)
+        activeStorageRef.current = userAdapter
+        userAdapter
+          .load()
+          .then((loaded) => {
+            if (loaded) {
+              const txs = loaded.transactions ?? []
+              const accountsWithInitial = (loaded.accounts ?? initialFinanceState.accounts).map((acc) =>
+                ensureAccountInitialBalance(acc, txs)
+              )
+
+              setState({
+                accounts: accountsWithInitial,
+                transactions: txs,
+                goals: loaded.goals ?? [],
+                recurring: loaded.recurring ?? [],
+                categories: loaded.categories?.length ? loaded.categories : initialFinanceState.categories,
+                budgets: loaded.budgets ?? [],
+                reserves: loaded.reserves ?? [],
+                specialPeriods: loaded.specialPeriods ?? [],
+                planSettings: loaded.planSettings ?? initialFinanceState.planSettings,
+                profile: loaded.profile ?? initialProfile,
+                variableExpenseEstimates: loaded.variableExpenseEstimates ?? [],
+                sharedContacts: loaded.sharedContacts ?? [],
+                expenseShares: loaded.expenseShares ?? [],
+                cashTransactions: loaded.cashTransactions ?? [],
+              })
+            } else {
+              setState(cleanInitialFinanceState)
+            }
+            setStorageHydrated(true)
+          })
+          .catch((err) => {
+            console.warn('[Pocketflow] Error cargando almacenamiento del usuario:', err)
+            setState(cleanInitialFinanceState)
+            setStorageHydrated(true)
+          })
+      }
+    },
+    [isCustomStorage]
+  )
+
+  const resetSession = useCallback(() => {
+    setSyncUserId(null)
+    activeStorageRef.current = null
+    setState(cleanInitialFinanceState)
+    setStorageHydrated(true)
   }, [])
 
   const dispatchSync = useCallback(
@@ -305,7 +333,7 @@ export function useFinance(storage: StorageAdapter = defaultAppStorage) {
               hint: err?.hint,
               error: err,
             })
-            enqueueOfflineMutation({ entity, action, data })
+            enqueueOfflineMutation(syncUserId, { entity, action, data })
             if (isNetworkError) {
               onSyncStatusChangeRef.current?.('offline')
             } else {
@@ -313,7 +341,7 @@ export function useFinance(storage: StorageAdapter = defaultAppStorage) {
             }
           })
       } else {
-        enqueueOfflineMutation({ entity, action, data })
+        enqueueOfflineMutation(syncUserId, { entity, action, data })
         onSyncStatusChangeRef.current?.('offline')
       }
     },
@@ -322,8 +350,10 @@ export function useFinance(storage: StorageAdapter = defaultAppStorage) {
 
   const persistStateAsync = useCallback(
     (next: PersistedState, correlationId?: string) => {
+      const currentStorage = activeStorageRef.current ?? (isCustomStorage ? storage : null)
+      if (!currentStorage) return
       queueMicrotask(() => {
-        storage
+        currentStorage
           .save(next)
           .then(() => {
             if (correlationId) logPerfCacheApplied(correlationId)
@@ -333,7 +363,7 @@ export function useFinance(storage: StorageAdapter = defaultAppStorage) {
           })
       })
     },
-    [storage]
+    [isCustomStorage, storage]
   )
 
   const commit = useCallback(
@@ -2612,9 +2642,12 @@ export function useFinance(storage: StorageAdapter = defaultAppStorage) {
         cashTransactions: cashTxs,
       }
       setState(completeState)
-      await storage.save(completeState)
+      const currentStorage = activeStorageRef.current ?? (isCustomStorage ? storage : null)
+      if (currentStorage) {
+        await currentStorage.save(completeState)
+      }
     },
-    [storage, dispatchSync]
+    [isCustomStorage, storage, dispatchSync]
   )
 
   const getFullState = useCallback((): PersistedState => {
@@ -2645,6 +2678,7 @@ export function useFinance(storage: StorageAdapter = defaultAppStorage) {
     cashTransactions: state.cashTransactions ?? [],
     storageHydrated,
     setSyncUser,
+    resetSession,
     setOnSyncStatusChange,
     accounts: reconciledAccounts,
     totals,

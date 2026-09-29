@@ -64,12 +64,20 @@ export default function App() {
     const supabase = getSupabase()
 
     supabase.auth.getSession().then(({ data: { session } }) => {
-      setUser(session?.user ?? null)
+      const initialUser = session?.user ?? null
+      setUser(initialUser)
+      if (!initialUser) {
+        financeRef.current.resetSession()
+      }
       setAuthChecked(true)
     })
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      setUser(session?.user ?? null)
+      const nextUser = session?.user ?? null
+      setUser(nextUser)
+      if (!nextUser) {
+        financeRef.current.resetSession()
+      }
       setAuthChecked(true)
     })
 
@@ -78,17 +86,26 @@ export default function App() {
     }
   }, [])
 
+  // Reset de marcas de sincronización al cambiar de usuario
+  useEffect(() => {
+    isInitialSyncDoneRef.current = false
+    isInitialSyncInProgressRef.current = false
+  }, [user?.id])
+
   // 2. Asociar usuario autenticado a las mutaciones locales de useFinance
   useEffect(() => {
     financeRef.current.setSyncUser(user?.id ?? null)
   }, [user?.id])
 
-  // 2.1. Reflejar cambios de la cola offline de inmediato en el contador
+  // 2.1. Reflejar cambios de la cola offline de inmediato en el contador para el usuario activo
   useEffect(() => {
-    return subscribeOfflineQueue((count) => {
-      setPendingCount(count)
+    setPendingCount(getPendingMutationsCount(user?.id ?? null))
+    return subscribeOfflineQueue((count, qUserId) => {
+      if (!qUserId || qUserId === user?.id) {
+        setPendingCount(count)
+      }
     })
-  }, [])
+  }, [user?.id])
 
   // 2.2. Conectar mutaciones locales de useFinance al badge de sincronización
   useEffect(() => {
@@ -450,14 +467,19 @@ export default function App() {
     setSelectedTx(null)
   }
 
-  // Si aún no se ha verificado la sesión o completado la hidratación de IndexedDB, mostramos shell sin parpadeo ni carreras
-  if (!authChecked || !finance.storageHydrated) {
+  // Si aún no se ha verificado la sesión, mostramos shell sin parpadeo
+  if (!authChecked) {
     return <div className="app-shell" />
   }
 
   // Si no hay sesión activa, mostramos la pantalla de login privado
   if (!user) {
     return <LoginPage onSuccess={() => setAuthChecked(false)} />
+  }
+
+  // Si hay sesión activa pero el almacenamiento del usuario aún se está hidratando, mostramos shell
+  if (!finance.storageHydrated) {
+    return <div className="app-shell" />
   }
 
   return (
@@ -543,7 +565,10 @@ export default function App() {
           }}
           onSelectTransaction={handleSelectTransaction}
           onToast={showToast}
-          onSignOut={() => setUser(null)}
+          onSignOut={() => {
+            setUser(null)
+            financeRef.current.resetSession()
+          }}
         />
       )}
 
