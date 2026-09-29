@@ -26,6 +26,7 @@ import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import * as fs from 'node:fs'
 import * as path from 'node:path'
+import * as XLSX from 'xlsx'
 import { fileURLToPath } from 'node:url'
 import { getServiceWorkerCacheName, generateServiceWorkerCode } from '../src/utils/swGenerator'
 import { initialProfile } from '../src/data/seed'
@@ -188,6 +189,11 @@ import {
   selectMonthDailyNetStats,
   selectExpenseShareDetails,
   selectOrphanExpenseShares,
+  selectTotalForgivenByUser,
+  selectTotalForgivenToUser,
+  selectSharedReceivablesSummary,
+  selectSharedPayablesSummary,
+  selectSharedSummaryByContact,
 } from '../src/utils/sharedExpenseSelectors'
 import { spentByCategoryThisMonth, selectBudgetsSummary } from '../src/utils/budgetSelectors'
 import {
@@ -6898,12 +6904,12 @@ describe('Fase 18 — Mejoras de Finanzas (Detalle por Categoría, Retiradas de 
 describe('Fase 18 — Identificación Visual de Versión y Build', () => {
   it('314. Versioning: única fuente de verdad y formato de visualización exacto', () => {
     assert.equal(APP_NAME, 'PocketFlow')
-    assert.equal(APP_VERSION, '0.23.1')
-    assert.equal(APP_BUILD, '2026.09.29-08')
+    assert.equal(APP_VERSION, '0.23.2')
+    assert.equal(APP_BUILD, '2026.09.29-09')
 
-    assert.equal(getAppVersionString(), 'PocketFlow v0.23.1')
-    assert.equal(getAppBuildString(), 'Build 2026.09.29-08')
-    assert.equal(getAppFullVersionLabel(), 'PocketFlow v0.23.1 · Build 2026.09.29-08')
+    assert.equal(getAppVersionString(), 'PocketFlow v0.23.2')
+    assert.equal(getAppBuildString(), 'Build 2026.09.29-09')
+    assert.equal(getAppFullVersionLabel(), 'PocketFlow v0.23.2 · Build 2026.09.29-09')
   })
 })
 
@@ -13999,12 +14005,12 @@ describe('Fase 50 — Control de Acceso por Roles (User / Admin), Seguridad RLS 
     }
 
     const userFooter = renderFooterTexts(false)
-    assert.equal(userFooter.versionText, 'PocketFlow v0.23.1')
+    assert.equal(userFooter.versionText, 'PocketFlow v0.23.2')
     assert.equal(userFooter.buildText, null)
 
     const adminFooter = renderFooterTexts(true)
-    assert.equal(adminFooter.versionText, 'PocketFlow v0.23.1')
-    assert.equal(adminFooter.buildText, 'Build 2026.09.29-08')
+    assert.equal(adminFooter.versionText, 'PocketFlow v0.23.2')
+    assert.equal(adminFooter.buildText, 'Build 2026.09.29-09')
   })
 
   it('590. 10. Reconciliación y sincronización de perfil no altera datos financieros ni transacciones', () => {
@@ -14505,7 +14511,7 @@ describe('Fase 52 — Versionado Automático y Robusto del Service Worker PWA', 
   it('613. 1. CACHE_NAME del Service Worker incluye exactamente APP_VERSION y APP_BUILD actuales', () => {
     const expectedCacheName = `pocketflow-v${APP_VERSION}-${APP_BUILD}`
     assert.equal(getServiceWorkerCacheName(APP_VERSION, APP_BUILD), expectedCacheName)
-    assert.equal(expectedCacheName, 'pocketflow-v0.23.1-2026.09.29-08')
+    assert.equal(expectedCacheName, 'pocketflow-v0.23.2-2026.09.29-09')
 
     const swCode = generateServiceWorkerCode(APP_VERSION, APP_BUILD)
     assert.ok(swCode.includes(`const CACHE_NAME = '${expectedCacheName}'`))
@@ -16481,6 +16487,287 @@ describe('Fase 58 — Activación Robusta PWA en iOS/Safari (Prevención de Stal
 
     assert.equal(result.success, false)
     assert.equal(reloaded, false, 'No debe recargar si el worker activo no ha completado la activación')
+  })
+})
+
+describe('Fase 59 — Visibilidad e Histórico de Importes Perdonados/Ajustados en Gastos Compartidos', () => {
+  it('658. 1. Caso HSN (Por cobrar): expected 34,99, cobrado 30,00, perdonado 4,99, pendiente 0,00', () => {
+    const hsnTx: Transaction = {
+      id: 'tx-hsn-1',
+      type: 'expense',
+      amount: 48.99,
+      accountId: 'daily',
+      description: 'Compra HSN Proteína',
+      date: '2026-09-15T12:00:00',
+    }
+
+    const shares: ExpenseShare[] = [
+      {
+        id: 's-user',
+        expenseTransactionId: 'tx-hsn-1',
+        participantName: 'Tú',
+        expectedAmount: 14.0,
+        isPayerShare: true,
+        isUserShare: true,
+      },
+      {
+        id: 's-sergi',
+        expenseTransactionId: 'tx-hsn-1',
+        participantName: 'Sergi',
+        expectedAmount: 34.99,
+        forgivenAmount: 4.99,
+      },
+    ]
+
+    const cashReimbursement: CashTransaction = {
+      id: 'cash-r1',
+      type: 'income',
+      amount: 30.0,
+      description: 'Reembolso Sergi HSN',
+      date: '2026-09-16T14:00:00',
+      bankTransactionId: 'tx-hsn-1',
+      note: '[share:s-sergi]',
+    }
+
+    const sergiStatus = selectExpenseShareStatus(shares[1], [hsnTx], [cashReimbursement])
+    assert.equal(sergiStatus.expectedAmount, 34.99)
+    assert.equal(sergiStatus.appliedAmount, 30.0)
+    assert.equal(sergiStatus.forgivenAmount, 4.99)
+    assert.equal(sergiStatus.pendingAmount, 0.0)
+    assert.equal(sergiStatus.status, 'received')
+
+    // Selectores de resumen
+    const forgivenByUser = selectTotalForgivenByUser(shares, [hsnTx], [cashReimbursement], 'all')
+    const forgivenToUser = selectTotalForgivenToUser(shares, [hsnTx], [cashReimbursement], 'all')
+    assert.equal(forgivenByUser, 4.99)
+    assert.equal(forgivenToUser, 0)
+
+    const recSummary = selectSharedReceivablesSummary(shares, [hsnTx], [cashReimbursement], 'all')
+    assert.equal(recSummary.totalExpected, 34.99)
+    assert.equal(recSummary.totalReceived, 30.0)
+    assert.equal(recSummary.totalForgiven, 4.99)
+    assert.equal(recSummary.totalPending, 0.0)
+  })
+
+  it('659. 2. Caso Por Pagar: debía 20,00, pagué 15,00, me perdonan 5,00, pendiente 0,00', () => {
+    const parentTx: Transaction = {
+      id: 'tx-cena-1',
+      type: 'expense',
+      amount: 60.0,
+      accountId: 'daily',
+      description: 'Cena Cumpleaños',
+      date: '2026-09-18T21:00:00',
+      paidBy: 'contact',
+      payerName: 'Carlos',
+      payerContactId: 'c-carlos',
+    }
+
+    const shares: ExpenseShare[] = [
+      {
+        id: 's-carlos-payer',
+        expenseTransactionId: 'tx-cena-1',
+        participantName: 'Carlos',
+        expectedAmount: 40.0,
+        isPayerShare: true,
+      },
+      {
+        id: 's-user-payable',
+        expenseTransactionId: 'tx-cena-1',
+        participantName: 'Tú',
+        expectedAmount: 20.0,
+        isUserShare: true,
+        forgivenAmount: 5.0,
+      },
+    ]
+
+    const bizumPayment: Transaction = {
+      id: 'tx-bizum-carlos',
+      type: 'expense',
+      amount: 15.0,
+      accountId: 'daily',
+      description: 'Pago a Carlos Cena',
+      date: '2026-09-19T10:00:00',
+      expenseShareId: 's-user-payable',
+      parentExpenseId: 'tx-cena-1',
+    }
+
+    const payableStatus = selectExpensePayableStatus(shares[1], [parentTx, bizumPayment], [])
+    assert.equal(payableStatus.expectedAmount, 20.0)
+    assert.equal(payableStatus.appliedAmount, 15.0)
+    assert.equal(payableStatus.forgivenAmount, 5.0)
+    assert.equal(payableStatus.pendingAmount, 0.0)
+    assert.equal(payableStatus.status, 'settled')
+
+    // Selectores de resumen
+    const forgivenByUser = selectTotalForgivenByUser(shares, [parentTx, bizumPayment], [], 'all')
+    const forgivenToUser = selectTotalForgivenToUser(shares, [parentTx, bizumPayment], [], 'all')
+    assert.equal(forgivenByUser, 0)
+    assert.equal(forgivenToUser, 5.0)
+
+    const paySummary = selectSharedPayablesSummary(shares, [parentTx, bizumPayment], [], 'all')
+    assert.equal(paySummary.totalExpected, 20.0)
+    assert.equal(paySummary.totalPaid, 15.0)
+    assert.equal(paySummary.totalForgiven, 5.0)
+    assert.equal(paySummary.totalPending, 0.0)
+  })
+
+  it('660. 3. Deuda sin forgiveness no altera totales de perdonado', () => {
+    const tx: Transaction = {
+      id: 'tx-norm-1',
+      type: 'expense',
+      amount: 50.0,
+      accountId: 'daily',
+      description: 'Cine y Palomitas',
+      date: '2026-09-10T18:00:00',
+    }
+    const shares: ExpenseShare[] = [
+      { id: 's1', expenseTransactionId: 'tx-norm-1', participantName: 'Tú', expectedAmount: 25.0, isPayerShare: true },
+      { id: 's2', expenseTransactionId: 'tx-norm-1', participantName: 'Marta', expectedAmount: 25.0 },
+    ]
+
+    assert.equal(selectTotalForgivenByUser(shares, [tx], [], 'all'), 0)
+    assert.equal(selectTotalForgivenToUser(shares, [tx], [], 'all'), 0)
+  })
+
+  it('661. 4. Varias personas se agrupan correctamente con sus importes perdonados respectivos', () => {
+    const tx1: Transaction = { id: 't1', type: 'expense', amount: 50, accountId: 'daily', description: 'Gasto 1', date: '2026-09-05T10:00:00' }
+    const tx2: Transaction = { id: 't2', type: 'expense', amount: 60, accountId: 'daily', description: 'Gasto 2', date: '2026-09-08T10:00:00', paidBy: 'contact', payerName: 'Ana' }
+
+    const shares: ExpenseShare[] = [
+      { id: 's1', expenseTransactionId: 't1', participantName: 'Tú', expectedAmount: 20, isPayerShare: true },
+      { id: 's2', expenseTransactionId: 't1', participantName: 'Sergi', expectedAmount: 30, forgivenAmount: 4.5 },
+      { id: 's3', expenseTransactionId: 't2', participantName: 'Ana', expectedAmount: 40, isPayerShare: true },
+      { id: 's4', expenseTransactionId: 't2', participantName: 'Tú', expectedAmount: 20, isUserShare: true, forgivenAmount: 3.0 },
+    ]
+
+    const contactSummaries = selectSharedSummaryByContact(shares, [tx1, tx2], [], 'all')
+    const sergi = contactSummaries.find((c) => c.name.toLowerCase() === 'sergi')
+    const ana = contactSummaries.find((c) => c.name.toLowerCase() === 'ana')
+
+    assert.ok(sergi)
+    assert.equal(sergi.expectedReceivable, 30.0)
+    assert.equal(sergi.forgivenByUser, 4.5)
+    assert.equal(sergi.pendingReceivable, 25.5)
+
+    assert.ok(ana)
+    assert.equal(ana.expectedPayable, 20.0)
+    assert.equal(ana.forgivenToUser, 3.0)
+    assert.equal(ana.pendingPayable, 17.0)
+  })
+
+  it('662. 5. Periodos: filtra correctamente mes actual vs histórico', () => {
+    const txSep: Transaction = { id: 't-sep', type: 'expense', amount: 50, accountId: 'daily', description: 'Gasto Sep', date: '2026-09-05T10:00:00' }
+    const txAgo: Transaction = { id: 't-ago', type: 'expense', amount: 50, accountId: 'daily', description: 'Gasto Ago', date: '2026-08-05T10:00:00' }
+
+    const shares: ExpenseShare[] = [
+      { id: 's-sep-u', expenseTransactionId: 't-sep', participantName: 'Tú', expectedAmount: 25, isPayerShare: true },
+      { id: 's-sep-s', expenseTransactionId: 't-sep', participantName: 'Sergi', expectedAmount: 25, forgivenAmount: 5.0 },
+      { id: 's-ago-u', expenseTransactionId: 't-ago', participantName: 'Tú', expectedAmount: 25, isPayerShare: true },
+      { id: 's-ago-s', expenseTransactionId: 't-ago', participantName: 'Sergi', expectedAmount: 25, forgivenAmount: 10.0 },
+    ]
+
+    const refDate = new Date(2026, 8, 15) // Septiembre 2026
+    const sepForgiven = selectTotalForgivenByUser(shares, [txSep, txAgo], [], 'month', refDate)
+    const allForgiven = selectTotalForgivenByUser(shares, [txSep, txAgo], [], 'all', refDate)
+
+    assert.equal(sepForgiven, 5.0)
+    assert.equal(allForgiven, 15.0)
+  })
+
+  it('663. 6. forgivenAmount nunca entra en ingresos ni gastos bancarios o de caja', () => {
+    const state = createCleanInitialState()
+    state.accounts = [
+      { id: 'daily', name: 'Cuenta Diaria', type: 'spending', initialBalance: 1000, balance: 1000 },
+    ]
+    const hsnTx: Transaction = {
+      id: 'tx-hsn-audit',
+      type: 'expense',
+      amount: 48.99,
+      accountId: 'daily',
+      description: 'HSN Proteína',
+      date: '2026-09-15T12:00:00',
+    }
+    const cashIncome: CashTransaction = {
+      id: 'cash-hsn-sergi',
+      type: 'income',
+      amount: 30.0,
+      description: 'Cobro Sergi',
+      date: '2026-09-16T12:00:00',
+      parentExpenseShareId: 'share-sergi-hsn',
+    }
+    const shares: ExpenseShare[] = [
+      { id: 'share-user-hsn', expenseTransactionId: 'tx-hsn-audit', participantName: 'Tú', expectedAmount: 14.0, isPayerShare: true },
+      { id: 'share-sergi-hsn', expenseTransactionId: 'tx-hsn-audit', participantName: 'Sergi', expectedAmount: 34.99, forgivenAmount: 4.99 },
+    ]
+    state.transactions = [hsnTx]
+    state.cashTransactions = [cashIncome]
+    state.expenseShares = shares
+
+    const refDate = new Date(2026, 8, 20)
+    const gross = selectGrossExpensesForPeriod(state.transactions, refDate, 'month')
+    const realInc = selectRealIncome(state.transactions, refDate, 'month')
+    const cashBal = selectCashBalance(state.cashTransactions)
+    const netCashExp = selectNetCashExpensesForPeriod(state.cashTransactions, state.transactions, refDate, 'month', state.expenseShares)
+
+    assert.equal(gross, 48.99)
+    assert.equal(realInc, 0.0) // El reembolso no computa como ingreso
+    assert.equal(cashBal, 30.0) // Caja solo tiene los 30 € reales (sin 4,99 € ficticios)
+    assert.equal(netCashExp, 0.0)
+  })
+
+  it('664. 7. Exportación Excel refleja totales de perdonado en la hoja RESUMEN', () => {
+    const state = createCleanInitialState()
+    state.accounts = [
+      { id: 'daily', name: 'Cuenta Diaria', type: 'spending', initialBalance: 1000, balance: 1000 },
+    ]
+    state.transactions = [
+      { id: 't1', type: 'expense', amount: 48.99, accountId: 'daily', description: 'HSN Proteína', date: '2026-09-15T12:00:00' },
+      { id: 't2', type: 'expense', amount: 60.0, accountId: 'daily', description: 'Cena Carlos', date: '2026-09-16T21:00:00', paidBy: 'contact', payerName: 'Carlos' },
+    ]
+    state.expenseShares = [
+      { id: 's1', expenseTransactionId: 't1', participantName: 'Tú', expectedAmount: 14.0, isPayerShare: true },
+      { id: 's2', expenseTransactionId: 't1', participantName: 'Sergi', expectedAmount: 34.99, forgivenAmount: 4.99 },
+      { id: 's3', expenseTransactionId: 't2', participantName: 'Carlos', expectedAmount: 40.0, isPayerShare: true },
+      { id: 's4', expenseTransactionId: 't2', participantName: 'Tú', expectedAmount: 20.0, isUserShare: true, forgivenAmount: 5.0 },
+    ]
+
+    const wb = generateExcelWorkbook(state, new Date(2026, 8, 20))
+    const wsResumen = wb.Sheets['RESUMEN']
+    assert.ok(wsResumen)
+
+    const rawData = XLSX.utils.sheet_to_json<any[]>(wsResumen, { header: 1 })
+    const rowsMap = new Map<string, any>()
+    rawData.forEach((row) => {
+      if (row && row[0]) {
+        rowsMap.set(String(row[0]).trim(), row[1])
+      }
+    })
+
+    assert.equal(rowsMap.get('Perdonado por mí este mes'), 4.99)
+    assert.equal(rowsMap.get('Perdonado a mí este mes'), 5.0)
+    assert.equal(rowsMap.get('Perdonado por mí histórico'), 4.99)
+    assert.equal(rowsMap.get('Perdonado a mí histórico'), 5.0)
+  })
+
+  it('665. 8. Backup y Restore conservan íntegramente forgivenAmount', () => {
+    const state = createCleanInitialState()
+    state.expenseShares = [
+      { id: 's1', expenseTransactionId: 't1', participantName: 'Sergi', expectedAmount: 34.99, forgivenAmount: 4.99 },
+      { id: 's2', expenseTransactionId: 't2', participantName: 'Tú', expectedAmount: 20.0, forgivenAmount: 5.0 },
+    ]
+
+    const backupPayload = createBackupPayload(state)
+    const jsonStr = JSON.stringify(backupPayload)
+    const parsed = JSON.parse(jsonStr)
+
+    const validation = validateBackupPayload(parsed)
+    assert.equal(validation.valid, true)
+
+    if (validation.valid) {
+      const restored = migratePersistedState(validation.state)
+      assert.equal(restored.expenseShares[0].forgivenAmount, 4.99)
+      assert.equal(restored.expenseShares[1].forgivenAmount, 5.0)
+    }
   })
 })
 

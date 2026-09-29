@@ -7,6 +7,9 @@ import {
   selectSettledReimbursements,
   selectPendingPayables,
   selectSettledPayables,
+  selectSharedReceivablesSummary,
+  selectSharedPayablesSummary,
+  selectSharedSummaryByContact,
 } from '../utils/sharedExpenseSelectors'
 import { AppIcon } from '../ui/icons'
 import { AdjustDebtModal } from '../components/AdjustDebtModal'
@@ -52,9 +55,13 @@ export function ReceivablesPage({
     )
   }, [finance.expenseShares, finance.transactions, finance.cashTransactions])
 
-  const totalPending = useMemo(() => {
-    return Math.round(pendingDebtors.reduce((acc, d) => acc + d.totalPending, 0) * 100) / 100
-  }, [pendingDebtors])
+  const receivablesSummary = useMemo(() => {
+    return selectSharedReceivablesSummary(
+      finance.expenseShares ?? [],
+      finance.transactions ?? [],
+      finance.cashTransactions ?? []
+    )
+  }, [finance.expenseShares, finance.transactions, finance.cashTransactions])
 
   // Por pagar (Payables)
   const pendingPayables = useMemo(() => {
@@ -73,9 +80,30 @@ export function ReceivablesPage({
     )
   }, [finance.expenseShares, finance.transactions, finance.cashTransactions])
 
-  const totalPendingPayables = useMemo(() => {
-    return Math.round(pendingPayables.reduce((acc, p) => acc + p.totalPending, 0) * 100) / 100
-  }, [pendingPayables])
+  const payablesSummary = useMemo(() => {
+    return selectSharedPayablesSummary(
+      finance.expenseShares ?? [],
+      finance.transactions ?? [],
+      finance.cashTransactions ?? []
+    )
+  }, [finance.expenseShares, finance.transactions, finance.cashTransactions])
+
+  // Resumen por contacto
+  const contactSummaries = useMemo(() => {
+    return selectSharedSummaryByContact(
+      finance.expenseShares ?? [],
+      finance.transactions ?? [],
+      finance.cashTransactions ?? []
+    )
+  }, [finance.expenseShares, finance.transactions, finance.cashTransactions])
+
+  const receivablesContacts = useMemo(() => {
+    return contactSummaries.filter((c) => c.expectedReceivable > 0)
+  }, [contactSummaries])
+
+  const payablesContacts = useMemo(() => {
+    return contactSummaries.filter((c) => c.expectedPayable > 0)
+  }, [contactSummaries])
 
   return (
     <main className="page">
@@ -129,27 +157,137 @@ export function ReceivablesPage({
         </button>
       </div>
 
+      {/* Resumen de 3 métricas */}
+      <div
+        className="shared-metrics-grid"
+        style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(3, 1fr)',
+          gap: '8px',
+          marginTop: 14,
+        }}
+      >
+        {mode === 'receivables' ? (
+          <>
+            <div
+              className="stat-card"
+              style={{
+                background: 'rgba(124, 58, 237, 0.08)',
+                border: '1px solid rgba(124, 58, 237, 0.2)',
+                padding: '10px 8px',
+                borderRadius: '12px',
+                textAlign: 'center',
+              }}
+            >
+              <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', display: 'block' }}>
+                Pendiente
+              </span>
+              <strong style={{ fontSize: '1.02rem', color: receivablesSummary.totalPending > 0 ? '#a855f7' : 'var(--text-main)' }}>
+                {money(receivablesSummary.totalPending)}
+              </strong>
+            </div>
+            <div
+              className="stat-card"
+              style={{
+                background: 'rgba(16, 185, 129, 0.08)',
+                border: '1px solid rgba(16, 185, 129, 0.2)',
+                padding: '10px 8px',
+                borderRadius: '12px',
+                textAlign: 'center',
+              }}
+            >
+              <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', display: 'block' }}>
+                Cobrado
+              </span>
+              <strong style={{ fontSize: '1.02rem', color: '#10b981' }}>
+                {money(receivablesSummary.totalReceived)}
+              </strong>
+            </div>
+            <div
+              className="stat-card"
+              style={{
+                background: 'rgba(255, 255, 255, 0.04)',
+                border: '1px solid rgba(255, 255, 255, 0.08)',
+                padding: '10px 8px',
+                borderRadius: '12px',
+                textAlign: 'center',
+              }}
+            >
+              <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', display: 'block' }}>
+                Perdonado por ti
+              </span>
+              <strong style={{ fontSize: '1.02rem', color: receivablesSummary.totalForgiven > 0 ? '#fbbf24' : 'var(--text-muted)' }}>
+                {money(receivablesSummary.totalForgiven)}
+              </strong>
+            </div>
+          </>
+        ) : (
+          <>
+            <div
+              className="stat-card"
+              style={{
+                background: 'rgba(239, 68, 68, 0.08)',
+                border: '1px solid rgba(239, 68, 68, 0.2)',
+                padding: '10px 8px',
+                borderRadius: '12px',
+                textAlign: 'center',
+              }}
+            >
+              <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', display: 'block' }}>
+                Pendiente
+              </span>
+              <strong style={{ fontSize: '1.02rem', color: payablesSummary.totalPending > 0 ? '#ef4444' : 'var(--text-main)' }}>
+                {money(payablesSummary.totalPending)}
+              </strong>
+            </div>
+            <div
+              className="stat-card"
+              style={{
+                background: 'rgba(16, 185, 129, 0.08)',
+                border: '1px solid rgba(16, 185, 129, 0.2)',
+                padding: '10px 8px',
+                borderRadius: '12px',
+                textAlign: 'center',
+              }}
+            >
+              <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', display: 'block' }}>
+                Pagado
+              </span>
+              <strong style={{ fontSize: '1.02rem', color: '#10b981' }}>
+                {money(payablesSummary.totalPaid)}
+              </strong>
+            </div>
+            <div
+              className="stat-card"
+              style={{
+                background: 'rgba(255, 255, 255, 0.04)',
+                border: '1px solid rgba(255, 255, 255, 0.08)',
+                padding: '10px 8px',
+                borderRadius: '12px',
+                textAlign: 'center',
+              }}
+            >
+              <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', display: 'block' }}>
+                Perdonado a ti
+              </span>
+              <strong style={{ fontSize: '1.02rem', color: payablesSummary.totalForgiven > 0 ? '#fbbf24' : 'var(--text-muted)' }}>
+                {money(payablesSummary.totalForgiven)}
+              </strong>
+            </div>
+          </>
+        )}
+      </div>
+
       {mode === 'receivables' ? (
         tab === 'pending' ? (
           <section className="receivables-section">
-            {/* Tarjeta de Resumen */}
-            <div className="hero-card light" style={{ marginTop: 16 }}>
-              <span className="hero-tag">Total pendiente por cobrar</span>
-              <strong className="hero-main-number" style={{ color: totalPending > 0 ? '#7c3aed' : 'var(--text-main)' }}>
-                {money(totalPending)}
-              </strong>
-              <p className="hero-sub" style={{ margin: '6px 0 0', fontSize: 12, color: 'var(--text-muted)' }}>
-                {pendingDebtors.length === 0
-                  ? 'Estás al día. No tienes dinero pendiente de recuperar.'
-                  : `Repartido entre ${pendingDebtors.length} ${pendingDebtors.length === 1 ? 'persona' : 'personas'}`}
-              </p>
-            </div>
-
             {/* Lista agrupada por persona */}
-            <div className="debtors-group-list" style={{ marginTop: 16 }}>
+            <div className="debtors-group-list" style={{ marginTop: 14 }}>
               {pendingDebtors.length === 0 ? (
                 <div className="empty-state-box">
-                  <span className="empty-icon"><AppIcon name="check" size={24} color="#10b981" /></span>
+                  <span className="empty-icon">
+                    <AppIcon name="check" size={24} color="#10b981" />
+                  </span>
                   <p>No hay cobros pendientes en este momento.</p>
                 </div>
               ) : (
@@ -161,7 +299,9 @@ export function ReceivablesPage({
                     <div className="debtor-card" key={key}>
                       <div
                         className="debtor-card-header clickable"
-                        onClick={() => setExpandedDebtor(isExpanded && pendingDebtors.length > 1 ? null : key)}
+                        onClick={() =>
+                          setExpandedDebtor(isExpanded && pendingDebtors.length > 1 ? null : key)
+                        }
                         role="button"
                         tabIndex={0}
                       >
@@ -172,7 +312,9 @@ export function ReceivablesPage({
                           <strong>{debtor.name}</strong>
                           <span>
                             {debtor.pendingShares.length}{' '}
-                            {debtor.pendingShares.length === 1 ? 'gasto pendiente' : 'gastos pendientes'}
+                            {debtor.pendingShares.length === 1
+                              ? 'gasto pendiente'
+                              : 'gastos pendientes'}
                           </span>
                         </div>
                         <div className="debtor-header-amount">
@@ -193,12 +335,17 @@ export function ReceivablesPage({
                               <div className="debtor-share-info">
                                 <strong>{ps.expenseDescription}</strong>
                                 <span>
-                                  Cuota: {money(ps.share.expectedAmount)} · {shortDate(ps.expenseDate)}
-                                  {ps.forgivenAmount > 0 && ` · Ajustado: ${money(ps.forgivenAmount)}`}
+                                  Esperado: {money(ps.expectedAmount)} · Cobrado: {money(ps.appliedAmount)}
+                                  {ps.forgivenAmount > 0 && ` · Perdonado: ${money(ps.forgivenAmount)}`}
                                 </span>
                               </div>
-                              <div className="debtor-share-action" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                <span className="debtor-share-amount">{money(ps.pendingAmount)}</span>
+                              <div
+                                className="debtor-share-action"
+                                style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
+                              >
+                                <span className="debtor-share-amount">
+                                  {money(ps.pendingAmount)}
+                                </span>
                                 <button
                                   type="button"
                                   className="small-action-button"
@@ -210,7 +357,9 @@ export function ReceivablesPage({
                                   type="button"
                                   className="secondary-button"
                                   style={{ padding: '4px 8px', fontSize: '0.78rem' }}
-                                  onClick={() => setAdjustingDebtTarget({ share: ps.share, isPayable: false })}
+                                  onClick={() =>
+                                    setAdjustingDebtTarget({ share: ps.share, isPayable: false })
+                                  }
                                 >
                                   Ajustar
                                 </button>
@@ -226,7 +375,38 @@ export function ReceivablesPage({
             </div>
           </section>
         ) : (
-          <section className="receivables-section" style={{ marginTop: 16 }}>
+          <section className="receivables-section" style={{ marginTop: 14 }}>
+            {/* Histórico agrupado por persona */}
+            {receivablesContacts.length > 0 && (
+              <div className="settled-by-contact" style={{ marginBottom: 16 }}>
+                <h4 style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: 8 }}>
+                  Histórico acumulado por persona
+                </h4>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                  {receivablesContacts.map((c) => (
+                    <div
+                      key={c.name}
+                      style={{
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'center',
+                        background: 'rgba(255,255,255,0.03)',
+                        padding: '8px 12px',
+                        borderRadius: '8px',
+                        fontSize: '0.82rem',
+                      }}
+                    >
+                      <strong>{c.name}</strong>
+                      <span style={{ color: 'var(--text-muted)' }}>
+                        Esperado: {money(c.expectedReceivable)} · Cobrado: {money(c.receivedReal)}
+                        {c.forgivenByUser > 0 && ` · Perdonado: ${money(c.forgivenByUser)}`}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
             {settledList.length === 0 ? (
               <div className="empty-state-box">
                 <p>Aún no hay cobros finalizados.</p>
@@ -242,10 +422,16 @@ export function ReceivablesPage({
                       <strong>{item.participantName}</strong>
                       <span>
                         {item.expenseDescription} · {shortDate(item.settledDate)}
-                        {item.forgivenAmount > 0 && ` (Cobrado: ${money(item.amount)} · Perdonado: ${money(item.forgivenAmount)})`}
                       </span>
+                      <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: 2 }}>
+                        <span>Esperado: {money(item.expectedAmount)}</span>
+                        <span> · Cobrado: {money(item.appliedAmount)}</span>
+                        {item.forgivenAmount > 0 && (
+                          <span style={{ color: '#fbbf24' }}> · Perdonado: {money(item.forgivenAmount)}</span>
+                        )}
+                      </div>
                     </div>
-                    <strong className="positive">+{money(item.amount)}</strong>
+                    <strong className="positive">+{money(item.appliedAmount)}</strong>
                   </div>
                 ))}
               </div>
@@ -256,22 +442,12 @@ export function ReceivablesPage({
         /* Modo Por Pagar */
         tab === 'pending' ? (
           <section className="receivables-section">
-            <div className="hero-card light" style={{ marginTop: 16 }}>
-              <span className="hero-tag">Total pendiente por pagar</span>
-              <strong className="hero-main-number" style={{ color: totalPendingPayables > 0 ? '#ef4444' : 'var(--text-main)' }}>
-                {money(totalPendingPayables)}
-              </strong>
-              <p className="hero-sub" style={{ margin: '6px 0 0', fontSize: 12, color: 'var(--text-muted)' }}>
-                {pendingPayables.length === 0
-                  ? 'No debes nada a nadie. Todas tus cuentas compartidas están saldadas.'
-                  : `${pendingPayables.length} ${pendingPayables.length === 1 ? 'deuda pendiente' : 'deudas pendientes'}`}
-              </p>
-            </div>
-
-            <div className="debtors-group-list" style={{ marginTop: 16 }}>
+            <div className="debtors-group-list" style={{ marginTop: 14 }}>
               {pendingPayables.length === 0 ? (
                 <div className="empty-state-box">
-                  <span className="empty-icon"><AppIcon name="check" size={24} color="#10b981" /></span>
+                  <span className="empty-icon">
+                    <AppIcon name="check" size={24} color="#10b981" />
+                  </span>
                   <p>No tienes deudas pendientes.</p>
                 </div>
               ) : (
@@ -283,22 +459,36 @@ export function ReceivablesPage({
                     <div className="debtor-card" key={key}>
                       <div
                         className="debtor-card-header clickable"
-                        onClick={() => setExpandedDebtor(isExpanded && pendingPayables.length > 1 ? null : key)}
+                        onClick={() =>
+                          setExpandedDebtor(
+                            isExpanded && pendingPayables.length > 1 ? null : key
+                          )
+                        }
                         role="button"
                         tabIndex={0}
                       >
-                        <div className="debtor-avatar" style={{ background: 'rgba(239, 68, 68, 0.1)', color: '#ef4444' }}>
+                        <div
+                          className="debtor-avatar"
+                          style={{
+                            background: 'rgba(239, 68, 68, 0.1)',
+                            color: '#ef4444',
+                          }}
+                        >
                           {creditor.creditorName.slice(0, 1).toUpperCase()}
                         </div>
                         <div className="debtor-header-info">
                           <strong>Debes a {creditor.creditorName}</strong>
                           <span>
                             {creditor.pendingShares.length}{' '}
-                            {creditor.pendingShares.length === 1 ? 'gasto pendiente' : 'gastos pendientes'}
+                            {creditor.pendingShares.length === 1
+                              ? 'gasto pendiente'
+                              : 'gastos pendientes'}
                           </span>
                         </div>
                         <div className="debtor-header-amount">
-                          <strong style={{ color: '#ef4444' }}>{money(creditor.totalPending)}</strong>
+                          <strong style={{ color: '#ef4444' }}>
+                            {money(creditor.totalPending)}
+                          </strong>
                           <AppIcon
                             name={isExpanded ? 'chevron-up' : 'chevron-down'}
                             size={16}
@@ -315,11 +505,14 @@ export function ReceivablesPage({
                               <div className="debtor-share-info">
                                 <strong>{ps.expenseDescription}</strong>
                                 <span>
-                                  Cuota: {money(ps.share.expectedAmount)} · {shortDate(ps.expenseDate)}
-                                  {ps.forgivenAmount > 0 && ` · Ajustado: ${money(ps.forgivenAmount)}`}
+                                  Esperado: {money(ps.expectedAmount)} · Pagado: {money(ps.appliedAmount)}
+                                  {ps.forgivenAmount > 0 && ` · Perdonado a ti: ${money(ps.forgivenAmount)}`}
                                 </span>
                               </div>
-                              <div className="debtor-share-action" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                              <div
+                                className="debtor-share-action"
+                                style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
+                              >
                                 <span className="debtor-share-amount" style={{ color: '#ef4444' }}>
                                   {money(ps.pendingAmount)}
                                 </span>
@@ -337,7 +530,9 @@ export function ReceivablesPage({
                                   type="button"
                                   className="secondary-button"
                                   style={{ padding: '4px 8px', fontSize: '0.78rem' }}
-                                  onClick={() => setAdjustingDebtTarget({ share: ps.share, isPayable: true })}
+                                  onClick={() =>
+                                    setAdjustingDebtTarget({ share: ps.share, isPayable: true })
+                                  }
                                 >
                                   Ajustar
                                 </button>
@@ -353,7 +548,38 @@ export function ReceivablesPage({
             </div>
           </section>
         ) : (
-          <section className="receivables-section" style={{ marginTop: 16 }}>
+          <section className="receivables-section" style={{ marginTop: 14 }}>
+            {/* Histórico acumulado por acreedor */}
+            {payablesContacts.length > 0 && (
+              <div className="settled-by-contact" style={{ marginBottom: 16 }}>
+                <h4 style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: 8 }}>
+                  Histórico acumulado por acreedor
+                </h4>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                  {payablesContacts.map((c) => (
+                    <div
+                      key={c.name}
+                      style={{
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'center',
+                        background: 'rgba(255,255,255,0.03)',
+                        padding: '8px 12px',
+                        borderRadius: '8px',
+                        fontSize: '0.82rem',
+                      }}
+                    >
+                      <strong>{c.name}</strong>
+                      <span style={{ color: 'var(--text-muted)' }}>
+                        Esperado: {money(c.expectedPayable)} · Pagado: {money(c.paidReal)}
+                        {c.forgivenToUser > 0 && ` · Perdonado a ti: ${money(c.forgivenToUser)}`}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
             {settledPayables.length === 0 ? (
               <div className="empty-state-box">
                 <p>Aún no hay deudas saldadas.</p>
@@ -362,17 +588,29 @@ export function ReceivablesPage({
               <div className="settled-shares-list">
                 {settledPayables.map((item) => (
                   <div className="settled-share-row" key={item.share.id}>
-                    <div className="settled-avatar" style={{ background: 'rgba(16, 185, 129, 0.1)', color: '#10b981' }}>
+                    <div
+                      className="settled-avatar"
+                      style={{
+                        background: 'rgba(16, 185, 129, 0.1)',
+                        color: '#10b981',
+                      }}
+                    >
                       <AppIcon name="check" size={14} color="#10b981" />
                     </div>
                     <div className="settled-info">
                       <strong>Pagado a {item.creditorName}</strong>
                       <span>
                         {item.expenseDescription} · {shortDate(item.settledDate)}
-                        {item.forgivenAmount > 0 && ` (Pagado: ${money(item.amount)} · Ajustado: ${money(item.forgivenAmount)})`}
                       </span>
+                      <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: 2 }}>
+                        <span>Esperado: {money(item.expectedAmount)}</span>
+                        <span> · Pagado: {money(item.appliedAmount)}</span>
+                        {item.forgivenAmount > 0 && (
+                          <span style={{ color: '#fbbf24' }}> · Perdonado a ti: {money(item.forgivenAmount)}</span>
+                        )}
+                      </div>
                     </div>
-                    <strong style={{ color: 'var(--text-main)' }}>-{money(item.amount)}</strong>
+                    <strong style={{ color: 'var(--text-main)' }}>-{money(item.appliedAmount)}</strong>
                   </div>
                 ))}
               </div>

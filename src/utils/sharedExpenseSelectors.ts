@@ -1248,3 +1248,270 @@ export function selectMonthDailyNetStats(
   return map
 }
 
+/**
+ * Total de importe perdonado por el usuario a otros contactos en gastos compartidos pagados por el usuario.
+ */
+export function selectTotalForgivenByUser(
+  shares: ExpenseShare[] = [],
+  transactions: Transaction[] = [],
+  cashTransactions: CashTransaction[] = [],
+  scope: 'all' | 'month' = 'all',
+  referenceDate: Date = new Date()
+): number {
+  const currentMonth = referenceDate.getMonth()
+  const currentYear = referenceDate.getFullYear()
+
+  let total = 0
+  shares.forEach((s) => {
+    const parentTx =
+      transactions.find((t) => t.id === s.expenseTransactionId) ||
+      cashTransactions.find((c) => c.id === s.expenseTransactionId)
+    if (!parentTx) return
+    // Solo gastos pagados por el usuario
+    if (parentTx.paidBy === 'contact') return
+    // Solo cuotas de terceros (no la del propio usuario/pagador)
+    if (s.isPayerShare || s.isUserShare || s.participantName.toLowerCase() === 'tú') return
+
+    if (scope === 'month') {
+      const txDate = new Date(parentTx.date || s.createdAt || '')
+      if (isNaN(txDate.getTime()) || txDate.getMonth() !== currentMonth || txDate.getFullYear() !== currentYear) {
+        return
+      }
+    }
+
+    const forgiven = Math.max(0, Number(s.forgivenAmount ?? 0))
+    total += forgiven
+  })
+
+  return Math.round(total * 100) / 100
+}
+
+/**
+ * Total de importe perdonado AL usuario por otros contactos en gastos compartidos pagados por ellos.
+ */
+export function selectTotalForgivenToUser(
+  shares: ExpenseShare[] = [],
+  transactions: Transaction[] = [],
+  cashTransactions: CashTransaction[] = [],
+  scope: 'all' | 'month' = 'all',
+  referenceDate: Date = new Date()
+): number {
+  const currentMonth = referenceDate.getMonth()
+  const currentYear = referenceDate.getFullYear()
+
+  let total = 0
+  shares.forEach((s) => {
+    const parentTx =
+      transactions.find((t) => t.id === s.expenseTransactionId) ||
+      cashTransactions.find((c) => c.id === s.expenseTransactionId)
+    if (!parentTx) return
+    // Solo gastos pagados por un tercero
+    if (parentTx.paidBy !== 'contact') return
+    // Solo la cuota del usuario
+    const isUserShare = Boolean(s.isUserShare) || s.participantName.toLowerCase() === 'tú' || (!s.isPayerShare && !s.contactId)
+    if (!isUserShare) return
+
+    if (scope === 'month') {
+      const txDate = new Date(parentTx.date || s.createdAt || '')
+      if (isNaN(txDate.getTime()) || txDate.getMonth() !== currentMonth || txDate.getFullYear() !== currentYear) {
+        return
+      }
+    }
+
+    const forgiven = Math.max(0, Number(s.forgivenAmount ?? 0))
+    total += forgiven
+  })
+
+  return Math.round(total * 100) / 100
+}
+
+/**
+ * Resumen de Por Cobrar: pendiente, cobrado real, perdonado por ti y esperado total.
+ */
+export function selectSharedReceivablesSummary(
+  shares: ExpenseShare[] = [],
+  transactions: Transaction[] = [],
+  cashTransactions: CashTransaction[] = [],
+  scope: 'all' | 'month' = 'all',
+  referenceDate: Date = new Date()
+) {
+  const currentMonth = referenceDate.getMonth()
+  const currentYear = referenceDate.getFullYear()
+
+  let totalExpected = 0
+  let totalReceived = 0
+  let totalForgiven = 0
+  let totalPending = 0
+
+  shares.forEach((s) => {
+    const parentTx =
+      transactions.find((t) => t.id === s.expenseTransactionId) ||
+      cashTransactions.find((c) => c.id === s.expenseTransactionId)
+    if (!parentTx) return
+    if (parentTx.paidBy === 'contact') return
+    if (s.isPayerShare || s.isUserShare || s.participantName.toLowerCase() === 'tú') return
+
+    if (scope === 'month') {
+      const txDate = new Date(parentTx.date || s.createdAt || '')
+      if (isNaN(txDate.getTime()) || txDate.getMonth() !== currentMonth || txDate.getFullYear() !== currentYear) {
+        return
+      }
+    }
+
+    const status = selectExpenseShareStatus(s, transactions, cashTransactions)
+    totalExpected += status.expectedAmount
+    totalReceived += status.appliedAmount
+    totalForgiven += status.forgivenAmount
+    totalPending += status.pendingAmount
+  })
+
+  return {
+    totalExpected: Math.round(totalExpected * 100) / 100,
+    totalReceived: Math.round(totalReceived * 100) / 100,
+    totalForgiven: Math.round(totalForgiven * 100) / 100,
+    totalPending: Math.round(totalPending * 100) / 100,
+  }
+}
+
+/**
+ * Resumen de Por Pagar: pendiente, pagado real, perdonado a ti y esperado total.
+ */
+export function selectSharedPayablesSummary(
+  shares: ExpenseShare[] = [],
+  transactions: Transaction[] = [],
+  cashTransactions: CashTransaction[] = [],
+  scope: 'all' | 'month' = 'all',
+  referenceDate: Date = new Date()
+) {
+  const currentMonth = referenceDate.getMonth()
+  const currentYear = referenceDate.getFullYear()
+
+  let totalExpected = 0
+  let totalPaid = 0
+  let totalForgiven = 0
+  let totalPending = 0
+
+  shares.forEach((s) => {
+    const parentTx =
+      transactions.find((t) => t.id === s.expenseTransactionId) ||
+      cashTransactions.find((c) => c.id === s.expenseTransactionId)
+    if (!parentTx) return
+    if (parentTx.paidBy !== 'contact') return
+    const isUserShare = Boolean(s.isUserShare) || s.participantName.toLowerCase() === 'tú' || (!s.isPayerShare && !s.contactId)
+    if (!isUserShare) return
+
+    if (scope === 'month') {
+      const txDate = new Date(parentTx.date || s.createdAt || '')
+      if (isNaN(txDate.getTime()) || txDate.getMonth() !== currentMonth || txDate.getFullYear() !== currentYear) {
+        return
+      }
+    }
+
+    const status = selectExpensePayableStatus(s, transactions, cashTransactions)
+    totalExpected += status.expectedAmount
+    totalPaid += status.appliedAmount
+    totalForgiven += status.forgivenAmount
+    totalPending += status.pendingAmount
+  })
+
+  return {
+    totalExpected: Math.round(totalExpected * 100) / 100,
+    totalPaid: Math.round(totalPaid * 100) / 100,
+    totalForgiven: Math.round(totalForgiven * 100) / 100,
+    totalPending: Math.round(totalPending * 100) / 100,
+  }
+}
+
+/**
+ * Resumen histórico y por persona de deudas compartidas (por cobrar y por pagar).
+ */
+export function selectSharedSummaryByContact(
+  shares: ExpenseShare[] = [],
+  transactions: Transaction[] = [],
+  cashTransactions: CashTransaction[] = [],
+  scope: 'all' | 'month' = 'all',
+  referenceDate: Date = new Date()
+) {
+  const currentMonth = referenceDate.getMonth()
+  const currentYear = referenceDate.getFullYear()
+
+  const map = new Map<string, {
+    contactId?: string
+    name: string
+    // Por cobrar (usuario prestó / pagó por el contacto)
+    expectedReceivable: number
+    receivedReal: number
+    forgivenByUser: number
+    pendingReceivable: number
+    // Por pagar (contacto pagó por el usuario)
+    expectedPayable: number
+    paidReal: number
+    forgivenToUser: number
+    pendingPayable: number
+  }>()
+
+  const getOrCreate = (key: string, name: string, contactId?: string) => {
+    let existing = map.get(key)
+    if (!existing) {
+      existing = {
+        contactId,
+        name,
+        expectedReceivable: 0,
+        receivedReal: 0,
+        forgivenByUser: 0,
+        pendingReceivable: 0,
+        expectedPayable: 0,
+        paidReal: 0,
+        forgivenToUser: 0,
+        pendingPayable: 0,
+      }
+      map.set(key, existing)
+    }
+    return existing
+  }
+
+  shares.forEach((s) => {
+    const parentTx =
+      transactions.find((t) => t.id === s.expenseTransactionId) ||
+      cashTransactions.find((c) => c.id === s.expenseTransactionId)
+    if (!parentTx) return
+
+    if (scope === 'month') {
+      const txDate = new Date(parentTx.date || s.createdAt || '')
+      if (isNaN(txDate.getTime()) || txDate.getMonth() !== currentMonth || txDate.getFullYear() !== currentYear) {
+        return
+      }
+    }
+
+    if (parentTx.paidBy !== 'contact') {
+      // Por cobrar: usuario pagó
+      if (s.isPayerShare || s.isUserShare || s.participantName.toLowerCase() === 'tú') return
+      const key = s.contactId || s.participantName.toLowerCase().trim()
+      const item = getOrCreate(key, s.participantName, s.contactId)
+      const status = selectExpenseShareStatus(s, transactions, cashTransactions)
+      item.expectedReceivable = Math.round((item.expectedReceivable + status.expectedAmount) * 100) / 100
+      item.receivedReal = Math.round((item.receivedReal + status.appliedAmount) * 100) / 100
+      item.forgivenByUser = Math.round((item.forgivenByUser + status.forgivenAmount) * 100) / 100
+      item.pendingReceivable = Math.round((item.pendingReceivable + status.pendingAmount) * 100) / 100
+    } else {
+      // Por pagar: contacto pagó
+      const isUserShare = Boolean(s.isUserShare) || s.participantName.toLowerCase() === 'tú' || (!s.isPayerShare && !s.contactId)
+      if (!isUserShare) return
+      const creditorName = parentTx.payerName || 'Contacto'
+      const key = parentTx.payerContactId || creditorName.toLowerCase().trim()
+      const item = getOrCreate(key, creditorName, parentTx.payerContactId)
+      const status = selectExpensePayableStatus(s, transactions, cashTransactions)
+      item.expectedPayable = Math.round((item.expectedPayable + status.expectedAmount) * 100) / 100
+      item.paidReal = Math.round((item.paidReal + status.appliedAmount) * 100) / 100
+      item.forgivenToUser = Math.round((item.forgivenToUser + status.forgivenAmount) * 100) / 100
+      item.pendingPayable = Math.round((item.pendingPayable + status.pendingAmount) * 100) / 100
+    }
+  })
+
+  return Array.from(map.values()).sort(
+    (a, b) =>
+      b.pendingReceivable + b.pendingPayable - (a.pendingReceivable + a.pendingPayable) ||
+      b.forgivenByUser + b.forgivenToUser - (a.forgivenByUser + a.forgivenToUser)
+  )
+}
+

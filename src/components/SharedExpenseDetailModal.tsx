@@ -132,7 +132,8 @@ export function SharedExpenseDetailModal({
 
               {/* Participantes externos o usuario si pagó contacto */}
               {details.externalSharesWithStatus.map((item) => {
-                const isUserItem = item.share.isUserShare || item.share.participantName.toLowerCase() === 'tú'
+                const isUserItem =
+                  item.share.isUserShare || item.share.participantName.toLowerCase() === 'tú'
                 const statusClass =
                   item.status === 'received'
                     ? 'status-received'
@@ -142,64 +143,117 @@ export function SharedExpenseDetailModal({
 
                 const statusLabel =
                   item.status === 'received'
-                    ? 'Completado'
+                    ? isContactPaid
+                      ? 'Pagado'
+                      : 'Cobrado'
                     : item.status === 'partial'
-                    ? `Parcial (${money(item.appliedAmount)} / ${money(item.expectedAmount)})`
+                    ? 'Parcial'
                     : 'Pendiente'
 
                 return (
-                  <div className="shared-participant-row" key={item.share.id}>
-                    <div className="participant-info">
-                      <strong>
-                        {item.share.participantName} {isUserItem ? '(Tú)' : ''}
-                      </strong>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap', marginTop: 2 }}>
+                  <div
+                    className="shared-participant-row"
+                    key={item.share.id}
+                    style={{ flexDirection: 'column', alignItems: 'stretch', gap: '8px' }}
+                  >
+                    <div
+                      style={{
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'center',
+                      }}
+                    >
+                      <div className="participant-info">
+                        <strong>
+                          {item.share.participantName} {isUserItem ? '(Tú)' : ''}
+                        </strong>
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                         <span className={`participant-status-badge ${statusClass}`}>
                           {statusLabel}
                         </span>
-                        {item.forgivenAmount > 0 && (
-                          <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', background: 'rgba(255,255,255,0.06)', padding: '2px 6px', borderRadius: '4px' }}>
-                            Ajustado: {money(item.forgivenAmount)}
-                          </span>
-                        )}
                       </div>
                     </div>
 
-                    <div className="participant-action-col">
-                      <span className="participant-expected">{money(item.expectedAmount)}</span>
-                      {item.pendingAmount > 0 && (
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                          {isContactPaid && isUserItem ? (
-                            <button
-                              type="button"
-                              className="small-action-button"
-                              style={{ background: '#ef4444', color: '#fff' }}
-                              onClick={() => onRecordPayablePayment?.(item.share.id)}
-                            >
-                              Pagar {money(item.pendingAmount)}
-                            </button>
-                          ) : (
-                            <button
-                              type="button"
-                              className="small-action-button"
-                              onClick={() => onRecordReimbursement(item.share.id)}
-                            >
-                              Cobrar {money(item.pendingAmount)}
-                            </button>
-                          )}
-                          {onAdjustDebt && (
-                            <button
-                              type="button"
-                              className="secondary-button"
-                              style={{ padding: '4px 8px', fontSize: '0.78rem' }}
-                              onClick={() => setAdjustingShare(item.share)}
-                            >
-                              Ajustar
-                            </button>
-                          )}
+                    <div
+                      className="participant-details-grid"
+                      style={{
+                        display: 'grid',
+                        gridTemplateColumns: 'repeat(auto-fit, minmax(110px, 1fr))',
+                        gap: '6px 12px',
+                        background: 'rgba(255, 255, 255, 0.03)',
+                        padding: '8px 10px',
+                        borderRadius: '8px',
+                        fontSize: '0.78rem',
+                      }}
+                    >
+                      <div>
+                        <span style={{ color: 'var(--text-muted)', display: 'block' }}>Parte asignada:</span>
+                        <strong>{money(item.expectedAmount)}</strong>
+                      </div>
+                      <div>
+                        <span style={{ color: 'var(--text-muted)', display: 'block' }}>
+                          {isContactPaid ? 'Pagado real:' : 'Cobrado real:'}
+                        </span>
+                        <strong style={{ color: '#10b981' }}>{money(item.appliedAmount)}</strong>
+                      </div>
+                      {item.forgivenAmount > 0 && (
+                        <div>
+                          <span style={{ color: 'var(--text-muted)', display: 'block' }}>
+                            {isContactPaid ? 'Perdonado a ti:' : 'Perdonado:'}
+                          </span>
+                          <strong style={{ color: '#fbbf24' }}>{money(item.forgivenAmount)}</strong>
                         </div>
                       )}
+                      <div>
+                        <span style={{ color: 'var(--text-muted)', display: 'block' }}>Pendiente:</span>
+                        <strong style={{ color: item.pendingAmount > 0 ? '#ef4444' : 'var(--text-muted)' }}>
+                          {money(item.pendingAmount)}
+                        </strong>
+                      </div>
                     </div>
+
+                    {item.pendingAmount > 0 && (
+                      <div
+                        className="participant-actions"
+                        style={{
+                          display: 'flex',
+                          justifyContent: 'flex-end',
+                          alignItems: 'center',
+                          gap: '6px',
+                          marginTop: 2,
+                        }}
+                      >
+                        {isContactPaid && isUserItem ? (
+                          <button
+                            type="button"
+                            className="small-action-button"
+                            style={{ background: '#ef4444', color: '#fff' }}
+                            onClick={() => onRecordPayablePayment?.(item.share.id)}
+                          >
+                            Pagar {money(item.pendingAmount)}
+                          </button>
+                        ) : (
+                          <button
+                            type="button"
+                            className="small-action-button"
+                            onClick={() => onRecordReimbursement(item.share.id)}
+                          >
+                            Cobrar {money(item.pendingAmount)}
+                          </button>
+                        )}
+                        {onAdjustDebt && (
+                          <button
+                            type="button"
+                            className="secondary-button"
+                            style={{ padding: '4px 8px', fontSize: '0.78rem' }}
+                            onClick={() => setAdjustingShare(item.share)}
+                          >
+                            Ajustar
+                          </button>
+                        )}
+                      </div>
+                    )}
                   </div>
                 )
               })}

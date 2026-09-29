@@ -23,6 +23,8 @@ import {
   selectNetPersonalExpensesForPeriod,
   selectRealIncome,
   selectExpenseShareStatus,
+  selectTotalForgivenByUser,
+  selectTotalForgivenToUser,
 } from './sharedExpenseSelectors'
 import {
   selectExpectedMonthlyIncome,
@@ -332,7 +334,13 @@ export function generateExcelWorkbook(
     ['Margen mensual previsto del plan', planSummary.plannedMargin],
     ['Margen libre actual para gastar', planSummary.freeToSpend],
     ['', ''],
-    ['4. AUDITORÍA DE CONSISTENCIA DE DATOS', ''],
+    ['4. CUENTAS COMPARTIDAS Y AJUSTES DE DEUDA', ''],
+    ['Perdonado por mí este mes', selectTotalForgivenByUser(expenseShares, transactions, cashTransactions, 'month', referenceDate)],
+    ['Perdonado a mí este mes', selectTotalForgivenToUser(expenseShares, transactions, cashTransactions, 'month', referenceDate)],
+    ['Perdonado por mí histórico', selectTotalForgivenByUser(expenseShares, transactions, cashTransactions, 'all', referenceDate)],
+    ['Perdonado a mí histórico', selectTotalForgivenToUser(expenseShares, transactions, cashTransactions, 'all', referenceDate)],
+    ['', ''],
+    ['5. AUDITORÍA DE CONSISTENCIA DE DATOS', ''],
     ['Comprobación A: Suma de movimientos vs Gasto neto mes', audit.checks.diffNet === 0 ? 'CORRECTO (Cuadra al céntimo)' : `ADVERTENCIA (Diferencia: ${audit.checks.diffNet} €)`],
     ['  └ Suma movimientos individuales netos', audit.checks.movementsNetSum],
     ['  └ Gasto neto total selector canónico', audit.checks.monthlyNetExpense],
