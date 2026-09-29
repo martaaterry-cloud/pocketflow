@@ -1,7 +1,9 @@
 import type {
   Account,
   Budget,
+  CashTransaction,
   Category,
+  ExpenseShare,
   FinancialPlanSettings,
   RecurringFrequency,
   RecurringPayment,
@@ -154,7 +156,9 @@ export function selectExpectedCommittedExpenses(recurring: RecurringPayment[] = 
  */
 export function selectActualFixedMonthlyExpenses(
   transactions: Transaction[],
-  referenceDate: Date = new Date()
+  referenceDate: Date = new Date(),
+  cashTransactions: CashTransaction[] = [],
+  expenseShares: ExpenseShare[] = []
 ): number {
   if (!Array.isArray(transactions)) return 0
   const year = referenceDate.getFullYear()
@@ -168,7 +172,7 @@ export function selectActualFixedMonthlyExpenses(
 
   let sum = 0
   fixedTxs.forEach((t) => {
-    const linked = selectLinkedReimbursementsForExpense(t.id, transactions)
+    const linked = selectLinkedReimbursementsForExpense(t.id, transactions, cashTransactions, expenseShares)
     sum += Math.max(0, t.amount - linked)
   })
 
@@ -205,7 +209,9 @@ export function selectExpectedVariableMonthlyExpenses(
  */
 export function selectActualVariableMonthlyExpenses(
   transactions: Transaction[],
-  referenceDate: Date = new Date()
+  referenceDate: Date = new Date(),
+  cashTransactions: CashTransaction[] = [],
+  expenseShares: ExpenseShare[] = []
 ): number {
   if (!Array.isArray(transactions)) return 0
   const year = referenceDate.getFullYear()
@@ -220,7 +226,7 @@ export function selectActualVariableMonthlyExpenses(
 
   let sum = 0
   varTxs.forEach((t) => {
-    const linked = selectLinkedReimbursementsForExpense(t.id, transactions)
+    const linked = selectLinkedReimbursementsForExpense(t.id, transactions, cashTransactions, expenseShares)
     sum += Math.max(0, t.amount - linked)
   })
 
@@ -233,7 +239,9 @@ export function selectActualVariableMonthlyExpenses(
  */
 export function selectActualExtraordinaryMonthlyExpenses(
   transactions: Transaction[],
-  referenceDate: Date = new Date()
+  referenceDate: Date = new Date(),
+  cashTransactions: CashTransaction[] = [],
+  expenseShares: ExpenseShare[] = []
 ): number {
   if (!Array.isArray(transactions)) return 0
   const year = referenceDate.getFullYear()
@@ -247,7 +255,7 @@ export function selectActualExtraordinaryMonthlyExpenses(
 
   let sum = 0
   extraTxs.forEach((t) => {
-    const linked = selectLinkedReimbursementsForExpense(t.id, transactions)
+    const linked = selectLinkedReimbursementsForExpense(t.id, transactions, cashTransactions, expenseShares)
     sum += Math.max(0, t.amount - linked)
   })
 

@@ -21,27 +21,50 @@ export interface NetCategoryExpense {
 /**
  * Reembolsos vinculados a un gasto concreto (por parentExpenseId / bankTransactionId),
  * sumando tanto reembolsos bancarios (Bizum) como reembolsos recibidos en efectivo.
+ *
+ * Si se dispone de las partes (ExpenseShare):
+ * - Suma únicamente el appliedAmount de las partes de terceros (min(expected, received)).
+ * - El extra recibido por sobrepago de un tercero NUNCA reduce el gasto propio del usuario.
  */
 export function selectLinkedReimbursementsForExpense(
   expenseId: string,
   transactions: Transaction[] = [],
-  cashTransactions: CashTransaction[] = []
+  cashTransactions: CashTransaction[] = [],
+  expenseShares: ExpenseShare[] = []
 ): number {
   const bankExpense = transactions.find((t) => t.id === expenseId)
   if (bankExpense && bankExpense.specialType === 'cash_withdrawal') {
     return 0
   }
 
+  // 1. Si disponemos de las cuotas de reparto de este gasto
+  const sharesForExpense = (expenseShares || []).filter((s) => s.expenseTransactionId === expenseId)
+  const otherShares = sharesForExpense.filter(
+    (s) => !s.isPayerShare && !s.isUserShare && s.participantName.toLowerCase() !== 'tú'
+  )
+
+  if (otherShares.length > 0) {
+    let totalApplied = 0
+    otherShares.forEach((share) => {
+      const { appliedAmount } = selectExpenseShareStatus(share, transactions, cashTransactions)
+      totalApplied += appliedAmount
+    })
+    return Math.round(totalApplied * 100) / 100
+  }
+
+  // 2. Fallback para gastos antiguos sin registro explícito en expenseShares
   const bankReimbursements = transactions.filter(
     (t) => t.type === 'income' && t.incomeKind === 'reimbursement' && t.parentExpenseId === expenseId
   )
   const cashReimbursements = cashTransactions.filter(
     (c) => c.type === 'income' && c.bankTransactionId === expenseId
   )
-  const sum =
+  const rawSum =
     bankReimbursements.reduce((acc, t) => acc + t.amount, 0) +
     cashReimbursements.reduce((acc, c) => acc + c.amount, 0)
-  return Math.round(sum * 100) / 100
+
+  const expenseAmount = bankExpense?.amount ?? rawSum
+  return Math.round(Math.min(expenseAmount, rawSum) * 100) / 100
 }
 
 /**
@@ -79,7 +102,8 @@ export function selectLinkedReimbursementsForPeriod(
   transactions: Transaction[],
   referenceDate: Date = new Date(),
   scope: 'month' | 'all' = 'month',
-  cashTransactions: CashTransaction[] = []
+  cashTransactions: CashTransaction[] = [],
+  expenseShares: ExpenseShare[] = []
 ): number {
   const currentMonth = referenceDate.getMonth()
   const currentYear = referenceDate.getFullYear()
@@ -93,8 +117,7 @@ export function selectLinkedReimbursementsForPeriod(
 
   let sum = 0
   periodExpenses.forEach((exp) => {
-    const linked = selectLinkedReimbursementsForExpense(exp.id, transactions, cashTransactions)
-    // Capped al importe del gasto para evitar excesos
+    const linked = selectLinkedReimbursementsForExpense(exp.id, transactions, cashTransactions, expenseShares)
     sum += Math.min(exp.amount, linked)
   })
 
@@ -153,7 +176,8 @@ export function selectNetPersonalExpensesForPeriod(
   transactions: Transaction[],
   referenceDate: Date = new Date(),
   scope: 'month' | 'all' = 'month',
-  cashTransactions: CashTransaction[] = []
+  cashTransactions: CashTransaction[] = [],
+  expenseShares: ExpenseShare[] = []
 ): number {
   const currentMonth = referenceDate.getMonth()
   const currentYear = referenceDate.getFullYear()
@@ -167,7 +191,7 @@ export function selectNetPersonalExpensesForPeriod(
 
   let totalNet = 0
   periodExpenses.forEach((exp) => {
-    const linked = selectLinkedReimbursementsForExpense(exp.id, transactions, cashTransactions)
+    const linked = selectLinkedReimbursementsForExpense(exp.id, transactions, cashTransactions, expenseShares)
     const net = Math.max(0, Math.round((exp.amount - linked) * 100) / 100)
     totalNet += net
   })
@@ -186,7 +210,8 @@ export function selectNetExpensesByCategory(
   categories: Category[],
   referenceDate: Date = new Date(),
   scope: 'month' | 'all' = 'month',
-  cashTransactions: CashTransaction[] = []
+  cashTransactions: CashTransaction[] = [],
+  expenseShares: ExpenseShare[] = []
 ): NetCategoryExpense[] {
   const currentMonth = referenceDate.getMonth()
   const currentYear = referenceDate.getFullYear()
@@ -202,7 +227,7 @@ export function selectNetExpensesByCategory(
 
   periodExpenses.forEach((exp) => {
     const catId = normalizeCategoryAlias(exp.categoryId || 'other')
-    const linked = selectLinkedReimbursementsForExpense(exp.id, transactions, cashTransactions)
+    const linked = selectLinkedReimbursementsForExpense(exp.id, transactions, cashTransactions, expenseShares)
     const net = Math.max(0, Math.round((exp.amount - linked) * 100) / 100)
     netByCategory.set(catId, Math.round(((netByCategory.get(catId) ?? 0) + net) * 100) / 100)
   })
@@ -400,6 +425,7 @@ export function selectExpenseShareStatus(
   expectedAmount: number
   receivedAmount: number
   appliedAmount: number
+  extraAmount: number
   pendingAmount: number
   status: ExpenseShareStatus
   reimbursements: (Transaction | CashTransaction)[]
@@ -423,6 +449,7 @@ export function selectExpenseShareStatus(
   const receivedAmount = Math.round(allReimbursements.reduce((sum, t) => sum + t.amount, 0) * 100) / 100
   const expectedAmount = Math.round(share.expectedAmount * 100) / 100
   const appliedAmount = Math.min(expectedAmount, receivedAmount)
+  const extraAmount = Math.max(0, Math.round((receivedAmount - expectedAmount) * 100) / 100)
   const pendingAmount = Math.max(0, Math.round((expectedAmount - appliedAmount) * 100) / 100)
 
   let status: ExpenseShareStatus = 'pending'
@@ -436,6 +463,7 @@ export function selectExpenseShareStatus(
     expectedAmount,
     receivedAmount,
     appliedAmount,
+    extraAmount,
     pendingAmount,
     status,
     reimbursements: allReimbursements,
@@ -808,7 +836,8 @@ export function selectNetCashExpensesForPeriod(
   cashTransactions: CashTransaction[] = [],
   transactions: Transaction[] = [],
   referenceDate: Date = new Date(),
-  scope: 'month' | 'all' = 'month'
+  scope: 'month' | 'all' = 'month',
+  expenseShares: ExpenseShare[] = []
 ): number {
   const currentMonth = referenceDate.getMonth()
   const currentYear = referenceDate.getFullYear()
@@ -822,7 +851,7 @@ export function selectNetCashExpensesForPeriod(
 
   let totalNet = 0
   periodExpenses.forEach((exp) => {
-    const linked = selectLinkedReimbursementsForExpense(exp.id, transactions, cashTransactions)
+    const linked = selectLinkedReimbursementsForExpense(exp.id, transactions, cashTransactions, expenseShares)
     const net = Math.max(0, Math.round((exp.amount - linked) * 100) / 100)
     totalNet += net
   })
@@ -840,7 +869,8 @@ export function selectNetCashExpensesByCategory(
   transactions: Transaction[] = [],
   categories: Category[] = [],
   referenceDate: Date = new Date(),
-  scope: 'month' | 'all' = 'month'
+  scope: 'month' | 'all' = 'month',
+  expenseShares: ExpenseShare[] = []
 ): NetCategoryExpense[] {
   const currentMonth = referenceDate.getMonth()
   const currentYear = referenceDate.getFullYear()
@@ -856,7 +886,7 @@ export function selectNetCashExpensesByCategory(
 
   periodExpenses.forEach((exp) => {
     const catId = normalizeCategoryAlias(exp.categoryId || 'other')
-    const linked = selectLinkedReimbursementsForExpense(exp.id, transactions, cashTransactions)
+    const linked = selectLinkedReimbursementsForExpense(exp.id, transactions, cashTransactions, expenseShares)
     const net = Math.max(0, Math.round((exp.amount - linked) * 100) / 100)
     netByCategory.set(catId, Math.round(((netByCategory.get(catId) ?? 0) + net) * 100) / 100)
   })
@@ -918,7 +948,8 @@ export function selectDayNetFinanceStats(
   year: number,
   month: number,
   day: number,
-  cashTransactions: CashTransaction[] = []
+  cashTransactions: CashTransaction[] = [],
+  expenseShares: ExpenseShare[] = []
 ): DayNetStats {
   const withdrawalTxIds = new Set(
     transactions.filter((t) => t.specialType === 'cash_withdrawal').map((t) => t.id)
@@ -943,7 +974,7 @@ export function selectDayNetFinanceStats(
           return
         }
         grossExpenses += t.amount
-        const linked = selectLinkedReimbursementsForExpense(t.id, transactions, cashTransactions)
+        const linked = selectLinkedReimbursementsForExpense(t.id, transactions, cashTransactions, expenseShares)
         const net = Math.max(0, Math.round((t.amount - linked) * 100) / 100)
         netExpenses += net
       } else if (t.type === 'income') {
@@ -965,7 +996,7 @@ export function selectDayNetFinanceStats(
           return
         }
         grossExpenses += c.amount
-        const linked = selectLinkedReimbursementsForExpense(c.id, transactions, cashTransactions)
+        const linked = selectLinkedReimbursementsForExpense(c.id, transactions, cashTransactions, expenseShares)
         const net = Math.max(0, Math.round((c.amount - linked) * 100) / 100)
         netExpenses += net
       } else if (c.type === 'income') {
@@ -1005,7 +1036,8 @@ export function selectMonthDailyNetStats(
   transactions: Transaction[],
   year: number,
   month: number,
-  cashTransactions: CashTransaction[] = []
+  cashTransactions: CashTransaction[] = [],
+  expenseShares: ExpenseShare[] = []
 ): Map<number, DayNetStats> {
   const map = new Map<number, DayNetStats>()
   const daysInMonth = new Date(year, month + 1, 0).getDate()
@@ -1055,7 +1087,7 @@ export function selectMonthDailyNetStats(
           return
         }
         grossExpenses += t.amount
-        const linked = selectLinkedReimbursementsForExpense(t.id, transactions, cashTransactions)
+        const linked = selectLinkedReimbursementsForExpense(t.id, transactions, cashTransactions, expenseShares)
         const net = Math.max(0, Math.round((t.amount - linked) * 100) / 100)
         netExpenses += net
       } else if (t.type === 'income') {
@@ -1073,7 +1105,7 @@ export function selectMonthDailyNetStats(
           return
         }
         grossExpenses += c.amount
-        const linked = selectLinkedReimbursementsForExpense(c.id, transactions, cashTransactions)
+        const linked = selectLinkedReimbursementsForExpense(c.id, transactions, cashTransactions, expenseShares)
         const net = Math.max(0, Math.round((c.amount - linked) * 100) / 100)
         netExpenses += net
       } else if (c.type === 'income') {

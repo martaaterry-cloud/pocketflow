@@ -6894,12 +6894,12 @@ describe('Fase 18 — Mejoras de Finanzas (Detalle por Categoría, Retiradas de 
 describe('Fase 18 — Identificación Visual de Versión y Build', () => {
   it('314. Versioning: única fuente de verdad y formato de visualización exacto', () => {
     assert.equal(APP_NAME, 'PocketFlow')
-    assert.equal(APP_VERSION, '0.22.1')
-    assert.equal(APP_BUILD, '2026.09.29-04')
+    assert.equal(APP_VERSION, '0.22.2')
+    assert.equal(APP_BUILD, '2026.09.29-05')
 
-    assert.equal(getAppVersionString(), 'PocketFlow v0.22.1')
-    assert.equal(getAppBuildString(), 'Build 2026.09.29-04')
-    assert.equal(getAppFullVersionLabel(), 'PocketFlow v0.22.1 · Build 2026.09.29-04')
+    assert.equal(getAppVersionString(), 'PocketFlow v0.22.2')
+    assert.equal(getAppBuildString(), 'Build 2026.09.29-05')
+    assert.equal(getAppFullVersionLabel(), 'PocketFlow v0.22.2 · Build 2026.09.29-05')
   })
 })
 
@@ -13995,12 +13995,12 @@ describe('Fase 50 — Control de Acceso por Roles (User / Admin), Seguridad RLS 
     }
 
     const userFooter = renderFooterTexts(false)
-    assert.equal(userFooter.versionText, 'PocketFlow v0.22.1')
+    assert.equal(userFooter.versionText, 'PocketFlow v0.22.2')
     assert.equal(userFooter.buildText, null)
 
     const adminFooter = renderFooterTexts(true)
-    assert.equal(adminFooter.versionText, 'PocketFlow v0.22.1')
-    assert.equal(adminFooter.buildText, 'Build 2026.09.29-04')
+    assert.equal(adminFooter.versionText, 'PocketFlow v0.22.2')
+    assert.equal(adminFooter.buildText, 'Build 2026.09.29-05')
   })
 
   it('590. 10. Reconciliación y sincronización de perfil no altera datos financieros ni transacciones', () => {
@@ -14501,7 +14501,7 @@ describe('Fase 52 — Versionado Automático y Robusto del Service Worker PWA', 
   it('613. 1. CACHE_NAME del Service Worker incluye exactamente APP_VERSION y APP_BUILD actuales', () => {
     const expectedCacheName = `pocketflow-v${APP_VERSION}-${APP_BUILD}`
     assert.equal(getServiceWorkerCacheName(APP_VERSION, APP_BUILD), expectedCacheName)
-    assert.equal(expectedCacheName, 'pocketflow-v0.22.1-2026.09.29-04')
+    assert.equal(expectedCacheName, 'pocketflow-v0.22.2-2026.09.29-05')
 
     const swCode = generateServiceWorkerCode(APP_VERSION, APP_BUILD)
     assert.ok(swCode.includes(`const CACHE_NAME = '${expectedCacheName}'`))
@@ -15178,6 +15178,334 @@ describe('Fase 54 — Comprobación Manual de Actualizaciones PWA', () => {
     const firstCallResult = await firstCallPromise
     assert.equal(firstCallResult, 'completed')
     assert.equal(isChecking, false)
+  })
+})
+
+describe('Fase 55 — Regla Canónica de Reembolsos Compartidos, Efectivo y Exportación Excel', () => {
+  const contacts: SharedContact[] = [
+    { id: 'c1', displayName: 'Sergi', createdAt: '2026-09-01T00:00:00' },
+    { id: 'c2', displayName: 'Marta', createdAt: '2026-09-01T00:00:00' },
+  ]
+
+  it('631. 1. Caso HSN Canónico: Gasto 48,99 €, Tú 24,49 €, Sergi 24,50 €, Cobro en efectivo 30,00 €', () => {
+    const expenseTx: Transaction = {
+      id: 'tx-hsn-1',
+      type: 'expense',
+      amount: 48.99,
+      accountId: 'bank-1',
+      description: 'HSN Suplementos',
+      date: '2026-09-15T10:00:00',
+      isShared: true,
+      categoryId: 'health',
+    }
+
+    const userShare: ExpenseShare = {
+      id: 'share-user',
+      expenseTransactionId: 'tx-hsn-1',
+      participantName: 'Tú',
+      expectedAmount: 24.49,
+      isPayerShare: true,
+      isUserShare: true,
+      createdAt: '2026-09-15T10:00:00',
+    }
+
+    const sergiShare: ExpenseShare = {
+      id: 'share-sergi',
+      expenseTransactionId: 'tx-hsn-1',
+      contactId: 'c1',
+      participantName: 'Sergi',
+      expectedAmount: 24.50,
+      isPayerShare: false,
+      isUserShare: false,
+      createdAt: '2026-09-15T10:00:00',
+    }
+
+    const cashReimbursement: CashTransaction = {
+      id: 'cash-reimb-1',
+      type: 'income',
+      amount: 30.00,
+      description: 'Cobro Sergi HSN',
+      date: '2026-09-16T14:00:00',
+      bankTransactionId: 'tx-hsn-1',
+    }
+
+    const transactions: Transaction[] = [expenseTx]
+    const cashTransactions: CashTransaction[] = [cashReimbursement]
+    const shares: ExpenseShare[] = [userShare, sergiShare]
+
+    // A. Estado canónico de la share de Sergi
+    const sergiStatus = selectExpenseShareStatus(sergiShare, transactions, cashTransactions)
+    assert.equal(sergiStatus.expectedAmount, 24.50)
+    assert.equal(sergiStatus.receivedAmount, 30.00)
+    assert.equal(sergiStatus.appliedAmount, 24.50, 'appliedAmount debe topar en expectedAmount (24,50 €)')
+    assert.equal(sergiStatus.extraAmount, 5.50, 'extraAmount debe registrar exactamente el sobrepago (5,50 €)')
+    assert.equal(sergiStatus.pendingAmount, 0.00, 'pendingAmount debe ser 0')
+    assert.equal(sergiStatus.status, 'received', 'El estado debe ser Cobrado')
+
+    // B. Estado canónico de la share de Tú ("Tú" no genera deuda)
+    const userStatus = selectExpenseShareStatus(userShare, transactions, cashTransactions)
+    assert.equal(userStatus.expectedAmount, 24.49)
+    assert.equal(userStatus.pendingAmount, 0.00)
+
+    // C. Reembolsos aplicados al gasto compartido
+    const appliedReimbursements = selectLinkedReimbursementsForExpense('tx-hsn-1', transactions, cashTransactions, shares)
+    assert.equal(appliedReimbursements, 24.50, 'Solo deben aplicarse 24,50 € a la reducción del gasto')
+
+    // D. Gasto neto personal HSN del periodo
+    const netPersonalExpense = selectNetPersonalExpensesForPeriod(transactions, new Date('2026-09-20'), 'month', cashTransactions, shares)
+    assert.equal(netPersonalExpense, 24.49, 'El gasto neto personal debe ser exactamente 24,49 € (los 5,50 € extra no reducen el gasto)')
+
+    // E. Flujo real de caja
+    const cashBalance = selectCashBalance(cashTransactions)
+    assert.equal(cashBalance, 30.00, 'El saldo en efectivo aumenta +30,00 € reales sin alteración')
+
+    // F. No queda deuda pendiente en los deudores
+    const pendingDebtors = selectPendingDebtors(shares, transactions, cashTransactions)
+    assert.equal(pendingDebtors.length, 0, 'No debe haber deudores pendientes para Sergi')
+  })
+
+  it('632. 2. Pago exacto bancario y en efectivo: applied = expected, extra = 0, pending = 0', () => {
+    const expenseTx: Transaction = {
+      id: 'tx-exact-1',
+      type: 'expense',
+      amount: 40.00,
+      accountId: 'bank-1',
+      description: 'Cena',
+      date: '2026-09-10T21:00:00',
+      isShared: true,
+    }
+    const sergiShare: ExpenseShare = {
+      id: 'share-exact',
+      expenseTransactionId: 'tx-exact-1',
+      contactId: 'c1',
+      participantName: 'Sergi',
+      expectedAmount: 20.00,
+      isPayerShare: false,
+      isUserShare: false,
+      createdAt: '2026-09-10T21:00:00',
+    }
+    const bankIncome: Transaction = {
+      id: 'tx-reimb-bank',
+      type: 'income',
+      amount: 20.00,
+      accountId: 'bank-1',
+      description: 'Bizum Sergi cena',
+      date: '2026-09-11T10:00:00',
+      incomeKind: 'reimbursement',
+      parentExpenseId: 'tx-exact-1',
+    }
+
+    const status = selectExpenseShareStatus(sergiShare, [expenseTx, bankIncome], [])
+    assert.equal(status.expectedAmount, 20.00)
+    assert.equal(status.receivedAmount, 20.00)
+    assert.equal(status.appliedAmount, 20.00)
+    assert.equal(status.extraAmount, 0.00)
+    assert.equal(status.pendingAmount, 0.00)
+    assert.equal(status.status, 'received')
+  })
+
+  it('633. 3. Pago parcial: applied = received, extra = 0, pending = expected - received, status = partial', () => {
+    const expenseTx: Transaction = {
+      id: 'tx-part-1',
+      type: 'expense',
+      amount: 100.00,
+      accountId: 'bank-1',
+      description: 'Compra semanal',
+      date: '2026-09-05T10:00:00',
+      isShared: true,
+    }
+    const martaShare: ExpenseShare = {
+      id: 'share-marta-part',
+      expenseTransactionId: 'tx-part-1',
+      contactId: 'c2',
+      participantName: 'Marta',
+      expectedAmount: 50.00,
+      isPayerShare: false,
+      isUserShare: false,
+      createdAt: '2026-09-05T10:00:00',
+    }
+    const cashIncome: CashTransaction = {
+      id: 'cash-marta-30',
+      type: 'income',
+      amount: 30.00,
+      description: 'Marta parte compra',
+      date: '2026-09-06T12:00:00',
+      bankTransactionId: 'tx-part-1',
+    }
+
+    const status = selectExpenseShareStatus(martaShare, [expenseTx], [cashIncome])
+    assert.equal(status.expectedAmount, 50.00)
+    assert.equal(status.receivedAmount, 30.00)
+    assert.equal(status.appliedAmount, 30.00)
+    assert.equal(status.extraAmount, 0.00)
+    assert.equal(status.pendingAmount, 20.00)
+    assert.equal(status.status, 'partial')
+
+    const appliedReimb = selectLinkedReimbursementsForExpense('tx-part-1', [expenseTx], [cashIncome], [martaShare])
+    assert.equal(appliedReimb, 30.00)
+  })
+
+  it('634. 4. Sobrepago por transferencia bancaria: se topa a expectedAmount y registra extra', () => {
+    const expenseTx: Transaction = {
+      id: 'tx-over-bank',
+      type: 'expense',
+      amount: 50.00,
+      accountId: 'bank-1',
+      description: 'Regalo conjunto',
+      date: '2026-09-01T10:00:00',
+      isShared: true,
+    }
+    const sergiShare: ExpenseShare = {
+      id: 'share-sergi-over',
+      expenseTransactionId: 'tx-over-bank',
+      contactId: 'c1',
+      participantName: 'Sergi',
+      expectedAmount: 25.00,
+      isPayerShare: false,
+      isUserShare: false,
+      createdAt: '2026-09-01T10:00:00',
+    }
+    const bankOverpay: Transaction = {
+      id: 'tx-bank-35',
+      type: 'income',
+      amount: 35.00,
+      accountId: 'bank-1',
+      description: 'Bizum Sergi regalo',
+      date: '2026-09-02T12:00:00',
+      incomeKind: 'reimbursement',
+      parentExpenseId: 'tx-over-bank',
+    }
+
+    const status = selectExpenseShareStatus(sergiShare, [expenseTx, bankOverpay], [])
+    assert.equal(status.expectedAmount, 25.00)
+    assert.equal(status.receivedAmount, 35.00)
+    assert.equal(status.appliedAmount, 25.00)
+    assert.equal(status.extraAmount, 10.00)
+    assert.equal(status.pendingAmount, 0.00)
+    assert.equal(status.status, 'received')
+
+    const appliedReimb = selectLinkedReimbursementsForExpense('tx-over-bank', [expenseTx, bankOverpay], [], [sergiShare])
+    assert.equal(appliedReimb, 25.00)
+  })
+
+  it('635. 5. Múltiples cobros parciales combinando banco y efectivo que suman sobrepago', () => {
+    const expenseTx: Transaction = {
+      id: 'tx-multi-1',
+      type: 'expense',
+      amount: 80.00,
+      accountId: 'bank-1',
+      description: 'Alojamiento',
+      date: '2026-09-03T10:00:00',
+      isShared: true,
+    }
+    const sergiShare: ExpenseShare = {
+      id: 'share-sergi-multi',
+      expenseTransactionId: 'tx-multi-1',
+      contactId: 'c1',
+      participantName: 'Sergi',
+      expectedAmount: 40.00,
+      isPayerShare: false,
+      isUserShare: false,
+      createdAt: '2026-09-03T10:00:00',
+    }
+    // Pago 1: 25 € en efectivo
+    const cash1: CashTransaction = {
+      id: 'cash-part-1',
+      type: 'income',
+      amount: 25.00,
+      description: 'Efectivo Sergi',
+      date: '2026-09-04T10:00:00',
+      bankTransactionId: 'tx-multi-1',
+    }
+    // Pago 2: 20 € en banco (Total recibido = 45 € para deuda de 40 €)
+    const bank1: Transaction = {
+      id: 'bank-part-2',
+      type: 'income',
+      amount: 20.00,
+      accountId: 'bank-1',
+      description: 'Bizum resto Sergi',
+      date: '2026-09-05T10:00:00',
+      incomeKind: 'reimbursement',
+      parentExpenseId: 'tx-multi-1',
+    }
+
+    const status = selectExpenseShareStatus(sergiShare, [expenseTx, bank1], [cash1])
+    assert.equal(status.expectedAmount, 40.00)
+    assert.equal(status.receivedAmount, 45.00)
+    assert.equal(status.appliedAmount, 40.00)
+    assert.equal(status.extraAmount, 5.00)
+    assert.equal(status.pendingAmount, 0.00)
+    assert.equal(status.status, 'received')
+
+    const appliedReimb = selectLinkedReimbursementsForExpense('tx-multi-1', [expenseTx, bank1], [cash1], [sergiShare])
+    assert.equal(appliedReimb, 40.00)
+  })
+
+  it('636. 6. Auditoría Excel y consistencia sin discrepancias con reembolsos en efectivo', () => {
+    const expenseTx: Transaction = {
+      id: 'tx-aud-1',
+      type: 'expense',
+      amount: 48.99,
+      accountId: 'bank-1',
+      description: 'HSN Suplementos',
+      date: '2026-09-15T10:00:00',
+      isShared: true,
+      categoryId: 'health',
+    }
+    const userShare: ExpenseShare = {
+      id: 'share-u',
+      expenseTransactionId: 'tx-aud-1',
+      participantName: 'Tú',
+      expectedAmount: 24.49,
+      isPayerShare: true,
+      isUserShare: true,
+      createdAt: '2026-09-15T10:00:00',
+    }
+    const sergiShare: ExpenseShare = {
+      id: 'share-s',
+      expenseTransactionId: 'tx-aud-1',
+      contactId: 'c1',
+      participantName: 'Sergi',
+      expectedAmount: 24.50,
+      isPayerShare: false,
+      isUserShare: false,
+      createdAt: '2026-09-15T10:00:00',
+    }
+    const cashReimbursement: CashTransaction = {
+      id: 'cash-r-1',
+      type: 'income',
+      amount: 30.00,
+      description: 'Cobro Sergi HSN',
+      date: '2026-09-16T14:00:00',
+      bankTransactionId: 'tx-aud-1',
+    }
+
+    const state: PersistedState = {
+      profile: initialProfile,
+      accounts: [{ id: 'bank-1', name: 'Cuenta Corriente', type: 'spending', balance: 500, initialBalance: 500 }],
+      transactions: [expenseTx],
+      cashTransactions: [cashReimbursement],
+      sharedContacts: contacts,
+      expenseShares: [userShare, sergiShare],
+      reserves: [],
+      recurringPayments: [],
+      categories: [],
+      budgets: [],
+      savingsGoals: [],
+      variableEstimates: [],
+      specialPeriods: [],
+    }
+
+    const audit = auditDataConsistency(state, new Date('2026-09-20'))
+    assert.equal(audit.isConsistent, true, `La auditoría no debe tener errores: ${audit.warnings.join(', ')}`)
+    assert.equal(audit.checks.reimbursementsReceivedTotal, 30.00, 'Total cobros reales recibidos debe ser 30 €')
+
+    // Generar workbook y verificar que se genera sin errores
+    const wb = generateExcelWorkbook(state, new Date('2026-09-20'))
+    assert.ok(wb)
+    assert.ok(wb.Sheets['GASTOS_COMPARTIDOS'])
+    assert.ok(wb.Sheets['RESUMEN'])
+    assert.ok(wb.Sheets['MOVIMIENTOS'])
   })
 })
 

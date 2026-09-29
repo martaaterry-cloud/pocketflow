@@ -1,4 +1,4 @@
-import type { Account, CashTransaction, Transaction } from '../models/finance'
+import type { Account, CashTransaction, ExpenseShare, Transaction } from '../models/finance'
 import { selectTotalMoney } from './financeSelectors'
 import { selectNetPersonalExpensesForPeriod, selectNetCashExpensesForPeriod } from './sharedExpenseSelectors'
 
@@ -208,10 +208,23 @@ export function selectTotalEconomicConsumptionForPeriod(
   transactions: Transaction[] = [],
   cashTransactions: CashTransaction[] = [],
   referenceDate: Date = new Date(),
-  scope: 'month' | 'all' = 'month'
+  scope: 'month' | 'all' = 'month',
+  expenseShares: ExpenseShare[] = []
 ): TotalEconomicConsumptionSummary {
-  const bankNetExpenses = selectNetPersonalExpensesForPeriod(transactions, referenceDate, scope, cashTransactions)
-  const cashExpenses = selectNetCashExpensesForPeriod(cashTransactions, transactions, referenceDate, scope)
+  const bankNetExpenses = selectNetPersonalExpensesForPeriod(
+    transactions,
+    referenceDate,
+    scope,
+    cashTransactions,
+    expenseShares
+  )
+  const cashExpenses = selectNetCashExpensesForPeriod(
+    cashTransactions,
+    transactions,
+    referenceDate,
+    scope,
+    expenseShares
+  )
   const linkedWithdrawalsDeducted = selectLinkedCashWithdrawalsForPeriod(
     transactions,
     cashTransactions,

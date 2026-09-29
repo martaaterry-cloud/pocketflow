@@ -2222,7 +2222,8 @@ export function useFinance(storage: StorageAdapter = defaultAppStorage) {
       state.transactions,
       now,
       'month',
-      state.cashTransactions ?? []
+      state.cashTransactions ?? [],
+      state.expenseShares ?? []
     )
     const reimbursementsMonth = selectReimbursementsReceived(
       state.transactions,
@@ -2234,14 +2235,16 @@ export function useFinance(storage: StorageAdapter = defaultAppStorage) {
       state.transactions,
       now,
       'month',
-      state.cashTransactions ?? []
+      state.cashTransactions ?? [],
+      state.expenseShares ?? []
     )
     const netCategoryExpenses = selectNetExpensesByCategory(
       state.transactions,
       state.categories,
       now,
       'month',
-      state.cashTransactions ?? []
+      state.cashTransactions ?? [],
+      state.expenseShares ?? []
     )
     const realMonthIncome = selectRealIncome(state.transactions, now)
     const pendingReimbursements = selectPendingReimbursements(

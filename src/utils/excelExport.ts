@@ -67,6 +67,8 @@ export function auditDataConsistency(
   referenceDate: Date = new Date()
 ): ConsistencyAuditResult {
   const transactions = state.transactions ?? []
+  const cashTransactions = state.cashTransactions ?? []
+  const expenseShares = state.expenseShares ?? []
   const currentMonth = referenceDate.getMonth()
   const currentYear = referenceDate.getFullYear()
 
@@ -80,31 +82,59 @@ export function auditDataConsistency(
   // A) Suma individual de gastos netos de movimientos
   let movementsNetSum = 0
   monthExpenses.forEach((t) => {
-    const linked = selectLinkedReimbursementsForExpense(t.id, transactions)
+    const linked = selectLinkedReimbursementsForExpense(t.id, transactions, cashTransactions, expenseShares)
     movementsNetSum += Math.max(0, Math.round((t.amount - linked) * 100) / 100)
   })
   movementsNetSum = Math.round(movementsNetSum * 100) / 100
 
   // Selector canónico del mes
-  const monthlyNetExpense = selectNetPersonalExpensesForPeriod(transactions, referenceDate, 'month')
+  const monthlyNetExpense = selectNetPersonalExpensesForPeriod(
+    transactions,
+    referenceDate,
+    'month',
+    cashTransactions,
+    expenseShares
+  )
   const diffNet = Math.round(Math.abs(movementsNetSum - monthlyNetExpense) * 100) / 100
 
   // B) Suma por naturaleza
-  const fixedNet = selectActualFixedMonthlyExpenses(transactions, referenceDate)
-  const variableNet = selectActualVariableMonthlyExpenses(transactions, referenceDate)
-  const extraNet = selectActualExtraordinaryMonthlyExpenses(transactions, referenceDate)
+  const fixedNet = selectActualFixedMonthlyExpenses(transactions, referenceDate, cashTransactions, expenseShares)
+  const variableNet = selectActualVariableMonthlyExpenses(transactions, referenceDate, cashTransactions, expenseShares)
+  const extraNet = selectActualExtraordinaryMonthlyExpenses(transactions, referenceDate, cashTransactions, expenseShares)
   const naturesNetSum = Math.round((fixedNet + variableNet + extraNet) * 100) / 100
   const diffNatures = Math.round(Math.abs(naturesNetSum - monthlyNetExpense) * 100) / 100
 
   // C) Reembolsos
-  const reimbursementsLinkedTotal = selectLinkedReimbursementsForPeriod(transactions, referenceDate, 'month')
-  const reimbursementsReceivedTotal = transactions
+  const reimbursementsLinkedTotal = selectLinkedReimbursementsForPeriod(
+    transactions,
+    referenceDate,
+    'month',
+    cashTransactions,
+    expenseShares
+  )
+  const bankReimbursementsReceived = transactions
     .filter((t) => {
       if (t.type !== 'income' || t.incomeKind !== 'reimbursement') return false
       const d = new Date(t.date)
       return d.getMonth() === currentMonth && d.getFullYear() === currentYear
     })
     .reduce((acc, t) => acc + t.amount, 0)
+
+  const withdrawalTxIds = new Set(
+    transactions.filter((t) => t.specialType === 'cash_withdrawal').map((t) => t.id)
+  )
+
+  const cashReimbursementsReceived = cashTransactions
+    .filter((c) => {
+      if (c.type !== 'income' || !c.bankTransactionId) return false
+      if (withdrawalTxIds.has(c.bankTransactionId as string)) return false
+      const d = new Date(c.date)
+      return d.getMonth() === currentMonth && d.getFullYear() === currentYear
+    })
+    .reduce((acc, c) => acc + c.amount, 0)
+
+  const reimbursementsReceivedTotal =
+    Math.round((bankReimbursementsReceived + cashReimbursementsReceived) * 100) / 100
 
   // D) Transferencias
   const monthTransfers = transactions.filter((t) => {
@@ -138,7 +168,7 @@ export function auditDataConsistency(
       transfersCount: monthTransfers.length,
       transfersTotal,
       reimbursementsLinkedTotal,
-      reimbursementsReceivedTotal: Math.round(reimbursementsReceivedTotal * 100) / 100,
+      reimbursementsReceivedTotal,
     },
   }
 }
@@ -164,6 +194,7 @@ export function generateExcelWorkbook(
   const estimates = state.variableExpenseEstimates ?? []
   const sharedContacts = state.sharedContacts ?? []
   const expenseShares = state.expenseShares ?? []
+  const cashTransactions = state.cashTransactions ?? []
 
   const currentMonth = referenceDate.getMonth()
   const currentYear = referenceDate.getFullYear()
@@ -202,11 +233,38 @@ export function generateExcelWorkbook(
   const projectedAvailable = selectProjectedAvailable(realAvailable, pendingVariable)
 
   const grossExpenses = selectGrossExpensesForPeriod(transactions, referenceDate, 'month')
-  const linkedReimbursements = selectLinkedReimbursementsForPeriod(transactions, referenceDate, 'month')
-  const netExpenses = selectNetPersonalExpensesForPeriod(transactions, referenceDate, 'month')
-  const fixedNetExpenses = selectActualFixedMonthlyExpenses(transactions, referenceDate)
-  const variableNetExpenses = selectActualVariableMonthlyExpenses(transactions, referenceDate)
-  const extraNetExpenses = selectActualExtraordinaryMonthlyExpenses(transactions, referenceDate)
+  const linkedReimbursements = selectLinkedReimbursementsForPeriod(
+    transactions,
+    referenceDate,
+    'month',
+    cashTransactions,
+    expenseShares
+  )
+  const netExpenses = selectNetPersonalExpensesForPeriod(
+    transactions,
+    referenceDate,
+    'month',
+    cashTransactions,
+    expenseShares
+  )
+  const fixedNetExpenses = selectActualFixedMonthlyExpenses(
+    transactions,
+    referenceDate,
+    cashTransactions,
+    expenseShares
+  )
+  const variableNetExpenses = selectActualVariableMonthlyExpenses(
+    transactions,
+    referenceDate,
+    cashTransactions,
+    expenseShares
+  )
+  const extraNetExpenses = selectActualExtraordinaryMonthlyExpenses(
+    transactions,
+    referenceDate,
+    cashTransactions,
+    expenseShares
+  )
   const cashWithdrawals = selectMonthCashWithdrawals(transactions, referenceDate)
   const realIncome = selectRealIncome(transactions, referenceDate, 'month')
   const expectedIncome = selectExpectedMonthlyIncome(planSettings, recurring)
@@ -341,7 +399,9 @@ export function generateExcelWorkbook(
     const typeLabel = t.type === 'expense' ? 'Gasto' : t.type === 'income' ? 'Ingreso' : 'Transferencia'
     const grossAmount = Math.round(Number(t.amount || 0) * 100) / 100
     const linkedReimb =
-      t.type === 'expense' ? selectLinkedReimbursementsForExpense(t.id, transactions) : 0
+      t.type === 'expense'
+        ? selectLinkedReimbursementsForExpense(t.id, transactions, cashTransactions, expenseShares)
+        : 0
     const netExpense =
       t.type === 'expense' ? Math.max(0, Math.round((grossAmount - linkedReimb) * 100) / 100) : 0
 
@@ -507,29 +567,46 @@ export function generateExcelWorkbook(
     'Persona / Contacto',
     'Es pagador propio',
     'Parte atribuida (€)',
-    'Reembolso recibido (€)',
-    'Pendiente por recuperar (€)',
+    'Reembolso recibido real (€)',
+    'Aplicado a deuda (€)',
+    'Extra recibido (€)',
+    'Pendiente por cobrar (€)',
     'Estado',
     'ExpenseShareId',
     'ParentExpenseId / ExpenseTransactionId',
   ]
 
   const compartidosRows = expenseShares.map((s) => {
-    const parentTx = transactions.find((t) => t.id === s.expenseTransactionId)
-    const status = selectExpenseShareStatus(s, transactions)
+    const parentTx =
+      transactions.find((t) => t.id === s.expenseTransactionId) ||
+      cashTransactions.find((c) => c.id === s.expenseTransactionId)
+    const isUser = s.isPayerShare || s.isUserShare || s.participantName.toLowerCase() === 'tú'
+    const status = selectExpenseShareStatus(s, transactions, cashTransactions)
+
     let statusLabel = 'Pendiente'
-    if (status.status === 'received') statusLabel = 'Cobrado'
-    else if (status.status === 'partial') statusLabel = 'Parcial'
+    if (isUser) {
+      statusLabel = 'Tu parte'
+    } else if (status.status === 'received') {
+      statusLabel = 'Cobrado'
+    } else if (status.status === 'partial') {
+      statusLabel = 'Parcial'
+    }
+
+    const appliedAmount = isUser ? 0 : status.appliedAmount
+    const extraAmount = isUser ? 0 : status.extraAmount
+    const pendingAmount = isUser ? 0 : status.pendingAmount
 
     return [
       parentTx?.description || 'Gasto compartido',
       parentTx?.date ? parentTx.date.slice(0, 10) : '',
       parentTx ? Math.round(parentTx.amount * 100) / 100 : 0,
       s.participantName || '',
-      s.isPayerShare ? 'Sí' : 'No',
+      isUser ? 'Sí' : 'No',
       status.expectedAmount,
       status.receivedAmount,
-      status.pendingAmount,
+      appliedAmount,
+      extraAmount,
+      pendingAmount,
       statusLabel,
       s.id,
       s.expenseTransactionId,
@@ -537,8 +614,8 @@ export function generateExcelWorkbook(
   })
 
   const wsCompartidos = XLSX.utils.aoa_to_sheet([compartidosHeaders, ...compartidosRows])
-  setColWidths(wsCompartidos, [30, 14, 18, 22, 18, 18, 22, 24, 14, 20, 26])
-  wsCompartidos['!autofilter'] = { ref: `A1:K${Math.max(1, compartidosRows.length + 1)}` }
+  setColWidths(wsCompartidos, [30, 14, 18, 22, 18, 18, 26, 22, 18, 24, 16, 20, 26])
+  wsCompartidos['!autofilter'] = { ref: `A1:M${Math.max(1, compartidosRows.length + 1)}` }
   XLSX.utils.book_append_sheet(wb, wsCompartidos, 'GASTOS_COMPARTIDOS')
 
   // ==========================================

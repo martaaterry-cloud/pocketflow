@@ -1,4 +1,4 @@
-import type { Budget, Category, Transaction } from '../models/finance'
+import type { Budget, CashTransaction, Category, ExpenseShare, Transaction } from '../models/finance'
 import { normalizeCategoryAlias } from './categoryNormalization'
 import { selectLinkedReimbursementsForExpense } from './sharedExpenseSelectors'
 
@@ -32,7 +32,9 @@ export interface BudgetsSummary {
 export function spentByCategoryThisMonth(
   transactions: Transaction[],
   categoryId: string,
-  referenceDate: Date = new Date()
+  referenceDate: Date = new Date(),
+  cashTransactions: CashTransaction[] = [],
+  expenseShares: ExpenseShare[] = []
 ): number {
   const currentMonth = referenceDate.getMonth()
   const currentYear = referenceDate.getFullYear()
@@ -47,7 +49,7 @@ export function spentByCategoryThisMonth(
 
   let netSum = 0
   expenses.forEach((exp) => {
-    const linked = selectLinkedReimbursementsForExpense(exp.id, transactions)
+    const linked = selectLinkedReimbursementsForExpense(exp.id, transactions, cashTransactions, expenseShares)
     netSum += Math.max(0, Math.round((exp.amount - linked) * 100) / 100)
   })
 
@@ -83,14 +85,16 @@ export function selectBudgetsSummary(
   budgets: Budget[],
   transactions: Transaction[],
   categories: Category[],
-  referenceDate: Date = new Date()
+  referenceDate: Date = new Date(),
+  cashTransactions: CashTransaction[] = [],
+  expenseShares: ExpenseShare[] = []
 ): BudgetsSummary {
   let totalBudgeted = 0
   let totalSpentOnBudgetedCategories = 0
 
   const items: BudgetStatusItem[] = budgets.map((b) => {
     const limit = b.amountLimit ?? b.monthlyLimit ?? 0
-    const spent = spentByCategoryThisMonth(transactions, b.categoryId, referenceDate)
+    const spent = spentByCategoryThisMonth(transactions, b.categoryId, referenceDate, cashTransactions, expenseShares)
     const remaining = budgetRemaining(limit, spent)
     const overBudget = overBudgetAmount(limit, spent)
     const percentage = budgetUsagePercentage(limit, spent)

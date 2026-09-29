@@ -88,7 +88,12 @@ export function HomePage({
     return cashTransactions
       .filter((tx) => tx.type === 'expense')
       .map((tx) => {
-        const linked = selectLinkedReimbursementsForExpense(tx.id, finance.transactions ?? [], cashTransactions)
+        const linked = selectLinkedReimbursementsForExpense(
+          tx.id,
+          finance.transactions ?? [],
+          cashTransactions,
+          finance.expenseShares ?? []
+        )
         const netAmount = Math.max(0, Math.round((tx.amount - linked) * 100) / 100)
         return {
           id: tx.id,
@@ -103,7 +108,7 @@ export function HomePage({
           isShared: tx.isShared,
         }
       })
-  }, [cashTransactions, finance.transactions])
+  }, [cashTransactions, finance.transactions, finance.expenseShares])
 
   // Cálculos de Total
   const totalAvailable = useMemo(
@@ -117,9 +122,10 @@ export function HomePage({
         finance.transactions ?? [],
         cashTransactions,
         new Date(),
-        'month'
+        'month',
+        finance.expenseShares ?? []
       ),
-    [finance.transactions, cashTransactions]
+    [finance.transactions, cashTransactions, finance.expenseShares]
   )
 
   // Handlers para Swipe táctil (Mobile First)

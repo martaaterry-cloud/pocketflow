@@ -1,4 +1,4 @@
-import type { Category, Transaction } from '../models/finance'
+import type { CashTransaction, Category, ExpenseShare, Transaction } from '../models/finance'
 import { normalizeCategoryAlias } from './categoryNormalization'
 import { selectLinkedReimbursementsForExpense } from './sharedExpenseSelectors'
 
@@ -150,7 +150,9 @@ export function calculatePeriodStatistics(
   transactions: Transaction[],
   categories: Category[],
   period: StatsPeriod,
-  referenceDate: Date = new Date()
+  referenceDate: Date = new Date(),
+  cashTransactions: CashTransaction[] = [],
+  expenseShares: ExpenseShare[] = []
 ): PeriodStatistics {
   const dateRange = getLocalDateRange(period, referenceDate)
   const periodTxs = filterTransactionsByRange(transactions, dateRange)
@@ -181,7 +183,7 @@ export function calculatePeriodStatistics(
       expenses += t.amount
 
       // Cálculo canónico del gasto neto individual
-      const linked = selectLinkedReimbursementsForExpense(t.id, transactions)
+      const linked = selectLinkedReimbursementsForExpense(t.id, transactions, cashTransactions, expenseShares)
       const net = Math.max(0, Math.round((t.amount - linked) * 100) / 100)
       netExpensesSum += net
 
@@ -270,7 +272,14 @@ export function calculatePeriodStatistics(
     dateRange.daysCount > 0 ? Math.round((netExpenses / dateRange.daysCount) * 100) / 100 : 0
 
   // Serie temporal agregada con importes netos
-  const timeSeries = generateTimeSeries(periodTxs, transactions, period, dateRange)
+  const timeSeries = generateTimeSeries(
+    periodTxs,
+    transactions,
+    period,
+    dateRange,
+    cashTransactions,
+    expenseShares
+  )
 
   return {
     period,
@@ -299,7 +308,9 @@ export function calculatePeriodStatistics(
 export function selectExpensesByNature(
   transactions: Transaction[],
   period: StatsPeriod = 'month',
-  referenceDate: Date = new Date()
+  referenceDate: Date = new Date(),
+  cashTransactions: CashTransaction[] = [],
+  expenseShares: ExpenseShare[] = []
 ): ExpenseNatureBreakdown {
   const dateRange = getLocalDateRange(period, referenceDate)
   const periodTxs = filterTransactionsByRange(transactions, dateRange)
@@ -311,7 +322,7 @@ export function selectExpensesByNature(
 
   periodTxs.forEach((t) => {
     if (t.type === 'expense') {
-      const linked = selectLinkedReimbursementsForExpense(t.id, transactions)
+      const linked = selectLinkedReimbursementsForExpense(t.id, transactions, cashTransactions, expenseShares)
       const net = Math.max(0, Math.round((t.amount - linked) * 100) / 100)
       totalNet += net
 
@@ -350,7 +361,9 @@ function generateTimeSeries(
   periodTxs: Transaction[],
   allTransactions: Transaction[],
   period: StatsPeriod,
-  range: DateRange
+  range: DateRange,
+  cashTransactions: CashTransaction[] = [],
+  expenseShares: ExpenseShare[] = []
 ): TimeSeriesPoint[] {
   const points: TimeSeriesPoint[] = []
 
@@ -358,7 +371,7 @@ function generateTimeSeries(
     return txs
       .filter((t) => t.type === 'expense')
       .reduce((sum, t) => {
-        const linked = selectLinkedReimbursementsForExpense(t.id, allTransactions)
+        const linked = selectLinkedReimbursementsForExpense(t.id, allTransactions, cashTransactions, expenseShares)
         const net = Math.max(0, Math.round((t.amount - linked) * 100) / 100)
         return sum + net
       }, 0)

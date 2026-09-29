@@ -50,9 +50,10 @@ export function CalendarPage({
       finance.transactions ?? [],
       year,
       month,
-      finance.cashTransactions ?? []
+      finance.cashTransactions ?? [],
+      finance.expenseShares ?? []
     )
-  }, [finance.transactions, month, year, finance.cashTransactions])
+  }, [finance.transactions, month, year, finance.cashTransactions, finance.expenseShares])
 
   // 2. Movimientos unificados del día seleccionado (Banco + Efectivo)
   const allUnifiedMovements = useMemo(() => {
@@ -80,9 +81,10 @@ export function CalendarPage({
       finance.transactions ?? [],
       finance.cashTransactions ?? [],
       currentDate,
-      'month'
+      'month',
+      finance.expenseShares ?? []
     ).totalEconomicConsumption
-  }, [finance.transactions, currentDate, finance.cashTransactions])
+  }, [finance.transactions, currentDate, finance.cashTransactions, finance.expenseShares])
 
   // 4. Estadísticas del día seleccionado
   const selectedDayStats = useMemo(() => {
@@ -91,9 +93,10 @@ export function CalendarPage({
       year,
       month,
       selectedDay,
-      finance.cashTransactions ?? []
+      finance.cashTransactions ?? [],
+      finance.expenseShares ?? []
     )
-  }, [finance.transactions, year, month, selectedDay, finance.cashTransactions])
+  }, [finance.transactions, year, month, selectedDay, finance.cashTransactions, finance.expenseShares])
 
   const monthLabel = new Intl.DateTimeFormat('es-ES', { month: 'long', year: 'numeric' }).format(currentDate)
 
