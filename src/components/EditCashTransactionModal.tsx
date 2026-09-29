@@ -15,7 +15,7 @@ interface EditCashTransactionModalProps {
   onUpdate: (
     id: string,
     patch: UpdateCashTransactionInput,
-    shares?: { participantName: string; contactId?: string; isPayerShare: boolean; expectedAmount: number }[]
+    shares?: { participantName: string; contactId?: string; isPayerShare: boolean; isUserShare?: boolean; expectedAmount: number }[]
   ) => void
   onDelete: (id: string) => void
 }
@@ -48,6 +48,9 @@ export function EditCashTransactionModal({
 
   // Estados para Gasto Compartido en Efectivo
   const [isShared, setIsShared] = useState(false)
+  const [paidBy, setPaidBy] = useState<'user' | 'contact'>('user')
+  const [payerName, setPayerName] = useState('')
+  const [payerContactId, setPayerContactId] = useState<string | undefined>(undefined)
   const [selfParticipates, setSelfParticipates] = useState(true)
   const [splitType, setSplitType] = useState<'equal' | 'custom'>('equal')
   const [participants, setParticipants] = useState<ParticipantEntry[]>([])
@@ -67,20 +70,39 @@ export function EditCashTransactionModal({
       setError(null)
       setNewParticipantInput('')
 
+      const initialPaidBy = transaction.paidBy || 'user'
+      setPaidBy(initialPaidBy)
+      setPayerName(transaction.payerName || '')
+      setPayerContactId(transaction.payerContactId)
+
       const existingShares = expenseShares.filter((s) => s.expenseTransactionId === transaction.id)
       if (existingShares.length > 0) {
         setIsShared(true)
-        const payer = existingShares.find((s) => s.isPayerShare)
-        setSelfParticipates(Boolean(payer))
-        const ext = existingShares
-          .filter((s) => !s.isPayerShare)
-          .map((s) => ({
-            id: s.id,
-            name: s.participantName,
-            contactId: s.contactId,
-            customAmount: s.expectedAmount,
-          }))
-        setParticipants(ext)
+        if (initialPaidBy === 'contact') {
+          const userShare = existingShares.find((s) => s.isUserShare || s.participantName.toLowerCase() === 'tú')
+          setSelfParticipates(Boolean(userShare))
+          const ext = existingShares
+            .filter((s) => !s.isPayerShare && !s.isUserShare && s.participantName.toLowerCase() !== 'tú')
+            .map((s) => ({
+              id: s.id,
+              name: s.participantName,
+              contactId: s.contactId,
+              customAmount: s.expectedAmount,
+            }))
+          setParticipants(ext)
+        } else {
+          const payer = existingShares.find((s) => s.isPayerShare)
+          setSelfParticipates(Boolean(payer))
+          const ext = existingShares
+            .filter((s) => !s.isPayerShare)
+            .map((s) => ({
+              id: s.id,
+              name: s.participantName,
+              contactId: s.contactId,
+              customAmount: s.expectedAmount,
+            }))
+          setParticipants(ext)
+        }
       } else {
         setIsShared(Boolean(transaction.isShared))
         setSelfParticipates(true)
@@ -100,7 +122,15 @@ export function EditCashTransactionModal({
         name: p.name,
         contactId: p.contactId,
       }))
-      return splitExpenseEqually(numericAmount, externalList, selfParticipates, 'Tú')
+      return splitExpenseEqually(
+        numericAmount,
+        externalList,
+        selfParticipates,
+        'Tú',
+        paidBy,
+        payerName,
+        payerContactId
+      )
     } else {
       const results = []
       if (selfParticipates) {
@@ -108,7 +138,8 @@ export function EditCashTransactionModal({
         const payerAmount = Math.max(0, Math.round((numericAmount - externalTotal) * 100) / 100)
         results.push({
           participantName: 'Tú',
-          isPayerShare: true,
+          isPayerShare: paidBy === 'user',
+          isUserShare: paidBy === 'contact',
           amount: payerAmount,
         })
       }
@@ -117,12 +148,13 @@ export function EditCashTransactionModal({
           participantName: p.name,
           contactId: p.contactId,
           isPayerShare: false,
+          isUserShare: false,
           amount: p.customAmount || 0,
         })
       })
       return results
     }
-  }, [isShared, numericAmount, splitType, participants, selfParticipates])
+  }, [isShared, numericAmount, splitType, participants, selfParticipates, paidBy, payerName, payerContactId])
 
   if (!open || !transaction) return null
 
@@ -192,7 +224,7 @@ export function EditCashTransactionModal({
         : numAmount
 
     if (type === 'expense' && isShared) {
-      if (participants.length === 0) {
+      if (participants.length === 0 && !paidBy) {
         setError('Añade al menos una persona para compartir el gasto.')
         return
       }
@@ -200,7 +232,8 @@ export function EditCashTransactionModal({
       const sharesInput = computedShares.map((s) => ({
         participantName: s.participantName,
         contactId: s.contactId,
-        isPayerShare: s.isPayerShare,
+        isPayerShare: Boolean(s.isPayerShare),
+        isUserShare: Boolean(s.isUserShare),
         expectedAmount: s.amount,
       }))
 
@@ -214,6 +247,9 @@ export function EditCashTransactionModal({
           categoryId: categoryId || undefined,
           note: note.trim() || undefined,
           isShared: true,
+          paidBy,
+          payerName: paidBy === 'contact' && payerName.trim() ? payerName.trim() : undefined,
+          payerContactId: paidBy === 'contact' ? payerContactId : undefined,
         },
         sharesInput
       )
@@ -401,6 +437,14 @@ export function EditCashTransactionModal({
               <SharedExpenseSection
                 isShared={isShared}
                 onToggleShared={handleToggleShared}
+                paidBy={paidBy}
+                onPaidByChange={setPaidBy}
+                payerName={payerName}
+                onPayerNameChange={(name, cId) => {
+                  setPayerName(name)
+                  setPayerContactId(cId)
+                }}
+                payerContactId={payerContactId}
                 selfParticipates={selfParticipates}
                 onToggleSelfParticipates={setSelfParticipates}
                 newParticipantInput={newParticipantInput}

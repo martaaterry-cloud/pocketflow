@@ -11,11 +11,18 @@ export interface SharedExpenseComputedShare {
   participantName: string
   amount: number
   isPayerShare?: boolean
+  isUserShare?: boolean
+  contactId?: string
 }
 
 export interface SharedExpenseSectionProps {
   isShared: boolean
   onToggleShared: (checked: boolean) => void
+  paidBy?: 'user' | 'contact'
+  onPaidByChange?: (paidBy: 'user' | 'contact') => void
+  payerName?: string
+  onPayerNameChange?: (name: string, contactId?: string) => void
+  payerContactId?: string
   selfParticipates: boolean
   onToggleSelfParticipates: (checked: boolean) => void
   newParticipantInput: string
@@ -32,6 +39,11 @@ export interface SharedExpenseSectionProps {
 export function SharedExpenseSection({
   isShared,
   onToggleShared,
+  paidBy = 'user',
+  onPaidByChange,
+  payerName = '',
+  onPayerNameChange,
+  payerContactId,
   selfParticipates,
   onToggleSelfParticipates,
   newParticipantInput,
@@ -44,12 +56,21 @@ export function SharedExpenseSection({
   datalistId = 'shared-contacts-list',
   placeholder = 'Escribe nombre (ej. Manuela)...',
 }: SharedExpenseSectionProps) {
+  const isPayerContact = paidBy === 'contact'
+
+  const handlePayerChange = (name: string) => {
+    const matched = sharedContacts.find(
+      (c) => c.displayName.toLowerCase() === name.trim().toLowerCase()
+    )
+    onPayerNameChange?.(name, matched?.id)
+  }
+
   return (
     <div className="shared-expense-section">
       <div className="shared-toggle-row">
         <div className="shared-toggle-text">
           <strong>Gasto compartido</strong>
-          <span>Repartir con amigos y registrar quién te debe</span>
+          <span>Repartir cuentas, registrar deudas y quién pagó</span>
         </div>
         <label className="switch-label">
           <input
@@ -63,7 +84,58 @@ export function SharedExpenseSection({
 
       {isShared && (
         <div className="shared-config-box">
-          <label className="checkbox-row">
+          {/* Selector de quién pagó */}
+          {onPaidByChange && (
+            <div className="payer-selector-group" style={{ marginBottom: '12px' }}>
+              <span className="section-subtitle" style={{ display: 'block', marginBottom: '6px', fontSize: '0.85rem', fontWeight: 600 }}>
+                ¿Quién pagó este gasto?
+              </span>
+              <div className="type-toggle" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px', marginBottom: '8px' }}>
+                <button
+                  type="button"
+                  className={!isPayerContact ? 'active' : ''}
+                  onClick={() => onPaidByChange('user')}
+                  style={{ padding: '8px', fontSize: '0.85rem' }}
+                >
+                  💳 Yo pagué
+                </button>
+                <button
+                  type="button"
+                  className={isPayerContact ? 'active' : ''}
+                  onClick={() => onPaidByChange('contact')}
+                  style={{ padding: '8px', fontSize: '0.85rem' }}
+                >
+                  👥 Pagó otra persona
+                </button>
+              </div>
+
+              {isPayerContact && (
+                <div className="payer-input-row" style={{ marginTop: '8px' }}>
+                  <label style={{ display: 'block', fontSize: '0.8rem', color: 'var(--text-muted, #8e8e93)', marginBottom: '4px' }}>
+                    Nombre de quien pagó (tu acreedor):
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="Ej. Carlos, Mamá..."
+                    value={payerName}
+                    onChange={(e) => handlePayerChange(e.target.value)}
+                    list="payer-contacts-list"
+                    style={{ width: '100%', padding: '8px 12px', borderRadius: '8px', border: '1px solid var(--border-color, rgba(255,255,255,0.1))' }}
+                  />
+                  <datalist id="payer-contacts-list">
+                    {sharedContacts.map((c) => (
+                      <option key={c.id} value={c.displayName} />
+                    ))}
+                  </datalist>
+                  <p style={{ fontSize: '0.78rem', color: 'var(--text-muted, #8e8e93)', marginTop: '4px', marginInline: 0 }}>
+                    💡 No se descontará de tus cuentas bancarias/efectivo hasta que registres el pago a {payerName.trim() || 'esta persona'}.
+                  </p>
+                </div>
+              )}
+            </div>
+          )}
+
+          <label className="checkbox-row" style={{ marginTop: '6px' }}>
             <input
               type="checkbox"
               checked={selfParticipates}
@@ -72,7 +144,7 @@ export function SharedExpenseSection({
             <span>Yo también participo en este gasto</span>
           </label>
 
-          <div className="participant-input-row">
+          <div className="participant-input-row" style={{ marginTop: '10px' }}>
             <input
               type="text"
               placeholder={placeholder}
@@ -119,11 +191,19 @@ export function SharedExpenseSection({
 
           {computedShares.length > 0 && (
             <div className="split-preview">
-              <span className="split-preview-title">Reparto exacto de céntimos:</span>
+              <span className="split-preview-title">
+                {isPayerContact
+                  ? `Reparto del gasto (pagado por ${payerName.trim() || 'otra persona'}):`
+                  : 'Reparto exacto de céntimos (te deben a ti):'}
+              </span>
               <div className="split-preview-list">
                 {computedShares.map((s, idx) => (
                   <div className="split-preview-item" key={idx}>
-                    <span>{s.participantName}</span>
+                    <span>
+                      {s.participantName}
+                      {s.isPayerShare && ' (Pagador)'}
+                      {s.isUserShare && isPayerContact && ' (Por pagar)'}
+                    </span>
                     <strong>{money(s.amount)}</strong>
                   </div>
                 ))}
@@ -135,3 +215,4 @@ export function SharedExpenseSection({
     </div>
   )
 }
+

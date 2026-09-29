@@ -40,6 +40,9 @@ export interface Transaction {
   specialType?: SpecialMovementType
   expenseNature?: ExpenseNature
   giftRecipient?: string
+  paidBy?: 'user' | 'contact'
+  payerContactId?: string
+  payerName?: string
 }
 
 export type CreateTransactionInput = Omit<Transaction, 'id'>
@@ -61,6 +64,7 @@ export interface ExpenseShare {
   contactId?: string
   participantName: string
   isPayerShare: boolean
+  isUserShare?: boolean
   expectedAmount: number
   createdAt?: string
   updatedAt?: string
@@ -255,6 +259,9 @@ export interface CashTransaction {
   note?: string
   bankTransactionId?: string // Enlace opcional a la retirada bancaria de cajero
   isShared?: boolean
+  paidBy?: 'user' | 'contact'
+  payerContactId?: string
+  payerName?: string
   createdAt?: string
   updatedAt?: string
 }

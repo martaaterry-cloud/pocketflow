@@ -32,12 +32,12 @@ interface AddTransactionModalProps {
   onAdd?: (value: CreateTransactionInput) => Transaction | void
   onAddShared?: (
     value: CreateTransactionInput,
-    shares: { participantName: string; contactId?: string; isPayerShare: boolean; expectedAmount: number }[]
+    shares: { participantName: string; contactId?: string; isPayerShare: boolean; isUserShare?: boolean; expectedAmount: number }[]
   ) => void
   onUpdate?: (
     id: string,
     value: Partial<CreateTransactionInput>,
-    shares?: { participantName: string; contactId?: string; isPayerShare: boolean; expectedAmount: number }[]
+    shares?: { participantName: string; contactId?: string; isPayerShare: boolean; isUserShare?: boolean; expectedAmount: number }[]
   ) => void
   onDelete?: (id: string) => void
   onAddCashTransaction?: (input: CreateCashTransactionInput) => void
@@ -126,6 +126,9 @@ export function AddTransactionModal({
 
   // Estados para Gasto Compartido
   const [isShared, setIsShared] = useState(false)
+  const [paidBy, setPaidBy] = useState<'user' | 'contact'>('user')
+  const [payerName, setPayerName] = useState('')
+  const [payerContactId, setPayerContactId] = useState<string | undefined>(undefined)
   const [selfParticipates, setSelfParticipates] = useState(true)
   const [splitType, setSplitType] = useState<'equal' | 'custom'>('equal')
   const [participants, setParticipants] = useState<ParticipantEntry[]>([])
@@ -153,19 +156,38 @@ export function AddTransactionModal({
       
       const sharesForTx = (expenseShares || []).filter((s) => s.expenseTransactionId === initialTransaction.id)
       const initialIsShared = Boolean(initialTransaction.isShared) || sharesForTx.length > 0
+      const initialPaidBy = initialTransaction.paidBy || 'user'
       setIsShared(initialIsShared)
+      setPaidBy(initialPaidBy)
+      setPayerName(initialTransaction.payerName || '')
+      setPayerContactId(initialTransaction.payerContactId)
+
       if (initialIsShared && sharesForTx.length > 0) {
-        const payerShare = sharesForTx.find((s) => s.isPayerShare)
-        setSelfParticipates(Boolean(payerShare))
-        const extParticipants = sharesForTx
-          .filter((s) => !s.isPayerShare)
-          .map((s) => ({
-            id: s.id,
-            name: s.participantName,
-            contactId: s.contactId,
-            customAmount: s.expectedAmount,
-          }))
-        setParticipants(extParticipants)
+        if (initialPaidBy === 'contact') {
+          const userShare = sharesForTx.find((s) => s.isUserShare || s.participantName.toLowerCase() === 'tú')
+          setSelfParticipates(Boolean(userShare))
+          const extParticipants = sharesForTx
+            .filter((s) => !s.isPayerShare && !s.isUserShare && s.participantName.toLowerCase() !== 'tú')
+            .map((s) => ({
+              id: s.id,
+              name: s.participantName,
+              contactId: s.contactId,
+              customAmount: s.expectedAmount,
+            }))
+          setParticipants(extParticipants)
+        } else {
+          const payerShare = sharesForTx.find((s) => s.isPayerShare)
+          setSelfParticipates(Boolean(payerShare))
+          const extParticipants = sharesForTx
+            .filter((s) => !s.isPayerShare)
+            .map((s) => ({
+              id: s.id,
+              name: s.participantName,
+              contactId: s.contactId,
+              customAmount: s.expectedAmount,
+            }))
+          setParticipants(extParticipants)
+        }
         setSplitType('equal')
       } else {
         setSelfParticipates(true)
@@ -193,6 +215,9 @@ export function AddTransactionModal({
       setExpenseNature('variable')
       setGiftRecipient('')
       setIsShared(false)
+      setPaidBy('user')
+      setPayerName('')
+      setPayerContactId(undefined)
       setSelfParticipates(true)
       setSplitType('equal')
       setParticipants([])
@@ -213,7 +238,15 @@ export function AddTransactionModal({
         name: p.name,
         contactId: p.contactId,
       }))
-      return splitExpenseEqually(numericAmount, externalList, selfParticipates, 'Tú')
+      return splitExpenseEqually(
+        numericAmount,
+        externalList,
+        selfParticipates,
+        'Tú',
+        paidBy,
+        payerName,
+        payerContactId
+      )
     } else {
       // Reparto personalizado
       const results = []
@@ -222,7 +255,8 @@ export function AddTransactionModal({
         const payerAmount = Math.max(0, Math.round((numericAmount - externalTotal) * 100) / 100)
         results.push({
           participantName: 'Tú',
-          isPayerShare: true,
+          isPayerShare: paidBy === 'user',
+          isUserShare: paidBy === 'contact',
           amount: payerAmount,
         })
       }
@@ -231,12 +265,13 @@ export function AddTransactionModal({
           participantName: p.name,
           contactId: p.contactId,
           isPayerShare: false,
+          isUserShare: false,
           amount: p.customAmount || 0,
         })
       })
       return results
     }
-  }, [isShared, numericAmount, splitType, participants, selfParticipates])
+  }, [isShared, numericAmount, splitType, participants, selfParticipates, paidBy, payerName, payerContactId])
 
   if (!open) return null
 
@@ -330,6 +365,9 @@ export function AddTransactionModal({
       toAccountId: type === 'transfer' ? toAccountId : undefined,
       incomeKind: type === 'income' ? incomeKind : undefined,
       isShared: type === 'expense' && isShared,
+      paidBy: type === 'expense' && isShared ? paidBy : undefined,
+      payerName: type === 'expense' && isShared && paidBy === 'contact' && payerName.trim() ? payerName.trim() : undefined,
+      payerContactId: type === 'expense' && isShared && paidBy === 'contact' ? payerContactId : undefined,
       specialType: type === 'expense' ? (isCashWithdrawal ? 'cash_withdrawal' : 'normal') : undefined,
       expenseNature: type === 'expense' ? expenseNature : undefined,
       giftRecipient: isGiftsCategory && giftRecipient.trim() ? giftRecipient.trim() : undefined,
@@ -350,7 +388,8 @@ export function AddTransactionModal({
         const sharesInput = computedShares.map((s) => ({
           participantName: s.participantName,
           contactId: s.contactId,
-          isPayerShare: s.isPayerShare,
+          isPayerShare: Boolean(s.isPayerShare),
+          isUserShare: Boolean(s.isUserShare),
           expectedAmount: s.amount,
         }))
         onUpdate(initialTransaction.id, { ...payload, isShared: true }, sharesInput)
@@ -363,7 +402,8 @@ export function AddTransactionModal({
       const sharesInput = computedShares.map((s) => ({
         participantName: s.participantName,
         contactId: s.contactId,
-        isPayerShare: s.isPayerShare,
+        isPayerShare: Boolean(s.isPayerShare),
+        isUserShare: Boolean(s.isUserShare),
         expectedAmount: s.amount,
       }))
       onAddShared(payload, sharesInput)
@@ -383,7 +423,8 @@ export function AddTransactionModal({
       const sharesInput = computedShares.map((s) => ({
         participantName: s.participantName,
         contactId: s.contactId,
-        isPayerShare: s.isPayerShare,
+        isPayerShare: Boolean(s.isPayerShare),
+        isUserShare: Boolean(s.isUserShare),
         expectedAmount: s.amount,
       }))
       onUpdate(initialTransaction.id, { ...pendingLinkedUpdatePayload, isShared: true }, sharesInput)
@@ -710,6 +751,14 @@ export function AddTransactionModal({
           <SharedExpenseSection
             isShared={isShared}
             onToggleShared={handleToggleShared}
+            paidBy={paidBy}
+            onPaidByChange={setPaidBy}
+            payerName={payerName}
+            onPayerNameChange={(name, cId) => {
+              setPayerName(name)
+              setPayerContactId(cId)
+            }}
+            payerContactId={payerContactId}
             selfParticipates={selfParticipates}
             onToggleSelfParticipates={setSelfParticipates}
             newParticipantInput={newParticipantInput}

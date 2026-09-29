@@ -6,6 +6,7 @@ import { CashWithdrawalLinkModal } from './components/CashWithdrawalLinkModal'
 import { EditCashTransactionModal } from './components/EditCashTransactionModal'
 import { QuickActionSheet } from './components/QuickActionSheet'
 import { ReimbursementModal } from './components/ReimbursementModal'
+import { PayDebtModal } from './components/PayDebtModal'
 import { SharedExpenseDetailModal } from './components/SharedExpenseDetailModal'
 import type { CashTransaction, Transaction } from './models/finance'
 import { money } from './utils/money'
@@ -443,6 +444,8 @@ export default function App() {
   const [modalDefaultType, setModalDefaultType] = useState<'expense' | 'income' | 'transfer'>('expense')
   const [isReimbursementModalOpen, setIsReimbursementModalOpen] = useState(false)
   const [reimbursementShareId, setReimbursementShareId] = useState<string | undefined>(undefined)
+  const [isPayDebtModalOpen, setIsPayDebtModalOpen] = useState(false)
+  const [payDebtShareId, setPayDebtShareId] = useState<string | undefined>(undefined)
   const [selectedSharedTx, setSelectedSharedTx] = useState<Transaction | CashTransaction | null>(null)
   const [editingCashTx, setEditingCashTx] = useState<CashTransaction | null>(null)
 
@@ -562,6 +565,10 @@ export default function App() {
           onRecordReimbursement={(shareId) => {
             setReimbursementShareId(shareId)
             setIsReimbursementModalOpen(true)
+          }}
+          onRecordPayablePayment={(shareId) => {
+            setPayDebtShareId(shareId)
+            setIsPayDebtModalOpen(true)
           }}
           onSelectTransaction={handleSelectTransaction}
           onToast={showToast}
@@ -687,6 +694,24 @@ export default function App() {
         }}
       />
 
+      <PayDebtModal
+        open={isPayDebtModalOpen}
+        onClose={() => {
+          setIsPayDebtModalOpen(false)
+          setPayDebtShareId(undefined)
+        }}
+        accounts={finance.accounts}
+        transactions={finance.transactions}
+        expenseShares={finance.expenseShares}
+        cashTransactions={finance.cashTransactions}
+        initialShareId={payDebtShareId}
+        onSubmit={(input) => {
+          finance.recordPayablePayment(input)
+          const targetStr = input.paymentMethod === 'cash' ? 'en Efectivo' : 'en Banco'
+          showToast(`Pago registrado (-${input.amount.toFixed(2)} € ${targetStr})`, 'success')
+        }}
+      />
+
       {selectedSharedTx && (
         <SharedExpenseDetailModal
           open={Boolean(selectedSharedTx)}
@@ -699,6 +724,11 @@ export default function App() {
             setSelectedSharedTx(null)
             setReimbursementShareId(shareId)
             setIsReimbursementModalOpen(true)
+          }}
+          onRecordPayablePayment={(shareId) => {
+            setSelectedSharedTx(null)
+            setPayDebtShareId(shareId)
+            setIsPayDebtModalOpen(true)
           }}
           onEditExpense={(tx) => {
             setSelectedSharedTx(null)

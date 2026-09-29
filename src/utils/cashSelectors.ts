@@ -17,7 +17,7 @@ export function selectGrossCashExpensesForPeriod(
   const refYear = referenceDate.getFullYear()
 
   const sum = cashTransactions
-    .filter((tx) => tx.type === 'expense')
+    .filter((tx) => tx.type === 'expense' && (!tx.isShared || tx.paidBy !== 'contact'))
     .filter((tx) => {
       if (scope === 'all') return true
       const d = new Date(tx.date)
@@ -47,6 +47,9 @@ export function selectCashBalance(cashTransactions: CashTransaction[] = []): num
       return acc + Math.abs(amount)
     }
     if (tx.type === 'expense') {
+      if (tx.isShared && tx.paidBy === 'contact') {
+        return acc
+      }
       return acc - Math.abs(amount)
     }
     if (tx.type === 'adjustment') {

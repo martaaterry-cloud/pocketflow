@@ -437,6 +437,30 @@ export function HomePage({
                       </span>
                     </div>
                   )}
+
+                  {finance.totals.pendingPayables > 0 && (
+                    <div
+                      className="hero-breakdown-row sub clickable"
+                      style={{ cursor: 'pointer' }}
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        onNavigateToReceivables?.()
+                      }}
+                      role="button"
+                      tabIndex={0}
+                    >
+                      <div className="breakdown-label">
+                        <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                          Por pagar (gastos compartidos)
+                          <AppIcon name="chevron-right" size={14} color="#ef4444" />
+                        </span>
+                        <small>Toca para ver el desglose y pagar deudas</small>
+                      </div>
+                      <span className="breakdown-value" style={{ color: '#ef4444', fontWeight: 600 }}>
+                        -{money(finance.totals.pendingPayables)}
+                      </span>
+                    </div>
+                  )}
                 </div>
               )}
             </section>

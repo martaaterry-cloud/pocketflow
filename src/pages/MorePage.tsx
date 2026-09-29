@@ -39,6 +39,7 @@ export function MorePage({
   onSubViewChange,
   onNavigateToSavings,
   onRecordReimbursement,
+  onRecordPayablePayment,
   onSelectTransaction,
   onToast,
   onSignOut,
@@ -50,6 +51,7 @@ export function MorePage({
   onSubViewChange?: (subView: MoreSubView) => void
   onNavigateToSavings?: () => void
   onRecordReimbursement?: (shareId: string) => void
+  onRecordPayablePayment?: (shareId: string) => void
   onSelectTransaction?: (tx: Transaction) => void
   onToast?: (message: string, type?: 'success' | 'error') => void
   onSignOut?: () => void
@@ -130,6 +132,7 @@ export function MorePage({
         finance={finance}
         onBack={handleBackToMenu}
         onRecordReimbursement={onRecordReimbursement ?? (() => {})}
+        onRecordPayablePayment={onRecordPayablePayment}
       />
     )
   }
@@ -283,15 +286,16 @@ export function MorePage({
             </b>
           </button>
 
-          {/* Por cobrar */}
+          {/* Cuentas compartidas: Por cobrar / Por pagar */}
           <button type="button" onClick={() => setSubView('receivables')}>
             <span className="menu-icon" style={{ background: 'rgba(124, 58, 237, 0.1)', color: '#7c3aed' }}>
               <AppIcon name="users" size={18} />
             </span>
             <div>
-              <strong>Por cobrar</strong>
+              <strong>Cuentas compartidas</strong>
               <small>
-                {money(finance.totals.pendingReimbursements)} pendientes · {pendingDebtors.length} {pendingDebtors.length === 1 ? 'persona' : 'personas'}
+                {money(finance.totals.pendingReimbursements)} a cobrar
+                {finance.totals.pendingPayables > 0 ? ` · ${money(finance.totals.pendingPayables)} a pagar` : ''}
               </small>
             </div>
             <b className="chevron">

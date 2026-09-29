@@ -5,6 +5,7 @@ export interface SplitResult {
   participantName: string
   contactId?: string
   isPayerShare: boolean
+  isUserShare?: boolean
   amount: number
 }
 
@@ -45,6 +46,7 @@ export function selectLinkedReimbursementsForExpense(
 
 /**
  * Gasto bruto del periodo = suma de todos los gastos (expense) realizados en el periodo.
+ * Si un gasto compartido fue pagado por otra persona (paidBy === 'contact'), no cuenta como desembolso bancario inicial del usuario.
  */
 export function selectGrossExpensesForPeriod(
   transactions: Transaction[],
@@ -55,7 +57,7 @@ export function selectGrossExpensesForPeriod(
   const currentYear = referenceDate.getFullYear()
 
   const sum = transactions
-    .filter((t) => t.type === 'expense')
+    .filter((t) => t.type === 'expense' && (!t.isShared || t.paidBy !== 'contact'))
     .filter((t) => {
       if (scope === 'all') return true
       const d = new Date(t.date)
@@ -253,57 +255,113 @@ export function selectNetExpensesByCategory(
  * tengan importes redondeados (o viceversa), garantizando que la suma matemática
  * de las partes coincida exactamente con el importe total.
  *
- * Ejemplo del usuario:
- * 7,49 € entre Marta (pagador), Manuela y Pepa:
- * Marta = 2,49 €, Manuela = 2,50 €, Pepa = 2,50 €. Suma = 7,49 € exactos.
+ * Soporta tanto "Yo pagué" (paidBy === 'user') como "Pagó otra persona" (paidBy === 'contact').
  */
 export function splitExpenseEqually(
   totalAmount: number,
   participants: { name: string; contactId?: string }[],
-  includePayer: boolean,
-  payerName = 'Tú'
+  includeSelf: boolean,
+  payerName = 'Tú',
+  paidBy: 'user' | 'contact' = 'user',
+  actualPayerName = 'Contacto',
+  actualPayerContactId?: string
 ): SplitResult[] {
   const cleanTotal = Math.round(Number(totalAmount) * 100) / 100
   if (cleanTotal <= 0) return []
 
   const totalCents = Math.round(cleanTotal * 100)
-  const count = participants.length + (includePayer ? 1 : 0)
+  const isUserPayer = paidBy !== 'contact'
+
+  // Si el usuario pagó (comportamiento canónico original):
+  if (isUserPayer) {
+    const count = participants.length + (includeSelf ? 1 : 0)
+    if (count === 0) return []
+
+    const baseCents = Math.floor(totalCents / count)
+    let remainder = totalCents % count
+
+    const results: SplitResult[] = []
+
+    participants.forEach((p) => {
+      let cents = baseCents
+      if (remainder > 0) {
+        cents += 1
+        remainder -= 1
+      }
+      results.push({
+        participantName: p.name.trim(),
+        contactId: p.contactId,
+        isPayerShare: false,
+        isUserShare: false,
+        amount: Math.round(cents) / 100,
+      })
+    })
+
+    if (includeSelf) {
+      let payerCents = baseCents
+      if (remainder > 0) {
+        payerCents += remainder
+      }
+      results.unshift({
+        participantName: payerName,
+        isPayerShare: true,
+        isUserShare: false,
+        amount: Math.round(payerCents) / 100,
+      })
+    }
+
+    return results
+  }
+
+  // Si pagó otra persona (paidBy === 'contact'):
+  const effectivePayerName = actualPayerName.trim() || 'Contacto'
+  const filteredOthers = participants.filter(
+    (p) =>
+      p.name.trim().toLowerCase() !== effectivePayerName.toLowerCase() &&
+      p.name.trim().toLowerCase() !== 'tú'
+  )
+
+  const count = 1 + (includeSelf ? 1 : 0) + filteredOthers.length
   if (count === 0) return []
 
   const baseCents = Math.floor(totalCents / count)
   let remainder = totalCents % count
 
-  // Si el pagador participa y hay resto, los participantes externos reciben baseCents + 1
-  // mientras haya resto, y el pagador recibe lo que quede (o baseCents),
-  // reproduciendo fielmente el caso 7,49 € / 3 = Marta 2,49, Manuela 2,50, Pepa 2,50.
   const results: SplitResult[] = []
 
-  participants.forEach((p) => {
-    let cents = baseCents
-    if (remainder > 0) {
-      cents += 1
-      remainder -= 1
-    }
+  // Cuota del usuario ('Tú')
+  if (includeSelf) {
+    results.push({
+      participantName: 'Tú',
+      isPayerShare: false,
+      isUserShare: true,
+      amount: Math.round(baseCents) / 100,
+    })
+  }
+
+  // Otros participantes
+  filteredOthers.forEach((p) => {
     results.push({
       participantName: p.name.trim(),
       contactId: p.contactId,
       isPayerShare: false,
-      amount: Math.round(cents) / 100,
+      isUserShare: false,
+      amount: Math.round(baseCents) / 100,
     })
   })
 
-  if (includePayer) {
-    let payerCents = baseCents
-    if (remainder > 0) {
-      payerCents += remainder
-    }
-    // Añadimos la parte del pagador al inicio
-    results.unshift({
-      participantName: payerName,
-      isPayerShare: true,
-      amount: Math.round(payerCents) / 100,
-    })
+  // Cuota del pagador externo (asume el resto de la división para cuadre total exacto)
+  let payerCents = baseCents
+  if (remainder > 0) {
+    payerCents += remainder
   }
+  results.unshift({
+    participantName: effectivePayerName,
+    contactId: actualPayerContactId,
+    isPayerShare: true,
+    isUserShare: false,
+    amount: Math.round(payerCents) / 100,
+  })
 
   return results
 }
@@ -385,6 +443,62 @@ export function selectExpenseShareStatus(
 }
 
 /**
+ * Calcula el estado de una parte por pagar del usuario ante un acreedor (quien pagó el gasto).
+ * Descuenta los pagos reales efectuados por el usuario hacia dicho gasto o cuota.
+ * Si el usuario paga más del importe debido (sobrepago), salda la deuda a 0 € sin generar deudas negativas ni inversas.
+ */
+export function selectExpensePayableStatus(
+  share: ExpenseShare,
+  transactions: Transaction[] = [],
+  cashTransactions: CashTransaction[] = []
+): {
+  expectedAmount: number
+  paidAmount: number
+  appliedAmount: number
+  pendingAmount: number
+  status: 'pending' | 'partial' | 'settled'
+  payments: (Transaction | CashTransaction)[]
+} {
+  // Transacciones bancarias de pago al acreedor vinculadas a la cuota o al gasto origen
+  const bankPayments = transactions.filter(
+    (t) =>
+      t.type === 'expense' &&
+      (t.expenseShareId === share.id ||
+        (t.parentExpenseId === share.expenseTransactionId && !t.isShared))
+  )
+
+  // Transacciones de efectivo de pago al acreedor
+  const cashPayments = cashTransactions.filter(
+    (c) =>
+      c.type === 'expense' &&
+      (c.bankTransactionId === share.expenseTransactionId &&
+        (!c.note?.includes('[share:') || c.note.includes(`[share:${share.id}]`)))
+  )
+
+  const allPayments = [...bankPayments, ...cashPayments]
+  const paidAmount = Math.round(allPayments.reduce((sum, p) => sum + p.amount, 0) * 100) / 100
+  const expectedAmount = Math.round(share.expectedAmount * 100) / 100
+  const appliedAmount = Math.min(expectedAmount, paidAmount)
+  const pendingAmount = Math.max(0, Math.round((expectedAmount - appliedAmount) * 100) / 100)
+
+  let status: 'pending' | 'partial' | 'settled' = 'pending'
+  if (pendingAmount <= 0) {
+    status = 'settled'
+  } else if (paidAmount > 0) {
+    status = 'partial'
+  }
+
+  return {
+    expectedAmount,
+    paidAmount,
+    appliedAmount,
+    pendingAmount,
+    status,
+    payments: allPayments,
+  }
+}
+
+/**
  * Detecta cuotas compartidas (ExpenseShare) huérfanas cuyo gasto origen
  * no existe ni en transacciones bancarias ni en transacciones de efectivo.
  */
@@ -401,24 +515,15 @@ export function selectOrphanExpenseShares(
 }
 
 /**
- * Pendiente total por recuperar de todas las partes de gastos compartidos (excluyendo la cuota propia).
+ * Pendiente total por recuperar de todas las partes de gastos compartidos ("Por cobrar").
  */
 export function selectPendingReimbursements(
   shares: ExpenseShare[] = [],
   transactions: Transaction[] = [],
   cashTransactions: CashTransaction[] = []
 ): number {
-  const externalShares = shares.filter((s) => !s.isPayerShare)
-  const total = externalShares.reduce((sum, share) => {
-    const parentTx =
-      transactions.find((t) => t.id === share.expenseTransactionId) ||
-      cashTransactions.find((c) => c.id === share.expenseTransactionId)
-    if (!parentTx) return sum // Defensa: ignorar cuota huérfana
-
-    const { pendingAmount } = selectExpenseShareStatus(share, transactions, cashTransactions)
-    return sum + pendingAmount
-  }, 0)
-
+  const debtors = selectPendingDebtors(shares, transactions, cashTransactions)
+  const total = debtors.reduce((sum, d) => sum + d.totalPending, 0)
   return Math.round(total * 100) / 100
 }
 
@@ -436,6 +541,7 @@ export function selectExpenseShareDetails(
     cashTransactions.find((c) => c.id === expenseTransactionId)
   const expenseShares = shares.filter((s) => s.expenseTransactionId === expenseTransactionId)
 
+  const isContactPaid = expenseTx?.paidBy === 'contact'
   const payerShare = expenseShares.find((s) => s.isPayerShare)
   const externalShares = expenseShares.filter((s) => !s.isPayerShare)
 
@@ -443,6 +549,13 @@ export function selectExpenseShareDetails(
     share: s,
     ...selectExpenseShareStatus(s, transactions, cashTransactions),
   }))
+
+  const userShare = expenseShares.find(
+    (s) => s.isUserShare || s.participantName.toLowerCase() === 'tú' || (!s.isPayerShare && !s.contactId)
+  )
+  const userPayableStatus = userShare
+    ? selectExpensePayableStatus(userShare, transactions, cashTransactions)
+    : null
 
   const totalExpected = Math.round(expenseShares.reduce((acc, s) => acc + s.expectedAmount, 0) * 100) / 100
   const totalRecovered = Math.round(
@@ -454,8 +567,11 @@ export function selectExpenseShareDetails(
 
   return {
     expenseTx,
+    isContactPaid,
     payerShare,
     externalSharesWithStatus,
+    userShare,
+    userPayableStatus,
     totalExpected,
     totalRecovered,
     totalPendingToRecover,
@@ -464,7 +580,7 @@ export function selectExpenseShareDetails(
 }
 
 /**
- * Lista agrupada de deudores con saldo pendiente para selector rápido.
+ * Lista agrupada de deudores con saldo pendiente para selector rápido ("Por cobrar").
  */
 export function selectPendingDebtors(
   shares: ExpenseShare[] = [],
@@ -483,13 +599,17 @@ export function selectPendingDebtors(
     }[]
   }>()
 
-  const externalShares = shares.filter((s) => !s.isPayerShare)
-
-  externalShares.forEach((s) => {
+  shares.forEach((s) => {
     const tx =
       transactions.find((t) => t.id === s.expenseTransactionId) ||
       cashTransactions.find((c) => c.id === s.expenseTransactionId)
     if (!tx) return // Defensa: ignorar cuota cuyo gasto origen no existe
+
+    // Si el gasto lo pagó un tercero, los demás no le deben al usuario
+    if (tx.paidBy === 'contact') return
+
+    // La cuota del propio usuario o pagador no es una deuda por cobrar
+    if (s.isPayerShare || s.isUserShare || s.participantName.toLowerCase() === 'tú') return
 
     const { pendingAmount } = selectExpenseShareStatus(s, transactions, cashTransactions)
     if (pendingAmount > 0) {
@@ -518,14 +638,93 @@ export function selectPendingDebtors(
 export const selectPendingReimbursementsByContact = selectPendingDebtors
 
 /**
- * Lista de cuotas externas ya cobradas / recuperadas en su totalidad.
+ * Lista agrupada de deudas que el usuario tiene pendientes de pagar a otras personas ("Por pagar").
+ */
+export function selectPendingPayables(
+  shares: ExpenseShare[] = [],
+  transactions: Transaction[] = [],
+  cashTransactions: CashTransaction[] = []
+): {
+  creditorContactId?: string
+  creditorName: string
+  totalPending: number
+  pendingShares: {
+    share: ExpenseShare
+    pendingAmount: number
+    expenseDescription: string
+    expenseDate: string
+  }[]
+}[] {
+  const map = new Map<string, {
+    creditorContactId?: string
+    creditorName: string
+    totalPending: number
+    pendingShares: {
+      share: ExpenseShare
+      pendingAmount: number
+      expenseDescription: string
+      expenseDate: string
+    }[]
+  }>()
+
+  shares.forEach((s) => {
+    const parentTx =
+      transactions.find((t) => t.id === s.expenseTransactionId) ||
+      cashTransactions.find((c) => c.id === s.expenseTransactionId)
+    if (!parentTx) return
+
+    // Solo cuotas de gastos pagados por un tercero (paidBy === 'contact') que correspondan a la parte del usuario
+    const isContactPaid = parentTx.paidBy === 'contact'
+    const isUserShare = Boolean(s.isUserShare) || s.participantName.toLowerCase() === 'tú' || (!s.isPayerShare && !s.contactId)
+    if (!isContactPaid || !isUserShare) return
+
+    const { pendingAmount } = selectExpensePayableStatus(s, transactions, cashTransactions)
+    if (pendingAmount > 0) {
+      const creditorName = parentTx.payerName || 'Contacto'
+      const creditorKey = parentTx.payerContactId || creditorName.toLowerCase().trim()
+
+      const existing = map.get(creditorKey) ?? {
+        creditorContactId: parentTx.payerContactId,
+        creditorName,
+        totalPending: 0,
+        pendingShares: [],
+      }
+
+      existing.totalPending = Math.round((existing.totalPending + pendingAmount) * 100) / 100
+      existing.pendingShares.push({
+        share: s,
+        pendingAmount,
+        expenseDescription: parentTx.description || 'Gasto compartido',
+        expenseDate: parentTx.date || s.createdAt || new Date().toISOString(),
+      })
+      map.set(creditorKey, existing)
+    }
+  })
+
+  return Array.from(map.values()).sort((a, b) => b.totalPending - a.totalPending)
+}
+
+/**
+ * Total de deudas pendientes por pagar del usuario.
+ */
+export function selectTotalPendingPayables(
+  shares: ExpenseShare[] = [],
+  transactions: Transaction[] = [],
+  cashTransactions: CashTransaction[] = []
+): number {
+  const payables = selectPendingPayables(shares, transactions, cashTransactions)
+  const total = payables.reduce((acc, p) => acc + p.totalPending, 0)
+  return Math.round(total * 100) / 100
+}
+
+/**
+ * Lista de cuotas externas ya cobradas / recuperadas en su totalidad ("Por cobrar" cobrado).
  */
 export function selectSettledReimbursements(
   shares: ExpenseShare[] = [],
   transactions: Transaction[] = [],
   cashTransactions: CashTransaction[] = []
 ) {
-  const externalShares = shares.filter((s) => !s.isPayerShare)
   const settledList: {
     share: ExpenseShare
     participantName: string
@@ -534,11 +733,13 @@ export function selectSettledReimbursements(
     settledDate: string
   }[] = []
 
-  externalShares.forEach((s) => {
+  shares.forEach((s) => {
     const tx =
       transactions.find((t) => t.id === s.expenseTransactionId) ||
       cashTransactions.find((c) => c.id === s.expenseTransactionId)
     if (!tx) return // Defensa: ignorar cuota cuyo gasto origen no existe
+    if (tx.paidBy === 'contact') return
+    if (s.isPayerShare || s.isUserShare || s.participantName.toLowerCase() === 'tú') return
 
     const status = selectExpenseShareStatus(s, transactions, cashTransactions)
     if (status.status === 'received') {
@@ -549,6 +750,48 @@ export function selectSettledReimbursements(
         amount: s.expectedAmount,
         expenseDescription: tx.description || 'Gasto compartido',
         settledDate: lastReimb?.date || tx.date || s.createdAt || new Date().toISOString(),
+      })
+    }
+  })
+
+  return settledList.sort((a, b) => new Date(b.settledDate).getTime() - new Date(a.settledDate).getTime())
+}
+
+/**
+ * Lista de deudas propias ya liquidadas / pagadas en su totalidad al acreedor ("Por pagar" pagado).
+ */
+export function selectSettledPayables(
+  shares: ExpenseShare[] = [],
+  transactions: Transaction[] = [],
+  cashTransactions: CashTransaction[] = []
+) {
+  const settledList: {
+    share: ExpenseShare
+    creditorName: string
+    amount: number
+    expenseDescription: string
+    settledDate: string
+  }[] = []
+
+  shares.forEach((s) => {
+    const parentTx =
+      transactions.find((t) => t.id === s.expenseTransactionId) ||
+      cashTransactions.find((c) => c.id === s.expenseTransactionId)
+    if (!parentTx) return
+
+    const isContactPaid = parentTx.paidBy === 'contact'
+    const isUserShare = Boolean(s.isUserShare) || s.participantName.toLowerCase() === 'tú' || (!s.isPayerShare && !s.contactId)
+    if (!isContactPaid || !isUserShare) return
+
+    const status = selectExpensePayableStatus(s, transactions, cashTransactions)
+    if (status.status === 'settled') {
+      const lastPayment = status.payments[status.payments.length - 1]
+      settledList.push({
+        share: s,
+        creditorName: parentTx.payerName || 'Contacto',
+        amount: s.expectedAmount,
+        expenseDescription: parentTx.description || 'Gasto compartido',
+        settledDate: lastPayment?.date || parentTx.date || s.createdAt || new Date().toISOString(),
       })
     }
   })
@@ -695,8 +938,8 @@ export function selectDayNetFinanceStats(
     const d = new Date(t.date)
     if (d.getFullYear() === year && d.getMonth() === month && d.getDate() === day) {
       if (t.type === 'expense') {
-        // Si es una retirada de cajero vinculada a efectivo, no computa como consumo económico
-        if (linkedBankWithdrawalIds.has(t.id)) {
+        // Si es una retirada de cajero vinculada o un gasto pagado por un contacto, no computa como desembolso
+        if (linkedBankWithdrawalIds.has(t.id) || (t.isShared && t.paidBy === 'contact')) {
           return
         }
         grossExpenses += t.amount
@@ -718,6 +961,9 @@ export function selectDayNetFinanceStats(
     const d = new Date(c.date)
     if (d.getFullYear() === year && d.getMonth() === month && d.getDate() === day) {
       if (c.type === 'expense') {
+        if (c.isShared && c.paidBy === 'contact') {
+          return
+        }
         grossExpenses += c.amount
         const linked = selectLinkedReimbursementsForExpense(c.id, transactions, cashTransactions)
         const net = Math.max(0, Math.round((c.amount - linked) * 100) / 100)
@@ -805,7 +1051,7 @@ export function selectMonthDailyNetStats(
 
     dayTxs.forEach((t) => {
       if (t.type === 'expense') {
-        if (linkedBankWithdrawalIds.has(t.id)) {
+        if (linkedBankWithdrawalIds.has(t.id) || (t.isShared && t.paidBy === 'contact')) {
           return
         }
         grossExpenses += t.amount
@@ -823,6 +1069,9 @@ export function selectMonthDailyNetStats(
 
     dayCash.forEach((c) => {
       if (c.type === 'expense') {
+        if (c.isShared && c.paidBy === 'contact') {
+          return
+        }
         grossExpenses += c.amount
         const linked = selectLinkedReimbursementsForExpense(c.id, transactions, cashTransactions)
         const net = Math.max(0, Math.round((c.amount - linked) * 100) / 100)

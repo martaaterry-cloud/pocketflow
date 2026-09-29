@@ -123,6 +123,9 @@ export function toDbTransaction(tx: Transaction, userId: string) {
     is_shared: Boolean(tx.isShared),
     special_type: tx.specialType || 'normal',
     expense_nature: tx.expenseNature || null,
+    paid_by: tx.paidBy || 'user',
+    payer_contact_id: tx.payerContactId || null,
+    payer_name: tx.payerName || null,
   }
   if (tx.giftRecipient) {
     row.gift_recipient = tx.giftRecipient
@@ -149,6 +152,9 @@ export function fromDbTransaction(row: Record<string, unknown>): Transaction {
     specialType: (row.special_type as SpecialMovementType) || undefined,
     expenseNature: (row.expense_nature as ExpenseNature) || undefined,
     giftRecipient: row.gift_recipient ? String(row.gift_recipient) : undefined,
+    paidBy: (row.paid_by as 'user' | 'contact') || 'user',
+    payerContactId: row.payer_contact_id ? String(row.payer_contact_id) : undefined,
+    payerName: row.payer_name ? String(row.payer_name) : undefined,
   }
 }
 
@@ -403,6 +409,7 @@ export function toDbExpenseShare(row: ExpenseShare, userId: string) {
     contact_id: row.contactId || null,
     participant_name: row.participantName,
     is_payer_share: Boolean(row.isPayerShare),
+    is_user_share: Boolean(row.isUserShare),
     expected_amount: row.expectedAmount,
   }
 }
@@ -414,6 +421,7 @@ export function fromDbExpenseShare(row: Record<string, unknown>): ExpenseShare {
     contactId: row.contact_id ? String(row.contact_id) : undefined,
     participantName: String(row.participant_name),
     isPayerShare: Boolean(row.is_payer_share),
+    isUserShare: Boolean(row.is_user_share),
     expectedAmount: Number(row.expected_amount),
     createdAt: row.created_at ? String(row.created_at) : undefined,
     updatedAt: row.updated_at ? String(row.updated_at) : undefined,
@@ -432,6 +440,9 @@ export function toDbCashTransaction(tx: CashTransaction, userId: string) {
     note: tx.note || null,
     bank_transaction_id: tx.bankTransactionId || null,
     is_shared: tx.isShared ?? false,
+    paid_by: tx.paidBy || 'user',
+    payer_contact_id: tx.payerContactId || null,
+    payer_name: tx.payerName || null,
   }
 }
 
@@ -446,6 +457,9 @@ export function fromDbCashTransaction(row: Record<string, unknown>): CashTransac
     note: row.note ? String(row.note) : undefined,
     bankTransactionId: row.bank_transaction_id ? String(row.bank_transaction_id) : undefined,
     isShared: Boolean(row.is_shared),
+    paidBy: (row.paid_by as 'user' | 'contact') || 'user',
+    payerContactId: row.payer_contact_id ? String(row.payer_contact_id) : undefined,
+    payerName: row.payer_name ? String(row.payer_name) : undefined,
     createdAt: row.created_at ? String(row.created_at) : undefined,
     updatedAt: row.updated_at ? String(row.updated_at) : undefined,
   }

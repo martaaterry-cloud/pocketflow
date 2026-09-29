@@ -170,6 +170,10 @@ import {
   selectNetExpensesByCategory,
   selectRealIncome,
   selectPendingReimbursements,
+  selectTotalPendingPayables,
+  selectPendingPayables,
+  selectExpensePayableStatus,
+  selectSettledPayables,
   selectExpenseShareStatus,
   selectPendingDebtors,
   selectPendingReimbursementsByContact,
@@ -6888,12 +6892,12 @@ describe('Fase 18 — Mejoras de Finanzas (Detalle por Categoría, Retiradas de 
 describe('Fase 18 — Identificación Visual de Versión y Build', () => {
   it('314. Versioning: única fuente de verdad y formato de visualización exacto', () => {
     assert.equal(APP_NAME, 'PocketFlow')
-    assert.equal(APP_VERSION, '0.21.1')
-    assert.equal(APP_BUILD, '2026.09.29-02')
+    assert.equal(APP_VERSION, '0.22.0')
+    assert.equal(APP_BUILD, '2026.09.29-03')
 
-    assert.equal(getAppVersionString(), 'PocketFlow v0.21.1')
-    assert.equal(getAppBuildString(), 'Build 2026.09.29-02')
-    assert.equal(getAppFullVersionLabel(), 'PocketFlow v0.21.1 · Build 2026.09.29-02')
+    assert.equal(getAppVersionString(), 'PocketFlow v0.22.0')
+    assert.equal(getAppBuildString(), 'Build 2026.09.29-03')
+    assert.equal(getAppFullVersionLabel(), 'PocketFlow v0.22.0 · Build 2026.09.29-03')
   })
 })
 
@@ -13980,7 +13984,7 @@ describe('Fase 50 — Control de Acceso por Roles (User / Admin), Seguridad RLS 
     assert.equal(allowedSubViews.includes('cloud'), false)
   })
 
-  it('589. 9. Footer: usuario normal ve solo "PocketFlow v0.21.1", admin ve "PocketFlow v0.21.1" y "Build 2026.09.29-02"', () => {
+  it('589. 9. Footer: usuario normal ve solo "PocketFlow v0.22.0", admin ve "PocketFlow v0.22.0" y "Build 2026.09.29-03"', () => {
     const renderFooterTexts = (isAdmin: boolean): { versionText: string; buildText: string | null } => {
       return {
         versionText: getAppVersionString(),
@@ -13989,12 +13993,12 @@ describe('Fase 50 — Control de Acceso por Roles (User / Admin), Seguridad RLS 
     }
 
     const userFooter = renderFooterTexts(false)
-    assert.equal(userFooter.versionText, 'PocketFlow v0.21.1')
+    assert.equal(userFooter.versionText, 'PocketFlow v0.22.0')
     assert.equal(userFooter.buildText, null)
 
     const adminFooter = renderFooterTexts(true)
-    assert.equal(adminFooter.versionText, 'PocketFlow v0.21.1')
-    assert.equal(adminFooter.buildText, 'Build 2026.09.29-02')
+    assert.equal(adminFooter.versionText, 'PocketFlow v0.22.0')
+    assert.equal(adminFooter.buildText, 'Build 2026.09.29-03')
   })
 
   it('590. 10. Reconciliación y sincronización de perfil no altera datos financieros ni transacciones', () => {
@@ -14495,7 +14499,7 @@ describe('Fase 52 — Versionado Automático y Robusto del Service Worker PWA', 
   it('613. 1. CACHE_NAME del Service Worker incluye exactamente APP_VERSION y APP_BUILD actuales', () => {
     const expectedCacheName = `pocketflow-v${APP_VERSION}-${APP_BUILD}`
     assert.equal(getServiceWorkerCacheName(APP_VERSION, APP_BUILD), expectedCacheName)
-    assert.equal(expectedCacheName, 'pocketflow-v0.21.1-2026.09.29-02')
+    assert.equal(expectedCacheName, 'pocketflow-v0.22.0-2026.09.29-03')
 
     const swCode = generateServiceWorkerCode(APP_VERSION, APP_BUILD)
     assert.ok(swCode.includes(`const CACHE_NAME = '${expectedCacheName}'`))
@@ -14589,6 +14593,405 @@ describe('Fase 52 — Versionado Automático y Robusto del Service Worker PWA', 
     assert.deepEqual(postedMessage, { type: 'SKIP_WAITING' })
   })
 })
+
+describe('Fase 53 — Gestión Completa de Deudas Por Pagar, Pagador Externo y Pagos Parciales', () => {
+  it('618. 1. Representación de "yo pagué" vs "pagó otra persona" en modelo y split', () => {
+    // 1.1 "Yo pagué": paidBy === 'user'
+    const splitUserPaid = splitExpenseEqually(
+      15.0,
+      [{ name: 'Carlos' }, { name: 'Elena' }],
+      true,
+      'Tú',
+      'user'
+    )
+    assert.equal(splitUserPaid.length, 3)
+    const userShare1 = splitUserPaid.find((s) => s.participantName === 'Tú')
+    const carlosShare1 = splitUserPaid.find((s) => s.participantName === 'Carlos')
+    assert.equal(userShare1?.isPayerShare, true)
+    assert.equal(userShare1?.isUserShare, false)
+    assert.equal(userShare1?.amount, 5.0)
+    assert.equal(carlosShare1?.isPayerShare, false)
+    assert.equal(carlosShare1?.amount, 5.0)
+
+    // 1.2 "Pagó otra persona": paidBy === 'contact' (Carlos pagó 15 €)
+    const splitContactPaid = splitExpenseEqually(
+      15.0,
+      [{ name: 'Elena' }],
+      true,
+      'Tú',
+      'contact',
+      'Carlos'
+    )
+    assert.equal(splitContactPaid.length, 3)
+    const carlosShare2 = splitContactPaid.find((s) => s.participantName === 'Carlos')
+    const userShare2 = splitContactPaid.find((s) => s.participantName === 'Tú')
+    const elenaShare2 = splitContactPaid.find((s) => s.participantName === 'Elena')
+
+    assert.equal(carlosShare2?.isPayerShare, true)
+    assert.equal(carlosShare2?.isUserShare, false)
+    assert.equal(carlosShare2?.amount, 5.0)
+
+    assert.equal(userShare2?.isPayerShare, false)
+    assert.equal(userShare2?.isUserShare, true)
+    assert.equal(userShare2?.amount, 5.0)
+
+    assert.equal(elenaShare2?.isPayerShare, false)
+    assert.equal(elenaShare2?.isUserShare, false)
+    assert.equal(elenaShare2?.amount, 5.0)
+  })
+
+  it('619. 2. Reparto exacto de céntimos con pagador externo (ej. 10 € entre 3 personas = 3,34 € pagador, 3,33 € otros)', () => {
+    const split = splitExpenseEqually(
+      10.0,
+      [{ name: 'Elena' }],
+      true,
+      'Tú',
+      'contact',
+      'Carlos'
+    )
+    assert.equal(split.length, 3)
+    const total = split.reduce((sum, s) => sum + s.amount, 0)
+    assert.equal(Math.round(total * 100) / 100, 10.0)
+
+    const carlos = split.find((s) => s.participantName === 'Carlos')
+    const user = split.find((s) => s.participantName === 'Tú')
+    const elena = split.find((s) => s.participantName === 'Elena')
+
+    assert.equal(carlos?.amount, 3.34) // El céntimo indivisible va al pagador
+    assert.equal(user?.amount, 3.33)
+    assert.equal(elena?.amount, 3.33)
+  })
+
+  it('620. 3. Evitar doble contabilización: gastos pagados por otra persona NO descuentan el saldo bancario ni efectivo inicial', () => {
+    const initialAccounts: Account[] = [
+      { id: 'daily', name: 'Cuenta diaria', type: 'spending', initialBalance: 1000.0, balance: 1000.0 },
+    ]
+
+    // Gasto pagado por Carlos (30 €)
+    const sharedTx: Transaction = {
+      id: 'tx_carlos_dinner',
+      accountId: 'daily',
+      type: 'expense',
+      amount: 30.0,
+      description: 'Cena amigos',
+      date: '2026-09-29T20:00:00Z',
+      isShared: true,
+      paidBy: 'contact',
+      payerName: 'Carlos',
+    }
+
+    // Reconciliación bancaria: NO debe restar los 30 € porque el usuario no los pagó
+    const reconciled = reconcileAccounts(initialAccounts, [sharedTx])
+    assert.equal(reconciled[0].balance, 1000.0)
+
+    // Reconciliación en efectivo
+    const cashSharedTx: CashTransaction = {
+      id: 'cash_carlos_coffee',
+      type: 'expense',
+      amount: 12.0,
+      description: 'Cafés',
+      date: '2026-09-29T10:00:00Z',
+      isShared: true,
+      paidBy: 'contact',
+      payerName: 'Carlos',
+    }
+    const cashBal = selectCashBalance([cashSharedTx])
+    assert.equal(cashBal, 0.0) // No resta 12 € del balance de efectivo
+  })
+
+  it('621. 4. Cálculo de "Por pagar": selectPendingPayables identifica cuotas de usuario pendientes', () => {
+    const parentTx: Transaction = {
+      id: 'tx_hotel',
+      accountId: 'daily',
+      type: 'expense',
+      amount: 100.0,
+      description: 'Hotel Fin de Semana',
+      date: '2026-09-20',
+      isShared: true,
+      paidBy: 'contact',
+      payerName: 'Marta',
+    }
+
+    const shares: ExpenseShare[] = [
+      { id: 'sh_payer', expenseTransactionId: 'tx_hotel', participantName: 'Marta', isPayerShare: true, isUserShare: false, expectedAmount: 50.0 },
+      { id: 'sh_user', expenseTransactionId: 'tx_hotel', participantName: 'Tú', isPayerShare: false, isUserShare: true, expectedAmount: 50.0 },
+    ]
+
+    const pendingPayables = selectPendingPayables(shares, [parentTx], [])
+    assert.equal(pendingPayables.length, 1)
+    assert.equal(pendingPayables[0].creditorName, 'Marta')
+    assert.equal(pendingPayables[0].totalPending, 50.0)
+    assert.equal(pendingPayables[0].pendingShares.length, 1)
+    assert.equal(pendingPayables[0].pendingShares[0].share.id, 'sh_user')
+    assert.equal(pendingPayables[0].pendingShares[0].pendingAmount, 50.0)
+
+    const totalPayables = selectTotalPendingPayables(shares, [parentTx], [])
+    assert.equal(totalPayables, 50.0)
+  })
+
+  it('622. 5. Registro de pago real a acreedor: reduce deuda y descuenta del banco/efectivo', () => {
+    const accounts: Account[] = [
+      { id: 'daily', name: 'Cuenta diaria', type: 'spending', initialBalance: 500.0, balance: 500.0 },
+    ]
+
+    const parentTx: Transaction = {
+      id: 'tx_festival',
+      accountId: 'daily',
+      type: 'expense',
+      amount: 60.0,
+      description: 'Entradas Festival',
+      date: '2026-09-10',
+      isShared: true,
+      paidBy: 'contact',
+      payerName: 'David',
+    }
+
+    const shares: ExpenseShare[] = [
+      { id: 'sh_david', expenseTransactionId: 'tx_festival', participantName: 'David', isPayerShare: true, expectedAmount: 30.0 },
+      { id: 'sh_user_fest', expenseTransactionId: 'tx_festival', participantName: 'Tú', isPayerShare: false, isUserShare: true, expectedAmount: 30.0 },
+    ]
+
+    // Antes del pago: debe 30 €, saldo en banco sigue 500 €
+    assert.equal(selectTotalPendingPayables(shares, [parentTx], []), 30.0)
+    assert.equal(reconcileAccounts(accounts, [parentTx])[0].balance, 500.0)
+
+    // El usuario le paga a David 30 € por Bizum
+    const paymentTx: Transaction = {
+      id: 'tx_pay_david',
+      accountId: 'daily',
+      type: 'expense',
+      amount: 30.0,
+      description: 'Pago a David · Entradas Festival',
+      date: '2026-09-12',
+      parentExpenseId: 'tx_festival',
+      expenseShareId: 'sh_user_fest',
+    }
+
+    const allTxs = [parentTx, paymentTx]
+
+    // Después del pago: deuda saldada (0 € pendientes), saldo en banco ahora 470 €
+    assert.equal(selectTotalPendingPayables(shares, allTxs, []), 0.0)
+    assert.equal(reconcileAccounts(accounts, allTxs)[0].balance, 470.0)
+
+    const status = selectExpensePayableStatus(shares[1], allTxs, [])
+    assert.equal(status.status, 'settled')
+    assert.equal(status.paidAmount, 30.0)
+    assert.equal(status.pendingAmount, 0.0)
+  })
+
+  it('623. 6. Pagos parciales sucesivos: refleja saldo restante con estado partial hasta su liquidación', () => {
+    const parentTx: Transaction = {
+      id: 'tx_roadtrip',
+      accountId: 'daily',
+      type: 'expense',
+      amount: 100.0,
+      description: 'Gasolina viaje',
+      date: '2026-09-15',
+      isShared: true,
+      paidBy: 'contact',
+      payerName: 'Alex',
+    }
+
+    const userShare: ExpenseShare = {
+      id: 'sh_roadtrip_user',
+      expenseTransactionId: 'tx_roadtrip',
+      participantName: 'Tú',
+      isPayerShare: false,
+      isUserShare: true,
+      expectedAmount: 50.0,
+    }
+
+    // 1. Pago parcial 1: 20 €
+    const pay1: Transaction = {
+      id: 'pay_1',
+      accountId: 'daily',
+      type: 'expense',
+      amount: 20.0,
+      description: 'Pago 1 a Alex',
+      date: '2026-09-16',
+      expenseShareId: 'sh_roadtrip_user',
+    }
+
+    const status1 = selectExpensePayableStatus(userShare, [parentTx, pay1], [])
+    assert.equal(status1.status, 'partial')
+    assert.equal(status1.paidAmount, 20.0)
+    assert.equal(status1.pendingAmount, 30.0)
+
+    // 2. Pago parcial 2: 30 €
+    const pay2: Transaction = {
+      id: 'pay_2',
+      accountId: 'daily',
+      type: 'expense',
+      amount: 30.0,
+      description: 'Pago 2 a Alex',
+      date: '2026-09-17',
+      expenseShareId: 'sh_roadtrip_user',
+    }
+
+    const status2 = selectExpensePayableStatus(userShare, [parentTx, pay1, pay2], [])
+    assert.equal(status2.status, 'settled')
+    assert.equal(status2.paidAmount, 50.0)
+    assert.equal(status2.pendingAmount, 0.0)
+  })
+
+  it('624. 7. Prevención de sobrepago sin generar deuda inversa: pagar 5,00 € cuando se deben 4,95 € liquida a 0,00 €', () => {
+    const parentTx: Transaction = {
+      id: 'tx_lunch',
+      accountId: 'daily',
+      type: 'expense',
+      amount: 9.90,
+      description: 'Almuerzo menú',
+      date: '2026-09-25',
+      isShared: true,
+      paidBy: 'contact',
+      payerName: 'Laura',
+    }
+
+    const userShare: ExpenseShare = {
+      id: 'sh_lunch_user',
+      expenseTransactionId: 'tx_lunch',
+      participantName: 'Tú',
+      isPayerShare: false,
+      isUserShare: true,
+      expectedAmount: 4.95,
+    }
+
+    // El usuario le redondea y le hace un Bizum de 5,00 € a Laura
+    const overpaymentTx: Transaction = {
+      id: 'tx_bizum_laura_round',
+      accountId: 'daily',
+      type: 'expense',
+      amount: 5.0,
+      description: 'Bizum Laura redondeado',
+      date: '2026-09-25',
+      expenseShareId: 'sh_lunch_user',
+    }
+
+    const status = selectExpensePayableStatus(userShare, [parentTx, overpaymentTx], [])
+    assert.equal(status.status, 'settled')
+    assert.equal(status.paidAmount, 5.0)
+    assert.equal(status.pendingAmount, 0.0) // NO genera -0.05 € ni deuda inversa negativa
+    assert.ok(status.pendingAmount >= 0)
+
+    const pendingList = selectPendingPayables([userShare], [parentTx, overpaymentTx], [])
+    assert.equal(pendingList.length, 0) // No queda listada en pendientes
+  })
+
+  it('625. 8. Compatibilidad retroactiva: gastos compartidos antiguos sin paidBy funcionan como "yo pagué"', () => {
+    // Gasto antiguo legacy sin paidBy
+    const legacyTx: Transaction = {
+      id: 'tx_legacy_shared',
+      accountId: 'daily',
+      type: 'expense',
+      amount: 40.0,
+      description: 'Supermercado compartido',
+      date: '2026-08-15',
+      isShared: true,
+      // paidBy es undefined
+    }
+
+    const legacyShares: ExpenseShare[] = [
+      { id: 'leg_sh1', expenseTransactionId: 'tx_legacy_shared', participantName: 'Tú', isPayerShare: true, expectedAmount: 20.0 },
+      { id: 'leg_sh2', expenseTransactionId: 'tx_legacy_shared', participantName: 'Manuela', isPayerShare: false, expectedAmount: 20.0 },
+    ]
+
+    // Aparece en Por cobrar (receivables)
+    const debtors = selectPendingDebtors(legacyShares, [legacyTx], [])
+    assert.equal(debtors.length, 1)
+    assert.equal(debtors[0].name, 'Manuela')
+    assert.equal(debtors[0].totalPending, 20.0)
+
+    // NO aparece en Por pagar (payables)
+    const payables = selectPendingPayables(legacyShares, [legacyTx], [])
+    assert.equal(payables.length, 0)
+
+    // El saldo bancario sí deduce los 40 € porque el usuario los pagó originalmente
+    const accounts: Account[] = [
+      { id: 'daily', name: 'Cuenta diaria', type: 'spending', initialBalance: 100.0, balance: 100.0 },
+    ]
+    const reconciled = reconcileAccounts(accounts, [legacyTx])
+    assert.equal(reconciled[0].balance, 60.0)
+  })
+
+  it('626. 9. Métricas de periodo y día neto: gastos pagados por contacto no computan en gasto bruto mensual hasta el pago real', () => {
+    const contactPaidExpense: Transaction = {
+      id: 'tx_event_contact',
+      accountId: 'daily',
+      type: 'expense',
+      amount: 80.0,
+      description: 'Teatro',
+      date: '2026-09-28T18:00:00Z',
+      isShared: true,
+      paidBy: 'contact',
+      payerName: 'Pedro',
+    }
+
+    // Gasto bruto de septiembre antes de que el usuario pague
+    const grossBefore = selectGrossExpensesForPeriod([contactPaidExpense], new Date('2026-09-28'), 'month')
+    assert.equal(grossBefore, 0.0)
+
+    // Cuando el usuario paga su parte de 40 € a Pedro
+    const userPayment: Transaction = {
+      id: 'tx_pay_pedro',
+      accountId: 'daily',
+      type: 'expense',
+      amount: 40.0,
+      description: 'Pago a Pedro · Teatro',
+      date: '2026-09-29T10:00:00Z',
+      parentExpenseId: 'tx_event_contact',
+    }
+
+    const grossAfter = selectGrossExpensesForPeriod([contactPaidExpense, userPayment], new Date('2026-09-29'), 'month')
+    assert.equal(grossAfter, 40.0) // Se contabiliza exactamente una vez por el importe pagado por el usuario
+  })
+
+  it('627. 10. Serialización y deserialización Supabase de paid_by, payer_contact_id, payer_name e is_user_share', () => {
+    const tx: Transaction = {
+      id: 'tx_sync_test',
+      accountId: 'daily',
+      type: 'expense',
+      amount: 50.0,
+      description: 'Regalo conjunto',
+      date: '2026-09-29T15:00:00Z',
+      isShared: true,
+      paidBy: 'contact',
+      payerContactId: 'ct_carlos_1',
+      payerName: 'Carlos',
+    }
+
+    const share: ExpenseShare = {
+      id: 'sh_sync_test',
+      expenseTransactionId: 'tx_sync_test',
+      participantName: 'Tú',
+      isPayerShare: false,
+      isUserShare: true,
+      expectedAmount: 25.0,
+      createdAt: '2026-09-29T15:00:00Z',
+      updatedAt: '2026-09-29T15:00:00Z',
+    }
+
+    // 1. Transaction to DB
+    const dbTx = toDbTransaction(tx, 'user_abc')
+    assert.equal(dbTx.paid_by, 'contact')
+    assert.equal(dbTx.payer_contact_id, 'ct_carlos_1')
+    assert.equal(dbTx.payer_name, 'Carlos')
+
+    // 2. Transaction from DB
+    const restoredTx = fromDbTransaction(dbTx)
+    assert.equal(restoredTx.paidBy, 'contact')
+    assert.equal(restoredTx.payerContactId, 'ct_carlos_1')
+    assert.equal(restoredTx.payerName, 'Carlos')
+
+    // 3. ExpenseShare to DB
+    const dbShare = toDbExpenseShare(share, 'user_abc')
+    assert.equal(dbShare.is_user_share, true)
+
+    // 4. ExpenseShare from DB
+    const restoredShare = fromDbExpenseShare(dbShare)
+    assert.equal(restoredShare.isUserShare, true)
+  })
+})
+
 
 
 

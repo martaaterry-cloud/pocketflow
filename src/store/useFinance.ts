@@ -67,6 +67,9 @@ import {
   selectNetExpensesByCategory,
   selectRealIncome,
   selectPendingReimbursements,
+  selectTotalPendingPayables,
+  selectPendingPayables,
+  selectExpensePayableStatus,
   selectExpenseShareDetails,
   selectPendingDebtors,
   selectOrphanExpenseShares,
@@ -411,7 +414,7 @@ export function useFinance(storage: StorageAdapter = defaultAppStorage) {
   const addSharedExpense = useCallback(
     (
       input: CreateTransactionInput,
-      shares: { participantName: string; contactId?: string; isPayerShare: boolean; expectedAmount: number }[]
+      shares: { participantName: string; contactId?: string; isPayerShare: boolean; isUserShare?: boolean; expectedAmount: number }[]
     ) => {
       const txId = crypto.randomUUID()
       const newTx: Transaction = {
@@ -427,28 +430,37 @@ export function useFinance(storage: StorageAdapter = defaultAppStorage) {
         contactId: s.contactId,
         participantName: s.participantName.trim(),
         isPayerShare: s.isPayerShare,
+        isUserShare: s.isUserShare,
         expectedAmount: Number(s.expectedAmount),
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
       }))
 
-      // Auto-guardar participantes no pagadores en sharedContacts para autocompletado
+      // Auto-guardar participantes externos y pagador externo en sharedContacts para autocompletado
       const currentContacts = state.sharedContacts ?? []
       const newContacts: SharedContact[] = []
+      const namesToSave = new Set<string>()
+
       shares.forEach((s) => {
-        if (!s.isPayerShare) {
-          const name = s.participantName.trim()
-          const exists =
-            currentContacts.some((c) => c.displayName.toLowerCase() === name.toLowerCase()) ||
-            newContacts.some((c) => c.displayName.toLowerCase() === name.toLowerCase())
-          if (!exists && name.length > 0) {
-            newContacts.push({
-              id: s.contactId || crypto.randomUUID(),
-              displayName: name,
-              createdAt: new Date().toISOString(),
-              updatedAt: new Date().toISOString(),
-            })
-          }
+        if (!s.isUserShare && s.participantName.toLowerCase() !== 'tú') {
+          namesToSave.add(s.participantName.trim())
+        }
+      })
+      if (input.payerName && input.payerName.toLowerCase() !== 'tú') {
+        namesToSave.add(input.payerName.trim())
+      }
+
+      namesToSave.forEach((name) => {
+        const exists =
+          currentContacts.some((c) => c.displayName.toLowerCase() === name.toLowerCase()) ||
+          newContacts.some((c) => c.displayName.toLowerCase() === name.toLowerCase())
+        if (!exists && name.length > 0) {
+          newContacts.push({
+            id: crypto.randomUUID(),
+            displayName: name,
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+          })
         }
       })
 
@@ -480,6 +492,100 @@ export function useFinance(storage: StorageAdapter = defaultAppStorage) {
       })
 
       return { transaction: newTx, shares: createdShares }
+    },
+    [state, commit, dispatchSync]
+  )
+
+  const recordPayablePayment = useCallback(
+    (input: {
+      expenseShareId: string
+      amount: number
+      accountId?: string
+      date?: string
+      note?: string
+      description?: string
+      paymentMethod?: 'bank' | 'cash'
+    }) => {
+      const paymentMethod = input.paymentMethod || 'bank'
+      const share = (state.expenseShares ?? []).find((s) => s.id === input.expenseShareId)
+      const targetExpenseId = share?.expenseTransactionId
+      const parentTx =
+        state.transactions.find((t) => t.id === targetExpenseId) ||
+        state.cashTransactions?.find((c) => c.id === targetExpenseId)
+
+      const creditorName = parentTx?.payerName || 'Contacto'
+
+      if (paymentMethod === 'cash') {
+        const desc =
+          input.description ||
+          `Pago efectivo a ${creditorName} · ${parentTx?.description || 'Gasto compartido'}`
+
+        const cashNoteParts: string[] = []
+        if (input.note) cashNoteParts.push(input.note)
+        if (input.expenseShareId) cashNoteParts.push(`[share:${input.expenseShareId}]`)
+        const finalNote = cashNoteParts.join(' ') || undefined
+
+        const newCashTx: CashTransaction = {
+          id: `cash_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+          type: 'expense',
+          amount: Number(input.amount),
+          date: input.date || new Date().toISOString(),
+          description: desc,
+          categoryId: parentTx?.categoryId,
+          note: finalNote,
+          bankTransactionId: targetExpenseId,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        }
+
+        commit(
+          {
+            ...state,
+            cashTransactions: [newCashTx, ...(state.cashTransactions ?? [])],
+          },
+          newCashTx.id
+        )
+
+        dispatchSync('cash_transaction', 'insert', newCashTx.id, newCashTx, (sb, uid) =>
+          syncUpsertCashTransaction(sb, uid, newCashTx)
+        )
+
+        return newCashTx
+      }
+
+      const desc =
+        input.description ||
+        `Pago a ${creditorName} · ${parentTx?.description || 'Gasto compartido'}`
+
+      const fallbackAccountId =
+        parentTx && 'accountId' in parentTx && parentTx.accountId ? parentTx.accountId : 'daily'
+
+      const newTx: Transaction = {
+        id: crypto.randomUUID(),
+        type: 'expense',
+        amount: Number(input.amount),
+        accountId: input.accountId || fallbackAccountId,
+        categoryId: parentTx?.categoryId,
+        date: input.date || new Date().toISOString(),
+        description: desc,
+        note: input.note,
+        parentExpenseId: targetExpenseId,
+        expenseShareId: input.expenseShareId,
+      }
+
+      commit(
+        {
+          ...state,
+          transactions: [newTx, ...state.transactions],
+        },
+        newTx.id
+      )
+
+      dispatchSync('transaction', 'insert', newTx.id, newTx, (sb, uid) =>
+        syncInsertTransaction(sb, uid, newTx)
+      )
+
+      return newTx
     },
     [state, commit, dispatchSync]
   )
@@ -624,7 +730,7 @@ export function useFinance(storage: StorageAdapter = defaultAppStorage) {
     (
       id: string,
       updates: UpdateTransactionInput,
-      shares?: { participantName: string; contactId?: string; isPayerShare: boolean; expectedAmount: number }[]
+      shares?: { participantName: string; contactId?: string; isPayerShare: boolean; isUserShare?: boolean; expectedAmount: number }[]
     ) => {
       const existingIndex = state.transactions.findIndex((t) => t.id === id)
       if (existingIndex === -1) return
@@ -667,6 +773,7 @@ export function useFinance(storage: StorageAdapter = defaultAppStorage) {
                 participantName: nameTrimmed,
                 contactId: s.contactId,
                 isPayerShare: s.isPayerShare,
+                isUserShare: s.isUserShare,
                 expectedAmount: Number(s.expectedAmount),
                 updatedAt: new Date().toISOString(),
               }
@@ -679,6 +786,7 @@ export function useFinance(storage: StorageAdapter = defaultAppStorage) {
                 contactId: s.contactId,
                 participantName: nameTrimmed,
                 isPayerShare: s.isPayerShare,
+                isUserShare: s.isUserShare,
                 expectedAmount: Number(s.expectedAmount),
                 createdAt: new Date().toISOString(),
                 updatedAt: new Date().toISOString(),
@@ -1763,7 +1871,7 @@ export function useFinance(storage: StorageAdapter = defaultAppStorage) {
   const addCashTransaction = useCallback(
     (
       input: CreateCashTransactionInput,
-      shares?: { participantName: string; contactId?: string; isPayerShare: boolean; expectedAmount: number }[]
+      shares?: { participantName: string; contactId?: string; isPayerShare: boolean; isUserShare?: boolean; expectedAmount: number }[]
     ): CashTransaction => {
       const amount = Number(input.amount)
       if (isNaN(amount) || !isFinite(amount)) {
@@ -1798,13 +1906,14 @@ export function useFinance(storage: StorageAdapter = defaultAppStorage) {
           contactId: s.contactId,
           participantName: s.participantName.trim(),
           isPayerShare: s.isPayerShare,
+          isUserShare: s.isUserShare,
           expectedAmount: Number(s.expectedAmount),
           createdAt: nowIso,
           updatedAt: nowIso,
         }))
 
         shares.forEach((s) => {
-          if (!s.isPayerShare) {
+          if (!s.isUserShare && s.participantName.toLowerCase() !== 'tú') {
             const name = s.participantName.trim()
             const exists =
               currentContacts.some((c) => c.displayName.toLowerCase() === name.toLowerCase()) ||
@@ -1857,7 +1966,7 @@ export function useFinance(storage: StorageAdapter = defaultAppStorage) {
     (
       id: string,
       patch: UpdateCashTransactionInput,
-      shares?: { participantName: string; contactId?: string; isPayerShare: boolean; expectedAmount: number }[]
+      shares?: { participantName: string; contactId?: string; isPayerShare: boolean; isUserShare?: boolean; expectedAmount: number }[]
     ): CashTransaction | null => {
       const existing = (state.cashTransactions ?? []).find((tx) => tx.id === id)
       if (!existing) return null
@@ -1911,6 +2020,7 @@ export function useFinance(storage: StorageAdapter = defaultAppStorage) {
                 participantName: nameTrimmed,
                 contactId: s.contactId,
                 isPayerShare: s.isPayerShare,
+                isUserShare: s.isUserShare,
                 expectedAmount: Number(s.expectedAmount),
                 updatedAt: nowIso,
               }
@@ -1923,13 +2033,14 @@ export function useFinance(storage: StorageAdapter = defaultAppStorage) {
                 contactId: s.contactId,
                 participantName: nameTrimmed,
                 isPayerShare: s.isPayerShare,
+                isUserShare: s.isUserShare,
                 expectedAmount: Number(s.expectedAmount),
                 createdAt: nowIso,
                 updatedAt: nowIso,
               }
               sharesToUpsert.push(newShare)
 
-              if (!s.isPayerShare) {
+              if (!s.isUserShare && s.participantName.toLowerCase() !== 'tú') {
                 const exists =
                   nextSharedContacts.some((c) => c.displayName.toLowerCase() === nameTrimmed.toLowerCase()) ||
                   contactsToUpsert.some((c) => c.displayName.toLowerCase() === nameTrimmed.toLowerCase())
@@ -2138,6 +2249,11 @@ export function useFinance(storage: StorageAdapter = defaultAppStorage) {
       state.transactions,
       state.cashTransactions ?? []
     )
+    const pendingPayables = selectTotalPendingPayables(
+      state.expenseShares ?? [],
+      state.transactions,
+      state.cashTransactions ?? []
+    )
 
     const monthlyPlanSummary = selectMonthlyPlanCardSummary(
       state.planSettings,
@@ -2175,6 +2291,7 @@ export function useFinance(storage: StorageAdapter = defaultAppStorage) {
       netCategoryExpenses,
       realMonthIncome,
       pendingReimbursements,
+      pendingPayables,
 
       // Conceptos explícitos de dominio
       totalMoney,
@@ -2685,6 +2802,7 @@ export function useFinance(storage: StorageAdapter = defaultAppStorage) {
     addTransaction,
     addSharedExpense,
     recordReimbursement,
+    recordPayablePayment,
     addSharedContact,
     deleteSharedContact,
     updateTransaction,

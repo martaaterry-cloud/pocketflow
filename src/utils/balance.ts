@@ -16,6 +16,9 @@ export function calculateAccountBalance(
 ): number {
   const effect = transactions.reduce((acc, t) => {
     if (t.type === 'expense' && t.accountId === account.id) {
+      if (t.isShared && t.paidBy === 'contact') {
+        return acc
+      }
       return acc - t.amount
     }
     if (t.type === 'income' && t.accountId === account.id) {
@@ -64,7 +67,12 @@ export function ensureAccountInitialBalance(
   }
 
   const effect = transactions.reduce((sum, t) => {
-    if (t.type === 'expense' && t.accountId === account.id) return sum - t.amount
+    if (t.type === 'expense' && t.accountId === account.id) {
+      if (t.isShared && t.paidBy === 'contact') {
+        return sum
+      }
+      return sum - t.amount
+    }
     if (t.type === 'income' && t.accountId === account.id) return sum + t.amount
     if (t.type === 'transfer') {
       if (t.accountId === account.id) return sum - t.amount
