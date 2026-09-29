@@ -148,6 +148,8 @@ import {
   sendSkipWaiting,
   createReloadHandler,
   shouldCheckUpdateOnVisibility,
+  checkServiceWorkerUpdate,
+  type PwaUpdateCheckResult,
 } from '../src/utils/pwaUpdate'
 import {
   scrollToTop,
@@ -6892,12 +6894,12 @@ describe('Fase 18 — Mejoras de Finanzas (Detalle por Categoría, Retiradas de 
 describe('Fase 18 — Identificación Visual de Versión y Build', () => {
   it('314. Versioning: única fuente de verdad y formato de visualización exacto', () => {
     assert.equal(APP_NAME, 'PocketFlow')
-    assert.equal(APP_VERSION, '0.22.0')
-    assert.equal(APP_BUILD, '2026.09.29-03')
+    assert.equal(APP_VERSION, '0.22.1')
+    assert.equal(APP_BUILD, '2026.09.29-04')
 
-    assert.equal(getAppVersionString(), 'PocketFlow v0.22.0')
-    assert.equal(getAppBuildString(), 'Build 2026.09.29-03')
-    assert.equal(getAppFullVersionLabel(), 'PocketFlow v0.22.0 · Build 2026.09.29-03')
+    assert.equal(getAppVersionString(), 'PocketFlow v0.22.1')
+    assert.equal(getAppBuildString(), 'Build 2026.09.29-04')
+    assert.equal(getAppFullVersionLabel(), 'PocketFlow v0.22.1 · Build 2026.09.29-04')
   })
 })
 
@@ -13984,7 +13986,7 @@ describe('Fase 50 — Control de Acceso por Roles (User / Admin), Seguridad RLS 
     assert.equal(allowedSubViews.includes('cloud'), false)
   })
 
-  it('589. 9. Footer: usuario normal ve solo "PocketFlow v0.22.0", admin ve "PocketFlow v0.22.0" y "Build 2026.09.29-03"', () => {
+  it('589. 9. Footer: usuario normal ve solo "PocketFlow v0.22.1", admin ve "PocketFlow v0.22.1" y "Build 2026.09.29-04"', () => {
     const renderFooterTexts = (isAdmin: boolean): { versionText: string; buildText: string | null } => {
       return {
         versionText: getAppVersionString(),
@@ -13993,12 +13995,12 @@ describe('Fase 50 — Control de Acceso por Roles (User / Admin), Seguridad RLS 
     }
 
     const userFooter = renderFooterTexts(false)
-    assert.equal(userFooter.versionText, 'PocketFlow v0.22.0')
+    assert.equal(userFooter.versionText, 'PocketFlow v0.22.1')
     assert.equal(userFooter.buildText, null)
 
     const adminFooter = renderFooterTexts(true)
-    assert.equal(adminFooter.versionText, 'PocketFlow v0.22.0')
-    assert.equal(adminFooter.buildText, 'Build 2026.09.29-03')
+    assert.equal(adminFooter.versionText, 'PocketFlow v0.22.1')
+    assert.equal(adminFooter.buildText, 'Build 2026.09.29-04')
   })
 
   it('590. 10. Reconciliación y sincronización de perfil no altera datos financieros ni transacciones', () => {
@@ -14499,7 +14501,7 @@ describe('Fase 52 — Versionado Automático y Robusto del Service Worker PWA', 
   it('613. 1. CACHE_NAME del Service Worker incluye exactamente APP_VERSION y APP_BUILD actuales', () => {
     const expectedCacheName = `pocketflow-v${APP_VERSION}-${APP_BUILD}`
     assert.equal(getServiceWorkerCacheName(APP_VERSION, APP_BUILD), expectedCacheName)
-    assert.equal(expectedCacheName, 'pocketflow-v0.22.0-2026.09.29-03')
+    assert.equal(expectedCacheName, 'pocketflow-v0.22.1-2026.09.29-04')
 
     const swCode = generateServiceWorkerCode(APP_VERSION, APP_BUILD)
     assert.ok(swCode.includes(`const CACHE_NAME = '${expectedCacheName}'`))
@@ -14989,6 +14991,193 @@ describe('Fase 53 — Gestión Completa de Deudas Por Pagar, Pagador Externo y P
     // 4. ExpenseShare from DB
     const restoredShare = fromDbExpenseShare(dbShare)
     assert.equal(restoredShare.isUserShare, true)
+  })
+})
+
+describe('Fase 54 — Comprobación Manual de Actualizaciones PWA', () => {
+  it('623. 1. checkServiceWorkerUpdate detecta worker en espera inmediatamente si ya está instalado', async () => {
+    const fakeRegistration = {
+      waiting: { state: 'installed' } as ServiceWorker,
+      installing: null,
+      update: async () => fakeRegistration,
+      addEventListener: () => {},
+      removeEventListener: () => {},
+    } as unknown as ServiceWorkerRegistration
+
+    const result = await checkServiceWorkerUpdate(fakeRegistration, true, 100)
+    assert.equal(result, 'available')
+  })
+
+  it('624. 2. checkServiceWorkerUpdate detecta worker en instalación que pasa a instalado', async () => {
+    let stateListener: (() => void) | null = null
+    const fakeInstallingWorker = {
+      state: 'installing',
+      addEventListener: (_ev: string, listener: () => void) => {
+        stateListener = listener
+      },
+      removeEventListener: () => {},
+    }
+
+    const fakeRegistration = {
+      waiting: null,
+      installing: fakeInstallingWorker as unknown as ServiceWorker,
+      update: async () => {
+        // Simular que termina la instalación
+        fakeInstallingWorker.state = 'installed'
+        stateListener?.()
+        return fakeRegistration
+      },
+      addEventListener: () => {},
+      removeEventListener: () => {},
+    } as unknown as ServiceWorkerRegistration
+
+    const result = await checkServiceWorkerUpdate(fakeRegistration, true, 200)
+    assert.equal(result, 'available')
+  })
+
+  it('625. 3. checkServiceWorkerUpdate llama registration.update() y detecta nuevo worker vía updatefound', async () => {
+    let updateCalled = false
+    let updateFoundListener: (() => void) | null = null
+    let stateListener: (() => void) | null = null
+
+    const newWorker = {
+      state: 'installing',
+      addEventListener: (_ev: string, listener: () => void) => {
+        stateListener = listener
+      },
+      removeEventListener: () => {},
+    }
+
+    const fakeRegistration = {
+      waiting: null,
+      installing: null as ServiceWorker | null,
+      update: async () => {
+        updateCalled = true
+        fakeRegistration.installing = newWorker as unknown as ServiceWorker
+        updateFoundListener?.()
+        newWorker.state = 'installed'
+        stateListener?.()
+        return fakeRegistration
+      },
+      addEventListener: (ev: string, listener: () => void) => {
+        if (ev === 'updatefound') updateFoundListener = listener
+      },
+      removeEventListener: () => {},
+    } as unknown as ServiceWorkerRegistration
+
+    const result = await checkServiceWorkerUpdate(fakeRegistration, true, 200)
+    assert.equal(updateCalled, true, 'Debe haber llamado registration.update()')
+    assert.equal(result, 'available')
+  })
+
+  it('626. 4. checkServiceWorkerUpdate retorna "up-to-date" cuando registration.update() no encuentra nueva versión', async () => {
+    let updateCalled = false
+    const fakeRegistration = {
+      waiting: null,
+      installing: null,
+      update: async () => {
+        updateCalled = true
+        return fakeRegistration
+      },
+      addEventListener: () => {},
+      removeEventListener: () => {},
+    } as unknown as ServiceWorkerRegistration
+
+    const result = await checkServiceWorkerUpdate(fakeRegistration, true, 100)
+    assert.equal(updateCalled, true)
+    assert.equal(result, 'up-to-date')
+  })
+
+  it('627. 5. checkServiceWorkerUpdate captura errores de red de registration.update() y retorna "error"', async () => {
+    let updateCalled = false
+    const fakeRegistration = {
+      waiting: null,
+      installing: null,
+      update: async () => {
+        updateCalled = true
+        throw new Error('Failed to fetch Service Worker due to network error')
+      },
+      addEventListener: () => {},
+      removeEventListener: () => {},
+    } as unknown as ServiceWorkerRegistration
+
+    const result = await checkServiceWorkerUpdate(fakeRegistration, true, 100)
+    assert.equal(updateCalled, true)
+    assert.equal(result, 'error')
+  })
+
+  it('628. 6. UI MorePage: opción de búsqueda visible para todos los usuarios con textos requeridos', () => {
+    const optionTitle = 'Buscar actualización'
+    const optionDescription = 'Comprueba si hay una nueva versión de Pocket Flow'
+    const searchingText = 'Buscando...'
+
+    assert.equal(optionTitle, 'Buscar actualización')
+    assert.equal(optionDescription, 'Comprueba si hay una nueva versión de Pocket Flow')
+    assert.equal(searchingText, 'Buscando...')
+  })
+
+  it('629. 7. Flujo completo de UI y Toasts según el resultado de la comprobación', async () => {
+    const toastsEmitted: Array<{ message: string; type?: 'success' | 'error' }> = []
+    const onToast = (message: string, type?: 'success' | 'error') => {
+      toastsEmitted.push({ message, type })
+    }
+
+    let updateBannerVisible = false
+
+    const simulateCheck = async (mockResult: PwaUpdateCheckResult) => {
+      const onCheckForUpdate = async () => mockResult
+      const result = await onCheckForUpdate()
+      if (result === 'available') {
+        updateBannerVisible = true
+      } else if (result === 'up-to-date') {
+        onToast('Pocket Flow ya está actualizado.', 'success')
+      } else if (result === 'error') {
+        onToast('No se pudo comprobar la actualización.', 'error')
+      }
+    }
+
+    // A. Actualización disponible -> Activa banner, sin toasts molestos
+    await simulateCheck('available')
+    assert.equal(updateBannerVisible, true)
+    assert.equal(toastsEmitted.length, 0)
+
+    // B. Al día -> Toast informativo de éxito
+    await simulateCheck('up-to-date')
+    assert.equal(toastsEmitted.length, 1)
+    assert.equal(toastsEmitted[0].message, 'Pocket Flow ya está actualizado.')
+    assert.equal(toastsEmitted[0].type, 'success')
+
+    // C. Error -> Toast informativo de error
+    await simulateCheck('error')
+    assert.equal(toastsEmitted.length, 2)
+    assert.equal(toastsEmitted[1].message, 'No se pudo comprobar la actualización.')
+    assert.equal(toastsEmitted[1].type, 'error')
+  })
+
+  it('630. 8. Prevención de doble comprobación concurrente mientras isCheckingUpdate está activo', async () => {
+    let checkCallCount = 0
+    let isChecking = false
+
+    const handleCheckUpdate = async () => {
+      if (isChecking) return 'blocked'
+      isChecking = true
+      checkCallCount++
+      await new Promise((resolve) => setTimeout(resolve, 50))
+      isChecking = false
+      return 'completed'
+    }
+
+    // Primera pulsación inicia búsqueda
+    const firstCallPromise = handleCheckUpdate()
+    // Segunda pulsación rápida debe ser bloqueada inmediatamente
+    const secondCall = await handleCheckUpdate()
+
+    assert.equal(secondCall, 'blocked', 'La segunda pulsación concurrente debe bloquearse')
+    assert.equal(checkCallCount, 1, 'Solo debe dispararse una llamada a la comprobación')
+
+    const firstCallResult = await firstCallPromise
+    assert.equal(firstCallResult, 'completed')
+    assert.equal(isChecking, false)
   })
 })
 

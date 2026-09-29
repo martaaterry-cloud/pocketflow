@@ -938,8 +938,27 @@ button, input, select, textarea, label {
   border-bottom: 0;
 }
 
+.menu-card button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
 .menu-card button:active {
   background: var(--bg-card-subtle);
+}
+
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.spin-animation {
+  animation: spin 1s linear infinite;
 }
 
 .menu-card button > span {

@@ -19,6 +19,8 @@ import { scrollToTop } from '../utils/scroll'
 
 import type { Transaction } from '../models/finance'
 
+import type { PwaUpdateCheckResult } from '../utils/pwaUpdate'
+
 export type MoreSubView =
   | 'menu'
   | 'profile'
@@ -41,6 +43,7 @@ export function MorePage({
   onRecordReimbursement,
   onRecordPayablePayment,
   onSelectTransaction,
+  onCheckForUpdate,
   onToast,
   onSignOut,
 }: {
@@ -53,10 +56,33 @@ export function MorePage({
   onRecordReimbursement?: (shareId: string) => void
   onRecordPayablePayment?: (shareId: string) => void
   onSelectTransaction?: (tx: Transaction) => void
+  onCheckForUpdate?: () => Promise<PwaUpdateCheckResult>
   onToast?: (message: string, type?: 'success' | 'error') => void
   onSignOut?: () => void
 }) {
   const [internalSubView, setInternalSubView] = useState<MoreSubView>(controlledSubView ?? initialSubView)
+  const [isCheckingUpdate, setIsCheckingUpdate] = useState(false)
+
+  const handleCheckUpdate = useCallback(async () => {
+    if (isCheckingUpdate) return
+    setIsCheckingUpdate(true)
+    try {
+      if (onCheckForUpdate) {
+        const result = await onCheckForUpdate()
+        if (result === 'up-to-date') {
+          onToast?.('Pocket Flow ya está actualizado.', 'success')
+        } else if (result === 'error') {
+          onToast?.('No se pudo comprobar la actualización.', 'error')
+        }
+      } else {
+        onToast?.('Pocket Flow ya está actualizado.', 'success')
+      }
+    } catch {
+      onToast?.('No se pudo comprobar la actualización.', 'error')
+    } finally {
+      setIsCheckingUpdate(false)
+    }
+  }, [isCheckingUpdate, onCheckForUpdate, onToast])
 
   const subView = controlledSubView !== undefined ? controlledSubView : internalSubView
 
@@ -364,6 +390,44 @@ export function MorePage({
             </div>
             <b className="chevron">
               <AppIcon name="chevron-right" size={16} />
+            </b>
+          </button>
+        </div>
+      </section>
+
+      {/* ACTUALIZACIÓN DE LA APLICACIÓN */}
+      <section className="menu-group">
+        <div className="menu-group-title">Aplicación</div>
+        <div className="menu-card">
+          <button
+            type="button"
+            className="check-update-btn"
+            disabled={isCheckingUpdate}
+            onClick={handleCheckUpdate}
+          >
+            <span className="menu-icon">
+              <AppIcon
+                name="refresh-cw"
+                size={18}
+                className={isCheckingUpdate ? 'spin-animation' : undefined}
+              />
+            </span>
+            <div>
+              <strong>Buscar actualización</strong>
+              <small>
+                {isCheckingUpdate
+                  ? 'Buscando...'
+                  : 'Comprueba si hay una nueva versión de Pocket Flow'}
+              </small>
+            </div>
+            <b className="chevron">
+              {isCheckingUpdate ? (
+                <span className="checking-text" style={{ fontSize: '13px', color: 'var(--text-muted)' }}>
+                  Buscando...
+                </span>
+              ) : (
+                <AppIcon name="chevron-right" size={16} />
+              )}
             </b>
           </button>
         </div>

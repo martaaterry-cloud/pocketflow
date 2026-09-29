@@ -33,7 +33,7 @@ export type SyncStatus = 'connecting' | 'connected' | 'syncing' | 'up_to_date' |
 
 export default function App() {
   const finance = useFinance()
-  const { updateAvailable, isUpdating: isPwaUpdating, updateApp: handlePwaUpdate } = usePwaUpdate()
+  const { updateAvailable, isUpdating: isPwaUpdating, updateApp: handlePwaUpdate, checkForUpdate } = usePwaUpdate()
   const [tab, setTab] = useState<Tab>('home')
   const [moreSubView, setMoreSubView] = useState<MoreSubView>('menu')
   const [isModalOpen, setIsModalOpen] = useState(false)
@@ -571,6 +571,7 @@ export default function App() {
             setIsPayDebtModalOpen(true)
           }}
           onSelectTransaction={handleSelectTransaction}
+          onCheckForUpdate={checkForUpdate}
           onToast={showToast}
           onSignOut={() => {
             setUser(null)

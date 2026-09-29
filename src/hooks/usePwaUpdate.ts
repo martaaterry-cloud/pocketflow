@@ -1,11 +1,11 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
-import { createReloadHandler, isPwaUpdateAvailable, sendSkipWaiting } from '../utils/pwaUpdate'
+import { createReloadHandler, isPwaUpdateAvailable, sendSkipWaiting, checkServiceWorkerUpdate, type PwaUpdateCheckResult } from '../utils/pwaUpdate'
 
 export interface PwaUpdateState {
   updateAvailable: boolean
   isUpdating: boolean
   updateApp: () => void
-  checkForUpdate: () => Promise<void>
+  checkForUpdate: () => Promise<PwaUpdateCheckResult>
 }
 
 export function usePwaUpdate(): PwaUpdateState {
@@ -39,14 +39,18 @@ export function usePwaUpdate(): PwaUpdateState {
     }, 350)
   }, [])
 
-  const checkForUpdate = useCallback(async () => {
-    if (registrationRef.current) {
-      try {
-        await registrationRef.current.update()
-      } catch {
-        // Silencioso ante errores de red o offline
+  const checkForUpdate = useCallback(async (): Promise<PwaUpdateCheckResult> => {
+    const hasController = typeof navigator !== 'undefined' && Boolean(navigator?.serviceWorker?.controller)
+    const result = await checkServiceWorkerUpdate(registrationRef.current, hasController)
+
+    if (result === 'available') {
+      if (registrationRef.current?.waiting) {
+        waitingWorkerRef.current = registrationRef.current.waiting
       }
+      setUpdateAvailable(true)
     }
+
+    return result
   }, [])
 
   useEffect(() => {
