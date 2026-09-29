@@ -6894,12 +6894,12 @@ describe('Fase 18 — Mejoras de Finanzas (Detalle por Categoría, Retiradas de 
 describe('Fase 18 — Identificación Visual de Versión y Build', () => {
   it('314. Versioning: única fuente de verdad y formato de visualización exacto', () => {
     assert.equal(APP_NAME, 'PocketFlow')
-    assert.equal(APP_VERSION, '0.22.2')
-    assert.equal(APP_BUILD, '2026.09.29-05')
+    assert.equal(APP_VERSION, '0.22.3')
+    assert.equal(APP_BUILD, '2026.09.29-06')
 
-    assert.equal(getAppVersionString(), 'PocketFlow v0.22.2')
-    assert.equal(getAppBuildString(), 'Build 2026.09.29-05')
-    assert.equal(getAppFullVersionLabel(), 'PocketFlow v0.22.2 · Build 2026.09.29-05')
+    assert.equal(getAppVersionString(), 'PocketFlow v0.22.3')
+    assert.equal(getAppBuildString(), 'Build 2026.09.29-06')
+    assert.equal(getAppFullVersionLabel(), 'PocketFlow v0.22.3 · Build 2026.09.29-06')
   })
 })
 
@@ -13995,12 +13995,12 @@ describe('Fase 50 — Control de Acceso por Roles (User / Admin), Seguridad RLS 
     }
 
     const userFooter = renderFooterTexts(false)
-    assert.equal(userFooter.versionText, 'PocketFlow v0.22.2')
+    assert.equal(userFooter.versionText, 'PocketFlow v0.22.3')
     assert.equal(userFooter.buildText, null)
 
     const adminFooter = renderFooterTexts(true)
-    assert.equal(adminFooter.versionText, 'PocketFlow v0.22.2')
-    assert.equal(adminFooter.buildText, 'Build 2026.09.29-05')
+    assert.equal(adminFooter.versionText, 'PocketFlow v0.22.3')
+    assert.equal(adminFooter.buildText, 'Build 2026.09.29-06')
   })
 
   it('590. 10. Reconciliación y sincronización de perfil no altera datos financieros ni transacciones', () => {
@@ -14501,7 +14501,7 @@ describe('Fase 52 — Versionado Automático y Robusto del Service Worker PWA', 
   it('613. 1. CACHE_NAME del Service Worker incluye exactamente APP_VERSION y APP_BUILD actuales', () => {
     const expectedCacheName = `pocketflow-v${APP_VERSION}-${APP_BUILD}`
     assert.equal(getServiceWorkerCacheName(APP_VERSION, APP_BUILD), expectedCacheName)
-    assert.equal(expectedCacheName, 'pocketflow-v0.22.2-2026.09.29-05')
+    assert.equal(expectedCacheName, 'pocketflow-v0.22.3-2026.09.29-06')
 
     const swCode = generateServiceWorkerCode(APP_VERSION, APP_BUILD)
     assert.ok(swCode.includes(`const CACHE_NAME = '${expectedCacheName}'`))
@@ -15506,6 +15506,213 @@ describe('Fase 55 — Regla Canónica de Reembolsos Compartidos, Efectivo y Expo
     assert.ok(wb.Sheets['GASTOS_COMPARTIDOS'])
     assert.ok(wb.Sheets['RESUMEN'])
     assert.ok(wb.Sheets['MOVIMIENTOS'])
+  })
+})
+
+describe('Fase 56 — Ciclo Completo y Fiable de Actualizaciones PWA en iOS y Standalone', () => {
+  it('637. A. update() tarda >400ms en generar updatefound -> debe detectar "available" sin abortar prematuramente', async () => {
+    let stateListener: (() => void) | null = null
+    let updateFoundListener: (() => void) | null = null
+
+    const newWorker = {
+      state: 'installing',
+      addEventListener: (_ev: string, listener: () => void) => {
+        stateListener = listener
+      },
+      removeEventListener: () => {},
+    }
+
+    const fakeRegistration = {
+      waiting: null,
+      installing: null as ServiceWorker | null,
+      update: async () => {
+        // Simular que Safari tarda 600ms (superior al antiguo timeout de 400ms) en descubrir la actualización
+        await new Promise((resolve) => setTimeout(resolve, 600))
+        fakeRegistration.installing = newWorker as unknown as ServiceWorker
+        updateFoundListener?.()
+        newWorker.state = 'installed'
+        stateListener?.()
+        return fakeRegistration
+      },
+      addEventListener: (ev: string, listener: () => void) => {
+        if (ev === 'updatefound') updateFoundListener = listener
+      },
+      removeEventListener: () => {},
+    } as unknown as ServiceWorkerRegistration
+
+    // Timeout suficiente (1500ms)
+    const result = await checkServiceWorkerUpdate(fakeRegistration, true, 1500)
+    assert.equal(result, 'available', 'Debe detectar available aunque update() tarde 600ms')
+  })
+
+  it('638. B. registrationRef inicialmente no tiene waiting pero getRegistration() sí -> "available"', async () => {
+    const staleReg = {
+      waiting: null,
+      installing: null,
+      update: async () => staleReg,
+      addEventListener: () => {},
+      removeEventListener: () => {},
+    } as unknown as ServiceWorkerRegistration
+
+    const freshReg = {
+      waiting: { state: 'installed' } as unknown as ServiceWorker,
+      installing: null,
+      update: async () => freshReg,
+      addEventListener: () => {},
+      removeEventListener: () => {},
+    } as unknown as ServiceWorkerRegistration
+
+    const origNavigator = globalThis.navigator
+    // Mock navigator.serviceWorker.getRegistration
+    Object.defineProperty(globalThis, 'navigator', {
+      value: {
+        ...origNavigator,
+        serviceWorker: {
+          controller: {},
+          getRegistration: async () => freshReg,
+        },
+        onLine: true,
+      },
+      writable: true,
+      configurable: true,
+    })
+
+    try {
+      const result = await checkServiceWorkerUpdate(staleReg, true, 500)
+      assert.equal(result, 'available', 'Debe consultar el registro fresco y detectar waiting')
+    } finally {
+      Object.defineProperty(globalThis, 'navigator', {
+        value: origNavigator,
+        writable: true,
+        configurable: true,
+      })
+    }
+  })
+
+  it('639. C. Worker pasa de installing a installed -> detecta "available"', async () => {
+    let stateListener: (() => void) | null = null
+
+    const fakeWorker = {
+      state: 'installing',
+      addEventListener: (ev: string, listener: () => void) => {
+        if (ev === 'statechange') stateListener = listener
+      },
+      removeEventListener: () => {},
+    }
+
+    const fakeRegistration = {
+      waiting: null,
+      installing: fakeWorker as unknown as ServiceWorker,
+      update: async () => {
+        setTimeout(() => {
+          fakeWorker.state = 'installed'
+          stateListener?.()
+        }, 100)
+        return fakeRegistration
+      },
+      addEventListener: () => {},
+      removeEventListener: () => {},
+    } as unknown as ServiceWorkerRegistration
+
+    const result = await checkServiceWorkerUpdate(fakeRegistration, true, 1000)
+    assert.equal(result, 'available')
+  })
+
+  it('640. D. Botón Actualizar envía SKIP_WAITING y espera controllerchange antes de recargar', () => {
+    let skipWaitingSent = false
+    let reloaded = false
+
+    const mockWaitingWorker: WorkerWithMessage = {
+      postMessage: (msg: any) => {
+        if (msg?.type === 'SKIP_WAITING') {
+          skipWaitingSent = true
+        }
+      },
+    }
+
+    const reloadOnce = createReloadHandler(() => {
+      reloaded = true
+    })
+
+    // 1. Envía mensaje
+    sendSkipWaiting(mockWaitingWorker)
+    assert.equal(skipWaitingSent, true, 'Debe haber enviado SKIP_WAITING al worker')
+    assert.equal(reloaded, false, 'NO debe recargar inmediatamente antes de controllerchange')
+
+    // 2. Evento controllerchange
+    reloadOnce()
+    assert.equal(reloaded, true, 'Debe recargar tras controllerchange')
+
+    // 3. Múltiples controllerchange no recargan de nuevo
+    reloaded = false
+    reloadOnce()
+    assert.equal(reloaded, false, 'Previene bucles de recarga ante múltiples eventos')
+  })
+
+  it('641. E. No hay update real tras margen razonable -> retorna "up-to-date"', async () => {
+    const fakeRegistration = {
+      waiting: null,
+      installing: null,
+      update: async () => fakeRegistration,
+      addEventListener: () => {},
+      removeEventListener: () => {},
+    } as unknown as ServiceWorkerRegistration
+
+    const result = await checkServiceWorkerUpdate(fakeRegistration, true, 200)
+    assert.equal(result, 'up-to-date')
+  })
+
+  it('642. F. Error de red durante update() -> retorna "error"', async () => {
+    const fakeRegistration = {
+      waiting: null,
+      installing: null,
+      update: async () => {
+        throw new Error('TypeError: Failed to fetch')
+      },
+      addEventListener: () => {},
+      removeEventListener: () => {},
+    } as unknown as ServiceWorkerRegistration
+
+    const result = await checkServiceWorkerUpdate(fakeRegistration, true, 200)
+    assert.equal(result, 'error')
+  })
+
+  it('643. G. Dos comprobaciones simultáneas no generan dos registration.update() duplicadas', async () => {
+    let updateCallCount = 0
+    let activePromise: Promise<PwaUpdateCheckResult> | null = null
+
+    const fakeRegistration = {
+      waiting: null,
+      installing: null,
+      update: async () => {
+        updateCallCount++
+        await new Promise((resolve) => setTimeout(resolve, 80))
+        return fakeRegistration
+      },
+      addEventListener: () => {},
+      removeEventListener: () => {},
+    } as unknown as ServiceWorkerRegistration
+
+    const runDeduplicatedCheck = () => {
+      if (activePromise) return activePromise
+      activePromise = checkServiceWorkerUpdate(fakeRegistration, true, 200).finally(() => {
+        activePromise = null
+      })
+      return activePromise
+    }
+
+    // Dos llamadas simultáneas
+    const [res1, res2] = await Promise.all([runDeduplicatedCheck(), runDeduplicatedCheck()])
+
+    assert.equal(res1, 'up-to-date')
+    assert.equal(res2, 'up-to-date')
+    assert.equal(updateCallCount, 1, 'Solo debe llamar registration.update() una única vez')
+  })
+
+  it('644. H. shouldCheckUpdateOnVisibility responde únicamente en visibilidad visible', () => {
+    assert.equal(shouldCheckUpdateOnVisibility('visible'), true)
+    assert.equal(shouldCheckUpdateOnVisibility('hidden'), false)
+    assert.equal(shouldCheckUpdateOnVisibility('prerender'), false)
   })
 })
 

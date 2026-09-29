@@ -12,6 +12,22 @@ export interface WorkerWithMessage {
 export type PwaUpdateCheckResult = 'available' | 'up-to-date' | 'error'
 
 /**
+ * Log helper exclusivo para entorno de desarrollo.
+ */
+export function devLog(...args: unknown[]): void {
+  try {
+    if (
+      (typeof process !== 'undefined' && process.env?.NODE_ENV === 'development') ||
+      (typeof import.meta !== 'undefined' && (import.meta as any).env?.DEV)
+    ) {
+      console.log(...args)
+    }
+  } catch {
+    // Ignorar en entornos sin import.meta
+  }
+}
+
+/**
  * Determina si una instalación de service worker corresponde a una actualización real
  * (existe un controlador previo activo) o si es la primera instalación (no hay controlador).
  */
@@ -51,32 +67,67 @@ export function shouldCheckUpdateOnVisibility(visibilityState: string): boolean 
 }
 
 /**
- * Ejecuta una comprobación manual de actualización sobre el registro del Service Worker.
+ * Ejecuta una comprobación robusta de actualización sobre el registro del Service Worker.
+ * Evita declarar "up-to-date" prematuramente y re-consulta el registro fresco.
  */
 export async function checkServiceWorkerUpdate(
   registration: ServiceWorkerRegistration | null | undefined,
   hasController: boolean = typeof navigator !== 'undefined' && Boolean(navigator?.serviceWorker?.controller),
-  timeoutMs: number = 2000
+  timeoutMs: number = 3500
 ): Promise<PwaUpdateCheckResult> {
-  if (!registration) {
-    // Si no hay soporte o registro activo
+  // 1. Re-consultar el registro fresco si está disponible para evitar referencias obsoletas (Safari/iOS)
+  let activeReg = registration
+  if (typeof navigator !== 'undefined' && 'serviceWorker' in navigator && typeof navigator.serviceWorker.getRegistration === 'function') {
+    try {
+      const freshReg = await navigator.serviceWorker.getRegistration()
+      if (freshReg) {
+        activeReg = freshReg
+      }
+    } catch {
+      // Usar activeReg fallback
+    }
+  }
+
+  if (!activeReg) {
     return typeof navigator !== 'undefined' && !navigator.onLine ? 'error' : 'up-to-date'
   }
 
-  // 1. Si ya existe un worker en espera instalado
-  if (registration.waiting && isPwaUpdateAvailable(hasController, registration.waiting.state)) {
+  devLog('[PWA] current controller:', hasController)
+  devLog('[PWA] registration active:', Boolean(activeReg.active))
+  devLog('[PWA] installing:', Boolean(activeReg.installing))
+  devLog('[PWA] waiting:', Boolean(activeReg.waiting))
+
+  // 2. Si ya existe un worker en espera instalado
+  if (activeReg.waiting && isPwaUpdateAvailable(hasController, activeReg.waiting.state)) {
+    devLog('[PWA] found waiting worker installed immediately')
     return 'available'
   }
 
   return new Promise<PwaUpdateCheckResult>((resolve) => {
     let resolved = false
+    let isInstallingActive = Boolean(activeReg?.installing)
     let updateFoundListener: (() => void) | null = null
     let installingStateListener: (() => void) | null = null
     let installingWorkerRef: ServiceWorker | null = null
+    let pollInterval: ReturnType<typeof setInterval> | null = null
+    let mainTimer: ReturnType<typeof setTimeout> | null = null
+    let maxWaitTimer: ReturnType<typeof setTimeout> | null = null
 
     const cleanup = () => {
-      if (updateFoundListener && typeof registration.removeEventListener === 'function') {
-        registration.removeEventListener('updatefound', updateFoundListener)
+      if (pollInterval) {
+        clearInterval(pollInterval)
+        pollInterval = null
+      }
+      if (mainTimer) {
+        clearTimeout(mainTimer)
+        mainTimer = null
+      }
+      if (maxWaitTimer) {
+        clearTimeout(maxWaitTimer)
+        maxWaitTimer = null
+      }
+      if (updateFoundListener && activeReg && typeof activeReg.removeEventListener === 'function') {
+        activeReg.removeEventListener('updatefound', updateFoundListener)
       }
       if (installingWorkerRef && installingStateListener && typeof installingWorkerRef.removeEventListener === 'function') {
         installingWorkerRef.removeEventListener('statechange', installingStateListener)
@@ -87,74 +138,138 @@ export async function checkServiceWorkerUpdate(
       if (!resolved) {
         resolved = true
         cleanup()
+        devLog('[PWA] checkServiceWorkerUpdate finished with:', result)
         resolve(result)
       }
     }
 
-    const timer = setTimeout(() => {
-      // Si ya hay un worker en espera al terminar el tiempo
-      if (registration.waiting && isPwaUpdateAvailable(hasController, registration.waiting.state)) {
-        finish('available')
-      } else {
-        finish('up-to-date')
+    const trackWorker = (worker: ServiceWorker | null) => {
+      if (!worker) return
+      installingWorkerRef = worker
+      isInstallingActive = true
+      devLog('[PWA] tracking installing worker:', worker.state)
+
+      installingStateListener = () => {
+        devLog('[PWA] statechange:', worker.state)
+        if (isPwaUpdateAvailable(hasController, worker.state)) {
+          finish('available')
+        } else if (worker.state === 'redundant') {
+          isInstallingActive = false
+        }
       }
+      worker.addEventListener?.('statechange', installingStateListener)
+    }
+
+    // 3. Si ya hay un worker instalándose
+    if (activeReg.installing) {
+      trackWorker(activeReg.installing)
+    }
+
+    // 4. Escuchar updatefound
+    if (typeof activeReg.addEventListener === 'function') {
+      updateFoundListener = () => {
+        devLog('[PWA] updatefound event fired')
+        const newWorker = activeReg?.installing
+        if (newWorker) {
+          trackWorker(newWorker)
+        }
+      }
+      activeReg.addEventListener('updatefound', updateFoundListener)
+    }
+
+    // 5. Polling de respaldo para reconsultar navigator.serviceWorker.getRegistration()
+    if (typeof navigator !== 'undefined' && 'serviceWorker' in navigator && typeof navigator.serviceWorker.getRegistration === 'function') {
+      pollInterval = setInterval(async () => {
+        if (resolved) return
+        try {
+          const fresh = await navigator.serviceWorker.getRegistration()
+          if (fresh?.waiting && isPwaUpdateAvailable(hasController, fresh.waiting.state)) {
+            devLog('[PWA] polling discovered waiting worker')
+            finish('available')
+          } else if (fresh?.installing && !installingWorkerRef) {
+            trackWorker(fresh.installing)
+          }
+        } catch {
+          // Continuar
+        }
+      }, 500)
+    }
+
+    // 6. Timer principal de espera razonable
+    mainTimer = setTimeout(async () => {
+      if (resolved) return
+
+      // Re-verificar antes de concluir
+      if (activeReg?.waiting && isPwaUpdateAvailable(hasController, activeReg.waiting.state)) {
+        finish('available')
+        return
+      }
+
+      if (typeof navigator !== 'undefined' && 'serviceWorker' in navigator && typeof navigator.serviceWorker.getRegistration === 'function') {
+        try {
+          const fresh = await navigator.serviceWorker.getRegistration()
+          if (fresh?.waiting && isPwaUpdateAvailable(hasController, fresh.waiting.state)) {
+            finish('available')
+            return
+          }
+        } catch {
+          // Ignorar
+        }
+      }
+
+      // Si un worker sigue en proceso de instalación, no declarar up-to-date prematuramente
+      if (isInstallingActive && installingWorkerRef && installingWorkerRef.state === 'installing') {
+        devLog('[PWA] worker still installing after main timeout, awaiting installation completion')
+        return
+      }
+
+      finish('up-to-date')
     }, timeoutMs)
 
-    // 2. Si ya hay un worker instalándose en este momento
-    if (registration.installing) {
-      installingWorkerRef = registration.installing
-      installingStateListener = () => {
-        if (installingWorkerRef && isPwaUpdateAvailable(hasController, installingWorkerRef.state)) {
-          clearTimeout(timer)
+    // Timer de seguridad máxima si un worker se queda colgado instalando
+    maxWaitTimer = setTimeout(() => {
+      if (!resolved) {
+        if (activeReg?.waiting && isPwaUpdateAvailable(hasController, activeReg.waiting.state)) {
           finish('available')
+        } else {
+          finish('up-to-date')
         }
       }
-      installingWorkerRef.addEventListener?.('statechange', installingStateListener)
-    }
+    }, Math.max(timeoutMs * 2, 8000))
 
-    // 3. Escuchar si update() descubre un nuevo worker
-    if (typeof registration.addEventListener === 'function') {
-      updateFoundListener = () => {
-        const newWorker = registration.installing
-        if (!newWorker) return
-        installingWorkerRef = newWorker
-        installingStateListener = () => {
-          if (isPwaUpdateAvailable(hasController, newWorker.state)) {
-            clearTimeout(timer)
-            finish('available')
-          }
-        }
-        newWorker.addEventListener?.('statechange', installingStateListener)
-      }
-      registration.addEventListener('updatefound', updateFoundListener)
-    }
-
-    // 4. Ejecutar registration.update()
+    // 7. Ejecutar registration.update()
     try {
-      const updatePromise = registration.update()
+      const updatePromise = activeReg.update()
       if (updatePromise && typeof updatePromise.then === 'function') {
         updatePromise
-          .then(() => {
-            // Dar un breve margen por si el evento updatefound o statechange está transicionando
-            setTimeout(() => {
-              if (!resolved) {
-                if (registration.waiting && isPwaUpdateAvailable(hasController, registration.waiting.state)) {
-                  clearTimeout(timer)
+          .then(async () => {
+            devLog('[PWA] registration.update() promise resolved')
+            // Re-consultar estado tras resolver la promesa de update
+            try {
+              if (typeof navigator !== 'undefined' && 'serviceWorker' in navigator && typeof navigator.serviceWorker.getRegistration === 'function') {
+                const fresh = await navigator.serviceWorker.getRegistration()
+                if (fresh?.waiting && isPwaUpdateAvailable(hasController, fresh.waiting.state)) {
                   finish('available')
-                } else if (!registration.installing) {
-                  clearTimeout(timer)
-                  finish('up-to-date')
+                  return
+                }
+                if (fresh?.installing && !installingWorkerRef) {
+                  trackWorker(fresh.installing)
                 }
               }
-            }, 400)
+            } catch {
+              // Ignorar
+            }
           })
-          .catch(() => {
-            clearTimeout(timer)
-            finish('error')
+          .catch((err) => {
+            devLog('[PWA] registration.update() rejected with error:', err)
+            // Si no hay conexión o falla la petición
+            if (!resolved) {
+              finish('error')
+            }
           })
       }
-    } catch {
-      clearTimeout(timer)
+    } catch (err) {
+      devLog('[PWA] registration.update() threw exception:', err)
       finish('error')
     }
   })
