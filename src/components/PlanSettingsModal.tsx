@@ -251,6 +251,57 @@ export function PlanSettingsModal({
             )}
           </div>
 
+          {/* 4. Categorías necesarias */}
+          <div className="form-group" style={{ marginTop: 16 }}>
+            <label>Categorías necesarias</label>
+            <span className="field-hint" style={{ display: 'block', marginBottom: 8 }}>
+              Estos gastos forman parte de tu coste de vida o trabajo y no se considerarán gasto libre.
+            </span>
+
+            <div className="category-selection-grid" style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+              {categories
+                .filter((c) => c.id !== 'income')
+                .map((cat) => {
+                  const isSelected = essentialCategoryIds.includes(cat.id)
+                  return (
+                    <button
+                      key={cat.id}
+                      type="button"
+                      className={`pill-btn ${isSelected ? 'active' : ''}`}
+                      style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: 6,
+                        padding: '6px 12px',
+                        borderRadius: 20,
+                        border: isSelected ? `1.5px solid ${cat.color || '#4f46e5'}` : '1px solid #e2e8f0',
+                        background: isSelected ? (cat.color ? `${cat.color}18` : '#eef2ff') : '#f8fafc',
+                        color: isSelected ? (cat.color || '#4338ca') : '#475569',
+                        fontWeight: isSelected ? 600 : 400,
+                        cursor: 'pointer',
+                      }}
+                      onClick={() => {
+                        setEssentialCategoryIds((prev) =>
+                          prev.includes(cat.id) ? prev.filter((id) => id !== cat.id) : [...prev, cat.id]
+                        )
+                      }}
+                    >
+                      <span
+                        style={{
+                          width: 8,
+                          height: 8,
+                          borderRadius: '50%',
+                          background: cat.color || '#94a3b8',
+                        }}
+                      />
+                      {cat.name}
+                      {isSelected && <AppIcon name="check" size={12} />}
+                    </button>
+                  )
+                })}
+            </div>
+          </div>
+
           <div className="modal-actions" style={{ marginTop: 24 }}>
             <button type="submit" className="primary-button">
               Guardar ajustes

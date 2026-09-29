@@ -93,6 +93,8 @@ export function PlanFinancialPage({
     finance.updatePlanSettings(updates)
   }
 
+  const ctrl = finance.totals.spendingControl
+
   return (
     <main className="page">
       <header className="simple-header">
@@ -111,58 +113,140 @@ export function PlanFinancialPage({
         </button>
       </header>
 
-      {/* 1. Resumen Mensual y Márgenes */}
+      {/* 1. Control del mes (Cerebro del Plan Financiero) */}
       <section className="hero-card light" style={{ marginBottom: 20 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <span className="hero-tag">Margen mensual previsto</span>
+          <span className="hero-tag">Control del mes</span>
           <span style={{ fontSize: 12, color: '#64748b' }}>
-            {plan.incomeDetail?.source === 'recurring' ? 'Nómina / Recurrente' : plan.incomeDetail?.source === 'manual' ? 'Manual' : 'Sin configurar'}
+            {ctrl.incomeSource === 'recurring'
+              ? 'Nómina / Recurrente'
+              : ctrl.incomeSource === 'manual'
+              ? 'Manual'
+              : 'Sin configurar'}
           </span>
         </div>
-        <strong className={`hero-main-number ${plan.estimatedMonthlyMargin >= 0 ? '' : 'negative'}`}>
-          {money(plan.estimatedMonthlyMargin)}
-        </strong>
-        <p className="hero-desc" style={{ fontSize: 13, color: '#666', marginTop: 4 }}>
-          Ingresos ({money(plan.monthlyIncome)}) menos comprometido ({money(plan.expectedCommittedExpenses)}), variable ({plan.expectedVariableExpenses !== null ? money(plan.expectedVariableExpenses) : `${money(plan.actualVariableExpenses)} real`}) y ahorro ({money(plan.targetMonthlySavings)}).
-        </p>
 
-        {/* Libre para gastar / Margen restante actual */}
-        <div style={{ marginTop: 12, padding: '8px 12px', background: 'rgba(99, 102, 241, 0.08)', borderRadius: 8, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <span style={{ fontSize: 13, color: '#4338ca', fontWeight: 500 }}>Libre para gastar (margen restante actual)</span>
-          <strong style={{ fontSize: 15, color: plan.currentRemainingMargin >= 0 ? '#10b981' : '#ef4444' }}>
-            {money(plan.currentRemainingMargin)}
+        <div style={{ marginTop: 8 }}>
+          <span style={{ fontSize: 13, color: '#64748b' }}>Te queda para gasto libre</span>
+          <strong
+            className={`hero-main-number ${ctrl.discretionaryAvailable >= 0 ? '' : 'negative'}`}
+            style={{ display: 'block', fontSize: 32, marginTop: 2 }}
+          >
+            {money(ctrl.discretionaryAvailable)}
           </strong>
         </div>
 
-        <div className="hero-kpis" style={{ gridTemplateColumns: 'repeat(2, 1fr)', marginTop: 14 }}>
-          <div className="hero-kpi-item">
-            <span>Ingresos previstos</span>
-            <strong>{money(plan.monthlyIncome)}/mes</strong>
-            <small>
-              {plan.incomeDetail?.source === 'recurring'
-                ? `${plan.incomeDetail.items.length} recurrente(s)`
-                : 'Configurado'}
-            </small>
+        {/* Desglose económico */}
+        <div
+          style={{
+            marginTop: 14,
+            background: '#f8fafc',
+            borderRadius: 10,
+            padding: '12px 14px',
+            border: '1px solid #e2e8f0',
+          }}
+        >
+          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, color: '#475569', marginBottom: 6 }}>
+            <span>Ingresos disponibles/previsibles</span>
+            <span style={{ fontWeight: 600, color: '#0f172a' }}>{money(ctrl.incomeExpected)}</span>
           </div>
-          <div className="hero-kpi-item">
-            <span>Comprometido previsto</span>
-            <strong>{money(plan.expectedCommittedExpenses)}/mes</strong>
-            <small>Suscripciones y fijos</small>
+          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, color: '#475569', marginBottom: 6 }}>
+            <span>Necesario / comprometido</span>
+            <span style={{ fontWeight: 600, color: '#0f172a' }}>- {money(ctrl.necessaryExpected)}</span>
           </div>
-          <div className="hero-kpi-item">
-            <span>Variable gastado neto este mes</span>
-            <strong>{money(plan.actualVariableExpenses)}</strong>
-            <small>
-              {plan.expectedVariableExpenses !== null
-                ? `Variable previsto pendiente: ${money(plan.expectedVariableExpenses)}`
-                : 'Gasto neto real'}
-            </small>
+          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, color: '#475569', marginBottom: 6 }}>
+            <span>Planificado para gastos futuros</span>
+            <span style={{ fontWeight: 600, color: '#0f172a' }}>- {money(ctrl.plannedForMonth)}</span>
           </div>
-          <div className="hero-kpi-item">
-            <span>Ahorro objetivo</span>
-            <strong>{money(plan.targetMonthlySavings)}/mes</strong>
-            <small>{settings.targetSavingsType === 'percentage' ? `${settings.targetSavingsValue}% ingresos` : 'Fijo'}</small>
+          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, color: '#475569', marginBottom: 8 }}>
+            <span>Objetivo de ahorro</span>
+            <span style={{ fontWeight: 600, color: '#0f172a' }}>- {money(ctrl.targetSavings)}</span>
           </div>
+
+          <div
+            style={{
+              borderTop: '1px solid #cbd5e1',
+              paddingTop: 8,
+              display: 'flex',
+              justifyContent: 'space-between',
+              fontSize: 13,
+              fontWeight: 600,
+              color: '#334155',
+            }}
+          >
+            <span>Disponible para gasto libre</span>
+            <span style={{ color: ctrl.discretionaryTotalBudget >= 0 ? '#0f172a' : '#ef4444' }}>
+              {money(ctrl.discretionaryTotalBudget)}
+            </span>
+          </div>
+
+          <div
+            style={{
+              marginTop: 8,
+              paddingTop: 8,
+              borderTop: '1px dashed #e2e8f0',
+              display: 'flex',
+              justifyContent: 'space-between',
+              fontSize: 13,
+              color: '#64748b',
+            }}
+          >
+            <span>Gastado libre este mes</span>
+            <span style={{ fontWeight: 600, color: '#0f172a' }}>{money(ctrl.discretionarySpent)}</span>
+          </div>
+        </div>
+
+        {/* Asesor Financiero Sobrio */}
+        <div
+          style={{
+            marginTop: 14,
+            padding: '10px 14px',
+            borderRadius: 8,
+            background:
+              ctrl.status === 'over'
+                ? 'rgba(239, 68, 68, 0.08)'
+                : ctrl.status === 'tight'
+                ? 'rgba(245, 158, 11, 0.08)'
+                : ctrl.status === 'comfortable'
+                ? 'rgba(16, 185, 129, 0.08)'
+                : 'rgba(99, 102, 241, 0.08)',
+            borderLeft: `4px solid ${
+              ctrl.status === 'over'
+                ? '#ef4444'
+                : ctrl.status === 'tight'
+                ? '#f59e0b'
+                : ctrl.status === 'comfortable'
+                ? '#10b981'
+                : '#6366f1'
+            }`,
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <span
+              style={{
+                fontWeight: 600,
+                fontSize: 13,
+                color:
+                  ctrl.status === 'over'
+                    ? '#b91c1c'
+                    : ctrl.status === 'tight'
+                    ? '#b45309'
+                    : ctrl.status === 'comfortable'
+                    ? '#047857'
+                    : '#4338ca',
+              }}
+            >
+              {ctrl.statusMessage}
+            </span>
+          </div>
+          <p style={{ margin: '4px 0 0', fontSize: 12, color: '#475569', lineHeight: 1.4 }}>
+            {ctrl.detailedExplanation}
+          </p>
+          {ctrl.specialContext.note && (
+            <p style={{ margin: '6px 0 0', fontSize: 12, color: '#6366f1', fontWeight: 500 }}>
+              {ctrl.specialContext.note}
+            </p>
+          )}
         </div>
       </section>
 

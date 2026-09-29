@@ -322,6 +322,7 @@ import {
   selectMonthlyIncome,
   selectMonthlyPlanCardSummary,
   selectMonthlyReserveNeeded,
+  selectMonthlySpendingControl,
   selectTargetMonthlySavings,
   selectTotalAllocatedToGoals,
   selectTotalAllocatedToReserves,
@@ -6901,12 +6902,12 @@ describe('Fase 18 — Mejoras de Finanzas (Detalle por Categoría, Retiradas de 
 describe('Fase 18 — Identificación Visual de Versión y Build', () => {
   it('314. Versioning: única fuente de verdad y formato de visualización exacto', () => {
     assert.equal(APP_NAME, 'PocketFlow')
-    assert.equal(APP_VERSION, '0.23.3')
-    assert.equal(APP_BUILD, '2026.09.29-10')
+    assert.equal(APP_VERSION, '0.24.0')
+    assert.equal(APP_BUILD, '2026.09.29-11')
 
-    assert.equal(getAppVersionString(), 'PocketFlow v0.23.3')
-    assert.equal(getAppBuildString(), 'Build 2026.09.29-10')
-    assert.equal(getAppFullVersionLabel(), 'PocketFlow v0.23.3 · Build 2026.09.29-10')
+    assert.equal(getAppVersionString(), 'PocketFlow v0.24.0')
+    assert.equal(getAppBuildString(), 'Build 2026.09.29-11')
+    assert.equal(getAppFullVersionLabel(), 'PocketFlow v0.24.0 · Build 2026.09.29-11')
   })
 })
 
@@ -14002,12 +14003,12 @@ describe('Fase 50 — Control de Acceso por Roles (User / Admin), Seguridad RLS 
     }
 
     const userFooter = renderFooterTexts(false)
-    assert.equal(userFooter.versionText, 'PocketFlow v0.23.3')
+    assert.equal(userFooter.versionText, 'PocketFlow v0.24.0')
     assert.equal(userFooter.buildText, null)
 
     const adminFooter = renderFooterTexts(true)
-    assert.equal(adminFooter.versionText, 'PocketFlow v0.23.3')
-    assert.equal(adminFooter.buildText, 'Build 2026.09.29-10')
+    assert.equal(adminFooter.versionText, 'PocketFlow v0.24.0')
+    assert.equal(adminFooter.buildText, 'Build 2026.09.29-11')
   })
 
   it('590. 10. Reconciliación y sincronización de perfil no altera datos financieros ni transacciones', () => {
@@ -14508,7 +14509,7 @@ describe('Fase 52 — Versionado Automático y Robusto del Service Worker PWA', 
   it('613. 1. CACHE_NAME del Service Worker incluye exactamente APP_VERSION y APP_BUILD actuales', () => {
     const expectedCacheName = `pocketflow-v${APP_VERSION}-${APP_BUILD}`
     assert.equal(getServiceWorkerCacheName(APP_VERSION, APP_BUILD), expectedCacheName)
-    assert.equal(expectedCacheName, 'pocketflow-v0.23.3-2026.09.29-10')
+    assert.equal(expectedCacheName, 'pocketflow-v0.24.0-2026.09.29-11')
 
     const swCode = generateServiceWorkerCode(APP_VERSION, APP_BUILD)
     assert.ok(swCode.includes(`const CACHE_NAME = '${expectedCacheName}'`))
@@ -16590,6 +16591,496 @@ describe('Fase 59 — Visibilidad e Histórico de Importes Perdonados/Ajustados 
       assert.equal(restored.expenseShares[0].forgivenAmount, 4.99)
       assert.equal(restored.expenseShares[1].forgivenAmount, 5.0)
     }
+  })
+})
+
+describe('Fase 60 — Control de Gasto del Mes (Cerebro del Plan Financiero)', () => {
+  it('666. CASO A — Mes Normal: Ingreso 1200, Necesario 600, Planificado 100, Ahorro 250 => Margen libre 250, gastado 80 => Disponible 170', () => {
+    const settings: FinancialPlanSettings = {
+      monthlyIncome: 1200,
+      targetSavingsType: 'fixed',
+      targetSavingsValue: 250,
+      emergencyFundTargetType: 'months',
+      emergencyFundTargetValue: 3,
+      emergencyFundCurrent: 1000,
+      essentialCategoryIds: ['cat-essential'],
+    }
+
+    const recurring: RecurringPayment[] = [
+      { id: 'rec-1', name: 'Alquiler', amount: 600, categoryId: 'cat-housing', accountId: 'daily', frequency: 'monthly', nextDate: '2026-09-01', active: true },
+    ]
+
+    const reserve: Reserve = {
+      id: 'res-1',
+      name: 'Viaje',
+      targetAmount: 500,
+      currentAllocated: 0,
+      targetDate: '2027-02-01', // 5 meses desde Sep 2026 => 100/mes
+      iconKey: 'plane',
+      active: true,
+    }
+
+    const txOcio: Transaction = {
+      id: 'tx-ocio',
+      type: 'expense',
+      amount: 80,
+      accountId: 'daily',
+      description: 'Cena y Cine',
+      date: '2026-09-10T20:00:00',
+      categoryId: 'cat-leisure',
+    }
+
+    const refDate = new Date(2026, 8, 15) // Día 15 de 30
+    const ctrl = selectMonthlySpendingControl(
+      settings,
+      recurring,
+      [txOcio],
+      [],
+      [],
+      [],
+      [reserve],
+      [],
+      [],
+      refDate
+    )
+
+    assert.equal(ctrl.hasConfiguredIncome, true)
+    assert.equal(ctrl.incomeExpected, 1200)
+    assert.equal(ctrl.necessaryExpected, 600)
+    assert.equal(ctrl.plannedForMonth, 100)
+    assert.equal(ctrl.targetSavings, 250)
+    assert.equal(ctrl.discretionaryTotalBudget, 250)
+    assert.equal(ctrl.discretionarySpent, 80)
+    assert.equal(ctrl.discretionaryAvailable, 170)
+    assert.equal(ctrl.daysRemaining, 15)
+    assert.equal(ctrl.recommendedDailyAvailable, 11.33) // 170 / 15 = 11.33
+    assert.equal(ctrl.status, 'comfortable')
+  })
+
+  it('667. CASO B — Gasolina Necesaria: gasto variable con categoría essential aumenta necesario y NO aumenta discretionarySpent', () => {
+    const settings: FinancialPlanSettings = {
+      monthlyIncome: 1200,
+      targetSavingsType: 'fixed',
+      targetSavingsValue: 200,
+      emergencyFundTargetType: 'months',
+      emergencyFundTargetValue: 3,
+      emergencyFundCurrent: 1000,
+      essentialCategoryIds: ['cat-gasolina'],
+    }
+
+    const txGasolina: Transaction = {
+      id: 'tx-gas',
+      type: 'expense',
+      amount: 120,
+      accountId: 'daily',
+      description: 'Gasolina Alcantarilla',
+      date: '2026-09-12T08:00:00',
+      categoryId: 'cat-gasolina',
+      expenseNature: 'variable',
+    }
+
+    const refDate = new Date(2026, 8, 15)
+    const ctrl = selectMonthlySpendingControl(
+      settings,
+      [],
+      [txGasolina],
+      [],
+      [],
+      [],
+      [],
+      [],
+      [],
+      refDate
+    )
+
+    assert.equal(ctrl.necessaryPaid, 120)
+    assert.equal(ctrl.necessaryExpected, 120)
+    assert.equal(ctrl.discretionarySpent, 0, 'La gasolina esencial NO debe computar como gasto libre/capricho')
+    assert.equal(ctrl.discretionaryTotalBudget, 880) // 1200 - 120 - 200 = 880
+    assert.equal(ctrl.discretionaryAvailable, 880)
+  })
+
+  it('668. CASO C — Cena Ocio: gasto variable en categoría no esencial suma a discretionarySpent', () => {
+    const settings: FinancialPlanSettings = {
+      monthlyIncome: 1200,
+      targetSavingsType: 'fixed',
+      targetSavingsValue: 200,
+      emergencyFundTargetType: 'months',
+      emergencyFundTargetValue: 3,
+      emergencyFundCurrent: 1000,
+      essentialCategoryIds: ['cat-gasolina'],
+    }
+
+    const txCena: Transaction = {
+      id: 'tx-cena',
+      type: 'expense',
+      amount: 35,
+      accountId: 'daily',
+      description: 'Cena Amigos',
+      date: '2026-09-15T21:30:00',
+      categoryId: 'cat-restaurantes',
+    }
+
+    const ctrl = selectMonthlySpendingControl(
+      settings,
+      [],
+      [txCena],
+      [],
+      [],
+      [],
+      [],
+      [],
+      [],
+      new Date(2026, 8, 16)
+    )
+
+    assert.equal(ctrl.discretionarySpent, 35)
+    assert.equal(ctrl.necessaryPaid, 0)
+    assert.equal(ctrl.discretionaryTotalBudget, 1000)
+    assert.equal(ctrl.discretionaryAvailable, 965)
+  })
+
+  it('669. CASO D — Periodo Especial Navidad (expected_high_spend): reduce margen planificado sin marcar descontrol', () => {
+    const settings: FinancialPlanSettings = {
+      monthlyIncome: 1500,
+      targetSavingsType: 'fixed',
+      targetSavingsValue: 200,
+      emergencyFundTargetType: 'months',
+      emergencyFundTargetValue: 3,
+      emergencyFundCurrent: 1000,
+      essentialCategoryIds: [],
+    }
+
+    const navidadPeriod: SpecialPeriod = {
+      id: 'sp-navidad',
+      name: 'Navidad',
+      startDate: '2026-12-01',
+      endDate: '2026-12-31',
+      expectedExtraBudget: 200,
+      type: 'expected_high_spend',
+    }
+
+    const refDateDec = new Date(2026, 11, 5) // 5 de Diciembre
+    const ctrl = selectMonthlySpendingControl(
+      settings,
+      [],
+      [],
+      [],
+      [],
+      [navidadPeriod],
+      [],
+      [],
+      [],
+      refDateDec
+    )
+
+    assert.equal(ctrl.plannedSpecialPeriods, 200)
+    assert.equal(ctrl.plannedForMonth, 200)
+    assert.equal(ctrl.discretionaryTotalBudget, 1100) // 1500 - 200 (extra) - 200 (ahorro) = 1100
+    assert.equal(ctrl.specialContext.isHighSpendMonth, true)
+    assert.ok(ctrl.specialContext.note?.includes('Navidad'))
+    assert.equal(ctrl.status, 'on_track')
+  })
+
+  it('670. CASO E — Reserva B2: cuota mensual de 40 € entra en plannedForMonth una sola vez (no targetAmount completo)', () => {
+    const settings: FinancialPlanSettings = {
+      monthlyIncome: 1200,
+      targetSavingsType: 'fixed',
+      targetSavingsValue: 100,
+      emergencyFundTargetType: 'months',
+      emergencyFundTargetValue: 3,
+      emergencyFundCurrent: 1000,
+      essentialCategoryIds: [],
+    }
+
+    const b2Reserve: Reserve = {
+      id: 'res-b2',
+      name: 'Examen B2 Inglés',
+      targetAmount: 240,
+      currentAllocated: 0,
+      targetDate: '2027-03-01', // 6 meses desde Sep 2026 => 40 €/mes
+      iconKey: 'graduation-cap',
+      active: true,
+    }
+
+    const ctrl = selectMonthlySpendingControl(
+      settings,
+      [],
+      [],
+      [],
+      [],
+      [],
+      [b2Reserve],
+      [],
+      [],
+      new Date(2026, 8, 10)
+    )
+
+    assert.equal(ctrl.plannedReserves, 40)
+    assert.equal(ctrl.plannedForMonth, 40)
+    assert.equal(ctrl.reservesBreakdown[0].neededThisMonth, 40)
+    assert.equal(ctrl.discretionaryTotalBudget, 1060) // 1200 - 40 - 100 = 1060
+  })
+
+  it('671. CASO F — Recurrente Ya Pagado: no duplica el compromiso con la transacción real (evita contar 120 €)', () => {
+    const settings: FinancialPlanSettings = {
+      monthlyIncome: 1200,
+      targetSavingsType: 'fixed',
+      targetSavingsValue: 200,
+      emergencyFundTargetType: 'months',
+      emergencyFundTargetValue: 3,
+      emergencyFundCurrent: 1000,
+      essentialCategoryIds: [],
+    }
+
+    const recurringIngles: RecurringPayment = {
+      id: 'rec-ingles',
+      name: 'Academia Inglés',
+      amount: 60,
+      categoryId: 'cat-estudios',
+      accountId: 'daily',
+      frequency: 'monthly',
+      nextDate: '2026-09-05',
+      active: true,
+    }
+
+    // Transacción ya cobrada en el mes vinculada al recurrente
+    const txInglesPagado: Transaction = {
+      id: 'tx-ingles-1',
+      type: 'expense',
+      amount: 60,
+      accountId: 'daily',
+      description: 'Academia Inglés Septiembre',
+      date: '2026-09-05T10:00:00',
+      categoryId: 'cat-estudios',
+      recurringPaymentId: 'rec-ingles',
+      expenseNature: 'fixed',
+    }
+
+    const ctrl = selectMonthlySpendingControl(
+      settings,
+      [recurringIngles],
+      [txInglesPagado],
+      [],
+      [],
+      [],
+      [],
+      [],
+      [],
+      new Date(2026, 8, 15)
+    )
+
+    assert.equal(ctrl.necessaryPaid, 60)
+    assert.equal(ctrl.necessaryPending, 0, 'El compromiso ya fue pagado, pendiente debe ser 0')
+    assert.equal(ctrl.necessaryExpected, 60, 'El total necesario debe ser 60 €, NUNCA 120 €')
+  })
+
+  it('672. CASO G — Gasto Compartido con Reembolso: descuenta reembolsos vinculados y no infla gasto libre', () => {
+    const settings: FinancialPlanSettings = {
+      monthlyIncome: 1200,
+      targetSavingsType: 'fixed',
+      targetSavingsValue: 200,
+      emergencyFundTargetType: 'months',
+      emergencyFundTargetValue: 3,
+      emergencyFundCurrent: 1000,
+      essentialCategoryIds: [],
+    }
+
+    const sharedTx: Transaction = {
+      id: 'tx-compra-compartida',
+      type: 'expense',
+      amount: 48.99,
+      accountId: 'daily',
+      description: 'Compra Proteína Compartida',
+      date: '2026-09-15T12:00:00',
+      categoryId: 'cat-suplementos',
+    }
+
+    const shares: ExpenseShare[] = [
+      { id: 's1', expenseTransactionId: 'tx-compra-compartida', participantName: 'Tú', expectedAmount: 18.99, isPayerShare: true },
+      { id: 's2', expenseTransactionId: 'tx-compra-compartida', participantName: 'Sergi', expectedAmount: 30.0 },
+    ]
+
+    const reimbursement: CashTransaction = {
+      id: 'c-reimbursement',
+      type: 'income',
+      amount: 30.0,
+      description: 'Cobro Sergi',
+      date: '2026-09-16T12:00:00',
+      bankTransactionId: 'tx-compra-compartida',
+      note: '[share:s2]',
+    }
+
+    const ctrl = selectMonthlySpendingControl(
+      settings,
+      [],
+      [sharedTx],
+      [reimbursement],
+      shares,
+      [],
+      [],
+      [],
+      [],
+      new Date(2026, 8, 17)
+    )
+
+    assert.equal(ctrl.discretionarySpent, 18.99, 'El gasto libre personal neto debe ser 18,99 € (48,99 - 30,00)')
+  })
+
+  it('673. CASO H — Forgiven Amount: importe perdonado en deuda no altera ingresos ni gastos del Control del Mes', () => {
+    const settings: FinancialPlanSettings = {
+      monthlyIncome: 1200,
+      targetSavingsType: 'fixed',
+      targetSavingsValue: 200,
+      emergencyFundTargetType: 'months',
+      emergencyFundTargetValue: 3,
+      emergencyFundCurrent: 1000,
+      essentialCategoryIds: [],
+    }
+
+    const sharedTx: Transaction = {
+      id: 'tx-hsn-forgiven',
+      type: 'expense',
+      amount: 48.99,
+      accountId: 'daily',
+      description: 'Compra HSN',
+      date: '2026-09-15T12:00:00',
+      categoryId: 'cat-suplementos',
+    }
+
+    const shares: ExpenseShare[] = [
+      { id: 's1', expenseTransactionId: 'tx-hsn-forgiven', participantName: 'Tú', expectedAmount: 14.0, isPayerShare: true },
+      { id: 's2', expenseTransactionId: 'tx-hsn-forgiven', participantName: 'Sergi', expectedAmount: 34.99, forgivenAmount: 4.99 },
+    ]
+
+    const reimbursement: CashTransaction = {
+      id: 'c-reimbursement',
+      type: 'income',
+      amount: 30.0,
+      description: 'Cobro Sergi',
+      date: '2026-09-16T12:00:00',
+      bankTransactionId: 'tx-hsn-forgiven',
+      note: '[share:s2]',
+    }
+
+    const ctrl = selectMonthlySpendingControl(
+      settings,
+      [],
+      [sharedTx],
+      [reimbursement],
+      shares,
+      [],
+      [],
+      [],
+      [],
+      new Date(2026, 8, 17)
+    )
+
+    // El gasto libre personal neto es 48.99 - 30.00 = 18.99 € (el perdón es un ajuste contable de deuda, no dinero en efectivo)
+    assert.equal(ctrl.discretionarySpent, 18.99)
+  })
+
+  it('674. CASO I — Efectivo: gastos en cash esenciales van a necesario y no esenciales a gasto libre', () => {
+    const settings: FinancialPlanSettings = {
+      monthlyIncome: 1200,
+      targetSavingsType: 'fixed',
+      targetSavingsValue: 200,
+      emergencyFundTargetType: 'months',
+      emergencyFundTargetValue: 3,
+      emergencyFundCurrent: 1000,
+      essentialCategoryIds: ['cat-farmacia'],
+    }
+
+    const cashFarmacia: CashTransaction = {
+      id: 'cash-1',
+      type: 'expense',
+      amount: 25,
+      description: 'Medicinas',
+      date: '2026-09-10T11:00:00',
+      categoryId: 'cat-farmacia',
+    }
+
+    const cashCafe: CashTransaction = {
+      id: 'cash-2',
+      type: 'expense',
+      amount: 8,
+      description: 'Cafés con amigos',
+      date: '2026-09-11T16:00:00',
+      categoryId: 'cat-cafes',
+    }
+
+    const ctrl = selectMonthlySpendingControl(
+      settings,
+      [],
+      [],
+      [cashFarmacia, cashCafe],
+      [],
+      [],
+      [],
+      [],
+      [],
+      new Date(2026, 8, 15)
+    )
+
+    assert.equal(ctrl.necessaryPaid, 25, 'Farmacia en efectivo es esencial => necesario')
+    assert.equal(ctrl.discretionarySpent, 8, 'Café en efectivo no es esencial => gasto libre')
+  })
+
+  it('675. CASO J — Sin Ingreso Configurado: no emite recomendación diaria engañosa y avisa con sobriedad', () => {
+    const settings: FinancialPlanSettings = {
+      monthlyIncome: 0,
+      targetSavingsType: 'fixed',
+      targetSavingsValue: 0,
+      emergencyFundTargetType: 'months',
+      emergencyFundTargetValue: 3,
+      emergencyFundCurrent: 0,
+      essentialCategoryIds: [],
+    }
+
+    const ctrl = selectMonthlySpendingControl(
+      settings,
+      [],
+      [],
+      [],
+      [],
+      [],
+      [],
+      [],
+      [],
+      new Date(2026, 8, 15)
+    )
+
+    assert.equal(ctrl.hasConfiguredIncome, false)
+    assert.equal(ctrl.incomeExpected, 0)
+    assert.equal(ctrl.recommendedDailyAvailable, null)
+    assert.ok(ctrl.statusMessage.includes('Configura tus ingresos'))
+  })
+
+  it('676. Asesor Sobrio: evalúa estados over, tight, comfortable y on_track con lenguaje profesional', () => {
+    const settings: FinancialPlanSettings = {
+      monthlyIncome: 1000,
+      targetSavingsType: 'fixed',
+      targetSavingsValue: 200,
+      emergencyFundTargetType: 'months',
+      emergencyFundTargetValue: 3,
+      emergencyFundCurrent: 500,
+      essentialCategoryIds: [],
+    }
+
+    // Caso Over: margen 800, gastado 850
+    const txOver: Transaction = {
+      id: 'tx-over',
+      type: 'expense',
+      amount: 850,
+      accountId: 'daily',
+      description: 'Gasto Excesivo',
+      date: '2026-09-10T12:00:00',
+    }
+
+    const ctrlOver = selectMonthlySpendingControl(settings, [], [txOver], [], [], [], [], [], [], new Date(2026, 8, 10))
+    assert.equal(ctrlOver.status, 'over')
+    assert.equal(ctrlOver.discretionaryAvailable, -50)
+    assert.ok(ctrlOver.statusMessage.includes('superado'))
   })
 })
 

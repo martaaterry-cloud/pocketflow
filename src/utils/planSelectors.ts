@@ -876,4 +876,317 @@ export function buildReserveInitialValuesFromSpecialPeriod(
   }
 }
 
+/* ==========================================================================
+   Control del Mes (Cerebro del Plan Financiero)
+   ========================================================================== */
+
+export type MonthlySpendingControlStatus = 'comfortable' | 'on_track' | 'tight' | 'over'
+
+export interface ReserveMonthlyNeedItem {
+  id: string
+  name: string
+  neededThisMonth: number
+  targetAmount: number
+  currentAllocated: number
+  targetDate: string
+}
+
+export interface MonthlySpendingControl {
+  hasConfiguredIncome: boolean
+  incomeExpected: number
+  incomeSource: 'recurring' | 'manual' | 'none'
+  incomeItemCount: number
+
+  // 1. Necesario / Comprometido
+  necessaryExpected: number
+  necessaryPaid: number
+  necessaryPending: number
+
+  // 2. Planificado / Gastos futuros
+  plannedForMonth: number
+  plannedReserves: number
+  plannedSpecialPeriods: number
+  reservesBreakdown: ReserveMonthlyNeedItem[]
+
+  // 3. Ahorro
+  targetSavings: number
+
+  // 4. Libre / Controlable
+  discretionaryTotalBudget: number
+  discretionarySpent: number
+  discretionaryAvailable: number
+
+  // Días y ritmo
+  daysElapsed: number
+  daysRemaining: number
+  totalDaysInMonth: number
+  recommendedDailyAvailable: number | null
+
+  // Estado y asesor sobrio
+  status: MonthlySpendingControlStatus
+  statusMessage: string
+  detailedExplanation: string
+
+  // Contexto especial
+  specialContext: {
+    hasSpecialPeriod: boolean
+    isHighSpendMonth: boolean
+    isLowSpendMonth: boolean
+    specialPeriodNames: string[]
+    extraBudgetPlanned: number
+    note?: string
+  }
+}
+
+/**
+ * Selector canónico de Control de Gasto del Mes.
+ * Unifica:
+ * - Ingresos previstos (recurrentes activos o configuración manual)
+ * - Necesario / comprometido (fijos, recurrentes, estimaciones variables esenciales y gastos esenciales)
+ * - Planificado para gastos futuros (cuota mensual de reservas y estacionalidad de periodos especiales)
+ * - Objetivo de ahorro
+ * - Margen real para gasto libre (discrecional), consumo actual y recomendación diaria sobria.
+ */
+export function selectMonthlySpendingControl(
+  settings: FinancialPlanSettings | null | undefined,
+  recurring: RecurringPayment[] = [],
+  transactions: Transaction[] = [],
+  cashTransactions: CashTransaction[] = [],
+  expenseShares: ExpenseShare[] = [],
+  specialPeriods: SpecialPeriod[] = [],
+  reserves: Reserve[] = [],
+  estimates: VariableExpenseEstimate[] = [],
+  budgets: Budget[] = [],
+  referenceDate: Date = new Date()
+): MonthlySpendingControl {
+  const refDate = referenceDate instanceof Date ? referenceDate : new Date()
+  const year = refDate.getFullYear()
+  const month = refDate.getMonth()
+
+  // 1. Días del mes
+  const totalDaysInMonth = new Date(year, month + 1, 0).getDate()
+  const daysElapsed = Math.min(totalDaysInMonth, Math.max(1, refDate.getDate()))
+  const daysRemaining = Math.max(0, totalDaysInMonth - daysElapsed)
+
+  // 2. Ingresos previstos
+  const incomeDetail = selectExpectedMonthlyIncomeDetail(settings, recurring)
+  const incomeExpected = incomeDetail.amount
+  const hasConfiguredIncome = incomeExpected > 0
+
+  // 3. Clasificación de gastos reales del mes (Banco + Efectivo con deducción de reembolsos)
+  const essentialSet = new Set(settings?.essentialCategoryIds || [])
+
+  let necessaryPaid = 0
+  let discretionarySpent = 0
+  let recurringPaidNet = 0
+  let essentialVariablePaid = 0
+
+  const isSameMonth = (dStr: string): boolean => {
+    if (!dStr) return false
+    const d = new Date(dStr)
+    return !isNaN(d.getTime()) && d.getFullYear() === year && d.getMonth() === month
+  }
+
+  // Banco
+  if (Array.isArray(transactions)) {
+    for (const t of transactions) {
+      if (t.type !== 'expense') continue
+      if (!isSameMonth(t.date)) continue
+      // Si fue pagado por un contacto, no es gasto directo del usuario
+      if (t.paidBy === 'contact') continue
+
+      const linked = selectLinkedReimbursementsForExpense(t.id, transactions, cashTransactions, expenseShares)
+      const net = Math.max(0, t.amount - linked)
+
+      const isFixed = t.expenseNature === 'fixed'
+      const isEssentialCat = Boolean(t.categoryId && essentialSet.has(t.categoryId))
+      const isNecessary = isFixed || isEssentialCat
+      const isExtraordinary = t.expenseNature === 'extraordinary'
+
+      if (isNecessary) {
+        necessaryPaid += net
+        if (t.recurringPaymentId || (isFixed && !isEssentialCat)) {
+          recurringPaidNet += net
+        } else if (isEssentialCat && !isFixed) {
+          essentialVariablePaid += net
+        }
+      } else if (!isExtraordinary) {
+        // Gasto variable no esencial = gasto libre
+        discretionarySpent += net
+      }
+    }
+  }
+
+  // Efectivo
+  if (Array.isArray(cashTransactions)) {
+    for (const c of cashTransactions) {
+      if (c.type !== 'expense') continue
+      if (!isSameMonth(c.date)) continue
+      if (c.paidBy === 'contact') continue
+
+      const linked = selectLinkedReimbursementsForExpense(c.id, transactions, cashTransactions, expenseShares)
+      const net = Math.max(0, c.amount - linked)
+
+      const isEssentialCat = Boolean(c.categoryId && essentialSet.has(c.categoryId))
+      if (isEssentialCat) {
+        necessaryPaid += net
+        essentialVariablePaid += net
+      } else {
+        discretionarySpent += net
+      }
+    }
+  }
+
+  necessaryPaid = Math.round(necessaryPaid * 100) / 100
+  discretionarySpent = Math.round(discretionarySpent * 100) / 100
+
+  // 4. Comprometido y necesario esperado (sin doble conteo de lo ya pagado)
+  const recurringExpected = selectExpectedCommittedExpenses(recurring)
+  const recurringPending = Math.max(0, recurringExpected - recurringPaidNet)
+
+  const activeEstimates = Array.isArray(estimates) ? estimates.filter((e) => e.active !== false) : []
+  const essentialEstimates = activeEstimates.filter((e) => essentialSet.has(e.categoryId))
+  const essentialVariableExpected = essentialEstimates.reduce((acc, e) => {
+    return acc + calculateMonthlyEstimate(e.unitCost, e.frequencyType, e.frequencyValue)
+  }, 0)
+  const essentialVariablePending = Math.max(0, essentialVariableExpected - essentialVariablePaid)
+
+  const necessaryPending = Math.round((recurringPending + essentialVariablePending) * 100) / 100
+  const necessaryExpected = Math.round((necessaryPaid + necessaryPending) * 100) / 100
+
+  // 5. Planificado / Reservas y Periodos especiales
+  const reservesBreakdown: ReserveMonthlyNeedItem[] = []
+  let plannedReserves = 0
+  if (Array.isArray(reserves)) {
+    for (const r of reserves) {
+      if (!r.active) continue
+      const needed = selectMonthlyReserveNeeded(r, refDate)
+      if (needed > 0) {
+        plannedReserves += needed
+        reservesBreakdown.push({
+          id: r.id,
+          name: r.name,
+          neededThisMonth: needed,
+          targetAmount: r.targetAmount,
+          currentAllocated: r.currentAllocated || 0,
+          targetDate: r.targetDate,
+        })
+      }
+    }
+  }
+  plannedReserves = Math.round(plannedReserves * 100) / 100
+
+  const plannedSpecialPeriods = selectExpectedExtraSpendingForMonth(specialPeriods, refDate)
+  const plannedForMonth = Math.round((plannedReserves + plannedSpecialPeriods) * 100) / 100
+
+  // Contexto especial
+  const monthSpecialPeriods = Array.isArray(specialPeriods)
+    ? specialPeriods.filter((p) => isMonthInSpecialPeriod(p, year, month))
+    : []
+  const isHighSpendMonth = monthSpecialPeriods.some(
+    (p) => p.type === 'expected_high_spend' || (typeof p.expectedExtraBudget === 'number' && p.expectedExtraBudget > 0)
+  )
+  const isLowSpendMonth = monthSpecialPeriods.some((p) => p.type === 'expected_low_spend')
+  const specialPeriodNames = monthSpecialPeriods.map((p) => p.name)
+
+  let specialNote: string | undefined
+  if (isHighSpendMonth && specialPeriodNames.length > 0) {
+    specialNote = `Este mes incluye un periodo de gasto alto previsto: ${specialPeriodNames.join(', ')}.`
+  } else if (isLowSpendMonth && specialPeriodNames.length > 0) {
+    specialNote = `Este mes incluye un periodo de gasto bajo previsto: ${specialPeriodNames.join(', ')}.`
+  }
+
+  // 6. Objetivo de ahorro
+  const targetSavings = selectTargetMonthlySavings(settings, incomeExpected)
+
+  // 7. Margen disponible para gasto libre
+  const discretionaryTotalBudget = hasConfiguredIncome
+    ? Math.round((incomeExpected - necessaryExpected - plannedForMonth - targetSavings) * 100) / 100
+    : 0
+  const discretionaryAvailable = Math.round((discretionaryTotalBudget - discretionarySpent) * 100) / 100
+
+  // 8. Recomendación diaria
+  let recommendedDailyAvailable: number | null = null
+  if (hasConfiguredIncome && daysRemaining > 0 && discretionaryAvailable > 0) {
+    recommendedDailyAvailable = Math.round((discretionaryAvailable / daysRemaining) * 100) / 100
+  }
+
+  // 9. Estado y mensajes del asesor sobrio
+  let status: MonthlySpendingControlStatus = 'on_track'
+  let statusMessage = 'Tu gasto libre está dentro del margen previsto.'
+  let detailedExplanation = ''
+
+  if (!hasConfiguredIncome) {
+    status = 'on_track'
+    statusMessage = 'Configura tus ingresos en los ajustes del plan para calcular el margen libre diario y evaluar el mes.'
+    detailedExplanation = 'Sin ingresos configurados no es posible calcular el margen disponible para gasto libre.'
+  } else if (discretionaryAvailable < 0) {
+    status = 'over'
+    statusMessage = 'El gasto libre ha superado el margen previsto del mes.'
+    const overAmount = Math.abs(discretionaryAvailable).toFixed(2).replace('.', ',')
+    detailedExplanation = `Has utilizado ${discretionarySpent.toFixed(2).replace('.', ',')} € de los ${discretionaryTotalBudget.toFixed(2).replace('.', ',')} € disponibles para gasto libre (${overAmount} € por encima del margen).`
+  } else {
+    const consumedRatio = discretionaryTotalBudget > 0 ? discretionarySpent / discretionaryTotalBudget : 0
+    const monthProgress = totalDaysInMonth > 0 ? daysElapsed / totalDaysInMonth : 0
+
+    if (consumedRatio > 0.85 || (consumedRatio > monthProgress + 0.25 && discretionaryAvailable < 50)) {
+      status = 'tight'
+      statusMessage = 'Te queda poco margen libre para el resto del mes.'
+    } else if (consumedRatio < 0.5 && monthProgress > 0.4) {
+      status = 'comfortable'
+      statusMessage = 'Tu margen de gasto libre es holgado este mes.'
+    } else {
+      status = 'on_track'
+      statusMessage = 'Tu gasto libre está dentro del margen previsto.'
+    }
+
+    const dailyText =
+      recommendedDailyAvailable !== null
+        ? `, aproximadamente ${recommendedDailyAvailable.toFixed(2).replace('.', ',')} €/día.`
+        : '.'
+    detailedExplanation = `Has utilizado ${discretionarySpent.toFixed(2).replace('.', ',')} € de los ${discretionaryTotalBudget.toFixed(2).replace('.', ',')} € disponibles para gasto libre. Quedan ${discretionaryAvailable.toFixed(2).replace('.', ',')} € para ${daysRemaining} días${dailyText}`
+  }
+
+  return {
+    hasConfiguredIncome,
+    incomeExpected,
+    incomeSource: incomeDetail.source,
+    incomeItemCount: incomeDetail.items.length,
+
+    necessaryExpected,
+    necessaryPaid,
+    necessaryPending,
+
+    plannedForMonth,
+    plannedReserves,
+    plannedSpecialPeriods,
+    reservesBreakdown,
+
+    targetSavings,
+
+    discretionaryTotalBudget,
+    discretionarySpent,
+    discretionaryAvailable,
+
+    daysElapsed,
+    daysRemaining,
+    totalDaysInMonth,
+    recommendedDailyAvailable,
+
+    status,
+    statusMessage,
+    detailedExplanation,
+
+    specialContext: {
+      hasSpecialPeriod: monthSpecialPeriods.length > 0,
+      isHighSpendMonth,
+      isLowSpendMonth,
+      specialPeriodNames,
+      extraBudgetPlanned: plannedSpecialPeriods,
+      note: specialNote,
+    },
+  }
+}
+
+
 

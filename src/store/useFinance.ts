@@ -147,6 +147,7 @@ import {
   selectFreeSavingsWithReserves,
   selectMonthlyIncome,
   selectMonthlyPlanCardSummary,
+  selectMonthlySpendingControl,
   selectTargetMonthlySavings,
   selectTotalAllocatedToReserves,
   selectVariableMonthlyExpenses,
@@ -2326,6 +2327,19 @@ export function useFinance(storage: StorageAdapter = defaultAppStorage) {
 
     const estimatedMonthlyMargin = monthlyPlanSummary.plannedMargin
 
+    const spendingControl = selectMonthlySpendingControl(
+      state.planSettings,
+      state.recurring,
+      state.transactions,
+      state.cashTransactions ?? [],
+      state.expenseShares ?? [],
+      state.specialPeriods,
+      state.reserves,
+      state.variableExpenseEstimates,
+      state.budgets,
+      now
+    )
+
     return {
       // Compatibilidad y concepto neto principal
       daily: spendable,
@@ -2364,7 +2378,8 @@ export function useFinance(storage: StorageAdapter = defaultAppStorage) {
       pendingRecurring,
       budgetsSummary,
 
-      // Plan financiero
+      // Plan financiero y Control del mes
+      spendingControl,
       planMetrics: {
         monthlyIncome,
         incomeDetail: expectedIncomeDetail,
@@ -2385,6 +2400,7 @@ export function useFinance(storage: StorageAdapter = defaultAppStorage) {
         currentRemainingMargin: monthlyPlanSummary.freeToSpend,
         adjustedSpending,
         monthlyPlanSummary,
+        spendingControl,
       },
       monthlyPlanSummary,
     }
