@@ -1,11 +1,13 @@
 {
   "name": "pocketflow",
   "private": true,
-  "version": "0.21.0",
+  "version": "0.21.1",
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc -b && vite build",
+    "generate:sw": "node --import tsx scripts/generateSw.ts",
+    "prebuild": "node --import tsx scripts/generateSw.ts",
+    "build": "node --import tsx scripts/generateSw.ts && tsc -b && vite build",
     "preview": "vite preview",
     "test": "node --import tsx --test",
     "cap:sync": "npm run build && cap sync",

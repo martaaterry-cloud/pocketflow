@@ -24,6 +24,10 @@ Object.defineProperty(globalThis, 'localStorage', {
 
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
+import * as fs from 'node:fs'
+import * as path from 'node:path'
+import { fileURLToPath } from 'node:url'
+import { getServiceWorkerCacheName, generateServiceWorkerCode } from '../src/utils/swGenerator'
 import { initialProfile } from '../src/data/seed'
 import type { Account, Budget, Category, FinancialPlanSettings, RecurringIncomeSourceType, RecurringPayment, Reserve, SavingsGoal, SpecialPeriod, Transaction, UserProfile, VariableExpenseEstimate, SharedContact, ExpenseShare, SpecialMovementType, ExpenseNature, CashTransaction, CashMovementType } from '../src/models/finance'
 import {
@@ -6884,12 +6888,12 @@ describe('Fase 18 — Mejoras de Finanzas (Detalle por Categoría, Retiradas de 
 describe('Fase 18 — Identificación Visual de Versión y Build', () => {
   it('314. Versioning: única fuente de verdad y formato de visualización exacto', () => {
     assert.equal(APP_NAME, 'PocketFlow')
-    assert.equal(APP_VERSION, '0.21.0')
-    assert.equal(APP_BUILD, '2026.09.29-01')
+    assert.equal(APP_VERSION, '0.21.1')
+    assert.equal(APP_BUILD, '2026.09.29-02')
 
-    assert.equal(getAppVersionString(), 'PocketFlow v0.21.0')
-    assert.equal(getAppBuildString(), 'Build 2026.09.29-01')
-    assert.equal(getAppFullVersionLabel(), 'PocketFlow v0.21.0 · Build 2026.09.29-01')
+    assert.equal(getAppVersionString(), 'PocketFlow v0.21.1')
+    assert.equal(getAppBuildString(), 'Build 2026.09.29-02')
+    assert.equal(getAppFullVersionLabel(), 'PocketFlow v0.21.1 · Build 2026.09.29-02')
   })
 })
 
@@ -13976,7 +13980,7 @@ describe('Fase 50 — Control de Acceso por Roles (User / Admin), Seguridad RLS 
     assert.equal(allowedSubViews.includes('cloud'), false)
   })
 
-  it('589. 9. Footer: usuario normal ve solo "PocketFlow v0.21.0", admin ve "PocketFlow v0.21.0" y "Build 2026.09.29-01"', () => {
+  it('589. 9. Footer: usuario normal ve solo "PocketFlow v0.21.1", admin ve "PocketFlow v0.21.1" y "Build 2026.09.29-02"', () => {
     const renderFooterTexts = (isAdmin: boolean): { versionText: string; buildText: string | null } => {
       return {
         versionText: getAppVersionString(),
@@ -13985,12 +13989,12 @@ describe('Fase 50 — Control de Acceso por Roles (User / Admin), Seguridad RLS 
     }
 
     const userFooter = renderFooterTexts(false)
-    assert.equal(userFooter.versionText, 'PocketFlow v0.21.0')
+    assert.equal(userFooter.versionText, 'PocketFlow v0.21.1')
     assert.equal(userFooter.buildText, null)
 
     const adminFooter = renderFooterTexts(true)
-    assert.equal(adminFooter.versionText, 'PocketFlow v0.21.0')
-    assert.equal(adminFooter.buildText, 'Build 2026.09.29-01')
+    assert.equal(adminFooter.versionText, 'PocketFlow v0.21.1')
+    assert.equal(adminFooter.buildText, 'Build 2026.09.29-02')
   })
 
   it('590. 10. Reconciliación y sincronización de perfil no altera datos financieros ni transacciones', () => {
@@ -14486,6 +14490,106 @@ describe('Fase 51 — Aislamiento Estricto por Usuario en Almacenamiento Local, 
     assert.equal(afterClear, null)
   })
 })
+
+describe('Fase 52 — Versionado Automático y Robusto del Service Worker PWA', () => {
+  it('613. 1. CACHE_NAME del Service Worker incluye exactamente APP_VERSION y APP_BUILD actuales', () => {
+    const expectedCacheName = `pocketflow-v${APP_VERSION}-${APP_BUILD}`
+    assert.equal(getServiceWorkerCacheName(APP_VERSION, APP_BUILD), expectedCacheName)
+    assert.equal(expectedCacheName, 'pocketflow-v0.21.1-2026.09.29-02')
+
+    const swCode = generateServiceWorkerCode(APP_VERSION, APP_BUILD)
+    assert.ok(swCode.includes(`const CACHE_NAME = '${expectedCacheName}'`))
+    assert.ok(swCode.includes(`PocketFlow Service Worker v${APP_VERSION} (${APP_BUILD})`))
+  })
+
+  it('614. 2. Modificar versión o build produce contenido de Service Worker byte a byte diferente', () => {
+    const swV1 = generateServiceWorkerCode('0.21.0', '2026.09.28-01')
+    const swV2 = generateServiceWorkerCode('0.21.1', '2026.09.29-02')
+    const swV3 = generateServiceWorkerCode('0.21.1', '2026.09.29-03')
+
+    assert.notEqual(swV1, swV2)
+    assert.notEqual(swV2, swV3)
+    assert.ok(swV1.includes('pocketflow-v0.21.0-2026.09.28-01'))
+    assert.ok(swV2.includes('pocketflow-v0.21.1-2026.09.29-02'))
+    assert.ok(swV3.includes('pocketflow-v0.21.1-2026.09.29-03'))
+  })
+
+  it('615. 3. public/sw.js en disco está sincronizado con APP_VERSION y APP_BUILD (prevención de regresión)', () => {
+    const publicSwPath = path.resolve(process.cwd(), 'public/sw.js')
+    assert.ok(fs.existsSync(publicSwPath), 'public/sw.js debe existir')
+
+    const publicSwContent = fs.readFileSync(publicSwPath, 'utf-8')
+    const expectedCacheName = getServiceWorkerCacheName(APP_VERSION, APP_BUILD)
+
+    assert.ok(
+      publicSwContent.includes(`const CACHE_NAME = '${expectedCacheName}'`),
+      `public/sw.js debe contener CACHE_NAME='${expectedCacheName}', pero contenía otro valor. Ejecuta scripts/generateSw.ts o npm run build.`
+    )
+    assert.ok(publicSwContent.includes(APP_VERSION))
+    assert.ok(publicSwContent.includes(APP_BUILD))
+  })
+
+  it('616. 4. Ciclo de vida del Service Worker: eliminación de cachés obsoletas y no skipWaiting automático', () => {
+    const swCode = generateServiceWorkerCode(APP_VERSION, APP_BUILD)
+
+    // 1. No debe invocar skipWaiting() en el nivel superior (global) ni en el evento install
+    const topLevelSkipWaiting = /^self\.skipWaiting\(\)/m.test(swCode)
+    assert.equal(topLevelSkipWaiting, false, 'No debe invocar skipWaiting en el top level')
+
+    const insideInstall = /addEventListener\('install'[^)]*\)[\s\S]*?self\.skipWaiting\(\)/.test(swCode)
+    assert.equal(insideInstall, false, 'No debe invocar skipWaiting automáticamente en install')
+
+    // 2. Debe invocar skipWaiting únicamente bajo mensaje 'SKIP_WAITING'
+    const insideMessage = /addEventListener\('message'[\s\S]*?SKIP_WAITING[\s\S]*?self\.skipWaiting\(\)/.test(swCode)
+    assert.equal(insideMessage, true, 'Debe invocar skipWaiting condicionado al mensaje SKIP_WAITING')
+
+    // 3. Debe limpiar caches antiguas en activate
+    assert.ok(swCode.includes("name !== CACHE_NAME"))
+    assert.ok(swCode.includes("caches.delete(name)"))
+
+    // 4. Debe incluir claim para clientes activos tras activación controlada
+    assert.ok(swCode.includes("self.clients.claim()"))
+  })
+
+  it('617. 5. Comprobación en primer plano, detección de updates y deduplicación de recarga en controllerchange', () => {
+    // 1. Comprobación en primer plano
+    assert.equal(shouldCheckUpdateOnVisibility('visible'), true)
+    assert.equal(shouldCheckUpdateOnVisibility('hidden'), false)
+    assert.equal(shouldCheckUpdateOnVisibility('prerender'), false)
+
+    // 2. Detección de update: requiere controller activo previo y worker en estado 'installed'
+    assert.equal(isPwaUpdateAvailable(false, 'installed'), false, 'Primera instalación no debe disparar banner de update')
+    assert.equal(isPwaUpdateAvailable(true, 'installing'), false, 'Estado installing todavía no está listo para update')
+    assert.equal(isPwaUpdateAvailable(true, 'installed'), true, 'Worker instalado con controller previo es un update válido')
+    assert.equal(isPwaUpdateAvailable(true, 'activated'), false)
+
+    // 3. Deduplicación de recarga en controllerchange
+    let reloadCount = 0
+    const mockReload = () => {
+      reloadCount++
+    }
+    const reloadHandler = createReloadHandler(mockReload)
+
+    // Simular múltiples eventos controllerchange sucesivos
+    reloadHandler()
+    reloadHandler()
+    reloadHandler()
+
+    assert.equal(reloadCount, 1, 'controllerchange debe invocar reload exactamente una vez')
+
+    // 4. Mensaje SKIP_WAITING
+    let postedMessage: any = null
+    const mockWaitingWorker = {
+      postMessage: (msg: any) => {
+        postedMessage = msg
+      },
+    } as any
+
+    sendSkipWaiting(mockWaitingWorker)
+    assert.deepEqual(postedMessage, { type: 'SKIP_WAITING' })
+  })
+})
+
 
 
 

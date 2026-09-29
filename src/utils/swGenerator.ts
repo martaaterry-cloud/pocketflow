@@ -1,5 +1,23 @@
-// PocketFlow Service Worker v0.21.1 (2026.09.29-02)
-const CACHE_NAME = 'pocketflow-v0.21.1-2026.09.29-02'
+import { APP_BUILD, APP_VERSION } from '../version'
+import * as fs from 'node:fs'
+import * as path from 'node:path'
+
+/**
+ * Genera el identificador único canónico de caché para el Service Worker.
+ * Formato: pocketflow-v<APP_VERSION>-<APP_BUILD>
+ */
+export function getServiceWorkerCacheName(version: string = APP_VERSION, build: string = APP_BUILD): string {
+  return `pocketflow-v${version}-${build}`
+}
+
+/**
+ * Genera el código fuente JavaScript completo para el Service Worker.
+ */
+export function generateServiceWorkerCode(version: string = APP_VERSION, build: string = APP_BUILD): string {
+  const cacheName = getServiceWorkerCacheName(version, build)
+
+  return `// PocketFlow Service Worker v${version} (${build})
+const CACHE_NAME = '${cacheName}'
 
 // Recursos estáticos iniciales a cachear
 const PRECACHE_URLS = [
@@ -123,3 +141,19 @@ self.addEventListener('fetch', (event) => {
     })
   )
 })
+`
+}
+
+/**
+ * Escribe el Service Worker con la versión y build actual en la ruta especificada (por defecto public/sw.js).
+ */
+export function writeServiceWorkerFile(
+  targetPath = path.resolve(process.cwd(), 'public', 'sw.js'),
+  version = APP_VERSION,
+  build = APP_BUILD
+): string {
+  const code = generateServiceWorkerCode(version, build)
+  fs.mkdirSync(path.dirname(targetPath), { recursive: true })
+  fs.writeFileSync(targetPath, code, 'utf-8')
+  return code
+}
