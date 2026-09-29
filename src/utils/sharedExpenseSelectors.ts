@@ -391,6 +391,77 @@ export function splitExpenseEqually(
   return results
 }
 
+export type SplitMode = 'equal' | 'custom'
+
+export interface CustomParticipantInput {
+  name: string
+  contactId?: string
+  amount: number
+  isPayerShare?: boolean
+  isUserShare?: boolean
+}
+
+export interface CustomSplitCalculation {
+  isValid: boolean
+  totalCents: number
+  assignedCents: number
+  remainingCents: number
+  remainingAmount: number
+  errorMessage?: string
+  shares: SplitResult[]
+}
+
+/**
+ * Calcula y valida un reparto personalizado de gasto compartido.
+ * Trabaja en céntimos enteros para evitar problemas de precisión flotante.
+ */
+export function calculateCustomSplit(
+  totalExpenseAmount: number,
+  participants: CustomParticipantInput[],
+  paidBy: 'user' | 'contact' = 'user',
+  actualPayerName = 'Contacto',
+  actualPayerContactId?: string
+): CustomSplitCalculation {
+  const cleanTotal = Math.round(Number(totalExpenseAmount) * 100) / 100
+  const totalCents = Math.round(cleanTotal * 100)
+
+  let assignedCents = 0
+  const shares: SplitResult[] = []
+
+  participants.forEach((p) => {
+    const pCents = Math.round((Number(p.amount) || 0) * 100)
+    assignedCents += pCents
+
+    shares.push({
+      participantName: p.name.trim(),
+      contactId: p.contactId,
+      isPayerShare: Boolean(p.isPayerShare),
+      isUserShare: Boolean(p.isUserShare),
+      amount: Math.round(pCents) / 100,
+    })
+  })
+
+  const remainingCents = totalCents - assignedCents
+  const remainingAmount = Math.round(remainingCents) / 100
+
+  let errorMessage: string | undefined
+  if (remainingCents > 0) {
+    errorMessage = `Faltan ${remainingAmount.toFixed(2).replace('.', ',')} € por asignar.`
+  } else if (remainingCents < 0) {
+    errorMessage = `Has asignado ${(Math.abs(remainingAmount)).toFixed(2).replace('.', ',')} € de más.`
+  }
+
+  return {
+    isValid: remainingCents === 0 && participants.length > 0 && totalCents > 0,
+    totalCents,
+    assignedCents,
+    remainingCents,
+    remainingAmount,
+    errorMessage,
+    shares,
+  }
+}
+
 /**
  * Ingresos reales = suma de transacciones income que NO son reembolsos.
  */
@@ -415,7 +486,8 @@ export function selectRealIncome(
 }
 
 /**
- * Calcula el estado de una parte de gasto (ExpenseShare) en base a los reembolsos recibidos (banco o efectivo).
+ * Calcula el estado de una parte de gasto (ExpenseShare) en base a los reembolsos recibidos (banco o efectivo)
+ * y a los importes perdonados/ajustados explícitos.
  */
 export function selectExpenseShareStatus(
   share: ExpenseShare,
@@ -426,6 +498,7 @@ export function selectExpenseShareStatus(
   receivedAmount: number
   appliedAmount: number
   extraAmount: number
+  forgivenAmount: number
   pendingAmount: number
   status: ExpenseShareStatus
   reimbursements: (Transaction | CashTransaction)[]
@@ -450,12 +523,13 @@ export function selectExpenseShareStatus(
   const expectedAmount = Math.round(share.expectedAmount * 100) / 100
   const appliedAmount = Math.min(expectedAmount, receivedAmount)
   const extraAmount = Math.max(0, Math.round((receivedAmount - expectedAmount) * 100) / 100)
-  const pendingAmount = Math.max(0, Math.round((expectedAmount - appliedAmount) * 100) / 100)
+  const forgivenAmount = Math.max(0, Math.round((share.forgivenAmount ?? 0) * 100) / 100)
+  const pendingAmount = Math.max(0, Math.round((expectedAmount - appliedAmount - forgivenAmount) * 100) / 100)
 
   let status: ExpenseShareStatus = 'pending'
   if (pendingAmount <= 0) {
     status = 'received'
-  } else if (receivedAmount > 0) {
+  } else if (receivedAmount > 0 || forgivenAmount > 0) {
     status = 'partial'
   }
 
@@ -464,6 +538,7 @@ export function selectExpenseShareStatus(
     receivedAmount,
     appliedAmount,
     extraAmount,
+    forgivenAmount,
     pendingAmount,
     status,
     reimbursements: allReimbursements,
@@ -472,7 +547,7 @@ export function selectExpenseShareStatus(
 
 /**
  * Calcula el estado de una parte por pagar del usuario ante un acreedor (quien pagó el gasto).
- * Descuenta los pagos reales efectuados por el usuario hacia dicho gasto o cuota.
+ * Descuenta los pagos reales efectuados por el usuario hacia dicho gasto o cuota y los importes perdonados/ajustados.
  * Si el usuario paga más del importe debido (sobrepago), salda la deuda a 0 € sin generar deudas negativas ni inversas.
  */
 export function selectExpensePayableStatus(
@@ -483,6 +558,7 @@ export function selectExpensePayableStatus(
   expectedAmount: number
   paidAmount: number
   appliedAmount: number
+  forgivenAmount: number
   pendingAmount: number
   status: 'pending' | 'partial' | 'settled'
   payments: (Transaction | CashTransaction)[]
@@ -507,12 +583,13 @@ export function selectExpensePayableStatus(
   const paidAmount = Math.round(allPayments.reduce((sum, p) => sum + p.amount, 0) * 100) / 100
   const expectedAmount = Math.round(share.expectedAmount * 100) / 100
   const appliedAmount = Math.min(expectedAmount, paidAmount)
-  const pendingAmount = Math.max(0, Math.round((expectedAmount - appliedAmount) * 100) / 100)
+  const forgivenAmount = Math.max(0, Math.round((share.forgivenAmount ?? 0) * 100) / 100)
+  const pendingAmount = Math.max(0, Math.round((expectedAmount - appliedAmount - forgivenAmount) * 100) / 100)
 
   let status: 'pending' | 'partial' | 'settled' = 'pending'
   if (pendingAmount <= 0) {
     status = 'settled'
-  } else if (paidAmount > 0) {
+  } else if (paidAmount > 0 || forgivenAmount > 0) {
     status = 'partial'
   }
 
@@ -520,6 +597,7 @@ export function selectExpensePayableStatus(
     expectedAmount,
     paidAmount,
     appliedAmount,
+    forgivenAmount,
     pendingAmount,
     status,
     payments: allPayments,
@@ -589,6 +667,9 @@ export function selectExpenseShareDetails(
   const totalRecovered = Math.round(
     externalSharesWithStatus.reduce((acc, s) => acc + s.appliedAmount, 0) * 100
   ) / 100
+  const totalForgiven = Math.round(
+    externalSharesWithStatus.reduce((acc, s) => acc + s.forgivenAmount, 0) * 100
+  ) / 100
   const totalPendingToRecover = Math.round(
     externalSharesWithStatus.reduce((acc, s) => acc + s.pendingAmount, 0) * 100
   ) / 100
@@ -602,6 +683,7 @@ export function selectExpenseShareDetails(
     userPayableStatus,
     totalExpected,
     totalRecovered,
+    totalForgiven,
     totalPendingToRecover,
     isFullyReimbursed: totalPendingToRecover <= 0,
   }
@@ -621,6 +703,9 @@ export function selectPendingDebtors(
     totalPending: number
     pendingShares: {
       share: ExpenseShare
+      expectedAmount: number
+      appliedAmount: number
+      forgivenAmount: number
       pendingAmount: number
       expenseDescription: string
       expenseDate: string
@@ -639,7 +724,7 @@ export function selectPendingDebtors(
     // La cuota del propio usuario o pagador no es una deuda por cobrar
     if (s.isPayerShare || s.isUserShare || s.participantName.toLowerCase() === 'tú') return
 
-    const { pendingAmount } = selectExpenseShareStatus(s, transactions, cashTransactions)
+    const { expectedAmount, appliedAmount, forgivenAmount, pendingAmount } = selectExpenseShareStatus(s, transactions, cashTransactions)
     if (pendingAmount > 0) {
       const key = s.contactId || s.participantName.toLowerCase().trim()
       const existing = map.get(key) ?? {
@@ -652,6 +737,9 @@ export function selectPendingDebtors(
       existing.totalPending = Math.round((existing.totalPending + pendingAmount) * 100) / 100
       existing.pendingShares.push({
         share: s,
+        expectedAmount,
+        appliedAmount,
+        forgivenAmount,
         pendingAmount,
         expenseDescription: tx.description || 'Gasto compartido',
         expenseDate: tx.date || s.createdAt || new Date().toISOString(),
@@ -678,6 +766,9 @@ export function selectPendingPayables(
   totalPending: number
   pendingShares: {
     share: ExpenseShare
+    expectedAmount: number
+    appliedAmount: number
+    forgivenAmount: number
     pendingAmount: number
     expenseDescription: string
     expenseDate: string
@@ -689,6 +780,9 @@ export function selectPendingPayables(
     totalPending: number
     pendingShares: {
       share: ExpenseShare
+      expectedAmount: number
+      appliedAmount: number
+      forgivenAmount: number
       pendingAmount: number
       expenseDescription: string
       expenseDate: string
@@ -706,7 +800,7 @@ export function selectPendingPayables(
     const isUserShare = Boolean(s.isUserShare) || s.participantName.toLowerCase() === 'tú' || (!s.isPayerShare && !s.contactId)
     if (!isContactPaid || !isUserShare) return
 
-    const { pendingAmount } = selectExpensePayableStatus(s, transactions, cashTransactions)
+    const { expectedAmount, appliedAmount, forgivenAmount, pendingAmount } = selectExpensePayableStatus(s, transactions, cashTransactions)
     if (pendingAmount > 0) {
       const creditorName = parentTx.payerName || 'Contacto'
       const creditorKey = parentTx.payerContactId || creditorName.toLowerCase().trim()
@@ -721,6 +815,9 @@ export function selectPendingPayables(
       existing.totalPending = Math.round((existing.totalPending + pendingAmount) * 100) / 100
       existing.pendingShares.push({
         share: s,
+        expectedAmount,
+        appliedAmount,
+        forgivenAmount,
         pendingAmount,
         expenseDescription: parentTx.description || 'Gasto compartido',
         expenseDate: parentTx.date || s.createdAt || new Date().toISOString(),
@@ -756,6 +853,9 @@ export function selectSettledReimbursements(
   const settledList: {
     share: ExpenseShare
     participantName: string
+    expectedAmount: number
+    appliedAmount: number
+    forgivenAmount: number
     amount: number
     expenseDescription: string
     settledDate: string
@@ -775,7 +875,10 @@ export function selectSettledReimbursements(
       settledList.push({
         share: s,
         participantName: s.participantName,
-        amount: s.expectedAmount,
+        expectedAmount: status.expectedAmount,
+        appliedAmount: status.appliedAmount,
+        forgivenAmount: status.forgivenAmount,
+        amount: status.expectedAmount,
         expenseDescription: tx.description || 'Gasto compartido',
         settledDate: lastReimb?.date || tx.date || s.createdAt || new Date().toISOString(),
       })
@@ -796,6 +899,9 @@ export function selectSettledPayables(
   const settledList: {
     share: ExpenseShare
     creditorName: string
+    expectedAmount: number
+    appliedAmount: number
+    forgivenAmount: number
     amount: number
     expenseDescription: string
     settledDate: string
@@ -817,7 +923,10 @@ export function selectSettledPayables(
       settledList.push({
         share: s,
         creditorName: parentTx.payerName || 'Contacto',
-        amount: s.expectedAmount,
+        expectedAmount: status.expectedAmount,
+        appliedAmount: status.appliedAmount,
+        forgivenAmount: status.forgivenAmount,
+        amount: status.expectedAmount,
         expenseDescription: parentTx.description || 'Gasto compartido',
         settledDate: lastPayment?.date || parentTx.date || s.createdAt || new Date().toISOString(),
       })

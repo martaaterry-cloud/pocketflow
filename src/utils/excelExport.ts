@@ -566,11 +566,12 @@ export function generateExcelWorkbook(
     'Importe bruto (€)',
     'Persona / Contacto',
     'Es pagador propio',
-    'Parte atribuida (€)',
-    'Reembolso recibido real (€)',
+    'Parte esperada (€)',
+    'Pagado/Cobrado real (€)',
     'Aplicado a deuda (€)',
+    'Perdonado/Ajustado (€)',
     'Extra recibido (€)',
-    'Pendiente por cobrar (€)',
+    'Pendiente (€)',
     'Estado',
     'ExpenseShareId',
     'ParentExpenseId / ExpenseTransactionId',
@@ -593,6 +594,7 @@ export function generateExcelWorkbook(
     }
 
     const appliedAmount = isUser ? 0 : status.appliedAmount
+    const forgivenAmount = isUser ? 0 : status.forgivenAmount
     const extraAmount = isUser ? 0 : status.extraAmount
     const pendingAmount = isUser ? 0 : status.pendingAmount
 
@@ -605,6 +607,7 @@ export function generateExcelWorkbook(
       status.expectedAmount,
       status.receivedAmount,
       appliedAmount,
+      forgivenAmount,
       extraAmount,
       pendingAmount,
       statusLabel,
@@ -614,8 +617,8 @@ export function generateExcelWorkbook(
   })
 
   const wsCompartidos = XLSX.utils.aoa_to_sheet([compartidosHeaders, ...compartidosRows])
-  setColWidths(wsCompartidos, [30, 14, 18, 22, 18, 18, 26, 22, 18, 24, 16, 20, 26])
-  wsCompartidos['!autofilter'] = { ref: `A1:M${Math.max(1, compartidosRows.length + 1)}` }
+  setColWidths(wsCompartidos, [30, 14, 18, 22, 18, 18, 26, 22, 22, 18, 20, 16, 20, 26])
+  wsCompartidos['!autofilter'] = { ref: `A1:N${Math.max(1, compartidosRows.length + 1)}` }
   XLSX.utils.book_append_sheet(wb, wsCompartidos, 'GASTOS_COMPARTIDOS')
 
   // ==========================================

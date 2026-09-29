@@ -1,7 +1,12 @@
 import { useState, useEffect, useMemo } from 'react'
 import type { Category, CreateCashTransactionInput, SharedContact } from '../models/finance'
 import { money } from '../utils/money'
-import { splitExpenseEqually } from '../utils/sharedExpenseSelectors'
+import {
+  splitExpenseEqually,
+  calculateCustomSplit,
+  type SplitMode,
+  type CustomParticipantInput,
+} from '../utils/sharedExpenseSelectors'
 import { AppIcon } from '../ui/icons'
 import { SharedExpenseSection } from './SharedExpenseSection'
 
@@ -42,8 +47,9 @@ export function AddCashTransactionModal({
   // Estados para Gasto Compartido en Efectivo
   const [isShared, setIsShared] = useState(false)
   const [selfParticipates, setSelfParticipates] = useState(true)
-  const [splitType, setSplitType] = useState<'equal' | 'custom'>('equal')
+  const [splitType, setSplitType] = useState<SplitMode>('equal')
   const [participants, setParticipants] = useState<ParticipantEntry[]>([])
+  const [customAmounts, setCustomAmounts] = useState<Record<string, string>>({})
   const [newParticipantInput, setNewParticipantInput] = useState('')
 
   useEffect(() => {
@@ -59,11 +65,45 @@ export function AddCashTransactionModal({
       setSelfParticipates(true)
       setSplitType('equal')
       setParticipants([])
+      setCustomAmounts({})
       setNewParticipantInput('')
     }
   }, [open, initialType])
 
   const numericAmount = Number(amount.replace(',', '.')) || 0
+
+  const handleCustomAmountChange = (key: string, val: string) => {
+    setCustomAmounts((prev) => ({ ...prev, [key]: val }))
+  }
+
+  // Cálculo de reparto personalizado con comprobación al céntimo
+  const customSplitSummary = useMemo(() => {
+    if (!isShared || splitType !== 'custom' || numericAmount <= 0) return undefined
+
+    const customInputs: CustomParticipantInput[] = []
+    if (selfParticipates) {
+      const userVal = Number((customAmounts['user'] || '0').replace(',', '.')) || 0
+      customInputs.push({
+        name: 'Tú',
+        amount: userVal,
+        isPayerShare: true,
+        isUserShare: false,
+      })
+    }
+
+    participants.forEach((p) => {
+      const pVal = Number((customAmounts[p.name] || '0').replace(',', '.')) || 0
+      customInputs.push({
+        name: p.name,
+        contactId: p.contactId,
+        amount: pVal,
+        isPayerShare: false,
+        isUserShare: false,
+      })
+    })
+
+    return calculateCustomSplit(numericAmount, customInputs, 'user')
+  }, [isShared, splitType, numericAmount, selfParticipates, customAmounts, participants])
 
   // Cálculo de reparto en tiempo real con exactitud de céntimos
   const computedShares = useMemo(() => {
@@ -76,27 +116,9 @@ export function AddCashTransactionModal({
       }))
       return splitExpenseEqually(numericAmount, externalList, selfParticipates, 'Tú')
     } else {
-      const results = []
-      if (selfParticipates) {
-        const externalTotal = participants.reduce((s, p) => s + (p.customAmount || 0), 0)
-        const payerAmount = Math.max(0, Math.round((numericAmount - externalTotal) * 100) / 100)
-        results.push({
-          participantName: 'Tú',
-          isPayerShare: true,
-          amount: payerAmount,
-        })
-      }
-      participants.forEach((p) => {
-        results.push({
-          participantName: p.name,
-          contactId: p.contactId,
-          isPayerShare: false,
-          amount: p.customAmount || 0,
-        })
-      })
-      return results
+      return customSplitSummary?.shares ?? []
     }
-  }, [isShared, numericAmount, splitType, participants, selfParticipates])
+  }, [isShared, numericAmount, splitType, participants, selfParticipates, customSplitSummary])
 
   if (!open) return null
 
@@ -147,6 +169,10 @@ export function AddCashTransactionModal({
     }
 
     if (type === 'expense' && isShared) {
+      if (splitType === 'custom' && (!customSplitSummary || !customSplitSummary.isValid)) {
+        setError(customSplitSummary?.errorMessage || 'El reparto personalizado no está cuadrado al céntimo.')
+        return
+      }
       if (participants.length === 0) {
         setError('Añade al menos una persona para compartir el gasto.')
         return
@@ -398,6 +424,12 @@ export function AddCashTransactionModal({
               computedShares={computedShares}
               datalistId="cash-shared-contacts-list"
               placeholder="Escribe nombre (ej. Sergi)..."
+              splitMode={splitType}
+              onSplitModeChange={setSplitType}
+              customAmounts={customAmounts}
+              onCustomAmountChange={handleCustomAmountChange}
+              customSplitSummary={customSplitSummary}
+              totalExpenseAmount={numericAmount}
             />
           )}
 

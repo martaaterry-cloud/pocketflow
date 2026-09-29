@@ -1,7 +1,12 @@
 import { useState, useEffect, useMemo } from 'react'
 import type { Category, CashTransaction, UpdateCashTransactionInput, ExpenseShare, SharedContact } from '../models/finance'
 import { money } from '../utils/money'
-import { splitExpenseEqually } from '../utils/sharedExpenseSelectors'
+import {
+  splitExpenseEqually,
+  calculateCustomSplit,
+  type SplitMode,
+  type CustomParticipantInput,
+} from '../utils/sharedExpenseSelectors'
 import { AppIcon } from '../ui/icons'
 import { SharedExpenseSection } from './SharedExpenseSection'
 
@@ -52,8 +57,9 @@ export function EditCashTransactionModal({
   const [payerName, setPayerName] = useState('')
   const [payerContactId, setPayerContactId] = useState<string | undefined>(undefined)
   const [selfParticipates, setSelfParticipates] = useState(true)
-  const [splitType, setSplitType] = useState<'equal' | 'custom'>('equal')
+  const [splitType, setSplitType] = useState<SplitMode>('equal')
   const [participants, setParticipants] = useState<ParticipantEntry[]>([])
+  const [customAmounts, setCustomAmounts] = useState<Record<string, string>>({})
   const [newParticipantInput, setNewParticipantInput] = useState('')
   const [confirmUnshare, setConfirmUnshare] = useState(false)
 
@@ -78,6 +84,13 @@ export function EditCashTransactionModal({
       const existingShares = expenseShares.filter((s) => s.expenseTransactionId === transaction.id)
       if (existingShares.length > 0) {
         setIsShared(true)
+        const amountsMap: Record<string, string> = {}
+        existingShares.forEach((s) => {
+          const key = s.isUserShare || s.participantName.toLowerCase() === 'tú' ? 'user' : s.participantName
+          amountsMap[key] = String(s.expectedAmount).replace('.', ',')
+        })
+        setCustomAmounts(amountsMap)
+
         if (initialPaidBy === 'contact') {
           const userShare = existingShares.find((s) => s.isUserShare || s.participantName.toLowerCase() === 'tú')
           setSelfParticipates(Boolean(userShare))
@@ -103,15 +116,59 @@ export function EditCashTransactionModal({
             }))
           setParticipants(ext)
         }
+
+        const isUnequal = existingShares.some((s, _, arr) => Math.abs(s.expectedAmount - arr[0].expectedAmount) > 0.01)
+        setSplitType(isUnequal ? 'custom' : 'equal')
       } else {
         setIsShared(Boolean(transaction.isShared))
         setSelfParticipates(true)
+        setSplitType('equal')
         setParticipants([])
+        setCustomAmounts({})
       }
     }
   }, [transaction, expenseShares, open])
 
   const numericAmount = Number(amount.replace(',', '.')) || 0
+
+  const handleCustomAmountChange = (key: string, val: string) => {
+    setCustomAmounts((prev) => ({ ...prev, [key]: val }))
+  }
+
+  // Cálculo de reparto personalizado con comprobación al céntimo
+  const customSplitSummary = useMemo(() => {
+    if (!isShared || splitType !== 'custom' || numericAmount <= 0) return undefined
+
+    const customInputs: CustomParticipantInput[] = []
+    if (selfParticipates) {
+      const userVal = Number((customAmounts['user'] || '0').replace(',', '.')) || 0
+      customInputs.push({
+        name: 'Tú',
+        amount: userVal,
+        isPayerShare: paidBy === 'user',
+        isUserShare: paidBy === 'contact',
+      })
+    }
+
+    participants.forEach((p) => {
+      const pVal = Number((customAmounts[p.name] || '0').replace(',', '.')) || 0
+      customInputs.push({
+        name: p.name,
+        contactId: p.contactId,
+        amount: pVal,
+        isPayerShare: false,
+        isUserShare: false,
+      })
+    })
+
+    return calculateCustomSplit(
+      numericAmount,
+      customInputs,
+      paidBy,
+      payerName,
+      payerContactId
+    )
+  }, [isShared, splitType, numericAmount, selfParticipates, customAmounts, participants, paidBy, payerName, payerContactId])
 
   // Cálculo de reparto en tiempo real con exactitud de céntimos
   const computedShares = useMemo(() => {
@@ -132,29 +189,9 @@ export function EditCashTransactionModal({
         payerContactId
       )
     } else {
-      const results = []
-      if (selfParticipates) {
-        const externalTotal = participants.reduce((s, p) => s + (p.customAmount || 0), 0)
-        const payerAmount = Math.max(0, Math.round((numericAmount - externalTotal) * 100) / 100)
-        results.push({
-          participantName: 'Tú',
-          isPayerShare: paidBy === 'user',
-          isUserShare: paidBy === 'contact',
-          amount: payerAmount,
-        })
-      }
-      participants.forEach((p) => {
-        results.push({
-          participantName: p.name,
-          contactId: p.contactId,
-          isPayerShare: false,
-          isUserShare: false,
-          amount: p.customAmount || 0,
-        })
-      })
-      return results
+      return customSplitSummary?.shares ?? []
     }
-  }, [isShared, numericAmount, splitType, participants, selfParticipates, paidBy, payerName, payerContactId])
+  }, [isShared, numericAmount, splitType, participants, selfParticipates, paidBy, payerName, payerContactId, customSplitSummary])
 
   if (!open || !transaction) return null
 
@@ -224,6 +261,10 @@ export function EditCashTransactionModal({
         : numAmount
 
     if (type === 'expense' && isShared) {
+      if (splitType === 'custom' && (!customSplitSummary || !customSplitSummary.isValid)) {
+        setError(customSplitSummary?.errorMessage || 'El reparto personalizado no está cuadrado al céntimo.')
+        return
+      }
       if (participants.length === 0 && !paidBy) {
         setError('Añade al menos una persona para compartir el gasto.')
         return
@@ -456,6 +497,12 @@ export function EditCashTransactionModal({
                 computedShares={computedShares}
                 datalistId="edit-cash-shared-contacts-list"
                 placeholder="Escribe nombre (ej. Sergi)..."
+                splitMode={splitType}
+                onSplitModeChange={setSplitType}
+                customAmounts={customAmounts}
+                onCustomAmountChange={handleCustomAmountChange}
+                customSplitSummary={customSplitSummary}
+                totalExpenseAmount={numericAmount}
               />
             )}
 

@@ -66,6 +66,7 @@ export interface ExpenseShare {
   isPayerShare: boolean
   isUserShare?: boolean
   expectedAmount: number
+  forgivenAmount?: number
   createdAt?: string
   updatedAt?: string
 }

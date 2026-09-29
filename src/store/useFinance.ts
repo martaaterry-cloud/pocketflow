@@ -69,6 +69,7 @@ import {
   selectPendingReimbursements,
   selectTotalPendingPayables,
   selectPendingPayables,
+  selectExpenseShareStatus,
   selectExpensePayableStatus,
   selectExpenseShareDetails,
   selectPendingDebtors,
@@ -681,6 +682,59 @@ export function useFinance(storage: StorageAdapter = defaultAppStorage) {
       )
 
       return newTx
+    },
+    [state, commit, dispatchSync]
+  )
+
+  const adjustDebt = useCallback(
+    (shareId: string, forgivenAmountToAdd: number) => {
+      const share = (state.expenseShares ?? []).find((s) => s.id === shareId)
+      if (!share) {
+        throw new Error('Cuota no encontrada.')
+      }
+      const toAdd = Math.round(Number(forgivenAmountToAdd) * 100) / 100
+      if (isNaN(toAdd) || toAdd <= 0) {
+        throw new Error('El importe a perdonar/ajustar debe ser mayor que 0.')
+      }
+
+      const status = selectExpenseShareStatus(
+        share,
+        state.transactions ?? [],
+        state.cashTransactions ?? []
+      )
+      if (toAdd > status.pendingAmount) {
+        throw new Error(
+          `No puedes perdonar más de lo pendiente (${status.pendingAmount.toFixed(2)} €).`
+        )
+      }
+
+      const currentForgiven = Math.round(Number(share.forgivenAmount ?? 0) * 100) / 100
+      const nextForgiven = Math.round((currentForgiven + toAdd) * 100) / 100
+      const nowIso = new Date().toISOString()
+
+      const updatedShare: ExpenseShare = {
+        ...share,
+        forgivenAmount: nextForgiven,
+        updatedAt: nowIso,
+      }
+
+      const nextExpenseShares = (state.expenseShares ?? []).map((s) =>
+        s.id === shareId ? updatedShare : s
+      )
+
+      commit(
+        {
+          ...state,
+          expenseShares: nextExpenseShares,
+        },
+        shareId
+      )
+
+      dispatchSync('expense_share', 'update', shareId, updatedShare, (sb, uid) =>
+        syncUpsertExpenseShare(sb, uid, updatedShare)
+      )
+
+      return updatedShare
     },
     [state, commit, dispatchSync]
   )
@@ -2806,6 +2860,7 @@ export function useFinance(storage: StorageAdapter = defaultAppStorage) {
     addSharedExpense,
     recordReimbursement,
     recordPayablePayment,
+    adjustDebt,
     addSharedContact,
     deleteSharedContact,
     updateTransaction,

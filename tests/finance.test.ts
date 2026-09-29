@@ -162,6 +162,7 @@ import {
 } from '../src/utils/unifiedMovementSelectors'
 import {
   splitExpenseEqually,
+  calculateCustomSplit,
   selectGrossExpenses,
   selectGrossExpensesForPeriod,
   selectLinkedReimbursementsForExpense,
@@ -6894,12 +6895,12 @@ describe('Fase 18 — Mejoras de Finanzas (Detalle por Categoría, Retiradas de 
 describe('Fase 18 — Identificación Visual de Versión y Build', () => {
   it('314. Versioning: única fuente de verdad y formato de visualización exacto', () => {
     assert.equal(APP_NAME, 'PocketFlow')
-    assert.equal(APP_VERSION, '0.22.3')
-    assert.equal(APP_BUILD, '2026.09.29-06')
+    assert.equal(APP_VERSION, '0.23.0')
+    assert.equal(APP_BUILD, '2026.09.29-07')
 
-    assert.equal(getAppVersionString(), 'PocketFlow v0.22.3')
-    assert.equal(getAppBuildString(), 'Build 2026.09.29-06')
-    assert.equal(getAppFullVersionLabel(), 'PocketFlow v0.22.3 · Build 2026.09.29-06')
+    assert.equal(getAppVersionString(), 'PocketFlow v0.23.0')
+    assert.equal(getAppBuildString(), 'Build 2026.09.29-07')
+    assert.equal(getAppFullVersionLabel(), 'PocketFlow v0.23.0 · Build 2026.09.29-07')
   })
 })
 
@@ -13995,12 +13996,12 @@ describe('Fase 50 — Control de Acceso por Roles (User / Admin), Seguridad RLS 
     }
 
     const userFooter = renderFooterTexts(false)
-    assert.equal(userFooter.versionText, 'PocketFlow v0.22.3')
+    assert.equal(userFooter.versionText, 'PocketFlow v0.23.0')
     assert.equal(userFooter.buildText, null)
 
     const adminFooter = renderFooterTexts(true)
-    assert.equal(adminFooter.versionText, 'PocketFlow v0.22.3')
-    assert.equal(adminFooter.buildText, 'Build 2026.09.29-06')
+    assert.equal(adminFooter.versionText, 'PocketFlow v0.23.0')
+    assert.equal(adminFooter.buildText, 'Build 2026.09.29-07')
   })
 
   it('590. 10. Reconciliación y sincronización de perfil no altera datos financieros ni transacciones', () => {
@@ -14501,7 +14502,7 @@ describe('Fase 52 — Versionado Automático y Robusto del Service Worker PWA', 
   it('613. 1. CACHE_NAME del Service Worker incluye exactamente APP_VERSION y APP_BUILD actuales', () => {
     const expectedCacheName = `pocketflow-v${APP_VERSION}-${APP_BUILD}`
     assert.equal(getServiceWorkerCacheName(APP_VERSION, APP_BUILD), expectedCacheName)
-    assert.equal(expectedCacheName, 'pocketflow-v0.22.3-2026.09.29-06')
+    assert.equal(expectedCacheName, 'pocketflow-v0.23.0-2026.09.29-07')
 
     const swCode = generateServiceWorkerCode(APP_VERSION, APP_BUILD)
     assert.ok(swCode.includes(`const CACHE_NAME = '${expectedCacheName}'`))
@@ -15715,6 +15716,492 @@ describe('Fase 56 — Ciclo Completo y Fiable de Actualizaciones PWA en iOS y St
     assert.equal(shouldCheckUpdateOnVisibility('prerender'), false)
   })
 })
+
+describe('Fase 57 — Reparto Personalizado y Ajuste / Perdón de Deudas en Gastos Compartidos', () => {
+  // 1. Reparto igual antiguo sigue funcionando
+  it('645. 1. Reparto igual clásico sigue dividiendo equitativamente con redondeo al céntimo', () => {
+    const splits = splitExpenseEqually(
+      48.99,
+      [{ name: 'Sergi' }],
+      true,
+      'Tú',
+      'user'
+    )
+    assert.equal(splits.length, 2)
+    const payer = splits.find((s) => s.participantName === 'Tú')
+    const sergi = splits.find((s) => s.participantName === 'Sergi')
+    assert.ok(payer && sergi)
+    assert.equal(Math.round((payer.amount + sergi.amount) * 100) / 100, 48.99)
+    assert.equal(sergi.amount, 24.5)
+    assert.equal(payer.amount, 24.49)
+  })
+
+  // 2. Reparto manual 14 / 34,99 = 48,99
+  it('646. 2. Reparto personalizado 14,00 € (Tú) y 34,99 € (Sergi) = 48,99 € total cuadra al céntimo', () => {
+    const customCalc = calculateCustomSplit(
+      48.99,
+      [
+        { name: 'Tú', amount: 14.0, isPayerShare: true, isUserShare: false },
+        { name: 'Sergi', amount: 34.99, isPayerShare: false, isUserShare: false },
+      ],
+      'user'
+    )
+    assert.equal(customCalc.isValid, true)
+    assert.equal(customCalc.totalCents, 4899)
+    assert.equal(customCalc.assignedCents, 4899)
+    assert.equal(customCalc.remainingCents, 0)
+    assert.equal(customCalc.remainingAmount, 0)
+    assert.equal(customCalc.errorMessage, undefined)
+    assert.equal(customCalc.shares[0].amount, 14.0)
+    assert.equal(customCalc.shares[1].amount, 34.99)
+  })
+
+  // 3. Suma manual incorrecta bloquea guardado / marca inválido
+  it('647. 3. Suma manual que no cuadra al céntimo marca inválido con mensaje exacto', () => {
+    // Faltan 2 €
+    const missingCalc = calculateCustomSplit(
+      48.99,
+      [
+        { name: 'Tú', amount: 14.0, isPayerShare: true },
+        { name: 'Sergi', amount: 32.99, isPayerShare: false },
+      ],
+      'user'
+    )
+    assert.equal(missingCalc.isValid, false)
+    assert.equal(missingCalc.remainingAmount, 2.0)
+    assert.equal(missingCalc.errorMessage, 'Faltan 2,00 € por asignar.')
+
+    // Sobran 2 €
+    const extraCalc = calculateCustomSplit(
+      48.99,
+      [
+        { name: 'Tú', amount: 14.0, isPayerShare: true },
+        { name: 'Sergi', amount: 36.99, isPayerShare: false },
+      ],
+      'user'
+    )
+    assert.equal(extraCalc.isValid, false)
+    assert.equal(extraCalc.remainingAmount, -2.0)
+    assert.equal(extraCalc.errorMessage, 'Has asignado 2,00 € de más.')
+  })
+
+  // 4. Tres participantes con importes distintos
+  it('648. 4. Tres participantes con importes distintos (Tú 10, Ana 20, Sergi 18,99) = 48,99', () => {
+    const calc = calculateCustomSplit(
+      48.99,
+      [
+        { name: 'Tú', amount: 10.0, isPayerShare: true },
+        { name: 'Ana', amount: 20.0, isPayerShare: false },
+        { name: 'Sergi', amount: 18.99, isPayerShare: false },
+      ],
+      'user'
+    )
+    assert.equal(calc.isValid, true)
+    assert.equal(calc.shares.length, 3)
+    assert.equal(calc.shares.find((s) => s.participantName === 'Ana')?.amount, 20.0)
+    assert.equal(calc.shares.find((s) => s.participantName === 'Sergi')?.amount, 18.99)
+    assert.equal(calc.shares.find((s) => s.participantName === 'Tú')?.amount, 10.0)
+  })
+
+  // 5. Pagó usuario -> Por cobrar correcto
+  it('649. 5. Si pagó el usuario, las cuotas externas se registran en Por cobrar con su importe exacto', () => {
+    const tx: Transaction = {
+      id: 'tx_hsn',
+      type: 'expense',
+      amount: 48.99,
+      accountId: 'daily',
+      description: 'HSN Proteínas',
+      date: '2026-09-29T10:00:00.000Z',
+      isShared: true,
+    }
+    const shares: ExpenseShare[] = [
+      {
+        id: 's_user',
+        expenseTransactionId: 'tx_hsn',
+        participantName: 'Tú',
+        expectedAmount: 14.0,
+        isPayerShare: true,
+        createdAt: '2026-09-29T10:00:00.000Z',
+        updatedAt: '2026-09-29T10:00:00.000Z',
+      },
+      {
+        id: 's_sergi',
+        expenseTransactionId: 'tx_hsn',
+        participantName: 'Sergi',
+        expectedAmount: 34.99,
+        isPayerShare: false,
+        createdAt: '2026-09-29T10:00:00.000Z',
+        updatedAt: '2026-09-29T10:00:00.000Z',
+      },
+    ]
+
+    const debtors = selectPendingDebtors(shares, [tx], [])
+    assert.equal(debtors.length, 1)
+    assert.equal(debtors[0].name, 'Sergi')
+    assert.equal(debtors[0].totalPending, 34.99)
+  })
+
+  // 6. Pagó contacto -> Por pagar correcto
+  it('650. 6. Si pagó un contacto, la cuota del usuario se registra en Por pagar', () => {
+    const tx: Transaction = {
+      id: 'tx_cenacomida',
+      type: 'expense',
+      amount: 40.0,
+      accountId: 'daily',
+      description: 'Cena amigos',
+      date: '2026-09-29T10:00:00.000Z',
+      isShared: true,
+      paidBy: 'contact',
+      payerName: 'Carlos',
+    }
+    const shares: ExpenseShare[] = [
+      {
+        id: 's_carlos',
+        expenseTransactionId: 'tx_cenacomida',
+        participantName: 'Carlos',
+        expectedAmount: 20.0,
+        isPayerShare: true,
+        createdAt: '2026-09-29T10:00:00.000Z',
+        updatedAt: '2026-09-29T10:00:00.000Z',
+      },
+      {
+        id: 's_user_pay',
+        expenseTransactionId: 'tx_cenacomida',
+        participantName: 'Tú',
+        expectedAmount: 20.0,
+        isPayerShare: false,
+        isUserShare: true,
+        createdAt: '2026-09-29T10:00:00.000Z',
+        updatedAt: '2026-09-29T10:00:00.000Z',
+      },
+    ]
+
+    const payables = selectPendingPayables(shares, [tx], [])
+    assert.equal(payables.length, 1)
+    assert.equal(payables[0].creditorName, 'Carlos')
+    assert.equal(payables[0].totalPending, 20.0)
+  })
+
+  // CASO HSN (Tests 7 a 15)
+  describe('Caso HSN Completo (Deuda 34,99, pago efectivo 30,00, perdón 4,99)', () => {
+    const hsnTx: Transaction = {
+      id: 'tx_hsn_real',
+      type: 'expense',
+      amount: 48.99,
+      accountId: 'daily',
+      description: 'HSN Suplementos',
+      date: '2026-09-29T10:00:00.000Z',
+      isShared: true,
+    }
+
+    const initialSergiShare: ExpenseShare = {
+      id: 'share_sergi_hsn',
+      expenseTransactionId: 'tx_hsn_real',
+      participantName: 'Sergi',
+      expectedAmount: 34.99,
+      forgivenAmount: 0,
+      isPayerShare: false,
+      createdAt: '2026-09-29T10:00:00.000Z',
+      updatedAt: '2026-09-29T10:00:00.000Z',
+    }
+
+    const cashPaymentSergi: CashTransaction = {
+      id: 'cash_reimb_sergi',
+      type: 'income',
+      amount: 30.0,
+      description: 'Efectivo Sergi · HSN Suplementos',
+      date: '2026-09-29T12:00:00.000Z',
+      bankTransactionId: 'tx_hsn_real',
+      note: '[share:share_sergi_hsn]',
+      createdAt: '2026-09-29T12:00:00.000Z',
+      updatedAt: '2026-09-29T12:00:00.000Z',
+    }
+
+    it('651. 7. Expected original es 34,99 €', () => {
+      assert.equal(initialSergiShare.expectedAmount, 34.99)
+    })
+
+    it('652. 8 & 9. Tras cobro efectivo de 30 €, pendingAmount es 4,99 € y estado es partial', () => {
+      const status = selectExpenseShareStatus(initialSergiShare, [hsnTx], [cashPaymentSergi])
+      assert.equal(status.expectedAmount, 34.99)
+      assert.equal(status.receivedAmount, 30.0)
+      assert.equal(status.appliedAmount, 30.0)
+      assert.equal(status.forgivenAmount, 0)
+      assert.equal(status.pendingAmount, 4.99)
+      assert.equal(status.status, 'partial')
+    })
+
+    it('653. 10, 11 & 12. Al perdonar 4,99 €, pendingAmount es 0,00 € y estado pasa a received (Cobrado)', () => {
+      const forgivenShare: ExpenseShare = {
+        ...initialSergiShare,
+        forgivenAmount: 4.99,
+      }
+      const status = selectExpenseShareStatus(forgivenShare, [hsnTx], [cashPaymentSergi])
+      assert.equal(status.expectedAmount, 34.99)
+      assert.equal(status.receivedAmount, 30.0)
+      assert.equal(status.appliedAmount, 30.0)
+      assert.equal(status.forgivenAmount, 4.99)
+      assert.equal(status.pendingAmount, 0.0)
+      assert.equal(status.status, 'received')
+    })
+
+    it('654. 13 & 14. El saldo de efectivo solo aumenta los 30 € reales (sin ingreso ficticio de 4,99 €)', () => {
+      const balance = selectCashBalance([cashPaymentSergi])
+      assert.equal(balance, 30.0)
+    })
+
+    it('655. 15. Gasto neto personal final de HSN = 48,99 - 30,00 = 18,99 € (el usuario absorbe su parte 14 € + los 4,99 € perdonados)', () => {
+      const forgivenShare: ExpenseShare = {
+        ...initialSergiShare,
+        forgivenAmount: 4.99,
+      }
+      const userShare: ExpenseShare = {
+        id: 'share_user_hsn',
+        expenseTransactionId: 'tx_hsn_real',
+        participantName: 'Tú',
+        expectedAmount: 14.0,
+        isPayerShare: true,
+        createdAt: '2026-09-29T10:00:00.000Z',
+        updatedAt: '2026-09-29T10:00:00.000Z',
+      }
+      const allShares = [userShare, forgivenShare]
+
+      // selectLinkedReimbursementsForExpense solo debe sumar los 30 € aplicados realmente
+      const linked = selectLinkedReimbursementsForExpense(hsnTx.id, [hsnTx], [cashPaymentSergi], allShares)
+      assert.equal(linked, 30.0)
+
+      // Gasto neto = 48.99 - 30.00 = 18.99 €
+      const netExpenses = selectNetPersonalExpensesForPeriod(
+        [hsnTx],
+        new Date(2026, 8, 29),
+        'all',
+        [cashPaymentSergi],
+        allShares
+      )
+      assert.equal(netExpenses, 18.99)
+    })
+  })
+
+  // POR PAGAR (Tests 16 a 20)
+  describe('Por pagar con ajuste/perdón', () => {
+    const payableTx: Transaction = {
+      id: 'tx_hotel',
+      type: 'expense',
+      amount: 40.0,
+      accountId: 'daily',
+      description: 'Hotel noche',
+      date: '2026-09-29T10:00:00.000Z',
+      isShared: true,
+      paidBy: 'contact',
+      payerName: 'Laura',
+    }
+
+    const initialUserShare: ExpenseShare = {
+      id: 'share_hotel_user',
+      expenseTransactionId: 'tx_hotel',
+      participantName: 'Tú',
+      expectedAmount: 20.0,
+      forgivenAmount: 0,
+      isPayerShare: false,
+      isUserShare: true,
+      createdAt: '2026-09-29T10:00:00.000Z',
+      updatedAt: '2026-09-29T10:00:00.000Z',
+    }
+
+    const realPaymentTx: Transaction = {
+      id: 'tx_pay_laura',
+      type: 'expense',
+      amount: 15.0,
+      accountId: 'daily',
+      description: 'Bizum Laura · Hotel noche',
+      date: '2026-09-29T11:00:00.000Z',
+      expenseShareId: 'share_hotel_user',
+      parentExpenseId: 'tx_hotel',
+    }
+
+    it('656. 16, 17 & 18. Debo 20 €, pago real 15 €, ajuste/perdón 5 € -> pendiente 0 € y estado Pagado', () => {
+      const adjustedShare: ExpenseShare = {
+        ...initialUserShare,
+        forgivenAmount: 5.0,
+      }
+
+      const status = selectExpensePayableStatus(adjustedShare, [payableTx, realPaymentTx], [])
+      assert.equal(status.expectedAmount, 20.0)
+      assert.equal(status.paidAmount, 15.0)
+      assert.equal(status.appliedAmount, 15.0)
+      assert.equal(status.forgivenAmount, 5.0)
+      assert.equal(status.pendingAmount, 0.0)
+      assert.equal(status.status, 'settled')
+    })
+
+    it('657. 19 & 20. El saldo bancario solo se reduce 15 € (sin salida ficticia de 5 €)', () => {
+      const initialAccounts: Account[] = [
+        { id: 'daily', name: 'Cuenta Principal', type: 'spending', initialBalance: 100 },
+      ]
+      const reconciled = reconcileAccounts(initialAccounts, [realPaymentTx])
+      assert.equal(reconciled[0].balance, 85.0)
+    })
+  })
+
+  // Reglas de negocio e integridad (Tests 21 a 25)
+  it('658. 21 & 22. Validaciones de forgivenAmount: nunca negativo ni superior a pendiente restante', () => {
+    const share: ExpenseShare = {
+      id: 'sh_val',
+      expenseTransactionId: 'tx_val',
+      participantName: 'Marta',
+      expectedAmount: 20.0,
+      forgivenAmount: 0,
+      createdAt: '2026-09-29T10:00:00.000Z',
+      updatedAt: '2026-09-29T10:00:00.000Z',
+    }
+
+    const tx: Transaction = {
+      id: 'tx_val',
+      type: 'expense',
+      amount: 40.0,
+      accountId: 'daily',
+      description: 'Prueba',
+      date: '2026-09-29T10:00:00.000Z',
+    }
+
+    const payTx: Transaction = {
+      id: 'tx_pay_partial',
+      type: 'income',
+      incomeKind: 'reimbursement',
+      amount: 15.0,
+      accountId: 'daily',
+      description: 'Reembolso',
+      date: '2026-09-29T11:00:00.000Z',
+      expenseShareId: 'sh_val',
+    }
+
+    const status = selectExpenseShareStatus(share, [tx, payTx], [])
+    assert.equal(status.pendingAmount, 5.0)
+
+    // No se puede perdonar más de 5.0
+    const invalidForgive = 6.0
+    assert.ok(invalidForgive > status.pendingAmount)
+  })
+
+  it('659. 23. Gastos antiguos con forgivenAmount undefined se interpretan con default 0', () => {
+    const legacyShare: ExpenseShare = {
+      id: 'sh_legacy',
+      expenseTransactionId: 'tx_legacy',
+      participantName: 'Lucas',
+      expectedAmount: 25.0,
+      createdAt: '2026-09-29T10:00:00.000Z',
+      updatedAt: '2026-09-29T10:00:00.000Z',
+    }
+
+    const status = selectExpenseShareStatus(legacyShare, [], [])
+    assert.equal(status.forgivenAmount, 0)
+    assert.equal(status.pendingAmount, 25.0)
+    assert.equal(status.status, 'pending')
+  })
+
+  it('660. 24. Exportación Excel refleja esperado, cobrado/pagado, perdonado y pendiente', async () => {
+    const share: ExpenseShare = {
+      id: 'sh_excel',
+      expenseTransactionId: 'tx_excel',
+      participantName: 'Sergi',
+      expectedAmount: 34.99,
+      forgivenAmount: 4.99,
+      createdAt: '2026-09-29T10:00:00.000Z',
+      updatedAt: '2026-09-29T10:00:00.000Z',
+    }
+
+    const tx: Transaction = {
+      id: 'tx_excel',
+      type: 'expense',
+      amount: 48.99,
+      accountId: 'daily',
+      description: 'HSN Proteínas',
+      date: '2026-09-29T10:00:00.000Z',
+      isShared: true,
+    }
+
+    const cashTx: CashTransaction = {
+      id: 'cash_excel',
+      type: 'income',
+      amount: 30.0,
+      description: 'Efectivo Sergi · HSN Proteínas',
+      date: '2026-09-29T11:00:00.000Z',
+      bankTransactionId: 'tx_excel',
+      note: '[share:sh_excel]',
+      createdAt: '2026-09-29T11:00:00.000Z',
+      updatedAt: '2026-09-29T11:00:00.000Z',
+    }
+
+    const wb = generateExcelWorkbook({
+      accounts: [{ id: 'daily', name: 'Principal', type: 'spending', initialBalance: 100 }],
+      transactions: [tx],
+      goals: [],
+      recurring: [],
+      categories: [],
+      budgets: [],
+      reserves: [],
+      specialPeriods: [],
+      planSettings: { monthlySpendingExpectation: 0, emergencyFundTargetMonths: 0, emergencyFundCurrent: 0 },
+      profile: initialProfile,
+      variableExpenseEstimates: [],
+      sharedContacts: [{ id: 'c_sergi', displayName: 'Sergi', createdAt: '', updatedAt: '' }],
+      expenseShares: [share],
+      cashTransactions: [cashTx],
+    })
+
+    assert.ok(wb.SheetNames.includes('GASTOS_COMPARTIDOS'))
+    const sheet = wb.Sheets['GASTOS_COMPARTIDOS']
+    assert.ok(sheet)
+  })
+
+  it('661. 25. Backup y Restore persisten íntegramente forgivenAmount', () => {
+    const originalShare: ExpenseShare = {
+      id: 'sh_backup',
+      expenseTransactionId: 'tx_backup',
+      participantName: 'Sergi',
+      expectedAmount: 34.99,
+      forgivenAmount: 4.99,
+      createdAt: '2026-09-29T10:00:00.000Z',
+      updatedAt: '2026-09-29T10:00:00.000Z',
+    }
+
+    const tx: Transaction = {
+      id: 'tx_backup',
+      type: 'expense',
+      amount: 48.99,
+      accountId: 'daily',
+      description: 'HSN Proteínas',
+      date: '2026-09-29T10:00:00.000Z',
+      isShared: true,
+    }
+
+    const state: PersistedState = {
+      accounts: [{ id: 'daily', name: 'Principal', type: 'spending', initialBalance: 100 }],
+      transactions: [tx],
+      goals: [],
+      recurring: [],
+      categories: [],
+      budgets: [],
+      reserves: [],
+      specialPeriods: [],
+      planSettings: { monthlySpendingExpectation: 0, emergencyFundTargetMonths: 0, emergencyFundCurrent: 0 },
+      profile: initialProfile,
+      variableExpenseEstimates: [],
+      sharedContacts: [],
+      expenseShares: [originalShare],
+      cashTransactions: [],
+    }
+
+    const payload = createBackupPayload(state)
+    const restored = validateBackupPayload(payload)
+    assert.equal(restored.valid, true)
+    const restoredShares = restored.state?.expenseShares
+    assert.ok(restoredShares && restoredShares.length > 0)
+    assert.equal(restoredShares[0].forgivenAmount, 4.99)
+    assert.equal(restoredShares[0].expectedAmount, 34.99)
+  })
+})
+
 
 
 

@@ -14,7 +14,12 @@ import type {
   UpdateCashTransactionInput,
 } from '../models/finance'
 import { money } from '../utils/money'
-import { splitExpenseEqually } from '../utils/sharedExpenseSelectors'
+import {
+  splitExpenseEqually,
+  calculateCustomSplit,
+  type SplitMode,
+  type CustomParticipantInput,
+} from '../utils/sharedExpenseSelectors'
 import { AppIcon } from '../ui/icons'
 import { SharedExpenseSection } from './SharedExpenseSection'
 
@@ -130,8 +135,9 @@ export function AddTransactionModal({
   const [payerName, setPayerName] = useState('')
   const [payerContactId, setPayerContactId] = useState<string | undefined>(undefined)
   const [selfParticipates, setSelfParticipates] = useState(true)
-  const [splitType, setSplitType] = useState<'equal' | 'custom'>('equal')
+  const [splitType, setSplitType] = useState<SplitMode>('equal')
   const [participants, setParticipants] = useState<ParticipantEntry[]>([])
+  const [customAmounts, setCustomAmounts] = useState<Record<string, string>>({})
   const [newParticipantInput, setNewParticipantInput] = useState('')
 
   useEffect(() => {
@@ -163,6 +169,13 @@ export function AddTransactionModal({
       setPayerContactId(initialTransaction.payerContactId)
 
       if (initialIsShared && sharesForTx.length > 0) {
+        const amountsMap: Record<string, string> = {}
+        sharesForTx.forEach((s) => {
+          const key = s.isUserShare || s.participantName.toLowerCase() === 'tú' ? 'user' : s.participantName
+          amountsMap[key] = String(s.expectedAmount).replace('.', ',')
+        })
+        setCustomAmounts(amountsMap)
+
         if (initialPaidBy === 'contact') {
           const userShare = sharesForTx.find((s) => s.isUserShare || s.participantName.toLowerCase() === 'tú')
           setSelfParticipates(Boolean(userShare))
@@ -188,11 +201,14 @@ export function AddTransactionModal({
             }))
           setParticipants(extParticipants)
         }
-        setSplitType('equal')
+
+        const isUnequal = sharesForTx.some((s, _, arr) => Math.abs(s.expectedAmount - arr[0].expectedAmount) > 0.01)
+        setSplitType(isUnequal ? 'custom' : 'equal')
       } else {
         setSelfParticipates(true)
         setSplitType('equal')
         setParticipants([])
+        setCustomAmounts({})
       }
 
       setExpenseNature(initialTransaction.expenseNature || 'variable')
@@ -221,6 +237,7 @@ export function AddTransactionModal({
       setSelfParticipates(true)
       setSplitType('equal')
       setParticipants([])
+      setCustomAmounts({})
       setNewParticipantInput('')
       setConfirmDelete(false)
       setPendingLinkedUpdatePayload(null)
@@ -228,6 +245,45 @@ export function AddTransactionModal({
   }, [initialTransaction, accounts, categories, open, defaultType])
 
   const numericAmount = Number(amount.replace(',', '.')) || 0
+
+  const handleCustomAmountChange = (key: string, val: string) => {
+    setCustomAmounts((prev) => ({ ...prev, [key]: val }))
+  }
+
+  // Cálculo de reparto personalizado con comprobación al céntimo
+  const customSplitSummary = useMemo(() => {
+    if (!isShared || splitType !== 'custom' || numericAmount <= 0) return undefined
+
+    const customInputs: CustomParticipantInput[] = []
+    if (selfParticipates) {
+      const userVal = Number((customAmounts['user'] || '0').replace(',', '.')) || 0
+      customInputs.push({
+        name: 'Tú',
+        amount: userVal,
+        isPayerShare: paidBy === 'user',
+        isUserShare: paidBy === 'contact',
+      })
+    }
+
+    participants.forEach((p) => {
+      const pVal = Number((customAmounts[p.name] || '0').replace(',', '.')) || 0
+      customInputs.push({
+        name: p.name,
+        contactId: p.contactId,
+        amount: pVal,
+        isPayerShare: false,
+        isUserShare: false,
+      })
+    })
+
+    return calculateCustomSplit(
+      numericAmount,
+      customInputs,
+      paidBy,
+      payerName,
+      payerContactId
+    )
+  }, [isShared, splitType, numericAmount, selfParticipates, customAmounts, participants, paidBy, payerName, payerContactId])
 
   // Cálculo de reparto en tiempo real con exactitud de céntimos
   const computedShares = useMemo(() => {
@@ -248,30 +304,9 @@ export function AddTransactionModal({
         payerContactId
       )
     } else {
-      // Reparto personalizado
-      const results = []
-      if (selfParticipates) {
-        const externalTotal = participants.reduce((s, p) => s + (p.customAmount || 0), 0)
-        const payerAmount = Math.max(0, Math.round((numericAmount - externalTotal) * 100) / 100)
-        results.push({
-          participantName: 'Tú',
-          isPayerShare: paidBy === 'user',
-          isUserShare: paidBy === 'contact',
-          amount: payerAmount,
-        })
-      }
-      participants.forEach((p) => {
-        results.push({
-          participantName: p.name,
-          contactId: p.contactId,
-          isPayerShare: false,
-          isUserShare: false,
-          amount: p.customAmount || 0,
-        })
-      })
-      return results
+      return customSplitSummary?.shares ?? []
     }
-  }, [isShared, numericAmount, splitType, participants, selfParticipates, paidBy, payerName, payerContactId])
+  }, [isShared, numericAmount, splitType, participants, selfParticipates, paidBy, payerName, payerContactId, customSplitSummary])
 
   if (!open) return null
 
@@ -349,6 +384,13 @@ export function AddTransactionModal({
     if (!description.trim()) return
     if (!accountId) return
     if (type === 'transfer' && (!toAccountId || toAccountId === accountId)) return
+
+    if (type === 'expense' && isShared) {
+      if (splitType === 'custom' && (!customSplitSummary || !customSplitSummary.isValid)) {
+        return
+      }
+      if (participants.length === 0) return
+    }
 
     const isGiftsCategory =
       type === 'expense' &&
@@ -769,7 +811,13 @@ export function AddTransactionModal({
             sharedContacts={sharedContacts}
             computedShares={computedShares}
             datalistId="shared-contacts-list"
-            placeholder="Escribe nombre (ej. Manuela)..."
+            placeholder="Escribe nombre (ej. Sergi)..."
+            splitMode={splitType}
+            onSplitModeChange={setSplitType}
+            customAmounts={customAmounts}
+            onCustomAmountChange={handleCustomAmountChange}
+            customSplitSummary={customSplitSummary}
+            totalExpenseAmount={numericAmount}
           />
         )}
 

@@ -74,7 +74,10 @@ export function migratePersistedState(parsed: Partial<PersistedState>): Persiste
       : { displayName: '', role: 'user' },
     variableExpenseEstimates: parsed.variableExpenseEstimates ?? [],
     sharedContacts: parsed.sharedContacts ?? [],
-    expenseShares: parsed.expenseShares ?? [],
+    expenseShares: (parsed.expenseShares ?? []).map((s) => ({
+      ...s,
+      forgivenAmount: Number(s.forgivenAmount ?? 0),
+    })),
     cashTransactions: parsed.cashTransactions ?? [],
   }
 }

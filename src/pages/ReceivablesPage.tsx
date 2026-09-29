@@ -1,5 +1,6 @@
 import { useState, useMemo } from 'react'
 import type { ReturnTypeFinance } from '../types'
+import type { ExpenseShare } from '../models/finance'
 import { money, shortDate } from '../utils/money'
 import {
   selectPendingDebtors,
@@ -8,6 +9,7 @@ import {
   selectSettledPayables,
 } from '../utils/sharedExpenseSelectors'
 import { AppIcon } from '../ui/icons'
+import { AdjustDebtModal } from '../components/AdjustDebtModal'
 
 interface ReceivablesPageProps {
   finance: ReturnTypeFinance
@@ -28,6 +30,10 @@ export function ReceivablesPage({
   const [mode, setMode] = useState<'receivables' | 'payables'>(initialMode)
   const [tab, setTab] = useState<'pending' | 'settled'>('pending')
   const [expandedDebtor, setExpandedDebtor] = useState<string | null>(null)
+  const [adjustingDebtTarget, setAdjustingDebtTarget] = useState<{
+    share: ExpenseShare
+    isPayable: boolean
+  } | null>(null)
 
   // Por cobrar (Receivables)
   const pendingDebtors = useMemo(() => {
@@ -134,7 +140,7 @@ export function ReceivablesPage({
               </strong>
               <p className="hero-sub" style={{ margin: '6px 0 0', fontSize: 12, color: 'var(--text-muted)' }}>
                 {pendingDebtors.length === 0
-                  ? '¡Estás al día! No tienes dinero pendiente de recuperar.'
+                  ? 'Estás al día. No tienes dinero pendiente de recuperar.'
                   : `Repartido entre ${pendingDebtors.length} ${pendingDebtors.length === 1 ? 'persona' : 'personas'}`}
               </p>
             </div>
@@ -188,9 +194,10 @@ export function ReceivablesPage({
                                 <strong>{ps.expenseDescription}</strong>
                                 <span>
                                   Cuota: {money(ps.share.expectedAmount)} · {shortDate(ps.expenseDate)}
+                                  {ps.forgivenAmount > 0 && ` · Ajustado: ${money(ps.forgivenAmount)}`}
                                 </span>
                               </div>
-                              <div className="debtor-share-action">
+                              <div className="debtor-share-action" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                                 <span className="debtor-share-amount">{money(ps.pendingAmount)}</span>
                                 <button
                                   type="button"
@@ -198,6 +205,14 @@ export function ReceivablesPage({
                                   onClick={() => onRecordReimbursement(ps.share.id)}
                                 >
                                   Marcar recibido
+                                </button>
+                                <button
+                                  type="button"
+                                  className="secondary-button"
+                                  style={{ padding: '4px 8px', fontSize: '0.78rem' }}
+                                  onClick={() => setAdjustingDebtTarget({ share: ps.share, isPayable: false })}
+                                >
+                                  Ajustar
                                 </button>
                               </div>
                             </div>
@@ -225,7 +240,10 @@ export function ReceivablesPage({
                     </div>
                     <div className="settled-info">
                       <strong>{item.participantName}</strong>
-                      <span>{item.expenseDescription} · {shortDate(item.settledDate)}</span>
+                      <span>
+                        {item.expenseDescription} · {shortDate(item.settledDate)}
+                        {item.forgivenAmount > 0 && ` (Cobrado: ${money(item.amount)} · Perdonado: ${money(item.forgivenAmount)})`}
+                      </span>
                     </div>
                     <strong className="positive">+{money(item.amount)}</strong>
                   </div>
@@ -245,7 +263,7 @@ export function ReceivablesPage({
               </strong>
               <p className="hero-sub" style={{ margin: '6px 0 0', fontSize: 12, color: 'var(--text-muted)' }}>
                 {pendingPayables.length === 0
-                  ? '¡No debes nada a nadie! Todas tus cuentas compartidas están saldadas.'
+                  ? 'No debes nada a nadie. Todas tus cuentas compartidas están saldadas.'
                   : `${pendingPayables.length} ${pendingPayables.length === 1 ? 'deuda pendiente' : 'deudas pendientes'}`}
               </p>
             </div>
@@ -298,9 +316,10 @@ export function ReceivablesPage({
                                 <strong>{ps.expenseDescription}</strong>
                                 <span>
                                   Cuota: {money(ps.share.expectedAmount)} · {shortDate(ps.expenseDate)}
+                                  {ps.forgivenAmount > 0 && ` · Ajustado: ${money(ps.forgivenAmount)}`}
                                 </span>
                               </div>
-                              <div className="debtor-share-action">
+                              <div className="debtor-share-action" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                                 <span className="debtor-share-amount" style={{ color: '#ef4444' }}>
                                   {money(ps.pendingAmount)}
                                 </span>
@@ -314,6 +333,14 @@ export function ReceivablesPage({
                                     Pagar
                                   </button>
                                 )}
+                                <button
+                                  type="button"
+                                  className="secondary-button"
+                                  style={{ padding: '4px 8px', fontSize: '0.78rem' }}
+                                  onClick={() => setAdjustingDebtTarget({ share: ps.share, isPayable: true })}
+                                >
+                                  Ajustar
+                                </button>
                               </div>
                             </div>
                           ))}
@@ -340,7 +367,10 @@ export function ReceivablesPage({
                     </div>
                     <div className="settled-info">
                       <strong>Pagado a {item.creditorName}</strong>
-                      <span>{item.expenseDescription} · {shortDate(item.settledDate)}</span>
+                      <span>
+                        {item.expenseDescription} · {shortDate(item.settledDate)}
+                        {item.forgivenAmount > 0 && ` (Pagado: ${money(item.amount)} · Ajustado: ${money(item.forgivenAmount)})`}
+                      </span>
                     </div>
                     <strong style={{ color: 'var(--text-main)' }}>-{money(item.amount)}</strong>
                   </div>
@@ -350,7 +380,21 @@ export function ReceivablesPage({
           </section>
         )
       )}
+
+      {adjustingDebtTarget && (
+        <AdjustDebtModal
+          open={Boolean(adjustingDebtTarget)}
+          share={adjustingDebtTarget.share}
+          transactions={finance.transactions}
+          cashTransactions={finance.cashTransactions}
+          onClose={() => setAdjustingDebtTarget(null)}
+          onAdjustDebt={(shareId, amount) => {
+            finance.adjustDebt(shareId, amount)
+            setAdjustingDebtTarget(null)
+          }}
+          isPayable={adjustingDebtTarget.isPayable}
+        />
+      )}
     </main>
   )
 }
-

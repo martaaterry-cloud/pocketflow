@@ -411,6 +411,7 @@ export function toDbExpenseShare(row: ExpenseShare, userId: string) {
     is_payer_share: Boolean(row.isPayerShare),
     is_user_share: Boolean(row.isUserShare),
     expected_amount: row.expectedAmount,
+    forgiven_amount: row.forgivenAmount ?? 0,
   }
 }
 
@@ -423,6 +424,7 @@ export function fromDbExpenseShare(row: Record<string, unknown>): ExpenseShare {
     isPayerShare: Boolean(row.is_payer_share),
     isUserShare: Boolean(row.is_user_share),
     expectedAmount: Number(row.expected_amount),
+    forgivenAmount: Number(row.forgiven_amount ?? 0),
     createdAt: row.created_at ? String(row.created_at) : undefined,
     updatedAt: row.updated_at ? String(row.updated_at) : undefined,
   }
