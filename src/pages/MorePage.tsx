@@ -69,7 +69,9 @@ export function MorePage({
     try {
       if (onCheckForUpdate) {
         const result = await onCheckForUpdate()
-        if (result === 'up-to-date') {
+        if (result === 'available') {
+          onToast?.('Nueva versión encontrada. Actualizando…', 'success')
+        } else if (result === 'up-to-date') {
           onToast?.('Pocket Flow ya está actualizado.', 'success')
         } else if (result === 'error') {
           onToast?.('No se pudo comprobar la actualización.', 'error')

@@ -1,9 +1,7 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
 import {
   createReloadHandler,
-  isPwaUpdateAvailable,
   checkServiceWorkerUpdate,
-  activatePwaUpdate,
   devLog,
   type PwaUpdateCheckResult,
 } from '../utils/pwaUpdate'
@@ -19,45 +17,7 @@ export function usePwaUpdate(): PwaUpdateState {
   const [updateAvailable, setUpdateAvailable] = useState(false)
   const [isUpdating, setIsUpdating] = useState(false)
   const registrationRef = useRef<ServiceWorkerRegistration | null>(null)
-  const waitingWorkerRef = useRef<ServiceWorker | null>(null)
   const activeCheckPromiseRef = useRef<Promise<PwaUpdateCheckResult> | null>(null)
-
-  const updateApp = useCallback(async (): Promise<boolean> => {
-    setIsUpdating(true)
-    devLog('[PWA] updateApp triggered')
-
-    try {
-      const result = await activatePwaUpdate({
-        registration: registrationRef.current,
-        waitingWorker: waitingWorkerRef.current,
-        getFreshRegistration: async () => {
-          if (
-            typeof navigator !== 'undefined' &&
-            'serviceWorker' in navigator &&
-            typeof navigator.serviceWorker.getRegistration === 'function'
-          ) {
-            const fresh = await navigator.serviceWorker.getRegistration()
-            if (fresh) {
-              registrationRef.current = fresh
-            }
-            return fresh
-          }
-          return registrationRef.current
-        },
-      })
-
-      if (!result.success) {
-        devLog('[PWA] updateApp failed:', result.error)
-        setIsUpdating(false)
-        return false
-      }
-      return true
-    } catch (err) {
-      devLog('[PWA] unexpected error in updateApp:', err)
-      setIsUpdating(false)
-      return false
-    }
-  }, [])
 
   const checkForUpdate = useCallback(async (): Promise<PwaUpdateCheckResult> => {
     // Evitar comprobaciones concurrentes reutilizando la Promise activa
@@ -68,7 +28,11 @@ export function usePwaUpdate(): PwaUpdateState {
 
     const checkPromise = (async (): Promise<PwaUpdateCheckResult> => {
       let currentReg = registrationRef.current
-      if (typeof navigator !== 'undefined' && 'serviceWorker' in navigator && typeof navigator.serviceWorker.getRegistration === 'function') {
+      if (
+        typeof navigator !== 'undefined' &&
+        'serviceWorker' in navigator &&
+        typeof navigator.serviceWorker.getRegistration === 'function'
+      ) {
         try {
           const freshReg = await navigator.serviceWorker.getRegistration()
           if (freshReg) {
@@ -80,24 +44,11 @@ export function usePwaUpdate(): PwaUpdateState {
         }
       }
 
-      const hasController = typeof navigator !== 'undefined' && Boolean(navigator?.serviceWorker?.controller)
-      const result = await checkServiceWorkerUpdate(currentReg, hasController)
+      const result = await checkServiceWorkerUpdate(currentReg)
 
       if (result === 'available') {
-        // Re-verificar worker en espera
-        if (currentReg?.waiting) {
-          waitingWorkerRef.current = currentReg.waiting
-        } else if (typeof navigator !== 'undefined' && 'serviceWorker' in navigator && typeof navigator.serviceWorker.getRegistration === 'function') {
-          try {
-            const fresh = await navigator.serviceWorker.getRegistration()
-            if (fresh?.waiting) {
-              waitingWorkerRef.current = fresh.waiting
-            }
-          } catch {
-            // Ignorar
-          }
-        }
         setUpdateAvailable(true)
+        setIsUpdating(true)
       }
 
       return result
@@ -110,6 +61,13 @@ export function usePwaUpdate(): PwaUpdateState {
       activeCheckPromiseRef.current = null
     }
   }, [])
+
+  const updateApp = useCallback(async (): Promise<boolean> => {
+    setIsUpdating(true)
+    devLog('[PWA] updateApp triggered - requesting registration.update()')
+    const result = await checkForUpdate()
+    return result === 'available' || result === 'up-to-date'
+  }, [checkForUpdate])
 
   useEffect(() => {
     // No registrar ni ejecutar Service Worker dentro de Capacitor nativo
@@ -125,6 +83,7 @@ export function usePwaUpdate(): PwaUpdateState {
 
     const onControllerChange = () => {
       devLog('[PWA] controllerchange event fired')
+      setIsUpdating(true)
       reloadOnce()
     }
 
@@ -139,26 +98,18 @@ export function usePwaUpdate(): PwaUpdateState {
         })
         registrationRef.current = reg
 
-        // Si ya hay un worker en espera instalado
-        if (reg.waiting && isPwaUpdateAvailable(Boolean(navigator.serviceWorker.controller), reg.waiting.state)) {
-          devLog('[PWA] active waiting worker detected on registration')
-          waitingWorkerRef.current = reg.waiting
+        // Si ya hay un worker instalándose o esperando (que se auto-activará por skipWaiting)
+        if (reg.waiting || reg.installing) {
+          devLog('[PWA] active worker detected on registration')
           setUpdateAvailable(true)
+          setIsUpdating(true)
         }
 
         // Escuchar cuando se descubre un nuevo worker
         reg.addEventListener('updatefound', () => {
-          devLog('[PWA] updatefound on initial registration')
-          const newWorker = reg.installing
-          if (!newWorker) return
-
-          newWorker.addEventListener('statechange', () => {
-            devLog('[PWA] statechange on registration worker:', newWorker.state)
-            if (isPwaUpdateAvailable(Boolean(navigator.serviceWorker.controller), newWorker.state)) {
-              waitingWorkerRef.current = newWorker
-              setUpdateAvailable(true)
-            }
-          })
+          devLog('[PWA] updatefound on registration')
+          setUpdateAvailable(true)
+          setIsUpdating(true)
         })
 
         // Comprobación inicial de actualización
@@ -183,13 +134,20 @@ export function usePwaUpdate(): PwaUpdateState {
         devLog('[PWA] foreground event triggered update check')
         if (registrationRef.current) {
           registrationRef.current.update().catch(() => {})
-        } else if (typeof navigator !== 'undefined' && 'serviceWorker' in navigator && typeof navigator.serviceWorker.getRegistration === 'function') {
-          navigator.serviceWorker.getRegistration().then((reg) => {
-            if (reg) {
-              registrationRef.current = reg
-              reg.update().catch(() => {})
-            }
-          }).catch(() => {})
+        } else if (
+          typeof navigator !== 'undefined' &&
+          'serviceWorker' in navigator &&
+          typeof navigator.serviceWorker.getRegistration === 'function'
+        ) {
+          navigator.serviceWorker
+            .getRegistration()
+            .then((reg) => {
+              if (reg) {
+                registrationRef.current = reg
+                reg.update().catch(() => {})
+              }
+            })
+            .catch(() => {})
         }
       }
     }

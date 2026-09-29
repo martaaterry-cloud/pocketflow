@@ -150,9 +150,6 @@ import {
   createReloadHandler,
   shouldCheckUpdateOnVisibility,
   checkServiceWorkerUpdate,
-  isWorkerWaiting,
-  findWaitingWorker,
-  activatePwaUpdate,
   type PwaUpdateCheckResult,
 } from '../src/utils/pwaUpdate'
 import {
@@ -6904,12 +6901,12 @@ describe('Fase 18 — Mejoras de Finanzas (Detalle por Categoría, Retiradas de 
 describe('Fase 18 — Identificación Visual de Versión y Build', () => {
   it('314. Versioning: única fuente de verdad y formato de visualización exacto', () => {
     assert.equal(APP_NAME, 'PocketFlow')
-    assert.equal(APP_VERSION, '0.23.2')
-    assert.equal(APP_BUILD, '2026.09.29-09')
+    assert.equal(APP_VERSION, '0.23.3')
+    assert.equal(APP_BUILD, '2026.09.29-10')
 
-    assert.equal(getAppVersionString(), 'PocketFlow v0.23.2')
-    assert.equal(getAppBuildString(), 'Build 2026.09.29-09')
-    assert.equal(getAppFullVersionLabel(), 'PocketFlow v0.23.2 · Build 2026.09.29-09')
+    assert.equal(getAppVersionString(), 'PocketFlow v0.23.3')
+    assert.equal(getAppBuildString(), 'Build 2026.09.29-10')
+    assert.equal(getAppFullVersionLabel(), 'PocketFlow v0.23.3 · Build 2026.09.29-10')
   })
 })
 
@@ -14005,12 +14002,12 @@ describe('Fase 50 — Control de Acceso por Roles (User / Admin), Seguridad RLS 
     }
 
     const userFooter = renderFooterTexts(false)
-    assert.equal(userFooter.versionText, 'PocketFlow v0.23.2')
+    assert.equal(userFooter.versionText, 'PocketFlow v0.23.3')
     assert.equal(userFooter.buildText, null)
 
     const adminFooter = renderFooterTexts(true)
-    assert.equal(adminFooter.versionText, 'PocketFlow v0.23.2')
-    assert.equal(adminFooter.buildText, 'Build 2026.09.29-09')
+    assert.equal(adminFooter.versionText, 'PocketFlow v0.23.3')
+    assert.equal(adminFooter.buildText, 'Build 2026.09.29-10')
   })
 
   it('590. 10. Reconciliación y sincronización de perfil no altera datos financieros ni transacciones', () => {
@@ -14511,7 +14508,7 @@ describe('Fase 52 — Versionado Automático y Robusto del Service Worker PWA', 
   it('613. 1. CACHE_NAME del Service Worker incluye exactamente APP_VERSION y APP_BUILD actuales', () => {
     const expectedCacheName = `pocketflow-v${APP_VERSION}-${APP_BUILD}`
     assert.equal(getServiceWorkerCacheName(APP_VERSION, APP_BUILD), expectedCacheName)
-    assert.equal(expectedCacheName, 'pocketflow-v0.23.2-2026.09.29-09')
+    assert.equal(expectedCacheName, 'pocketflow-v0.23.3-2026.09.29-10')
 
     const swCode = generateServiceWorkerCode(APP_VERSION, APP_BUILD)
     assert.ok(swCode.includes(`const CACHE_NAME = '${expectedCacheName}'`))
@@ -14545,19 +14542,19 @@ describe('Fase 52 — Versionado Automático y Robusto del Service Worker PWA', 
     assert.ok(publicSwContent.includes(APP_BUILD))
   })
 
-  it('616. 4. Ciclo de vida del Service Worker: eliminación de cachés obsoletas y no skipWaiting automático', () => {
+  it('616. 4. Ciclo de vida del Service Worker: eliminación de cachés obsoletas y skipWaiting automático en install', () => {
     const swCode = generateServiceWorkerCode(APP_VERSION, APP_BUILD)
 
-    // 1. No debe invocar skipWaiting() en el nivel superior (global) ni en el evento install
+    // 1. No debe invocar skipWaiting() en el nivel superior (global)
     const topLevelSkipWaiting = /^self\.skipWaiting\(\)/m.test(swCode)
     assert.equal(topLevelSkipWaiting, false, 'No debe invocar skipWaiting en el top level')
 
     const insideInstall = /addEventListener\('install'[^)]*\)[\s\S]*?self\.skipWaiting\(\)/.test(swCode)
-    assert.equal(insideInstall, false, 'No debe invocar skipWaiting automáticamente en install')
+    assert.equal(insideInstall, true, 'Debe invocar skipWaiting automáticamente en install')
 
-    // 2. Debe invocar skipWaiting únicamente bajo mensaje 'SKIP_WAITING'
+    // 2. Mantiene soporte de skipWaiting bajo mensaje 'SKIP_WAITING'
     const insideMessage = /addEventListener\('message'[\s\S]*?SKIP_WAITING[\s\S]*?self\.skipWaiting\(\)/.test(swCode)
-    assert.equal(insideMessage, true, 'Debe invocar skipWaiting condicionado al mensaje SKIP_WAITING')
+    assert.equal(insideMessage, true, 'Debe mantener compatibilidad con mensaje SKIP_WAITING')
 
     // 3. Debe limpiar caches antiguas en activate
     assert.ok(swCode.includes("name !== CACHE_NAME"))
@@ -16211,282 +16208,107 @@ describe('Fase 57 — Reparto Personalizado y Ajuste / Perdón de Deudas en Gast
   })
 })
 
-describe('Fase 58 — Activación Robusta PWA en iOS/Safari (Prevención de Stalling y Referencias Stale)', () => {
-  it('650. 1. waitingWorkerRef stale pero freshReg.waiting válido: usa freshReg.waiting', async () => {
-    let messageSentTo: string | null = null
-    const staleWorker = {
+describe('Fase 58 — Estrategia Simple y Automática de Actualización PWA (Estilo Orbit)', () => {
+  it('650. 1. install llama skipWaiting() automáticamente sin requerir intervención', () => {
+    const swCode = generateServiceWorkerCode('0.23.3', '2026.09.29-10')
+    assert.ok(swCode.includes("self.addEventListener('install', (event) => {"))
+    assert.ok(swCode.includes('self.skipWaiting()'))
+  })
+
+  it('651. 2. activate llama self.clients.claim() para tomar control inmediato', () => {
+    const swCode = generateServiceWorkerCode('0.23.3', '2026.09.29-10')
+    assert.ok(swCode.includes("self.addEventListener('activate', (event) => {"))
+    assert.ok(swCode.includes('self.clients.claim()'))
+  })
+
+  it('652. 3. Nueva instalación no queda esperando interacción del usuario', () => {
+    const swCode = generateServiceWorkerCode('0.23.3', '2026.09.29-10')
+    // El install listener invoca skipWaiting() de forma síncrona/directa
+    const installIndex = swCode.indexOf("self.addEventListener('install'")
+    const skipWaitingIndex = swCode.indexOf('self.skipWaiting()', installIndex)
+    assert.ok(skipWaitingIndex > installIndex)
+  })
+
+  it('653. 4. controllerchange recarga exactamente una sola vez (idempotente)', () => {
+    let reloads = 0
+    const reloadHandler = createReloadHandler(() => {
+      reloads++
+    })
+
+    // Disparar múltiples controllerchange consecutivos
+    reloadHandler()
+    reloadHandler()
+    reloadHandler()
+
+    assert.equal(reloads, 1, 'controllerchange debe invocar el reload exactamente 1 vez')
+  })
+
+  it('654. 5. registration.update descubre nueva versión y no requiere botón de activación manual', async () => {
+    const mockReg = {
+      update: async () => {},
+      installing: { state: 'installing' },
+      waiting: null,
+      addEventListener: () => {},
+      removeEventListener: () => {},
+    } as unknown as ServiceWorkerRegistration
+
+    const result = await checkServiceWorkerUpdate(mockReg, 100)
+    assert.equal(result, 'available')
+  })
+
+  it('655. 6. Buscar actualización no intenta enviar SKIP_WAITING manual ni depende de él', async () => {
+    let postMessageCalled = false
+    const mockWorker = {
       state: 'installed',
       postMessage: () => {
-        messageSentTo = 'stale'
+        postMessageCalled = true
       },
     }
-    const freshWaitingWorker = {
-      state: 'installed',
-      postMessage: (data: any) => {
-        if (data?.type === 'SKIP_WAITING') messageSentTo = 'fresh'
-      },
-    }
-
-    const freshReg = {
-      waiting: freshWaitingWorker,
-      active: { state: 'activated' },
-    } as unknown as ServiceWorkerRegistration
-
-    const currentReg = null
-    const chosen = findWaitingWorker(freshReg, currentReg, staleWorker)
-    assert.equal(chosen, freshWaitingWorker)
-
-    let reloaded = 0
-    await activatePwaUpdate({
-      getFreshRegistration: async () => freshReg,
-      registration: currentReg,
-      waitingWorker: staleWorker,
-      onReload: () => {
-        reloaded++
-      },
-      timeoutMs: 50,
-      pollIntervalMs: 10,
-    })
-
-    assert.equal(messageSentTo, 'fresh')
-  })
-
-  it('651. 2. waitingWorkerRef redundant o en activación: nunca se usa', () => {
-    const redundantWorker = {
-      state: 'redundant',
-      postMessage: () => {},
-    }
-    const activatingWorker = {
-      state: 'activating',
-      postMessage: () => {},
-    }
-    const activatedWorker = {
-      state: 'activated',
-      postMessage: () => {},
-    }
-
-    assert.equal(isWorkerWaiting(redundantWorker), false)
-    assert.equal(isWorkerWaiting(activatingWorker), false)
-    assert.equal(isWorkerWaiting(activatedWorker), false)
-
-    const chosenRedundant = findWaitingWorker(null, null, redundantWorker)
-    assert.equal(chosenRedundant, null)
-
-    const chosenActivating = findWaitingWorker(null, null, activatingWorker)
-    assert.equal(chosenActivating, null)
-  })
-
-  it('652. 3. SKIP_WAITING -> controllerchange: reload exactamente una vez', async () => {
-    let reloads = 0
-    let messageSent = false
-    const waitingWorker = {
-      state: 'installed',
-      postMessage: (msg: any) => {
-        if (msg?.type === 'SKIP_WAITING') messageSent = true
-      },
-    }
-    const reg = { waiting: waitingWorker, active: { state: 'activated' } } as unknown as ServiceWorkerRegistration
-
-    const listeners: Record<string, (() => void)[]> = {}
-    const mockContainer = {
-      addEventListener: (type: string, fn: () => void) => {
-        listeners[type] = listeners[type] || []
-        listeners[type].push(fn)
-      },
-      removeEventListener: (type: string, fn: () => void) => {
-        listeners[type] = (listeners[type] || []).filter((cb) => cb !== fn)
-      },
-    }
-
-    const activationPromise = activatePwaUpdate({
-      getFreshRegistration: async () => reg,
-      registration: reg,
-      waitingWorker,
-      onReload: () => {
-        reloads++
-      },
-      timeoutMs: 1000,
-      pollIntervalMs: 100,
-      serviceWorkerContainer: mockContainer,
-    })
-
-    // Esperar a que se procese la obtención del registro fresco y se envíe SKIP_WAITING
-    await new Promise((r) => setTimeout(r, 10))
-    assert.equal(messageSent, true)
-
-    // Simular controllerchange
-    listeners['controllerchange']?.forEach((cb) => cb())
-
-    const result = await activationPromise
-    assert.equal(result.success, true)
-    assert.equal(reloads, 1)
-  })
-
-  it('653. 4. Safari no lanza controllerchange: waiting desaparece y active es activated -> reload una vez por polling', async () => {
-    let reloads = 0
-    let messageSent = false
-    const waitingWorker = {
-      state: 'installed',
-      postMessage: (msg: any) => {
-        if (msg?.type === 'SKIP_WAITING') messageSent = true
-      },
-    }
-
-    let pollCount = 0
-    const mockGetFresh = async () => {
-      pollCount++
-      if (pollCount === 1) {
-        return { waiting: waitingWorker, active: { state: 'installed' } } as unknown as ServiceWorkerRegistration
-      }
-      // Tras skipWaiting, el worker pasa a ser active y waiting desaparece
-      return { waiting: null, active: { state: 'activated' } } as unknown as ServiceWorkerRegistration
-    }
-
-    const mockContainer = {
+    const mockReg = {
+      update: async () => {},
+      installing: null,
+      waiting: mockWorker,
       addEventListener: () => {},
       removeEventListener: () => {},
-    }
-
-    const result = await activatePwaUpdate({
-      getFreshRegistration: mockGetFresh,
-      registration: { waiting: waitingWorker } as unknown as ServiceWorkerRegistration,
-      waitingWorker,
-      onReload: () => {
-        reloads++
-      },
-      timeoutMs: 1000,
-      pollIntervalMs: 10,
-      serviceWorkerContainer: mockContainer,
-    })
-
-    assert.equal(result.success, true)
-    assert.equal(reloads, 1)
-    assert.equal(messageSent, true)
-  })
-
-  it('654. 5. waiting no desaparece tras timeout: no reload, isUpdating vuelve false y devuelve fallo', async () => {
-    let reloads = 0
-    const stuckWorker = {
-      state: 'installed',
-      postMessage: () => {},
-    }
-
-    const stuckReg = {
-      waiting: stuckWorker,
-      active: { state: 'installed' },
     } as unknown as ServiceWorkerRegistration
 
-    const mockContainer = {
+    const result = await checkServiceWorkerUpdate(mockReg, 100)
+    assert.equal(result, 'available')
+    assert.equal(postMessageCalled, false, 'No debe depender de enviar SKIP_WAITING manual por postMessage')
+  })
+
+  it('656. 7. Ausencia de update muestra "up-to-date" (Pocket Flow ya está actualizado)', async () => {
+    const mockReg = {
+      update: async () => {},
+      installing: null,
+      waiting: null,
       addEventListener: () => {},
       removeEventListener: () => {},
-    }
-
-    const result = await activatePwaUpdate({
-      getFreshRegistration: async () => stuckReg,
-      registration: stuckReg,
-      waitingWorker: stuckWorker,
-      onReload: () => {
-        reloads++
-      },
-      timeoutMs: 60,
-      pollIntervalMs: 15,
-      serviceWorkerContainer: mockContainer,
-    })
-
-    assert.equal(result.success, false)
-    assert.equal(result.error, 'No se pudo completar la actualización. Inténtalo de nuevo.')
-    assert.equal(reloads, 0)
-  })
-
-  it('655. 6. Nunca puede quedarse isUpdating=true indefinidamente ante cualquier error', async () => {
-    // Si no hay worker válido disponible
-    const result = await activatePwaUpdate({
-      getFreshRegistration: async () => null,
-      registration: null,
-      waitingWorker: null,
-      timeoutMs: 50,
-    })
-
-    assert.equal(result.success, false)
-    assert.equal(result.error, 'No valid waiting worker found')
-  })
-
-  it('656. 7. Múltiples controllerchange y polling concurrentes: recarga exactamente una sola vez', async () => {
-    let reloads = 0
-    const waitingWorker = {
-      state: 'installed',
-      postMessage: () => {},
-    }
-
-    const listeners: Record<string, (() => void)[]> = {}
-    const mockContainer = {
-      addEventListener: (type: string, fn: () => void) => {
-        listeners[type] = listeners[type] || []
-        listeners[type].push(fn)
-      },
-      removeEventListener: () => {},
-    }
-
-    const activationPromise = activatePwaUpdate({
-      getFreshRegistration: async () =>
-        ({
-          waiting: null,
-          active: { state: 'activated' },
-        }) as unknown as ServiceWorkerRegistration,
-      registration: { waiting: waitingWorker } as unknown as ServiceWorkerRegistration,
-      waitingWorker,
-      onReload: () => {
-        reloads++
-      },
-      timeoutMs: 500,
-      pollIntervalMs: 10,
-      serviceWorkerContainer: mockContainer,
-    })
-
-    // Esperar a que se monte la escucha de eventos
-    await new Promise((r) => setTimeout(r, 10))
-
-    // Disparar múltiples eventos simultáneos
-    listeners['controllerchange']?.forEach((cb) => cb())
-    listeners['controllerchange']?.forEach((cb) => cb())
-
-    const result = await activationPromise
-    assert.equal(result.success, true)
-    assert.equal(reloads, 1)
-  })
-
-  it('657. 8. No volver a introducir reload prematuro: solo recarga con controllerchange o active activated', async () => {
-    let reloaded = false
-    const waitingWorker = {
-      state: 'installed',
-      postMessage: () => {},
-    }
-
-    // Worker todavía en estado installing / no activated
-    const installingReg = {
-      waiting: waitingWorker,
-      active: { state: 'installing' },
     } as unknown as ServiceWorkerRegistration
 
-    const mockContainer = {
-      addEventListener: () => {},
-      removeEventListener: () => {},
-    }
+    const result = await checkServiceWorkerUpdate(mockReg, 50)
+    assert.equal(result, 'up-to-date')
+  })
 
-    const result = await activatePwaUpdate({
-      getFreshRegistration: async () => installingReg,
-      registration: installingReg,
-      waitingWorker,
-      onReload: () => {
-        reloaded = true
-      },
-      timeoutMs: 50,
-      pollIntervalMs: 10,
-      serviceWorkerContainer: mockContainer,
-    })
+  it('657. 8. index/navigation usa estrategia Network First con no-cache', () => {
+    const swCode = generateServiceWorkerCode('0.23.3', '2026.09.29-10')
+    assert.ok(swCode.includes("request.mode === 'navigate'"))
+    assert.ok(swCode.includes("fetch(request, { cache: 'no-cache' })"))
+  })
 
-    assert.equal(result.success, false)
-    assert.equal(reloaded, false, 'No debe recargar si el worker activo no ha completado la activación')
+  it('657b. 9. Caches antiguas se eliminan de forma resiliente en activate', () => {
+    const swCode = generateServiceWorkerCode('0.23.3', '2026.09.29-10')
+    assert.ok(swCode.includes('filter((name) => name !== CACHE_NAME)'))
+    assert.ok(swCode.includes('caches.delete(name).catch(() => false)'))
+  })
+
+  it('657c. 10. Supabase sigue estrictamente excluido del Service Worker', () => {
+    const swCode = generateServiceWorkerCode('0.23.3', '2026.09.29-10')
+    assert.ok(swCode.includes("url.hostname.includes('supabase.co')"))
+    assert.ok(swCode.includes("url.pathname.startsWith('/rest/v1')"))
+    assert.ok(swCode.includes("url.pathname.startsWith('/auth/v1')"))
+    assert.ok(swCode.includes("url.pathname.startsWith('/realtime/v1')"))
+    assert.ok(swCode.includes("url.pathname.startsWith('/storage/v1')"))
   })
 })
 

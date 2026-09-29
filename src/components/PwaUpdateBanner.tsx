@@ -4,13 +4,12 @@ import { AppIcon } from '../ui/icons'
 export interface PwaUpdateBannerProps {
   show: boolean
   isUpdating?: boolean
-  onUpdate: () => void
+  onUpdate?: () => void
 }
 
 export const PwaUpdateBanner: React.FC<PwaUpdateBannerProps> = ({
   show,
-  isUpdating = false,
-  onUpdate,
+  isUpdating = true,
 }) => {
   if (!show) return null
 
@@ -21,18 +20,10 @@ export const PwaUpdateBanner: React.FC<PwaUpdateBannerProps> = ({
           <AppIcon name="sparkles" size={18} />
         </span>
         <span className="pwa-update-text">
-          Hay una nueva versión de Pocket Flow disponible.
+          {isUpdating
+            ? 'Nueva versión encontrada. Actualizando Pocket Flow…'
+            : 'Nueva versión disponible. Actualizando…'}
         </span>
-      </div>
-      <div className="pwa-update-actions">
-        <button
-          type="button"
-          className="pwa-update-button"
-          onClick={onUpdate}
-          disabled={isUpdating}
-        >
-          {isUpdating ? 'Actualizando...' : 'Actualizar'}
-        </button>
       </div>
     </div>
   )

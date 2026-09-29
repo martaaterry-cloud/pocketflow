@@ -1,5 +1,5 @@
-// PocketFlow Service Worker v0.23.2 (2026.09.29-09)
-const CACHE_NAME = 'pocketflow-v0.23.2-2026.09.29-09'
+// PocketFlow Service Worker v0.23.3 (2026.09.29-10)
+const CACHE_NAME = 'pocketflow-v0.23.3-2026.09.29-10'
 
 // Recursos estáticos iniciales a cachear
 const PRECACHE_URLS = [
@@ -23,6 +23,7 @@ self.addEventListener('message', (event) => {
 })
 
 self.addEventListener('install', (event) => {
+  self.skipWaiting()
   event.waitUntil(
     caches
       .open(CACHE_NAME)
