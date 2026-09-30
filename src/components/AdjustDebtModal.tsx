@@ -71,9 +71,9 @@ export function AdjustDebtModal({
       <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 420 }}>
         <div className="modal-header">
           <div>
-            <span className="badge-shared">Ajuste de Deuda</span>
+            <span className="badge-shared">{isPayable ? 'Ajuste de Deuda' : 'Invitar / Ajustar'}</span>
             <h3 style={{ marginTop: 4 }}>
-              {isPayable ? `Ajustar deuda con ${share.participantName}` : `Perdonar deuda a ${share.participantName}`}
+              {isPayable ? `Ajustar deuda con ${share.participantName}` : `Invitar a ${share.participantName}`}
             </h3>
           </div>
           <button className="close-btn" onClick={onClose} aria-label="Cerrar">
@@ -92,7 +92,7 @@ export function AdjustDebtModal({
           </div>
           {currentForgiven > 0 && (
             <div className="shared-summary-row" style={{ color: 'var(--text-muted)' }}>
-              <span>Perdonado/Ajustado previamente:</span>
+              <span>Invitado / Ajustado previamente:</span>
               <strong>{money(currentForgiven)}</strong>
             </div>
           )}
@@ -105,7 +105,7 @@ export function AdjustDebtModal({
         <form onSubmit={handleSubmit}>
           <div className="form-group" style={{ marginBottom: '16px' }}>
             <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 600, marginBottom: '6px' }}>
-              Importe a {isPayable ? 'ajustar' : 'perdonar'} (€)
+              Importe a {isPayable ? 'ajustar' : 'invitar'} (€)
             </label>
             <div style={{ display: 'flex', gap: '8px' }}>
               <input
@@ -164,7 +164,7 @@ export function AdjustDebtModal({
               disabled={!isValid}
               style={{ background: '#7c3aed' }}
             >
-              {isPayable ? 'Ajustar deuda' : 'Perdonar importe'}
+              {isPayable ? 'Ajustar deuda' : 'Invitar importe'}
             </button>
           </div>
         </form>

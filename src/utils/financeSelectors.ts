@@ -358,7 +358,7 @@ export function selectMonthExpenses(
   const currentYear = referenceDate.getFullYear()
 
   const sum = transactions
-    .filter((t) => t.type === 'expense')
+    .filter((t) => t.type === 'expense' && (!t.isShared || t.paidBy !== 'contact'))
     .filter((t) => {
       const d = new Date(t.date)
       return d.getMonth() === currentMonth && d.getFullYear() === currentYear
@@ -527,7 +527,7 @@ export function selectCategoryExpenses(
   const currentYear = referenceDate.getFullYear()
 
   const monthExpenses = transactions.filter((t) => {
-    if (t.type !== 'expense') return false
+    if (t.type !== 'expense' || (t.isShared && t.paidBy === 'contact')) return false
     const d = new Date(t.date)
     return d.getMonth() === currentMonth && d.getFullYear() === currentYear
   })

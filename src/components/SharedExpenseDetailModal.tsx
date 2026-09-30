@@ -84,7 +84,7 @@ export function SharedExpenseDetailModal({
                 </div>
                 {userPayableStatus && userPayableStatus.forgivenAmount > 0 && (
                   <div className="shared-summary-row" style={{ color: 'var(--text-muted)' }}>
-                    <span>Ajustado/Perdonado:</span>
+                    <span>Te invitaron / Ajustado:</span>
                     <strong>{money(userPayableStatus.forgivenAmount)}</strong>
                   </div>
                 )}
@@ -101,7 +101,7 @@ export function SharedExpenseDetailModal({
                 </div>
                 {details.totalForgiven > 0 && (
                   <div className="shared-summary-row" style={{ color: 'var(--text-muted)' }}>
-                    <span>Perdonado/Ajustado:</span>
+                    <span>Invitado por ti:</span>
                     <strong>{money(details.totalForgiven)}</strong>
                   </div>
                 )}
@@ -206,7 +206,7 @@ export function SharedExpenseDetailModal({
                       {item.forgivenAmount > 0 && (
                         <div>
                           <span style={{ color: 'var(--text-muted)', display: 'block' }}>
-                            {isContactPaid ? 'Perdonado a ti:' : 'Perdonado:'}
+                            {isContactPaid ? 'Te invitaron:' : 'Invitado por ti:'}
                           </span>
                           <strong style={{ color: '#fbbf24' }}>{money(item.forgivenAmount)}</strong>
                         </div>

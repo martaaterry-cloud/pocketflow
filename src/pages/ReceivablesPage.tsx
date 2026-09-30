@@ -214,7 +214,7 @@ export function ReceivablesPage({
               }}
             >
               <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', display: 'block' }}>
-                Perdonado por ti
+                Invitado por ti
               </span>
               <strong style={{ fontSize: '1.02rem', color: receivablesSummary.totalForgiven > 0 ? '#fbbf24' : 'var(--text-muted)' }}>
                 {money(receivablesSummary.totalForgiven)}
@@ -268,7 +268,7 @@ export function ReceivablesPage({
               }}
             >
               <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', display: 'block' }}>
-                Perdonado a ti
+                Te invitaron
               </span>
               <strong style={{ fontSize: '1.02rem', color: payablesSummary.totalForgiven > 0 ? '#fbbf24' : 'var(--text-muted)' }}>
                 {money(payablesSummary.totalForgiven)}
@@ -336,7 +336,7 @@ export function ReceivablesPage({
                                 <strong>{ps.expenseDescription}</strong>
                                 <span>
                                   Esperado: {money(ps.expectedAmount)} · Cobrado: {money(ps.appliedAmount)}
-                                  {ps.forgivenAmount > 0 && ` · Perdonado: ${money(ps.forgivenAmount)}`}
+                                  {ps.forgivenAmount > 0 && ` · Invitado: ${money(ps.forgivenAmount)}`}
                                 </span>
                               </div>
                               <div
@@ -399,7 +399,7 @@ export function ReceivablesPage({
                       <strong>{c.name}</strong>
                       <span style={{ color: 'var(--text-muted)' }}>
                         Esperado: {money(c.expectedReceivable)} · Cobrado: {money(c.receivedReal)}
-                        {c.forgivenByUser > 0 && ` · Perdonado: ${money(c.forgivenByUser)}`}
+                        {c.forgivenByUser > 0 && ` · Invitado: ${money(c.forgivenByUser)}`}
                       </span>
                     </div>
                   ))}
@@ -427,7 +427,7 @@ export function ReceivablesPage({
                         <span>Esperado: {money(item.expectedAmount)}</span>
                         <span> · Cobrado: {money(item.appliedAmount)}</span>
                         {item.forgivenAmount > 0 && (
-                          <span style={{ color: '#fbbf24' }}> · Perdonado: {money(item.forgivenAmount)}</span>
+                          <span style={{ color: '#fbbf24' }}> · Invitado: {money(item.forgivenAmount)}</span>
                         )}
                       </div>
                     </div>
@@ -506,7 +506,7 @@ export function ReceivablesPage({
                                 <strong>{ps.expenseDescription}</strong>
                                 <span>
                                   Esperado: {money(ps.expectedAmount)} · Pagado: {money(ps.appliedAmount)}
-                                  {ps.forgivenAmount > 0 && ` · Perdonado a ti: ${money(ps.forgivenAmount)}`}
+                                  {ps.forgivenAmount > 0 && ` · Te invitaron: ${money(ps.forgivenAmount)}`}
                                 </span>
                               </div>
                               <div
@@ -572,7 +572,7 @@ export function ReceivablesPage({
                       <strong>{c.name}</strong>
                       <span style={{ color: 'var(--text-muted)' }}>
                         Esperado: {money(c.expectedPayable)} · Pagado: {money(c.paidReal)}
-                        {c.forgivenToUser > 0 && ` · Perdonado a ti: ${money(c.forgivenToUser)}`}
+                        {c.forgivenToUser > 0 && ` · Te invitaron: ${money(c.forgivenToUser)}`}
                       </span>
                     </div>
                   ))}
@@ -610,7 +610,7 @@ export function ReceivablesPage({
                           <span> · Extra: {money(item.extraAmount)}</span>
                         ) : null}
                         {item.forgivenAmount > 0 && (
-                          <span style={{ color: '#fbbf24' }}> · Perdonado a ti: {money(item.forgivenAmount)}</span>
+                          <span style={{ color: '#fbbf24' }}> · Te invitaron: {money(item.forgivenAmount)}</span>
                         )}
                         <span> · Pendiente: 0,00 €</span>
                       </div>

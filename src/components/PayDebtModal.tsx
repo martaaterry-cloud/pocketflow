@@ -191,18 +191,46 @@ export function PayDebtModal({
               autoFocus
             />
           </label>
-          {isOverpaying && (
-            <div className="field-hint" style={{ color: 'var(--text-muted)', marginTop: 4, fontSize: '0.78rem' }}>
-              Pendiente: {money(pendingAmount)} · Vas a pagar: {money(numericAmount)} · Extra: {money(extraAmount)}
-              <div style={{ marginTop: 2 }}>
-                Los {money(extraAmount)} adicionales se registrarán como salida real, pero no crearán saldo a tu favor.
+          {numericAmount > 0 && selectedItem && (
+            <div
+              style={{
+                marginTop: 8,
+                padding: '10px 12px',
+                borderRadius: '8px',
+                background: 'rgba(255, 255, 255, 0.03)',
+                border: '1px solid rgba(255, 255, 255, 0.06)',
+                fontSize: '0.8rem',
+              }}
+            >
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 2 }}>
+                <span style={{ color: 'var(--text-muted)' }}>Pendiente:</span>
+                <strong>{money(pendingAmount)}</strong>
               </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 2 }}>
+                <span style={{ color: 'var(--text-muted)' }}>Vas a pagar:</span>
+                <strong>{money(numericAmount)}</strong>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: isOverpaying ? 2 : 0 }}>
+                <span style={{ color: 'var(--text-muted)' }}>Aplicado a deuda:</span>
+                <strong style={{ color: '#10b981' }}>{money(Math.min(pendingAmount, numericAmount))}</strong>
+              </div>
+              {isOverpaying && (
+                <>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
+                    <span style={{ color: 'var(--text-muted)' }}>Extra:</span>
+                    <strong style={{ color: 'var(--text-muted)' }}>{money(extraAmount)}</strong>
+                  </div>
+                  <div style={{ fontSize: '0.74rem', color: 'var(--text-muted)', marginTop: 4, lineHeight: 1.3 }}>
+                    Los {money(extraAmount)} adicionales se registrarán como salida real, pero no crearán saldo a tu favor.
+                  </div>
+                </>
+              )}
+              {!isOverpaying && numericAmount < pendingAmount && (
+                <div style={{ fontSize: '0.74rem', color: 'var(--text-muted)', marginTop: 4 }}>
+                  Pago parcial · Quedará pendiente {money(Math.max(0, pendingAmount - numericAmount))}
+                </div>
+              )}
             </div>
-          )}
-          {!isOverpaying && numericAmount > 0 && selectedItem && numericAmount < pendingAmount && (
-            <span className="field-hint">
-              Pago parcial (quedará pendiente {money(Math.max(0, pendingAmount - numericAmount))})
-            </span>
           )}
         </div>
 

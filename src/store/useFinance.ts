@@ -695,7 +695,7 @@ export function useFinance(storage: StorageAdapter = defaultAppStorage) {
       }
       const toAdd = Math.round(Number(forgivenAmountToAdd) * 100) / 100
       if (isNaN(toAdd) || toAdd <= 0) {
-        throw new Error('El importe a perdonar/ajustar debe ser mayor que 0.')
+        throw new Error('El importe a invitar/ajustar debe ser mayor que 0.')
       }
 
       const status = selectExpenseShareStatus(
@@ -705,7 +705,7 @@ export function useFinance(storage: StorageAdapter = defaultAppStorage) {
       )
       if (toAdd > status.pendingAmount) {
         throw new Error(
-          `No puedes perdonar más de lo pendiente (${status.pendingAmount.toFixed(2)} €).`
+          `No puedes invitar/ajustar más de lo pendiente (${status.pendingAmount.toFixed(2)} €).`
         )
       }
 

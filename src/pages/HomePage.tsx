@@ -86,7 +86,7 @@ export function HomePage({
   // Gastos de efectivo convertidos a formato Transaction compatible para DonutChart
   const cashExpensesAsTransactions = useMemo<Transaction[]>(() => {
     return cashTransactions
-      .filter((tx) => tx.type === 'expense')
+      .filter((tx) => tx.type === 'expense' && (!tx.isShared || tx.paidBy !== 'contact'))
       .map((tx) => {
         const linked = selectLinkedReimbursementsForExpense(
           tx.id,
