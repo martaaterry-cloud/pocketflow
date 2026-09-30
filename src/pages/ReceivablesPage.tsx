@@ -107,12 +107,12 @@ export function ReceivablesPage({
 
   return (
     <main className="page">
-      <header className="simple-header">
+      <header className="subpage-header">
         <button type="button" className="text-button back-button" onClick={onBack}>
           <AppIcon name="chevron-left" size={16} /> Más
         </button>
-        <h1>Cuentas Compartidas</h1>
-        <div style={{ width: 44 }} />
+        <h1 className="subpage-title">Cuentas compartidas</h1>
+        <div className="subpage-header-spacer" aria-hidden="true" />
       </header>
 
       {/* Selector principal: Por cobrar vs Por pagar */}
@@ -334,15 +334,13 @@ export function ReceivablesPage({
                             <div className="debtor-share-item" key={ps.share.id}>
                               <div className="debtor-share-info">
                                 <strong>{ps.expenseDescription}</strong>
-                                <span>
-                                  Esperado: {money(ps.expectedAmount)} · Cobrado: {money(ps.appliedAmount)}
-                                  {ps.forgivenAmount > 0 && ` · Invitado: ${money(ps.forgivenAmount)}`}
+                                <span className="debtor-share-metrics">
+                                  <span>Esperado: {money(ps.expectedAmount)}</span>
+                                  <span> · Cobrado: {money(ps.appliedAmount)}</span>
+                                  {ps.forgivenAmount > 0 && <span> · Invitado: {money(ps.forgivenAmount)}</span>}
                                 </span>
                               </div>
-                              <div
-                                className="debtor-share-action"
-                                style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
-                              >
+                              <div className="debtor-share-action">
                                 <span className="debtor-share-amount">
                                   {money(ps.pendingAmount)}
                                 </span>
@@ -378,29 +376,36 @@ export function ReceivablesPage({
           <section className="receivables-section" style={{ marginTop: 14 }}>
             {/* Histórico agrupado por persona */}
             {receivablesContacts.length > 0 && (
-              <div className="settled-by-contact" style={{ marginBottom: 16 }}>
-                <h4 style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: 8 }}>
+              <div className="settled-by-contact">
+                <h4 className="settled-by-contact-title">
                   Histórico acumulado por persona
                 </h4>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                <div className="contact-summary-list">
                   {receivablesContacts.map((c) => (
-                    <div
-                      key={c.name}
-                      style={{
-                        display: 'flex',
-                        justifyContent: 'space-between',
-                        alignItems: 'center',
-                        background: 'rgba(255,255,255,0.03)',
-                        padding: '8px 12px',
-                        borderRadius: '8px',
-                        fontSize: '0.82rem',
-                      }}
-                    >
-                      <strong>{c.name}</strong>
-                      <span style={{ color: 'var(--text-muted)' }}>
-                        Esperado: {money(c.expectedReceivable)} · Cobrado: {money(c.receivedReal)}
-                        {c.forgivenByUser > 0 && ` · Invitado: ${money(c.forgivenByUser)}`}
-                      </span>
+                    <div key={c.name} className="contact-summary-card">
+                      <div className="contact-summary-header">
+                        <div className="contact-summary-avatar">
+                          {c.name.slice(0, 1).toUpperCase()}
+                        </div>
+                        <strong className="contact-summary-name">{c.name}</strong>
+                      </div>
+                      <div className="contact-summary-details">
+                        <span className="contact-detail-item">
+                          Esperado: <strong>{money(c.expectedReceivable)}</strong>
+                        </span>
+                        <span className="contact-detail-separator">·</span>
+                        <span className="contact-detail-item success">
+                          Cobrado: <strong>{money(c.receivedReal)}</strong>
+                        </span>
+                        {c.forgivenByUser > 0 && (
+                          <>
+                            <span className="contact-detail-separator">·</span>
+                            <span className="contact-detail-item warning">
+                              Invitado: <strong>{money(c.forgivenByUser)}</strong>
+                            </span>
+                          </>
+                        )}
+                      </div>
                     </div>
                   ))}
                 </div>
@@ -420,18 +425,18 @@ export function ReceivablesPage({
                     </div>
                     <div className="settled-info">
                       <strong>{item.participantName}</strong>
-                      <span>
+                      <span className="settled-meta">
                         {item.expenseDescription} · {shortDate(item.settledDate)}
                       </span>
-                      <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: 2 }}>
+                      <div className="settled-metrics-wrap">
                         <span>Esperado: {money(item.expectedAmount)}</span>
                         <span> · Cobrado: {money(item.appliedAmount)}</span>
                         {item.forgivenAmount > 0 && (
-                          <span style={{ color: '#fbbf24' }}> · Invitado: {money(item.forgivenAmount)}</span>
+                          <span className="highlight-warning"> · Invitado: {money(item.forgivenAmount)}</span>
                         )}
                       </div>
                     </div>
-                    <strong className="positive">+{money(item.appliedAmount)}</strong>
+                    <strong className="settled-amount positive">+{money(item.appliedAmount)}</strong>
                   </div>
                 ))}
               </div>
@@ -504,15 +509,13 @@ export function ReceivablesPage({
                             <div className="debtor-share-item" key={ps.share.id}>
                               <div className="debtor-share-info">
                                 <strong>{ps.expenseDescription}</strong>
-                                <span>
-                                  Esperado: {money(ps.expectedAmount)} · Pagado: {money(ps.appliedAmount)}
-                                  {ps.forgivenAmount > 0 && ` · Te invitaron: ${money(ps.forgivenAmount)}`}
+                                <span className="debtor-share-metrics">
+                                  <span>Esperado: {money(ps.expectedAmount)}</span>
+                                  <span> · Pagado: {money(ps.appliedAmount)}</span>
+                                  {ps.forgivenAmount > 0 && <span> · Te invitaron: {money(ps.forgivenAmount)}</span>}
                                 </span>
                               </div>
-                              <div
-                                className="debtor-share-action"
-                                style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
-                              >
+                              <div className="debtor-share-action">
                                 <span className="debtor-share-amount" style={{ color: '#ef4444' }}>
                                   {money(ps.pendingAmount)}
                                 </span>
@@ -551,29 +554,38 @@ export function ReceivablesPage({
           <section className="receivables-section" style={{ marginTop: 14 }}>
             {/* Histórico acumulado por acreedor */}
             {payablesContacts.length > 0 && (
-              <div className="settled-by-contact" style={{ marginBottom: 16 }}>
-                <h4 style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: 8 }}>
+              <div className="settled-by-contact">
+                <h4 className="settled-by-contact-title">
                   Histórico acumulado por acreedor
                 </h4>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                <div className="contact-summary-list">
                   {payablesContacts.map((c) => (
-                    <div
-                      key={c.name}
-                      style={{
-                        display: 'flex',
-                        justifyContent: 'space-between',
-                        alignItems: 'center',
-                        background: 'rgba(255,255,255,0.03)',
-                        padding: '8px 12px',
-                        borderRadius: '8px',
-                        fontSize: '0.82rem',
-                      }}
-                    >
-                      <strong>{c.name}</strong>
-                      <span style={{ color: 'var(--text-muted)' }}>
-                        Esperado: {money(c.expectedPayable)} · Pagado: {money(c.paidReal)}
-                        {c.forgivenToUser > 0 && ` · Te invitaron: ${money(c.forgivenToUser)}`}
-                      </span>
+                    <div key={c.name} className="contact-summary-card">
+                      <div className="contact-summary-header">
+                        <div
+                          className="contact-summary-avatar payable"
+                        >
+                          {c.name.slice(0, 1).toUpperCase()}
+                        </div>
+                        <strong className="contact-summary-name">{c.name}</strong>
+                      </div>
+                      <div className="contact-summary-details">
+                        <span className="contact-detail-item">
+                          Esperado: <strong>{money(c.expectedPayable)}</strong>
+                        </span>
+                        <span className="contact-detail-separator">·</span>
+                        <span className="contact-detail-item success">
+                          Pagado: <strong>{money(c.paidReal)}</strong>
+                        </span>
+                        {c.forgivenToUser > 0 && (
+                          <>
+                            <span className="contact-detail-separator">·</span>
+                            <span className="contact-detail-item warning">
+                              Te invitaron: <strong>{money(c.forgivenToUser)}</strong>
+                            </span>
+                          </>
+                        )}
+                      </div>
                     </div>
                   ))}
                 </div>
@@ -599,10 +611,10 @@ export function ReceivablesPage({
                     </div>
                     <div className="settled-info">
                       <strong>Pagado a {item.creditorName}</strong>
-                      <span>
+                      <span className="settled-meta">
                         {item.expenseDescription} · {shortDate(item.settledDate)}
                       </span>
-                      <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: 2 }}>
+                      <div className="settled-metrics-wrap">
                         <span>Esperado: {money(item.expectedAmount)}</span>
                         <span> · Enviado: {money(item.paidAmount || item.appliedAmount)}</span>
                         <span> · Aplicado: {money(item.appliedAmount)}</span>
@@ -610,12 +622,12 @@ export function ReceivablesPage({
                           <span> · Extra: {money(item.extraAmount)}</span>
                         ) : null}
                         {item.forgivenAmount > 0 && (
-                          <span style={{ color: '#fbbf24' }}> · Te invitaron: {money(item.forgivenAmount)}</span>
+                          <span className="highlight-warning"> · Te invitaron: {money(item.forgivenAmount)}</span>
                         )}
                         <span> · Pendiente: 0,00 €</span>
                       </div>
                     </div>
-                    <strong style={{ color: 'var(--text-main)' }}>-{money(item.paidAmount || item.appliedAmount)}</strong>
+                    <strong className="settled-amount payable">-{money(item.paidAmount || item.appliedAmount)}</strong>
                   </div>
                 ))}
               </div>
