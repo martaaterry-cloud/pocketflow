@@ -222,6 +222,8 @@ export function RecurringPaymentsPage({
                                 ? RECURRING_INCOME_SOURCE_LABELS[r.incomeSourceType as RecurringIncomeSourceType]
                                 : 'Ingreso programado')
                             : (category?.name ?? 'Suscripción')} · {frequencyLabel[r.frequency] ?? 'Mensual'}
+                          {!isIncome && r.isShared && r.paidBy === 'contact' && ` · Lo paga ${r.payerName || 'otra persona'}`}
+                          {!isIncome && r.isShared && r.paidBy !== 'contact' && ` · Lo pagas tú`}
                         </span>
                       </div>
                     </div>
@@ -245,7 +247,16 @@ export function RecurringPaymentsPage({
                       )}
                       {!isIncome && r.isShared && (
                         <span className="badge-status shared-badge">
-                          {sharedLabel}
+                          {r.paidBy === 'contact'
+                            ? `Paga ${r.payerName || 'contacto'}`
+                            : sharedLabel}
+                        </span>
+                      )}
+                      {!isIncome && r.isShared && r.settlementPaymentMethod && (
+                        <span className="badge-status" style={{ background: 'rgba(255,255,255,0.06)', color: 'var(--text-muted)' }}>
+                          {r.paidBy === 'contact'
+                            ? `Liquidación: ${r.settlementPaymentMethod === 'bizum' ? 'Bizum' : r.settlementPaymentMethod === 'cash' ? 'Efectivo' : 'Banco'}`
+                            : `Cobro: ${r.settlementPaymentMethod === 'bizum' ? 'Bizum' : r.settlementPaymentMethod === 'cash' ? 'Efectivo' : 'Banco'}`}
                         </span>
                       )}
                       {!isIncome && r.active && cycleStatus.status === 'confirmed_for_cycle' && (

@@ -84,12 +84,18 @@ export interface RecurringSharingParticipant {
   contactId?: string
   name: string
   amount: number
+  isUserShare?: boolean
 }
 
 export interface RecurringSharingTemplate {
   includePayer: boolean
   splitType: 'equal' | 'custom'
   participants: RecurringSharingParticipant[]
+  payer?: 'user' | 'contact'
+  payerName?: string
+  payerContactId?: string
+  settlementPaymentMethod?: PaymentMethod
+  settlementAccountId?: string
 }
 
 export interface SavingsGoal {
@@ -133,6 +139,12 @@ export interface RecurringPayment {
   incomeSourceType?: RecurringIncomeSourceType | string
   installmentsCount?: number
   paymentMethod?: PaymentMethod
+  paidBy?: 'user' | 'contact'
+  payerName?: string
+  payerContactId?: string
+  expensePaymentMethod?: PaymentMethod
+  settlementPaymentMethod?: PaymentMethod
+  settlementAccountId?: string
 }
 
 export type CreateRecurringPaymentInput = Omit<RecurringPayment, 'id'>

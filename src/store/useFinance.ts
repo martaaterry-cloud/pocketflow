@@ -521,6 +521,7 @@ export function useFinance(storage: StorageAdapter = defaultAppStorage) {
         state.cashTransactions?.find((c) => c.id === targetExpenseId)
 
       const creditorName = parentTx?.payerName || 'Contacto'
+      const fallbackAccountId = state.accounts[0]?.id || 'daily'
 
       if (paymentMethod === 'cash') {
         const desc =
@@ -567,8 +568,10 @@ export function useFinance(storage: StorageAdapter = defaultAppStorage) {
           ? `Pago Bizum a ${creditorName} · ${parentTx?.description || 'Gasto compartido'}`
           : `Pago a ${creditorName} · ${parentTx?.description || 'Gasto compartido'}`)
 
-      const fallbackAccountId =
-        parentTx && 'accountId' in parentTx && parentTx.accountId ? parentTx.accountId : 'daily'
+      const parentRecurringId =
+        parentTx && 'recurringPaymentId' in parentTx && parentTx.recurringPaymentId
+          ? parentTx.recurringPaymentId
+          : undefined
 
       const newTx: Transaction = {
         id: crypto.randomUUID(),
@@ -581,6 +584,7 @@ export function useFinance(storage: StorageAdapter = defaultAppStorage) {
         note: input.note,
         parentExpenseId: targetExpenseId,
         expenseShareId: input.expenseShareId,
+        recurringPaymentId: parentRecurringId,
         paymentMethod: paymentMethod === 'bizum' ? 'bizum' : 'bank',
       }
 
@@ -1310,6 +1314,10 @@ export function useFinance(storage: StorageAdapter = defaultAppStorage) {
         ? formatCoverageDescription(rec.name, dateStr, effectiveMonths)
         : rec.name
 
+      const isContactPaid = rec.paidBy === 'contact' || rec.sharingTemplate?.payer === 'contact'
+      const payerName = rec.payerName || rec.sharingTemplate?.payerName || 'Contacto'
+      const payerContactId = rec.payerContactId || rec.sharingTemplate?.payerContactId || undefined
+
       // 1. Crear transacción real vinculada con recurringPaymentId
       const newTx: Transaction = {
         id: `tx_${crypto.randomUUID()}`,
@@ -1321,53 +1329,136 @@ export function useFinance(storage: StorageAdapter = defaultAppStorage) {
         date: dateStr,
         recurringPaymentId: rec.id,
         isShared: Boolean(rec.isShared),
-        paymentMethod: rec.paymentMethod || 'bank',
+        paymentMethod: rec.expensePaymentMethod || rec.paymentMethod || 'bank',
+        paidBy: isContactPaid ? 'contact' : 'user',
+        payerName: isContactPaid ? payerName : undefined,
+        payerContactId: isContactPaid ? payerContactId : undefined,
       }
 
       // Si es un recurrente compartido, crear las partes independientes para ESTE ciclo
       let cycleShares: ExpenseShare[] = []
       if (rec.isShared && rec.sharingTemplate) {
-        if (rec.sharingTemplate.splitType === 'equal') {
-          const splitResults = splitExpenseEqually(
-            totalAmount,
-            rec.sharingTemplate.participants,
-            rec.sharingTemplate.includePayer,
-            'Tú'
-          )
-          cycleShares = splitResults.map((s) => ({
-            id: crypto.randomUUID(),
-            expenseTransactionId: newTx.id,
-            contactId: s.contactId,
-            participantName: s.participantName,
-            isPayerShare: s.isPayerShare,
-            expectedAmount: s.amount,
-            createdAt: dateStr,
-            updatedAt: dateStr,
-          }))
-        } else {
-          cycleShares = rec.sharingTemplate.participants.map((p) => ({
-            id: crypto.randomUUID(),
-            expenseTransactionId: newTx.id,
-            contactId: p.contactId,
-            participantName: p.name,
-            isPayerShare: false,
-            expectedAmount: Math.round(Number(p.amount) * effectiveMonths * 100) / 100,
-            createdAt: dateStr,
-            updatedAt: dateStr,
-          }))
+        if (isContactPaid) {
+          if (rec.sharingTemplate.splitType === 'equal') {
+            const splitResults = splitExpenseEqually(
+              totalAmount,
+              rec.sharingTemplate.participants,
+              rec.sharingTemplate.includePayer,
+              'Tú'
+            )
+            cycleShares = splitResults.map((s) => {
+              const isPayer =
+                s.participantName.toLowerCase() === payerName.toLowerCase() ||
+                (Boolean(payerContactId) && s.contactId === payerContactId)
+              const isUser = s.participantName.toLowerCase() === 'tú' || s.isPayerShare
+              return {
+                id: crypto.randomUUID(),
+                expenseTransactionId: newTx.id,
+                contactId: s.contactId,
+                participantName: s.participantName,
+                isPayerShare: isPayer,
+                isUserShare: isUser && !isPayer,
+                expectedAmount: s.amount,
+                createdAt: dateStr,
+                updatedAt: dateStr,
+              }
+            })
+          } else {
+            const rawShares: ExpenseShare[] = rec.sharingTemplate.participants.map((p) => {
+              const isPayer =
+                p.name.toLowerCase() === payerName.toLowerCase() ||
+                (Boolean(payerContactId) && p.contactId === payerContactId)
+              return {
+                id: crypto.randomUUID(),
+                expenseTransactionId: newTx.id,
+                contactId: p.contactId,
+                participantName: p.name,
+                isPayerShare: isPayer,
+                isUserShare: !isPayer && (Boolean(p.isUserShare) || p.name.toLowerCase() === 'tú'),
+                expectedAmount: Math.round(Number(p.amount) * effectiveMonths * 100) / 100,
+                createdAt: dateStr,
+                updatedAt: dateStr,
+              }
+            })
 
-          if (rec.sharingTemplate.includePayer) {
-            const externalTotal = cycleShares.reduce((s, sh) => s + sh.expectedAmount, 0)
-            const payerAmount = Math.max(0, Math.round((totalAmount - externalTotal) * 100) / 100)
-            cycleShares.unshift({
+            if (rec.sharingTemplate.includePayer && !rawShares.some((s) => s.isUserShare)) {
+              const externalTotal = rawShares.reduce((s, sh) => s + sh.expectedAmount, 0)
+              const userAmount = Math.max(0, Math.round((totalAmount - externalTotal) * 100) / 100)
+              rawShares.unshift({
+                id: crypto.randomUUID(),
+                expenseTransactionId: newTx.id,
+                participantName: 'Tú',
+                isPayerShare: false,
+                isUserShare: true,
+                expectedAmount: userAmount,
+                createdAt: dateStr,
+                updatedAt: dateStr,
+              })
+            }
+
+            if (!rawShares.some((s) => s.isPayerShare)) {
+              const othersTotal = rawShares
+                .filter((s) => !s.isPayerShare)
+                .reduce((s, sh) => s + sh.expectedAmount, 0)
+              const payerShareAmount = Math.max(0, Math.round((totalAmount - othersTotal) * 100) / 100)
+              rawShares.push({
+                id: crypto.randomUUID(),
+                expenseTransactionId: newTx.id,
+                contactId: payerContactId,
+                participantName: payerName,
+                isPayerShare: true,
+                isUserShare: false,
+                expectedAmount: payerShareAmount,
+                createdAt: dateStr,
+                updatedAt: dateStr,
+              })
+            }
+
+            cycleShares = rawShares
+          }
+        } else {
+          if (rec.sharingTemplate.splitType === 'equal') {
+            const splitResults = splitExpenseEqually(
+              totalAmount,
+              rec.sharingTemplate.participants,
+              rec.sharingTemplate.includePayer,
+              'Tú'
+            )
+            cycleShares = splitResults.map((s) => ({
               id: crypto.randomUUID(),
               expenseTransactionId: newTx.id,
-              participantName: 'Tú',
-              isPayerShare: true,
-              expectedAmount: payerAmount,
+              contactId: s.contactId,
+              participantName: s.participantName,
+              isPayerShare: s.isPayerShare,
+              expectedAmount: s.amount,
               createdAt: dateStr,
               updatedAt: dateStr,
-            })
+            }))
+          } else {
+            cycleShares = rec.sharingTemplate.participants.map((p) => ({
+              id: crypto.randomUUID(),
+              expenseTransactionId: newTx.id,
+              contactId: p.contactId,
+              participantName: p.name,
+              isPayerShare: false,
+              expectedAmount: Math.round(Number(p.amount) * effectiveMonths * 100) / 100,
+              createdAt: dateStr,
+              updatedAt: dateStr,
+            }))
+
+            if (rec.sharingTemplate.includePayer) {
+              const externalTotal = cycleShares.reduce((s, sh) => s + sh.expectedAmount, 0)
+              const payerAmount = Math.max(0, Math.round((totalAmount - externalTotal) * 100) / 100)
+              cycleShares.unshift({
+                id: crypto.randomUUID(),
+                expenseTransactionId: newTx.id,
+                participantName: 'Tú',
+                isPayerShare: true,
+                expectedAmount: payerAmount,
+                createdAt: dateStr,
+                updatedAt: dateStr,
+              })
+            }
           }
         }
       }

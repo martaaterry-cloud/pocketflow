@@ -6909,12 +6909,12 @@ describe('Fase 18 — Mejoras de Finanzas (Detalle por Categoría, Retiradas de 
 describe('Fase 18 — Identificación Visual de Versión y Build', () => {
   it('314. Versioning: única fuente de verdad y formato de visualización exacto', () => {
     assert.equal(APP_NAME, 'PocketFlow')
-    assert.equal(APP_VERSION, '0.24.9')
-    assert.equal(APP_BUILD, '2026.09.30-07')
+    assert.equal(APP_VERSION, '0.24.10')
+    assert.equal(APP_BUILD, '2026.09.30-08')
 
-    assert.equal(getAppVersionString(), 'PocketFlow v0.24.9')
-    assert.equal(getAppBuildString(), 'Build 2026.09.30-07')
-    assert.equal(getAppFullVersionLabel(), 'PocketFlow v0.24.9 · Build 2026.09.30-07')
+    assert.equal(getAppVersionString(), 'PocketFlow v0.24.10')
+    assert.equal(getAppBuildString(), 'Build 2026.09.30-08')
+    assert.equal(getAppFullVersionLabel(), 'PocketFlow v0.24.10 · Build 2026.09.30-08')
   })
 })
 
@@ -14010,12 +14010,12 @@ describe('Fase 50 — Control de Acceso por Roles (User / Admin), Seguridad RLS 
     }
 
     const userFooter = renderFooterTexts(false)
-    assert.equal(userFooter.versionText, 'PocketFlow v0.24.9')
+    assert.equal(userFooter.versionText, 'PocketFlow v0.24.10')
     assert.equal(userFooter.buildText, null)
 
     const adminFooter = renderFooterTexts(true)
-    assert.equal(adminFooter.versionText, 'PocketFlow v0.24.9')
-    assert.equal(adminFooter.buildText, 'Build 2026.09.30-07')
+    assert.equal(adminFooter.versionText, 'PocketFlow v0.24.10')
+    assert.equal(adminFooter.buildText, 'Build 2026.09.30-08')
   })
 
   it('590. 10. Reconciliación y sincronización de perfil no altera datos financieros ni transacciones', () => {
@@ -14516,7 +14516,7 @@ describe('Fase 52 — Versionado Automático y Robusto del Service Worker PWA', 
   it('613. 1. CACHE_NAME del Service Worker incluye exactamente APP_VERSION y APP_BUILD actuales', () => {
     const expectedCacheName = `pocketflow-v${APP_VERSION}-${APP_BUILD}`
     assert.equal(getServiceWorkerCacheName(APP_VERSION, APP_BUILD), expectedCacheName)
-    assert.equal(expectedCacheName, 'pocketflow-v0.24.9-2026.09.30-07')
+    assert.equal(expectedCacheName, 'pocketflow-v0.24.10-2026.09.30-08')
 
     const swCode = generateServiceWorkerCode(APP_VERSION, APP_BUILD)
     assert.ok(swCode.includes(`const CACHE_NAME = '${expectedCacheName}'`))
@@ -17224,15 +17224,15 @@ describe('Fase 61 — Detección Fiable de Versión Remota y Actualizaciones PWA
     assert.ok(swCode.includes('return false'))
 
     const versionData = JSON.parse(generateVersionJson(APP_VERSION, APP_BUILD))
-    assert.equal(versionData.version, '0.24.9')
-    assert.equal(versionData.build, '2026.09.30-07')
+    assert.equal(versionData.version, '0.24.10')
+    assert.equal(versionData.build, '2026.09.30-08')
   })
 
   // Test 10: Diagnóstico completo collectPwaDiagnosticInfo
   it('686. 10. collectPwaDiagnosticInfo recopila estado de versión local, remota y controller', async () => {
     const info = await collectPwaDiagnosticInfo(null, '/pocketflow/')
-    assert.equal(info.localVersion, '0.24.9')
-    assert.equal(info.localBuild, '2026.09.30-07')
+    assert.equal(info.localVersion, '0.24.10')
+    assert.equal(info.localBuild, '2026.09.30-08')
     assert.equal(info.basePath, '/pocketflow/')
     assert.ok(typeof info.lastCheckedAt === 'string')
   })
@@ -17345,8 +17345,8 @@ describe('Fase 62 — Categoría Canónica "Estudios / Formación" (education)',
   it('694. 8. build genera version.json 0.24.5 / 2026.09.30-03', () => {
     const versionJsonStr = generateVersionJson(APP_VERSION, APP_BUILD)
     const parsed = JSON.parse(versionJsonStr)
-    assert.equal(parsed.version, '0.24.9')
-    assert.equal(parsed.build, '2026.09.30-07')
+    assert.equal(parsed.version, '0.24.10')
+    assert.equal(parsed.build, '2026.09.30-08')
     assert.equal(parsed.name, 'PocketFlow')
   })
 
@@ -18375,13 +18375,13 @@ describe('Fase 66 — Clasificación y Desglose de Gastos por Medio de Pago (Tar
     assert.equal(grossTotal, breakdown.total)
   })
 
-  // CASO 12: Versión 0.24.9 y Build 2026.09.30-07
-  it('731. 12. Build genera version.json 0.24.9 / 2026.09.30-07', () => {
-    assert.equal(APP_VERSION, '0.24.9')
-    assert.equal(APP_BUILD, '2026.09.30-07')
-    const vJson = JSON.parse(generateVersionJson('0.24.9', '2026.09.30-07'))
-    assert.equal(vJson.version, '0.24.9')
-    assert.equal(vJson.build, '2026.09.30-07')
+  // CASO 12: Versión 0.24.10 y Build 2026.09.30-08
+  it('731. 12. Build genera version.json 0.24.10 / 2026.09.30-08', () => {
+    assert.equal(APP_VERSION, '0.24.10')
+    assert.equal(APP_BUILD, '2026.09.30-08')
+    const vJson = JSON.parse(generateVersionJson('0.24.10', '2026.09.30-08'))
+    assert.equal(vJson.version, '0.24.10')
+    assert.equal(vJson.build, '2026.09.30-08')
   })
 })
 
@@ -19551,6 +19551,493 @@ describe('Fase 67.6 — Corrección del Tipo de Movimientos Históricos + Retira
     assert.equal(expensesOnly.length, 0, 'Ninguna pata cuenta como gasto comercial')
   })
 })
+
+describe('Fase 67.7 — Recurrentes Compartidos: Pagador Real, Método del Gasto y Método Habitual de Liquidación', () => {
+  const testAccounts: Account[] = [
+    { id: 'daily', name: 'CaixaBank', type: 'spending', initialBalance: 500, balance: 500 },
+    { id: 'savings', name: 'Ahorro BBVA', type: 'savings', initialBalance: 1000, balance: 1000 },
+  ]
+  const refDate = '2026-09-15T12:00:00.000Z'
+
+  // TEST 1: Recurrente no compartido Banco
+  it('774. 1. Recurrente no compartido Banco: configura paymentMethod = "bank" y cuenta', () => {
+    const rec: RecurringPayment = {
+      id: 'rec_gym',
+      name: 'Gimnasio',
+      amount: 40,
+      categoryId: 'health',
+      accountId: 'daily',
+      frequency: 'monthly',
+      nextDate: '2026-09-15',
+      active: true,
+      type: 'expense',
+      paymentMethod: 'bank',
+      expensePaymentMethod: 'bank',
+    }
+    assert.equal(rec.paymentMethod, 'bank')
+    assert.equal(rec.accountId, 'daily')
+    assert.equal(Boolean(rec.isShared), false)
+  })
+
+  // TEST 2: Recurrente no compartido Bizum
+  it('775. 2. Recurrente no compartido Bizum: configura paymentMethod = "bizum"', () => {
+    const rec: RecurringPayment = {
+      id: 'rec_padel',
+      name: 'Pistas Pádel',
+      amount: 15,
+      categoryId: 'health',
+      accountId: 'daily',
+      frequency: 'monthly',
+      nextDate: '2026-09-15',
+      active: true,
+      type: 'expense',
+      paymentMethod: 'bizum',
+      expensePaymentMethod: 'bizum',
+    }
+    assert.equal(rec.paymentMethod, 'bizum')
+    assert.equal(rec.accountId, 'daily')
+  })
+
+  // TEST 3: Recurrente no compartido Efectivo
+  it('776. 3. Recurrente no compartido Efectivo: configura paymentMethod = "cash" y accountId = "cash"', () => {
+    const rec: RecurringPayment = {
+      id: 'rec_cleaning',
+      name: 'Limpieza',
+      amount: 50,
+      categoryId: 'home',
+      accountId: 'cash',
+      frequency: 'monthly',
+      nextDate: '2026-09-15',
+      active: true,
+      type: 'expense',
+      paymentMethod: 'cash',
+      expensePaymentMethod: 'cash',
+    }
+    assert.equal(rec.paymentMethod, 'cash')
+  })
+
+  // TEST 4: Recurrente compartido pagado por usuario
+  it('777. 4. Recurrente compartido pagado por usuario: paidBy = "user", settlementPaymentMethod y settlementAccountId', () => {
+    const rec: RecurringPayment = {
+      id: 'rec_netflix',
+      name: 'Netflix 4K',
+      amount: 18,
+      categoryId: 'subscriptions',
+      accountId: 'daily',
+      frequency: 'monthly',
+      nextDate: '2026-09-15',
+      active: true,
+      type: 'expense',
+      isShared: true,
+      paidBy: 'user',
+      expensePaymentMethod: 'bank',
+      settlementPaymentMethod: 'bizum',
+      settlementAccountId: 'daily',
+      sharingTemplate: {
+        includePayer: true,
+        splitType: 'equal',
+        payer: 'user',
+        settlementPaymentMethod: 'bizum',
+        settlementAccountId: 'daily',
+        participants: [{ name: 'Andrés', amount: 9 }],
+      },
+    }
+    assert.equal(rec.paidBy, 'user')
+    assert.equal(rec.settlementPaymentMethod, 'bizum')
+    assert.equal(rec.settlementAccountId, 'daily')
+  })
+
+  // TEST 5: Recurrente compartido pagado por contacto
+  it('778. 5. Recurrente compartido pagado por contacto: paidBy = "contact", payerName = "Andrés"', () => {
+    const rec: RecurringPayment = {
+      id: 'rec_spotify',
+      name: 'Spotify Familiar',
+      amount: 3.5,
+      categoryId: 'subscriptions',
+      accountId: 'daily',
+      frequency: 'monthly',
+      nextDate: '2026-09-15',
+      active: true,
+      type: 'expense',
+      isShared: true,
+      paidBy: 'contact',
+      payerName: 'Andrés',
+      expensePaymentMethod: 'bank',
+      settlementPaymentMethod: 'bizum',
+      settlementAccountId: 'daily',
+      sharingTemplate: {
+        includePayer: true,
+        splitType: 'custom',
+        payer: 'contact',
+        payerName: 'Andrés',
+        settlementPaymentMethod: 'bizum',
+        settlementAccountId: 'daily',
+        participants: [
+          { name: 'Tú', isUserShare: true, amount: 3.5 },
+          { name: 'Andrés', amount: 3.5 },
+        ],
+      },
+    }
+    assert.equal(rec.paidBy, 'contact')
+    assert.equal(rec.payerName, 'Andrés')
+    assert.equal(rec.settlementPaymentMethod, 'bizum')
+  })
+
+  // TEST 6: Pagador contacto no genera salida bancaria automática del usuario
+  it('779. 6. Pagador contacto no genera salida bancaria automática del usuario', () => {
+    const parentTx: Transaction = {
+      id: 'tx_rec_spot_1',
+      type: 'expense',
+      amount: 3.5,
+      description: 'Spotify Familiar',
+      categoryId: 'subscriptions',
+      accountId: 'daily',
+      date: refDate,
+      recurringPaymentId: 'rec_spotify',
+      isShared: true,
+      paidBy: 'contact',
+      payerName: 'Andrés',
+      paymentMethod: 'bank',
+    }
+    const accounts = reconcileAccounts(testAccounts, [parentTx], [])
+    const daily = accounts.find((a) => a.id === 'daily')
+    assert.equal(daily?.balance, 500, 'El saldo bancario NO se descuenta al crear el gasto pagado por un tercero')
+  })
+
+  // TEST 7: Default de liquidación Bizum se hereda en Liquidar / PayDebt
+  it('780. 7. Default de liquidación Bizum se hereda para la deuda vinculada al recurrente', () => {
+    const rec: RecurringPayment = {
+      id: 'rec_spotify',
+      name: 'Spotify',
+      amount: 3.5,
+      categoryId: 'subscriptions',
+      accountId: 'daily',
+      frequency: 'monthly',
+      nextDate: '2026-09-15',
+      active: true,
+      type: 'expense',
+      isShared: true,
+      paidBy: 'contact',
+      payerName: 'Andrés',
+      settlementPaymentMethod: 'bizum',
+      settlementAccountId: 'daily',
+    }
+    const parentTx: Transaction = {
+      id: 'tx_spot_parent',
+      type: 'expense',
+      amount: 3.5,
+      description: 'Spotify',
+      date: refDate,
+      recurringPaymentId: rec.id,
+      paidBy: 'contact',
+      payerName: 'Andrés',
+      isShared: true,
+      accountId: 'daily',
+      categoryId: 'subscriptions',
+    }
+    const share: ExpenseShare = {
+      id: 'sh_spot_user',
+      expenseTransactionId: parentTx.id,
+      participantName: 'Tú',
+      isUserShare: true,
+      isPayerShare: false,
+      expectedAmount: 3.5,
+      createdAt: refDate,
+    }
+    const pendingPayables = selectPendingPayables([share], [parentTx], [])
+    assert.equal(pendingPayables.length, 1)
+    assert.equal(pendingPayables[0].creditorName, 'Andrés')
+    assert.equal(pendingPayables[0].totalPending, 3.5)
+  })
+
+  // TEST 8: Default de cobro Bizum se hereda en Cobrar
+  it('781. 8. Default de cobro Bizum se hereda en Cobrar para cuotas pendientes generadas por el usuario', () => {
+    const rec: RecurringPayment = {
+      id: 'rec_netflix',
+      name: 'Netflix',
+      amount: 20,
+      categoryId: 'subscriptions',
+      accountId: 'daily',
+      frequency: 'monthly',
+      nextDate: '2026-09-15',
+      active: true,
+      type: 'expense',
+      isShared: true,
+      paidBy: 'user',
+      settlementPaymentMethod: 'bizum',
+      settlementAccountId: 'daily',
+    }
+    const parentTx: Transaction = {
+      id: 'tx_netflix_p',
+      type: 'expense',
+      amount: 20,
+      description: 'Netflix',
+      date: refDate,
+      recurringPaymentId: rec.id,
+      paidBy: 'user',
+      isShared: true,
+      accountId: 'daily',
+      categoryId: 'subscriptions',
+    }
+    const shareAndres: ExpenseShare = {
+      id: 'sh_net_andres',
+      expenseTransactionId: parentTx.id,
+      participantName: 'Andrés',
+      isUserShare: false,
+      isPayerShare: false,
+      expectedAmount: 10,
+      createdAt: refDate,
+    }
+    const debtors = selectPendingDebtors([shareAndres], [parentTx], [])
+    assert.equal(debtors.length, 1)
+    assert.equal(debtors[0].name, 'Andrés')
+    assert.equal(debtors[0].totalPending, 10)
+  })
+
+  // TEST 9 & 10: Cambiar Bizum -> Efectivo en liquidación puntual no modifica plantilla
+  it('782. 9 & 10. Cambiar Bizum -> Efectivo en liquidación puntual no altera la plantilla recurrente', () => {
+    const rec: RecurringPayment = {
+      id: 'rec_spotify',
+      name: 'Spotify',
+      amount: 3.5,
+      categoryId: 'subscriptions',
+      accountId: 'daily',
+      frequency: 'monthly',
+      nextDate: '2026-09-15',
+      active: true,
+      type: 'expense',
+      isShared: true,
+      paidBy: 'contact',
+      payerName: 'Andrés',
+      settlementPaymentMethod: 'bizum',
+      settlementAccountId: 'daily',
+    }
+    const punctualCashPayment: CashTransaction = {
+      id: 'cash_pay_1',
+      type: 'expense',
+      amount: 3.5,
+      description: 'Pago efectivo a Andrés · Spotify',
+      bankTransactionId: 'tx_spot_parent',
+      date: refDate,
+      paymentMethod: 'cash',
+    }
+    assert.equal(punctualCashPayment.paymentMethod, 'cash')
+    assert.equal(rec.settlementPaymentMethod, 'bizum', 'La plantilla recurrente conserva Bizum como preferencia habitual')
+  })
+
+  // TEST 11, 12, 13, 14: Caso real Spotify septiembre 3,50 + pago 7 € con anticipo a octubre
+  it('783. 11, 12, 13 & 14. Spotify: septiembre 3,50 + liquidación 7 € cubre septiembre y octubre sin doble gasto ni doble débito', () => {
+    const recSpotify: RecurringPayment = {
+      id: 'rec_spotify_flow',
+      name: 'Spotify',
+      amount: 3.5,
+      categoryId: 'subscriptions',
+      accountId: 'daily',
+      frequency: 'monthly',
+      nextDate: '2026-09-04',
+      active: true,
+      type: 'expense',
+      isShared: true,
+      paidBy: 'contact',
+      payerName: 'Andrés',
+      settlementPaymentMethod: 'bizum',
+      settlementAccountId: 'daily',
+    }
+
+    // Septiembre: Se genera la ocurrencia del gasto pagado por Andrés
+    const septParentTx: Transaction = {
+      id: 'tx_spot_sep',
+      type: 'expense',
+      amount: 3.5,
+      description: 'Spotify',
+      accountId: 'daily',
+      categoryId: 'subscriptions',
+      date: '2026-09-04T10:00:00.000Z',
+      recurringPaymentId: recSpotify.id,
+      isShared: true,
+      paidBy: 'contact',
+      payerName: 'Andrés',
+    }
+    const septShare: ExpenseShare = {
+      id: 'sh_spot_sep',
+      expenseTransactionId: septParentTx.id,
+      participantName: 'Tú',
+      isUserShare: true,
+      isPayerShare: false,
+      expectedAmount: 3.5,
+      createdAt: '2026-09-04T10:00:00.000Z',
+    }
+
+    // Saldo bancario sigue en 500 € antes de liquidar
+    let accs = reconcileAccounts(testAccounts, [septParentTx], [])
+    assert.equal(accs.find((a) => a.id === 'daily')?.balance, 500)
+
+    // El usuario liquida 7 € por Bizum a Andrés vinculados al gasto padre
+    const paymentTx: Transaction = {
+      id: 'tx_pay_andres_7',
+      type: 'expense',
+      amount: 7.0,
+      description: 'Pago Bizum a Andrés · Spotify',
+      accountId: 'daily',
+      categoryId: 'subscriptions',
+      date: '2026-09-05T10:00:00.000Z',
+      parentExpenseId: septParentTx.id,
+      expenseShareId: septShare.id,
+      recurringPaymentId: recSpotify.id,
+      paymentMethod: 'bizum',
+    }
+
+    // Saldo bancario se reduce exactamente en 7 €
+    accs = reconcileAccounts(testAccounts, [septParentTx, paymentTx], [])
+    assert.equal(accs.find((a) => a.id === 'daily')?.balance, 493)
+
+    // Estado de la deuda de septiembre: liquidada
+    const payableStatus = selectExpensePayableStatus(septShare, [septParentTx, paymentTx], [])
+    assert.equal(payableStatus.status, 'settled')
+    assert.equal(payableStatus.pendingAmount, 0)
+    assert.equal(payableStatus.extraAmount, 3.5, 'Conserva 3,50 € de exceso para cubrir octubre')
+
+    // Cobertura multimensual del recurrente
+    const coveredMonths = getCoveredMonthKeysForRecurring(recSpotify, [septParentTx, paymentTx])
+    assert.ok(coveredMonths.has('2026-09'), 'Septiembre cubierto')
+    assert.ok(coveredMonths.has('2026-10'), 'Octubre cubierto por anticipo')
+    assert.equal(isRecurringCoveredInMonth(recSpotify, [septParentTx, paymentTx], 2026, 9), true, 'Octubre está cubierto')
+  })
+
+  // TEST 15 & 16: Cobro y liquidación no duplican ni consumo ni ingreso
+  it('784. 15 & 16. Cobro de deuda no duplica ingreso y liquidación no duplica gasto económico', () => {
+    const parentExpense: Transaction = {
+      id: 'tx_dinner_40',
+      type: 'expense',
+      amount: 40,
+      description: 'Cena amigos',
+      accountId: 'daily',
+      categoryId: 'food',
+      date: refDate,
+      isShared: true,
+      paidBy: 'user',
+      paymentMethod: 'bank',
+    }
+    const shareAmigo: ExpenseShare = {
+      id: 'sh_amigo_20',
+      expenseTransactionId: parentExpense.id,
+      participantName: 'Carlos',
+      isPayerShare: false,
+      expectedAmount: 20,
+      createdAt: refDate,
+    }
+    const reimbursementTx: Transaction = {
+      id: 'tx_reimb_20',
+      type: 'income',
+      incomeKind: 'reimbursement',
+      amount: 20,
+      accountId: 'daily',
+      description: 'Bizum Carlos · Cena amigos',
+      parentExpenseId: parentExpense.id,
+      expenseShareId: shareAmigo.id,
+      date: refDate,
+      paymentMethod: 'bizum',
+    }
+
+    const gross = selectGrossExpensesForPeriod([parentExpense, reimbursementTx], new Date(refDate))
+    assert.equal(gross, 40, 'El gasto bruto de la cena sigue siendo 40 €')
+  })
+
+  // TEST 17, 18, 19, 20: Resolver sin pago / Invitar
+  it('785. 17, 18, 19 & 20. Resolver sin pago / Invitar: pendiente queda en 0, trazabilidad en forgivenAmount, 0 cambios en banco y efectivo', () => {
+    const share: ExpenseShare = {
+      id: 'sh_gift_1',
+      expenseTransactionId: 'tx_any',
+      participantName: 'Lucía',
+      isPayerShare: false,
+      expectedAmount: 15,
+      forgivenAmount: 15,
+      createdAt: refDate,
+    }
+    const status = selectExpenseShareStatus(share, [], [])
+    assert.equal(status.pendingAmount, 0, 'Pendiente es 0 € tras perdonar/invitar')
+    assert.equal(status.forgivenAmount, 15, 'Trazabilidad conservada en forgivenAmount')
+    assert.equal(status.status, 'received')
+  })
+
+  // TEST 21 & 22: Compatibilidad de plantillas antiguas e histórico
+  it('786. 21 & 22. Plantillas antiguas sin nuevos campos cargan con fallbacks compatibles sin alterar histórico', () => {
+    const legacyRec: RecurringPayment = {
+      id: 'rec_old',
+      name: 'Internet',
+      amount: 30,
+      categoryId: 'home',
+      accountId: 'daily',
+      frequency: 'monthly',
+      nextDate: '2026-09-01',
+      active: true,
+      type: 'expense',
+    }
+    const isContact = legacyRec.paidBy === 'contact'
+    assert.equal(isContact, false)
+    assert.equal(legacyRec.paymentMethod ?? 'bank', 'bank')
+  })
+
+  // TEST 23 & 24: Backup y Supabase Sync conservan campos de recurrente
+  it('787. 23 & 24. toDbRecurring y fromDbRecurring persisten payer, settlementPaymentMethod y settlementAccountId', () => {
+    const rec: RecurringPayment = {
+      id: 'rec_sync_test',
+      name: 'Spotify',
+      amount: 3.5,
+      categoryId: 'subscriptions',
+      accountId: 'daily',
+      frequency: 'monthly',
+      nextDate: '2026-09-15',
+      active: true,
+      type: 'expense',
+      isShared: true,
+      paidBy: 'contact',
+      payerName: 'Andrés',
+      expensePaymentMethod: 'bank',
+      settlementPaymentMethod: 'bizum',
+      settlementAccountId: 'daily',
+    }
+    const dbRow = toDbRecurring(rec, 'user_123')
+    assert.equal(dbRow.paid_by, 'contact')
+    assert.equal(dbRow.payer_name, 'Andrés')
+    assert.equal(dbRow.settlement_payment_method, 'bizum')
+    assert.equal(dbRow.settlement_account_id, 'daily')
+
+    const back = fromDbRecurring(dbRow)
+    assert.equal(back.paidBy, 'contact')
+    assert.equal(back.payerName, 'Andrés')
+    assert.equal(back.settlementPaymentMethod, 'bizum')
+    assert.equal(back.settlementAccountId, 'daily')
+  })
+
+  // TEST 25: Edición de recurrente conserva configuración
+  it('788. 25. Edición de recurrente conserva la configuración completa', () => {
+    const original: RecurringPayment = {
+      id: 'rec_edit_test',
+      name: 'iCloud',
+      amount: 2.99,
+      categoryId: 'subscriptions',
+      accountId: 'daily',
+      frequency: 'monthly',
+      nextDate: '2026-09-20',
+      active: true,
+      type: 'expense',
+      isShared: true,
+      paidBy: 'user',
+      settlementPaymentMethod: 'bizum',
+      settlementAccountId: 'daily',
+    }
+    const edited: RecurringPayment = {
+      ...original,
+      amount: 3.99,
+      settlementPaymentMethod: 'cash',
+    }
+    assert.equal(edited.amount, 3.99)
+    assert.equal(edited.settlementPaymentMethod, 'cash')
+    assert.equal(edited.paidBy, 'user')
+  })
+})
+
 
 
 

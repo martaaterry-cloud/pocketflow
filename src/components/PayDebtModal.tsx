@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect } from 'react'
-import type { Account, CashTransaction, ExpenseShare, Transaction } from '../models/finance'
+import type { Account, CashTransaction, ExpenseShare, RecurringPayment, Transaction } from '../models/finance'
 import { money, shortDate } from '../utils/money'
 import { selectPendingPayables } from '../utils/sharedExpenseSelectors'
 import { AppIcon } from '../ui/icons'
@@ -11,6 +11,7 @@ interface PayDebtModalProps {
   transactions: Transaction[]
   expenseShares: ExpenseShare[]
   cashTransactions?: CashTransaction[]
+  recurring?: RecurringPayment[]
   initialShareId?: string
   initialExpenseId?: string
   onSubmit: (input: {
@@ -22,6 +23,7 @@ interface PayDebtModalProps {
     description?: string
     paymentMethod?: 'bank' | 'bizum' | 'cash'
   }) => void
+  onAdjustDebt?: (shareId: string, amount: number) => void
 }
 
 export function PayDebtModal({
@@ -31,9 +33,11 @@ export function PayDebtModal({
   transactions,
   expenseShares,
   cashTransactions = [],
+  recurring = [],
   initialShareId,
   initialExpenseId,
   onSubmit,
+  onAdjustDebt,
 }: PayDebtModalProps) {
   const [paymentMethod, setPaymentMethod] = useState<'bizum' | 'bank' | 'cash'>('bizum')
   const [selectedShareId, setSelectedShareId] = useState<string>(initialShareId || '')
@@ -56,22 +60,42 @@ export function PayDebtModal({
     )
   }, [pendingPayables])
 
+  const applyRecurringDefaults = (targetShareId: string) => {
+    const item = allPendingShares.find((p) => p.share.id === targetShareId)
+    if (!item) return
+    const parentTx = transactions.find((t) => t.id === item.share.expenseTransactionId)
+    if (parentTx?.recurringPaymentId && recurring.length > 0) {
+      const rec = recurring.find((r) => r.id === parentTx.recurringPaymentId)
+      if (rec) {
+        if (rec.settlementPaymentMethod) {
+          setPaymentMethod(rec.settlementPaymentMethod as 'bizum' | 'bank' | 'cash')
+        }
+        if (rec.settlementAccountId && accounts.some((a) => a.id === rec.settlementAccountId)) {
+          setAccountId(rec.settlementAccountId)
+        }
+      }
+    }
+  }
+
   useEffect(() => {
     if (initialShareId) {
       const match = allPendingShares.find((p) => p.share.id === initialShareId)
       if (match) {
         setSelectedShareId(match.share.id)
         setAmount(String(match.pendingAmount).replace('.', ','))
+        applyRecurringDefaults(match.share.id)
       }
     } else if (initialExpenseId) {
       const match = allPendingShares.find((p) => p.share.expenseTransactionId === initialExpenseId)
       if (match) {
         setSelectedShareId(match.share.id)
         setAmount(String(match.pendingAmount).replace('.', ','))
+        applyRecurringDefaults(match.share.id)
       }
     } else if (allPendingShares.length > 0 && !selectedShareId) {
       setSelectedShareId(allPendingShares[0].share.id)
       setAmount(String(allPendingShares[0].pendingAmount).replace('.', ','))
+      applyRecurringDefaults(allPendingShares[0].share.id)
     }
   }, [initialShareId, initialExpenseId, allPendingShares, open])
 
@@ -86,6 +110,7 @@ export function PayDebtModal({
   const handleSelectPayable = (shareId: string, itemPendingAmount: number) => {
     setSelectedShareId(shareId)
     setAmount(String(itemPendingAmount).replace('.', ','))
+    applyRecurringDefaults(shareId)
   }
 
   const handleSubmit = () => {
@@ -315,6 +340,24 @@ export function PayDebtModal({
             Cancelar
           </button>
         </div>
+
+        {onAdjustDebt && selectedItem && pendingAmount > 0 && (
+          <div style={{ marginTop: 12, textAlign: 'center' }}>
+            <button
+              type="button"
+              className="text-button small"
+              style={{ color: 'var(--text-muted, #888)', fontSize: '0.82rem' }}
+              onClick={() => {
+                if (window.confirm(`¿Resolver esta deuda de ${money(pendingAmount)} con ${selectedItem.creditorName} sin registrar movimiento monetario?`)) {
+                  onAdjustDebt(selectedShareId, pendingAmount)
+                  onClose()
+                }
+              }}
+            >
+              Resolver sin pago / Condonar
+            </button>
+          </div>
+        )}
       </div>
     </div>
   )

@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect } from 'react'
-import type { Account, CashTransaction, ExpenseShare, Transaction } from '../models/finance'
+import type { Account, CashTransaction, ExpenseShare, RecurringPayment, Transaction } from '../models/finance'
 import { money, shortDate } from '../utils/money'
 import { selectPendingDebtors, selectExpenseShareStatus } from '../utils/sharedExpenseSelectors'
 import { AppIcon } from '../ui/icons'
@@ -11,6 +11,7 @@ interface ReimbursementModalProps {
   transactions: Transaction[]
   expenseShares: ExpenseShare[]
   cashTransactions?: CashTransaction[]
+  recurring?: RecurringPayment[]
   initialShareId?: string
   initialExpenseId?: string
   onSubmit: (input: {
@@ -23,6 +24,7 @@ interface ReimbursementModalProps {
     description?: string
     paymentMethod?: 'bank' | 'cash'
   }) => void
+  onAdjustDebt?: (shareId: string, amount: number) => void
 }
 
 export function ReimbursementModal({
@@ -32,9 +34,11 @@ export function ReimbursementModal({
   transactions,
   expenseShares,
   cashTransactions = [],
+  recurring = [],
   initialShareId,
   initialExpenseId,
   onSubmit,
+  onAdjustDebt,
 }: ReimbursementModalProps) {
   const [paymentMethod, setPaymentMethod] = useState<'bank' | 'cash'>('bank')
   const [selectedShareId, setSelectedShareId] = useState<string>(initialShareId || '')
@@ -71,6 +75,25 @@ export function ReimbursementModal({
     return list
   }, [expenseShares, transactions, cashTransactions])
 
+  const applyRecurringDefaults = (targetShareId: string) => {
+    const item = pendingShares.find((ps) => ps.share.id === targetShareId)
+    if (!item?.expense) return
+    const recId = 'recurringPaymentId' in item.expense ? item.expense.recurringPaymentId : undefined
+    if (recId && recurring.length > 0) {
+      const rec = recurring.find((r) => r.id === recId)
+      if (rec) {
+        if (rec.settlementPaymentMethod === 'cash') {
+          setPaymentMethod('cash')
+        } else if (rec.settlementPaymentMethod === 'bank' || rec.settlementPaymentMethod === 'bizum') {
+          setPaymentMethod('bank')
+        }
+        if (rec.settlementAccountId && accounts.some((a) => a.id === rec.settlementAccountId)) {
+          setAccountId(rec.settlementAccountId)
+        }
+      }
+    }
+  }
+
   useEffect(() => {
     if (initialShareId) {
       const match = pendingShares.find((ps) => ps.share.id === initialShareId)
@@ -78,6 +101,7 @@ export function ReimbursementModal({
         setSelectedShareId(match.share.id)
         setAmount(String(match.pendingAmount).replace('.', ','))
         setIsCustom(false)
+        applyRecurringDefaults(match.share.id)
       }
     } else if (initialExpenseId) {
       const match = pendingShares.find((ps) => ps.share.expenseTransactionId === initialExpenseId)
@@ -85,10 +109,12 @@ export function ReimbursementModal({
         setSelectedShareId(match.share.id)
         setAmount(String(match.pendingAmount).replace('.', ','))
         setIsCustom(false)
+        applyRecurringDefaults(match.share.id)
       }
     } else if (pendingShares.length > 0 && !selectedShareId && !isCustom) {
       setSelectedShareId(pendingShares[0].share.id)
       setAmount(String(pendingShares[0].pendingAmount).replace('.', ','))
+      applyRecurringDefaults(pendingShares[0].share.id)
     }
   }, [initialShareId, initialExpenseId, pendingShares, open])
 
@@ -100,6 +126,7 @@ export function ReimbursementModal({
     setSelectedShareId(shareId)
     setAmount(String(pendingAmount).replace('.', ','))
     setIsCustom(false)
+    applyRecurringDefaults(shareId)
   }
 
   const handleSubmit = () => {
@@ -322,6 +349,24 @@ export function ReimbursementModal({
             Cancelar
           </button>
         </div>
+
+        {onAdjustDebt && selectedItem && selectedItem.pendingAmount > 0 && (
+          <div style={{ marginTop: 12, textAlign: 'center' }}>
+            <button
+              type="button"
+              className="text-button small"
+              style={{ color: 'var(--text-muted, #888)', fontSize: '0.82rem' }}
+              onClick={() => {
+                if (window.confirm(`¿Invitar a ${selectedItem.share.participantName} y perdonar la deuda de ${money(selectedItem.pendingAmount)} sin registrar ingreso de dinero?`)) {
+                  onAdjustDebt(selectedItem.share.id, selectedItem.pendingAmount)
+                  onClose()
+                }
+              }}
+            >
+              Resolver sin cobro / Invitar
+            </button>
+          </div>
+        )}
       </div>
     </div>
   )

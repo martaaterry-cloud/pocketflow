@@ -86,7 +86,13 @@ export function getCoveredMonthKeysForRecurring(
   if (!rec || !Array.isArray(transactions) || rec.type === 'income') return covered
 
   const linkedTxs = transactions.filter(
-    (t) => t.type === 'expense' && t.recurringPaymentId === rec.id
+    (t) =>
+      t.type === 'expense' &&
+      (t.recurringPaymentId === rec.id ||
+        (t.parentExpenseId &&
+          transactions.some(
+            (pt) => pt.id === t.parentExpenseId && pt.recurringPaymentId === rec.id
+          )))
   )
 
   for (const tx of linkedTxs) {

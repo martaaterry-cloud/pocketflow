@@ -699,12 +699,14 @@ export default function App() {
         transactions={finance.transactions}
         expenseShares={finance.expenseShares}
         cashTransactions={finance.cashTransactions}
+        recurring={finance.recurring}
         initialShareId={payDebtShareId}
         onSubmit={(input) => {
           finance.recordPayablePayment(input)
           const targetStr = input.paymentMethod === 'cash' ? 'en Efectivo' : 'en Banco'
           showToast(`Pago registrado (-${input.amount.toFixed(2)} € ${targetStr})`, 'success')
         }}
+        onAdjustDebt={finance.adjustDebt}
       />
 
       {selectedSharedTx && (

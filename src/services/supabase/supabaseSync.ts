@@ -20,6 +20,7 @@ import type {
   VariableExpenseEstimate,
   CashTransaction,
   CashMovementType,
+  PaymentMethod,
 } from '../../models/finance'
 import type { PersistedState } from '../storage/storageAdapter'
 import { categories as seedCategories } from '../../data/seed'
@@ -251,6 +252,13 @@ export function toDbRecurring(r: RecurringPayment, userId: string) {
     sharing_template: r.sharingTemplate || null,
     type: r.type || 'expense',
     installments_count: r.installmentsCount || null,
+    payment_method: r.paymentMethod || null,
+    paid_by: r.paidBy || null,
+    payer_name: r.payerName || null,
+    payer_contact_id: r.payerContactId || null,
+    expense_payment_method: r.expensePaymentMethod || null,
+    settlement_payment_method: r.settlementPaymentMethod || null,
+    settlement_account_id: r.settlementAccountId || null,
   }
   if (r.incomeSourceType) {
     row.income_source_type = r.incomeSourceType
@@ -261,6 +269,7 @@ export function toDbRecurring(r: RecurringPayment, userId: string) {
 export function fromDbRecurring(row: Record<string, unknown>): RecurringPayment {
   const isIncome = (row.type as string) === 'income'
   const categoryId = row.category_id ? String(row.category_id) : (isIncome ? 'income' : 'other')
+  const sharingTpl = (row.sharing_template as RecurringSharingTemplate) || undefined
   return {
     id: String(row.id),
     name: String(row.name),
@@ -271,10 +280,17 @@ export function fromDbRecurring(row: Record<string, unknown>): RecurringPayment 
     nextDate: String(row.next_date),
     active: Boolean(row.active),
     isShared: Boolean(row.is_shared),
-    sharingTemplate: (row.sharing_template as RecurringSharingTemplate) || undefined,
+    sharingTemplate: sharingTpl,
     type: isIncome ? 'income' : 'expense',
     incomeSourceType: row.income_source_type ? String(row.income_source_type) : undefined,
     installmentsCount: row.installments_count ? Number(row.installments_count) : undefined,
+    paymentMethod: (row.payment_method as PaymentMethod) || undefined,
+    paidBy: (row.paid_by as 'user' | 'contact') || sharingTpl?.payer || 'user',
+    payerName: (row.payer_name as string) || sharingTpl?.payerName || undefined,
+    payerContactId: (row.payer_contact_id as string) || sharingTpl?.payerContactId || undefined,
+    expensePaymentMethod: (row.expense_payment_method as PaymentMethod) || undefined,
+    settlementPaymentMethod: (row.settlement_payment_method as PaymentMethod) || sharingTpl?.settlementPaymentMethod || undefined,
+    settlementAccountId: (row.settlement_account_id as string) || sharingTpl?.settlementAccountId || undefined,
   }
 }
 
