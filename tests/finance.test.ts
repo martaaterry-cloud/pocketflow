@@ -152,6 +152,7 @@ import {
   checkServiceWorkerUpdate,
   fetchRemoteVersion,
   isRemoteVersionNewer,
+  waitForServiceWorkerActivation,
   collectPwaDiagnosticInfo,
   getAppBaseUrl,
   type PwaUpdateCheckResult,
@@ -6907,12 +6908,12 @@ describe('Fase 18 — Mejoras de Finanzas (Detalle por Categoría, Retiradas de 
 describe('Fase 18 — Identificación Visual de Versión y Build', () => {
   it('314. Versioning: única fuente de verdad y formato de visualización exacto', () => {
     assert.equal(APP_NAME, 'PocketFlow')
-    assert.equal(APP_VERSION, '0.24.4')
-    assert.equal(APP_BUILD, '2026.09.30-02')
+    assert.equal(APP_VERSION, '0.24.5')
+    assert.equal(APP_BUILD, '2026.09.30-03')
 
-    assert.equal(getAppVersionString(), 'PocketFlow v0.24.4')
-    assert.equal(getAppBuildString(), 'Build 2026.09.30-02')
-    assert.equal(getAppFullVersionLabel(), 'PocketFlow v0.24.4 · Build 2026.09.30-02')
+    assert.equal(getAppVersionString(), 'PocketFlow v0.24.5')
+    assert.equal(getAppBuildString(), 'Build 2026.09.30-03')
+    assert.equal(getAppFullVersionLabel(), 'PocketFlow v0.24.5 · Build 2026.09.30-03')
   })
 })
 
@@ -14008,12 +14009,12 @@ describe('Fase 50 — Control de Acceso por Roles (User / Admin), Seguridad RLS 
     }
 
     const userFooter = renderFooterTexts(false)
-    assert.equal(userFooter.versionText, 'PocketFlow v0.24.4')
+    assert.equal(userFooter.versionText, 'PocketFlow v0.24.5')
     assert.equal(userFooter.buildText, null)
 
     const adminFooter = renderFooterTexts(true)
-    assert.equal(adminFooter.versionText, 'PocketFlow v0.24.4')
-    assert.equal(adminFooter.buildText, 'Build 2026.09.30-02')
+    assert.equal(adminFooter.versionText, 'PocketFlow v0.24.5')
+    assert.equal(adminFooter.buildText, 'Build 2026.09.30-03')
   })
 
   it('590. 10. Reconciliación y sincronización de perfil no altera datos financieros ni transacciones', () => {
@@ -14514,7 +14515,7 @@ describe('Fase 52 — Versionado Automático y Robusto del Service Worker PWA', 
   it('613. 1. CACHE_NAME del Service Worker incluye exactamente APP_VERSION y APP_BUILD actuales', () => {
     const expectedCacheName = `pocketflow-v${APP_VERSION}-${APP_BUILD}`
     assert.equal(getServiceWorkerCacheName(APP_VERSION, APP_BUILD), expectedCacheName)
-    assert.equal(expectedCacheName, 'pocketflow-v0.24.4-2026.09.30-02')
+    assert.equal(expectedCacheName, 'pocketflow-v0.24.5-2026.09.30-03')
 
     const swCode = generateServiceWorkerCode(APP_VERSION, APP_BUILD)
     assert.ok(swCode.includes(`const CACHE_NAME = '${expectedCacheName}'`))
@@ -17222,15 +17223,15 @@ describe('Fase 61 — Detección Fiable de Versión Remota y Actualizaciones PWA
     assert.ok(swCode.includes('return false'))
 
     const versionData = JSON.parse(generateVersionJson(APP_VERSION, APP_BUILD))
-    assert.equal(versionData.version, '0.24.4')
-    assert.equal(versionData.build, '2026.09.30-02')
+    assert.equal(versionData.version, '0.24.5')
+    assert.equal(versionData.build, '2026.09.30-03')
   })
 
   // Test 10: Diagnóstico completo collectPwaDiagnosticInfo
   it('686. 10. collectPwaDiagnosticInfo recopila estado de versión local, remota y controller', async () => {
     const info = await collectPwaDiagnosticInfo(null, '/pocketflow/')
-    assert.equal(info.localVersion, '0.24.4')
-    assert.equal(info.localBuild, '2026.09.30-02')
+    assert.equal(info.localVersion, '0.24.5')
+    assert.equal(info.localBuild, '2026.09.30-03')
     assert.equal(info.basePath, '/pocketflow/')
     assert.ok(typeof info.lastCheckedAt === 'string')
   })
@@ -17339,12 +17340,12 @@ describe('Fase 62 — Categoría Canónica "Estudios / Formación" (education)',
     assert.equal(planSettings.essentialCategoryIds.includes('education'), false)
   })
 
-  // Test 8: generateVersionJson genera 0.24.3 / 2026.09.30-01
-  it('694. 8. build genera version.json 0.24.3 / 2026.09.30-01', () => {
+  // Test 8: generateVersionJson genera 0.24.5 / 2026.09.30-03
+  it('694. 8. build genera version.json 0.24.5 / 2026.09.30-03', () => {
     const versionJsonStr = generateVersionJson(APP_VERSION, APP_BUILD)
     const parsed = JSON.parse(versionJsonStr)
-    assert.equal(parsed.version, '0.24.4')
-    assert.equal(parsed.build, '2026.09.30-02')
+    assert.equal(parsed.version, '0.24.5')
+    assert.equal(parsed.build, '2026.09.30-03')
     assert.equal(parsed.name, 'PocketFlow')
   })
 
@@ -17842,6 +17843,273 @@ describe('Fase 64 — Semántica Estricta de Cashflow Real y Lenguaje de Invitac
     assert.equal(consumptionAfter.totalEconomicConsumption, 24)
   })
 })
+
+describe('Fase 65 — Resiliencia y Activación Total de Service Worker PWA en iOS/Safari', () => {
+  // Test 1: remote == local => up-to-date => no activation flow
+  it('708. 1. remote == local => up-to-date sin iniciar flujo de activación innecesario', async () => {
+    const mockFetch = async () => ({
+      ok: true,
+      json: async () => ({ version: '0.24.5', build: '2026.09.30-03' }),
+    }) as any
+
+    const fakeReg = {
+      installing: null,
+      waiting: null,
+      active: { state: 'activated' },
+      update: async () => fakeReg,
+    } as unknown as ServiceWorkerRegistration
+
+    const result = await checkServiceWorkerUpdate(fakeReg, 100, undefined, mockFetch)
+    assert.equal(result, 'up-to-date')
+  })
+
+  // Test 2: remote nuevo + updatefound + installing -> activated => reload una vez
+  it('709. 2. remote nuevo + installing -> activated => activa y permite recarga única', async () => {
+    let reloads = 0
+    const onReload = () => { reloads++ }
+    const reloadHandler = createReloadHandler(onReload)
+
+    const listeners: Record<string, () => void> = {}
+    const mockInstallingWorker: any = {
+      state: 'installing',
+      addEventListener: (event: string, cb: () => void) => {
+        listeners[event] = cb
+      },
+      removeEventListener: () => {},
+    }
+
+    const fakeReg = {
+      installing: mockInstallingWorker,
+      waiting: null,
+      active: { state: 'activated' },
+      update: async () => fakeReg,
+    } as unknown as ServiceWorkerRegistration
+
+    const activationPromise = waitForServiceWorkerActivation({
+      registration: fakeReg,
+      timeoutMs: 1000,
+      pollIntervalMs: 50,
+    })
+
+    // Simular transición a activated
+    mockInstallingWorker.state = 'activated'
+    if (listeners['statechange']) {
+      listeners['statechange']()
+    }
+
+    const result = await activationPromise
+    assert.equal(result, 'activated')
+
+    reloadHandler()
+    reloadHandler()
+    assert.equal(reloads, 1)
+  })
+
+  // Test 3: remote nuevo + no controllerchange pero active cambia => reload una vez por polling
+  it('710. 3. remote nuevo + no controllerchange pero active cambia => detecta activación por polling', async () => {
+    const oldActiveWorker = { state: 'activated', scriptURL: 'https://app/sw.js?v=1' } as any
+    const newActiveWorker = { state: 'activated', scriptURL: 'https://app/sw.js?v=2' } as any
+
+    const fakeReg: any = {
+      installing: null,
+      waiting: null,
+      active: oldActiveWorker,
+      update: async () => fakeReg,
+    }
+
+    const activationPromise = waitForServiceWorkerActivation({
+      registration: fakeReg,
+      oldActive: oldActiveWorker,
+      timeoutMs: 800,
+      pollIntervalMs: 50,
+    })
+
+    // Tras 60ms, el worker activo cambia en Safari sin disparar controllerchange
+    setTimeout(() => {
+      fakeReg.active = newActiveWorker
+    }, 60)
+
+    const result = await activationPromise
+    assert.equal(result, 'activated', 'Polling debe detectar que registration.active cambió a activated')
+  })
+
+  // Test 4: remote nuevo + controller cambia => reload una vez
+  it('711. 4. remote nuevo + controller cambia => detecta activación', async () => {
+    const oldController = { scriptURL: 'https://app/sw.js?v=1' } as any
+    const newController = { scriptURL: 'https://app/sw.js?v=2' } as any
+
+    const fakeReg: any = {
+      installing: null,
+      waiting: null,
+      active: { state: 'activated' },
+      update: async () => fakeReg,
+    }
+
+    const mockNav = {
+      serviceWorker: {
+        controller: oldController,
+        addEventListener: () => {},
+        removeEventListener: () => {},
+      },
+    }
+    const origNav = globalThis.navigator
+    Object.defineProperty(globalThis, 'navigator', {
+      value: mockNav,
+      writable: true,
+      configurable: true,
+    })
+
+    try {
+      const activationPromise = waitForServiceWorkerActivation({
+        registration: fakeReg,
+        oldController,
+        timeoutMs: 800,
+        pollIntervalMs: 30,
+      })
+
+      setTimeout(() => {
+        mockNav.serviceWorker.controller = newController
+      }, 50)
+
+      const result = await activationPromise
+      assert.equal(result, 'activated')
+    } finally {
+      Object.defineProperty(globalThis, 'navigator', {
+        value: origNav,
+        writable: true,
+        configurable: true,
+      })
+    }
+  })
+
+  // Test 5: installing -> redundant => problem => no spinner infinito => no reload
+  it('712. 5. installing -> redundant => devuelve problem, no reload, no spinner infinito', async () => {
+    let reloads = 0
+    const onReload = () => { reloads++ }
+    const reloadHandler = createReloadHandler(onReload)
+
+    const listeners: Record<string, () => void> = {}
+    const mockInstallingWorker: any = {
+      state: 'installing',
+      addEventListener: (event: string, cb: () => void) => {
+        listeners[event] = cb
+      },
+      removeEventListener: () => {},
+    }
+
+    const fakeReg = {
+      installing: mockInstallingWorker,
+      waiting: null,
+      active: { state: 'activated' },
+      update: async () => fakeReg,
+    } as unknown as ServiceWorkerRegistration
+
+    const activationPromise = waitForServiceWorkerActivation({
+      registration: fakeReg,
+      timeoutMs: 800,
+      pollIntervalMs: 50,
+    })
+
+    // Simular error de instalación (redundant)
+    mockInstallingWorker.state = 'redundant'
+    if (listeners['statechange']) {
+      listeners['statechange']()
+    }
+
+    const result = await activationPromise
+    assert.equal(result, 'redundant')
+    assert.equal(reloads, 0, 'No debe disparar recarga si el worker falló a redundant')
+  })
+
+  // Test 6: timeout 10 s => problem => updateAvailable true
+  it('713. 6. timeout de activación => devuelve timeout/problem sin recargar', async () => {
+    const fakeReg = {
+      installing: null,
+      waiting: null,
+      active: { state: 'activated' },
+      update: async () => fakeReg,
+    } as unknown as ServiceWorkerRegistration
+
+    const result = await waitForServiceWorkerActivation({
+      registration: fakeReg,
+      timeoutMs: 80,
+      pollIntervalMs: 20,
+    })
+
+    assert.equal(result, 'timeout')
+  })
+
+  // Test 7: un icono del precache falla => install continúa con Promise.allSettled
+  it('714. 7. Service Worker install listener usa Promise.allSettled para precache resiliente', () => {
+    const swCode = generateServiceWorkerCode('0.24.5', '2026.09.30-03')
+    assert.ok(swCode.includes('Promise.allSettled'), 'El SW debe usar Promise.allSettled en install')
+    assert.ok(swCode.includes('PRECACHE_URLS.map'), 'Mapea los recursos del precache')
+    assert.ok(swCode.includes('self.skipWaiting()'), 'Ejecuta self.skipWaiting()')
+  })
+
+  // Test 8: manifest falla => install continúa
+  it('715. 8. manifest.webmanifest y assets secundarios están en el array de precache tolerante', () => {
+    const swCode = generateServiceWorkerCode('0.24.5', '2026.09.30-03')
+    assert.ok(swCode.includes("'./manifest.webmanifest'"))
+    assert.ok(swCode.includes("'./favicon.png'"))
+    assert.ok(swCode.includes("'./pwa-192x192.png'"))
+    assert.ok(swCode.includes("'./pwa-512x512.png'"))
+  })
+
+  // Test 9: index.html presente => precache contiene App Shell
+  it('716. 9. index.html y root ./ presentes en PRECACHE_URLS', () => {
+    const swCode = generateServiceWorkerCode('0.24.5', '2026.09.30-03')
+    assert.ok(swCode.includes("'./'"))
+    assert.ok(swCode.includes("'./index.html'"))
+  })
+
+  // Test 10: múltiples señales de éxito => un solo reload
+  it('717. 10. Múltiples señales concurrentes de activación solo ejecutan 1 recarga (idempotencia)', () => {
+    let reloads = 0
+    const reloadHandler = createReloadHandler(() => { reloads++ })
+
+    // Simular controllerchange + polling + updatefound simultáneos
+    reloadHandler()
+    reloadHandler()
+    reloadHandler()
+    reloadHandler()
+
+    assert.equal(reloads, 1, 'Exactamente 1 recarga ejecutada')
+  })
+
+  // Test 11: Supabase sigue excluido del SW
+  it('718. 11. Supabase (*.supabase.co, REST, Auth, Realtime, Storage) sigue estrictamente excluido', () => {
+    const swCode = generateServiceWorkerCode('0.24.5', '2026.09.30-03')
+    assert.ok(swCode.includes("url.hostname.includes('supabase.co')"))
+    assert.ok(swCode.includes("url.pathname.startsWith('/rest/v1')"))
+    assert.ok(swCode.includes("url.pathname.startsWith('/auth/v1')"))
+    assert.ok(swCode.includes("url.pathname.startsWith('/realtime/v1')"))
+    assert.ok(swCode.includes("url.pathname.startsWith('/storage/v1')"))
+    assert.ok(swCode.includes("return false"))
+  })
+
+  // Test 12: version.json sigue bypass cache
+  it('719. 12. fetchRemoteVersion usa cache: no-store y timestamp dinámico para bypass de caché', async () => {
+    let requestedUrl = ''
+    let requestedHeaders: any = null
+
+    const mockFetch = (async (url: string, opts: any) => {
+      requestedUrl = url
+      requestedHeaders = opts
+      return {
+        ok: true,
+        json: async () => ({ version: '0.24.5', build: '2026.09.30-03' }),
+      }
+    }) as any
+
+    const res = await fetchRemoteVersion('/pocketflow/', mockFetch)
+    assert.ok(res !== null)
+    assert.equal(res?.version, '0.24.5')
+    assert.ok(requestedUrl.startsWith('/pocketflow/version.json?ts='))
+    assert.equal(requestedHeaders?.cache, 'no-store')
+  })
+})
+
 
 
 

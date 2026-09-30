@@ -1,5 +1,5 @@
-// PocketFlow Service Worker v0.24.4 (2026.09.30-02)
-const CACHE_NAME = 'pocketflow-v0.24.4-2026.09.30-02'
+// PocketFlow Service Worker v0.24.5 (2026.09.30-03)
+const CACHE_NAME = 'pocketflow-v0.24.5-2026.09.30-03'
 
 // Recursos estáticos iniciales a cachear
 const PRECACHE_URLS = [
@@ -25,9 +25,15 @@ self.addEventListener('message', (event) => {
 self.addEventListener('install', (event) => {
   self.skipWaiting()
   event.waitUntil(
-    caches
-      .open(CACHE_NAME)
-      .then((cache) => cache.addAll(PRECACHE_URLS))
+    caches.open(CACHE_NAME).then(async (cache) => {
+      await Promise.allSettled(
+        PRECACHE_URLS.map((url) =>
+          cache.add(url).catch((err) => {
+            console.warn('[SW] Warning: failed to precache non-critical asset:', url, err)
+          })
+        )
+      )
+    })
   )
 })
 

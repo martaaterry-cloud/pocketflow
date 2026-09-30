@@ -4,6 +4,7 @@ import {
   checkServiceWorkerUpdate,
   fetchRemoteVersion,
   isRemoteVersionNewer,
+  waitForServiceWorkerActivation,
   getAppBaseUrl,
   devLog,
   type PwaUpdateCheckResult,
@@ -21,6 +22,12 @@ export function usePwaUpdate(): PwaUpdateState {
   const [isUpdating, setIsUpdating] = useState(false)
   const registrationRef = useRef<ServiceWorkerRegistration | null>(null)
   const activeCheckPromiseRef = useRef<Promise<PwaUpdateCheckResult> | null>(null)
+  const reloadOnceRef = useRef<() => void>(
+    createReloadHandler(() => {
+      devLog('[PWA] reloading window once after service worker activation')
+      window.location.reload()
+    })
+  )
 
   const checkForUpdate = useCallback(async (): Promise<PwaUpdateCheckResult> => {
     // Evitar comprobaciones concurrentes reutilizando la Promise activa
@@ -47,13 +54,20 @@ export function usePwaUpdate(): PwaUpdateState {
         }
       }
 
-      const result = await checkServiceWorkerUpdate(currentReg)
+      setIsUpdating(true)
+      const result = await checkServiceWorkerUpdate(currentReg, 10000)
 
       if (result === 'available') {
         setUpdateAvailable(true)
         setIsUpdating(true)
+        reloadOnceRef.current()
       } else if (result === 'problem') {
         setUpdateAvailable(true)
+        setIsUpdating(false)
+      } else if (result === 'up-to-date') {
+        setUpdateAvailable(false)
+        setIsUpdating(false)
+      } else {
         setIsUpdating(false)
       }
 
@@ -70,7 +84,7 @@ export function usePwaUpdate(): PwaUpdateState {
 
   const updateApp = useCallback(async (): Promise<boolean> => {
     setIsUpdating(true)
-    devLog('[PWA] updateApp triggered - requesting registration.update()')
+    devLog('[PWA] updateApp triggered - executing checkForUpdate')
     const result = await checkForUpdate()
     return result === 'available' || result === 'up-to-date'
   }, [checkForUpdate])
@@ -82,10 +96,7 @@ export function usePwaUpdate(): PwaUpdateState {
       return
     }
 
-    const reloadOnce = createReloadHandler(() => {
-      devLog('[PWA] reloading window once after controllerchange')
-      window.location.reload()
-    })
+    const reloadOnce = reloadOnceRef.current
 
     const onControllerChange = () => {
       devLog('[PWA] controllerchange event fired')
@@ -109,13 +120,30 @@ export function usePwaUpdate(): PwaUpdateState {
         })
         registrationRef.current = reg
 
+        const oldActive = reg.active
+        const oldController = navigator.serviceWorker.controller
+
         // 1. Verificación remota inicial independiente
-        fetchRemoteVersion(basePath).then((remote) => {
+        fetchRemoteVersion(basePath).then(async (remote) => {
           if (isRemoteVersionNewer(remote)) {
             devLog('[PWA] remote version is newer on initial registration check')
             setUpdateAvailable(true)
             setIsUpdating(true)
             reg.update().catch(() => {})
+
+            const activationRes = await waitForServiceWorkerActivation({
+              registration: reg,
+              oldActive,
+              oldController,
+              timeoutMs: 10000,
+            })
+
+            if (activationRes === 'activated') {
+              reloadOnce()
+            } else {
+              setIsUpdating(false)
+              setUpdateAvailable(true)
+            }
           }
         }).catch(() => {})
 
@@ -124,13 +152,38 @@ export function usePwaUpdate(): PwaUpdateState {
           devLog('[PWA] active worker detected on registration')
           setUpdateAvailable(true)
           setIsUpdating(true)
+          waitForServiceWorkerActivation({
+            registration: reg,
+            oldActive,
+            oldController,
+            timeoutMs: 10000,
+          }).then((res) => {
+            if (res === 'activated') {
+              reloadOnce()
+            } else {
+              setIsUpdating(false)
+            }
+          })
         }
 
         // 3. Escuchar cuando se descubre un nuevo worker
         reg.addEventListener('updatefound', () => {
           devLog('[PWA] updatefound on registration')
-          setUpdateAvailable(true)
-          setIsUpdating(true)
+          const newWorker = reg.installing
+          if (newWorker) {
+            setUpdateAvailable(true)
+            setIsUpdating(true)
+            newWorker.addEventListener('statechange', () => {
+              devLog(`[PWA] new worker statechange: ${newWorker.state}`)
+              if (newWorker.state === 'activated') {
+                reloadOnce()
+              } else if (newWorker.state === 'redundant') {
+                devLog('[PWA] new worker went redundant on updatefound')
+                setIsUpdating(false)
+                setUpdateAvailable(true)
+              }
+            })
+          }
         })
 
         // Comprobación inicial de actualización
@@ -147,7 +200,6 @@ export function usePwaUpdate(): PwaUpdateState {
     let lastForegroundCheck = 0
     const triggerForegroundCheck = async () => {
       const now = Date.now()
-      // Limitar a máximo una comprobación cada 5 segundos al cambiar de foco
       if (now - lastForegroundCheck < 5000) return
       lastForegroundCheck = now
 
@@ -158,24 +210,23 @@ export function usePwaUpdate(): PwaUpdateState {
           devLog('[PWA] remote is newer during foreground check')
           setUpdateAvailable(true)
           setIsUpdating(true)
-        }
 
-        if (registrationRef.current) {
-          registrationRef.current.update().catch(() => {})
-        } else if (
-          typeof navigator !== 'undefined' &&
-          'serviceWorker' in navigator &&
-          typeof navigator.serviceWorker.getRegistration === 'function'
-        ) {
-          navigator.serviceWorker
-            .getRegistration()
-            .then((reg) => {
-              if (reg) {
-                registrationRef.current = reg
-                reg.update().catch(() => {})
-              }
+          const reg = registrationRef.current
+          if (reg) {
+            reg.update().catch(() => {})
+            const activationRes = await waitForServiceWorkerActivation({
+              registration: reg,
+              oldActive: reg.active,
+              oldController: navigator.serviceWorker.controller,
+              timeoutMs: 10000,
             })
-            .catch(() => {})
+            if (activationRes === 'activated') {
+              reloadOnce()
+            } else {
+              setIsUpdating(false)
+              setUpdateAvailable(true)
+            }
+          }
         }
       }
     }

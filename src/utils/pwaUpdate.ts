@@ -2,7 +2,7 @@
  * Utilidades para detección y activación automática de actualizaciones PWA en PocketFlow.
  * Arquitectura de doble capa:
  * 1. Capa remota: Comprobación de public/version.json con cache no-store.
- * 2. Capa Service Worker: skipWaiting automático en install + reload en controllerchange.
+ * 2. Capa Service Worker: skipWaiting automático en install + watcher de activación y reload en controllerchange.
  */
 
 import { APP_BUILD, APP_VERSION } from '../version'
@@ -25,13 +25,28 @@ export interface PwaDiagnosticInfo {
   registrationScope: string | null
   activeScriptURL: string | null
   activeState: string | null
+  installingScriptURL: string | null
   installingState: string | null
+  waitingScriptURL: string | null
   waitingState: string | null
   controllerScriptURL: string | null
   hasController: boolean
+  activeChanged: boolean
+  controllerChanged: boolean
   basePath: string
   lastCheckedAt: string
 }
+
+export interface WaitForActivationOptions {
+  registration: ServiceWorkerRegistration
+  oldActive?: ServiceWorker | null
+  oldController?: ServiceWorker | null
+  timeoutMs?: number // default 10000ms
+  pollIntervalMs?: number // default 300ms
+  onStateChange?: (state: string) => void
+}
+
+export type ServiceWorkerActivationResult = 'activated' | 'redundant' | 'timeout'
 
 /**
  * Log helper exclusivo para entorno de desarrollo.
@@ -154,6 +169,159 @@ export async function fetchRemoteVersion(
 }
 
 /**
+ * Observa de forma robusta la activación de un nuevo Service Worker.
+ * Detecta éxito cuando:
+ * A) controllerchange ocurre
+ * B) registration.active cambia respecto a oldActive y active.state === 'activated'
+ * C) navigator.serviceWorker.controller cambia respecto a oldController
+ * Detecta fallo cuando:
+ * - El worker en installing/waiting pasa a redundant
+ * Detecta timeout cuando expira timeoutMs (default 10 segundos).
+ */
+export async function waitForServiceWorkerActivation(
+  options: WaitForActivationOptions
+): Promise<ServiceWorkerActivationResult> {
+  const {
+    registration,
+    oldActive = registration.active,
+    oldController = typeof navigator !== 'undefined' && navigator.serviceWorker ? navigator.serviceWorker.controller : null,
+    timeoutMs = 10000,
+    pollIntervalMs = 300,
+    onStateChange,
+  } = options
+
+  return new Promise<ServiceWorkerActivationResult>((resolve) => {
+    let resolved = false
+    let timer: ReturnType<typeof setTimeout> | null = null
+    let pollTimer: ReturnType<typeof setInterval> | null = null
+    const cleanupFns: Array<() => void> = []
+
+    const cleanup = () => {
+      if (timer) {
+        clearTimeout(timer)
+        timer = null
+      }
+      if (pollTimer) {
+        clearInterval(pollTimer)
+        pollTimer = null
+      }
+      cleanupFns.forEach((fn) => {
+        try {
+          fn()
+        } catch {}
+      })
+      cleanupFns.length = 0
+    }
+
+    const finish = (result: ServiceWorkerActivationResult) => {
+      if (!resolved) {
+        resolved = true
+        cleanup()
+        devLog(`[PWA] waitForServiceWorkerActivation result: ${result}`)
+        resolve(result)
+      }
+    }
+
+    // 1. Controllerchange listener en navigator.serviceWorker si existe
+    if (
+      typeof navigator !== 'undefined' &&
+      'serviceWorker' in navigator &&
+      navigator.serviceWorker &&
+      typeof navigator.serviceWorker.addEventListener === 'function'
+    ) {
+      const onControllerChange = () => {
+        devLog('[PWA] controllerchange detected in activation watcher')
+        finish('activated')
+      }
+      navigator.serviceWorker.addEventListener('controllerchange', onControllerChange)
+      cleanupFns.push(() => {
+        navigator.serviceWorker?.removeEventListener('controllerchange', onControllerChange)
+      })
+    }
+
+    // Helper para escuchar transiciones de estado en un ServiceWorker específico
+    const trackWorker = (worker: ServiceWorker | null | undefined) => {
+      if (!worker || typeof worker.addEventListener !== 'function') return
+      const onState = () => {
+        devLog(`[PWA] worker statechange: ${worker.state}`)
+        onStateChange?.(worker.state)
+        if (worker.state === 'activated') {
+          finish('activated')
+        } else if (worker.state === 'redundant') {
+          finish('redundant')
+        }
+      }
+      worker.addEventListener('statechange', onState)
+      cleanupFns.push(() => {
+        worker.removeEventListener('statechange', onState)
+      })
+      // Comprobación inmediata
+      if (worker.state === 'activated' && worker !== oldActive) {
+        finish('activated')
+      } else if (worker.state === 'redundant') {
+        finish('redundant')
+      }
+    }
+
+    // 2. Track initial installing and waiting workers
+    trackWorker(registration.installing)
+    trackWorker(registration.waiting)
+
+    // 3. Listen to updatefound on registration
+    if (typeof registration.addEventListener === 'function') {
+      const onUpdateFound = () => {
+        devLog('[PWA] updatefound in activation watcher, tracking installing worker')
+        trackWorker(registration.installing)
+      }
+      registration.addEventListener('updatefound', onUpdateFound)
+      cleanupFns.push(() => {
+        registration.removeEventListener('updatefound', onUpdateFound)
+      })
+    }
+
+    // 4. Polling periódico cada ~300ms (resiliencia para Safari / iOS)
+    pollTimer = setInterval(() => {
+      if (resolved) return
+
+      const currentController =
+        typeof navigator !== 'undefined' && navigator.serviceWorker ? navigator.serviceWorker.controller : null
+      const currentActive = registration.active
+
+      // Condición A: El controller ha cambiado respecto al controller inicial
+      if (currentController && currentController !== oldController) {
+        devLog('[PWA] polling detected controller changed')
+        finish('activated')
+        return
+      }
+
+      // Condición B: El active worker ha cambiado y está en activated
+      if (currentActive && currentActive !== oldActive && currentActive.state === 'activated') {
+        devLog('[PWA] polling detected active worker changed to activated')
+        finish('activated')
+        return
+      }
+
+      // Condición C: El worker en installing o waiting ha pasado a redundant
+      if (registration.installing?.state === 'redundant' || registration.waiting?.state === 'redundant') {
+        devLog('[PWA] polling detected worker became redundant')
+        finish('redundant')
+        return
+      }
+
+      // Track any newly appeared worker
+      if (registration.installing) trackWorker(registration.installing)
+      if (registration.waiting) trackWorker(registration.waiting)
+    }, pollIntervalMs)
+
+    // 5. Timeout global de seguridad
+    timer = setTimeout(() => {
+      devLog('[PWA] waitForServiceWorkerActivation timed out after', timeoutMs, 'ms')
+      finish('timeout')
+    }, timeoutMs)
+  })
+}
+
+/**
  * Recopila información detallada de diagnóstico de la PWA y el Service Worker.
  */
 export async function collectPwaDiagnosticInfo(
@@ -176,6 +344,8 @@ export async function collectPwaDiagnosticInfo(
 
   const remote = await fetchRemoteVersion(basePath)
   const isNewer = isRemoteVersionNewer(remote)
+  const currentController =
+    typeof navigator !== 'undefined' && navigator.serviceWorker ? navigator.serviceWorker.controller : null
 
   return {
     localVersion: APP_VERSION,
@@ -186,13 +356,14 @@ export async function collectPwaDiagnosticInfo(
     registrationScope: activeReg?.scope || null,
     activeScriptURL: activeReg?.active?.scriptURL || null,
     activeState: activeReg?.active?.state || null,
+    installingScriptURL: activeReg?.installing?.scriptURL || null,
     installingState: activeReg?.installing?.state || null,
+    waitingScriptURL: activeReg?.waiting?.scriptURL || null,
     waitingState: activeReg?.waiting?.state || null,
-    controllerScriptURL:
-      typeof navigator !== 'undefined' && navigator.serviceWorker?.controller
-        ? navigator.serviceWorker.controller.scriptURL
-        : null,
-    hasController: typeof navigator !== 'undefined' && Boolean(navigator.serviceWorker?.controller),
+    controllerScriptURL: currentController ? currentController.scriptURL : null,
+    hasController: Boolean(currentController),
+    activeChanged: Boolean(activeReg?.active && activeReg.active.state === 'activated'),
+    controllerChanged: Boolean(currentController),
     basePath,
     lastCheckedAt: new Date().toISOString(),
   }
@@ -328,7 +499,9 @@ export async function checkServiceWorkerUpdate(
               }
               if (remote) {
                 finish('up-to-date')
+                return
               }
+              finish('up-to-date')
             }, 50)
           })
           .catch((err) => {
@@ -350,3 +523,4 @@ export async function checkServiceWorkerUpdate(
     }
   })
 }
+
