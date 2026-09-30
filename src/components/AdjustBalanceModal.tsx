@@ -265,9 +265,9 @@ export function AdjustBalanceModal({
               type="submit"
               className="btn btn-primary"
               disabled={parsedRealBalance === null || difference === 0}
-              style={{ flex: 1, background: '#f59e0b', borderColor: '#f59e0b' }}
+              style={{ flex: 1 }}
             >
-              Confirmar ajuste
+              Ajustar saldo
             </button>
           </div>
         </form>

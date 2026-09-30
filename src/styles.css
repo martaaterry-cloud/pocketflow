@@ -1377,52 +1377,269 @@ input[type="date"]::-webkit-calendar-picker-indicator:hover {
   gap: 8px;
 }
 
-.danger-button,
-.btn.btn-danger {
-  flex: 1;
-  min-height: 44px;
-  border: 0;
-  border-radius: var(--radius-md);
-  background: var(--accent-red, #dc2626);
-  color: #ffffff;
-  padding: 12px 16px;
-  font-size: 14px;
+.btn {
+  font-family: inherit;
+  font-size: 15px;
   font-weight: 600;
-  cursor: pointer;
+  border-radius: var(--radius-md, 14px);
+  padding: 13px 18px;
+  min-height: 48px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  transition: opacity 0.15s ease, transform 0.12s ease;
+  gap: 8px;
+  border: 0;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  text-decoration: none;
+  box-sizing: border-box;
 }
 
-.danger-button:active,
-.btn.btn-danger:active {
-  opacity: 0.9;
-  transform: scale(0.98);
+.btn:active {
+  transform: scale(0.985);
+}
+
+.btn:disabled,
+.btn[disabled],
+.primary-button:disabled,
+.primary-button[disabled] {
+  opacity: 0.45 !important;
+  cursor: not-allowed !important;
+  pointer-events: none !important;
+  transform: none !important;
+  box-shadow: none !important;
+}
+
+.primary-button,
+.btn.btn-primary,
+.btn-primary {
+  flex: 1;
+  width: 100%;
+  min-height: 48px;
+  border: 0;
+  border-radius: var(--radius-md, 14px);
+  background: var(--accent-dark, #1c1d1a);
+  color: #ffffff;
+  padding: 13px 18px;
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+  box-shadow: var(--shadow-sm, 0 2px 8px rgba(28, 29, 26, 0.08));
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  transition: transform 0.15s ease, background 0.15s ease, opacity 0.15s ease;
+}
+
+.primary-button:active,
+.btn.btn-primary:active,
+.btn-primary:active {
+  transform: scale(0.985);
+  background: var(--accent-dark-hover, #33362f);
 }
 
 .secondary-button,
-.btn.btn-secondary {
+.btn.btn-secondary,
+.btn-secondary {
   flex: 1;
-  min-height: 44px;
-  border: 1px solid var(--border-strong, #cbd5e1);
-  border-radius: var(--radius-md);
+  min-height: 48px;
+  border: 1px solid var(--border-strong, #d7d8d0);
+  border-radius: var(--radius-md, 14px);
   background: var(--bg-card, #ffffff);
-  color: var(--text-main, #1e293b);
-  padding: 12px 16px;
+  color: var(--text-main, #1c1d1a);
+  padding: 13px 18px;
   font-size: 14px;
   font-weight: 600;
   cursor: pointer;
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  gap: 8px;
   transition: background 0.15s ease, transform 0.12s ease;
 }
 
 .secondary-button:active,
-.btn.btn-secondary:active {
-  background: var(--border-color, #f1f5f9);
-  transform: scale(0.98);
+.btn.btn-secondary:active,
+.btn-secondary:active {
+  background: var(--bg-card-subtle, #f8f8f5);
+  transform: scale(0.985);
+}
+
+.danger-button,
+.btn.btn-danger,
+.btn-danger {
+  min-height: 48px;
+  border: 0;
+  border-radius: var(--radius-md, 14px);
+  background: var(--accent-red, #dc2626);
+  color: #ffffff;
+  padding: 13px 18px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  transition: opacity 0.15s ease, transform 0.12s ease;
+}
+
+.danger-button:active,
+.btn.btn-danger:active,
+.btn-danger:active {
+  opacity: 0.9;
+  transform: scale(0.985);
+}
+
+.segmented-control {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+  background: #ecece7;
+  border-radius: 12px;
+  padding: 3px;
+  box-sizing: border-box;
+}
+
+.segmented-btn {
+  border: 0;
+  background: transparent;
+  padding: 9px 8px;
+  border-radius: 9px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-muted, #82847c);
+  cursor: pointer;
+  transition: all 0.15s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.segmented-btn.active {
+  background: #ffffff;
+  color: var(--text-main, #1c1d1a);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08);
+}
+
+.income-kind-selector {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+  background: #ecece7;
+  border-radius: 12px;
+  padding: 3px;
+  margin-bottom: 14px;
+  box-sizing: border-box;
+}
+
+.income-kind-pill {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 9px 8px;
+  border-radius: 9px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text-muted, #82847c);
+  cursor: pointer;
+  transition: all 0.15s ease;
+  text-align: center;
+  user-select: none;
+}
+
+.income-kind-pill input[type="radio"] {
+  display: none;
+}
+
+.income-kind-pill.active {
+  background: #ffffff;
+  color: var(--text-main, #1c1d1a);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08);
+}
+
+.bizum-toggle-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 14px;
+  border-radius: var(--radius-pill, 9999px);
+  border: 1px solid var(--border-light, #eaeae4);
+  background: var(--bg-card-subtle, #f8f8f5);
+  color: var(--text-muted, #82847c);
+  font-size: 0.86rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.bizum-toggle-chip.active {
+  border-color: #10b981;
+  background: rgba(16, 185, 129, 0.12);
+  color: #059669;
+  font-weight: 600;
+}
+
+.debt-chip-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 200px;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  margin-top: 6px;
+  padding-right: 2px;
+}
+
+.debt-chip {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px 14px;
+  border-radius: 12px;
+  border: 1px solid var(--border-light, #eaeae4);
+  background: var(--bg-card, #ffffff);
+  cursor: pointer;
+  text-align: left;
+  transition: all 0.15s ease;
+}
+
+.debt-chip:hover {
+  border-color: var(--border-strong, #d7d8d0);
+  background: var(--bg-card-subtle, #f8f8f5);
+}
+
+.debt-chip.selected {
+  border-color: var(--accent-green, #487a5b);
+  background: rgba(72, 122, 91, 0.08);
+  box-shadow: 0 0 0 1px var(--accent-green, #487a5b);
+}
+
+.debt-chip-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+}
+
+.debt-chip-top strong {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--text-main, #1c1d1a);
+}
+
+.debt-chip-amount {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--accent-green, #487a5b);
+}
+
+.debt-chip-subtitle {
+  font-size: 12px;
+  color: var(--text-muted, #82847c);
 }
 
 .muted {

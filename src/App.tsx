@@ -6,7 +6,6 @@ import { AdjustBalanceModal } from './components/AdjustBalanceModal'
 import { CashWithdrawalLinkModal } from './components/CashWithdrawalLinkModal'
 import { EditCashTransactionModal } from './components/EditCashTransactionModal'
 import { QuickActionSheet } from './components/QuickActionSheet'
-import { ReimbursementModal } from './components/ReimbursementModal'
 import { PayDebtModal } from './components/PayDebtModal'
 import { SharedExpenseDetailModal } from './components/SharedExpenseDetailModal'
 import type { CashTransaction, Transaction } from './models/finance'
@@ -452,7 +451,6 @@ export default function App() {
   const [isActionSheetOpen, setIsActionSheetOpen] = useState(false)
   const [isAdjustBalanceModalOpen, setIsAdjustBalanceModalOpen] = useState(false)
   const [modalDefaultType, setModalDefaultType] = useState<'expense' | 'income' | 'transfer'>('expense')
-  const [isReimbursementModalOpen, setIsReimbursementModalOpen] = useState(false)
   const [reimbursementShareId, setReimbursementShareId] = useState<string | undefined>(undefined)
   const [isPayDebtModalOpen, setIsPayDebtModalOpen] = useState(false)
   const [payDebtShareId, setPayDebtShareId] = useState<string | undefined>(undefined)
@@ -476,6 +474,7 @@ export default function App() {
   const handleCloseModal = () => {
     setIsModalOpen(false)
     setSelectedTx(null)
+    setReimbursementShareId(undefined)
   }
 
   // Si aún no se ha verificado la sesión, mostramos shell sin parpadeo
@@ -572,7 +571,8 @@ export default function App() {
           }}
           onRecordReimbursement={(shareId) => {
             setReimbursementShareId(shareId)
-            setIsReimbursementModalOpen(true)
+            setModalDefaultType('income')
+            setIsModalOpen(true)
           }}
           onRecordPayablePayment={(shareId) => {
             setPayDebtShareId(shareId)
@@ -687,28 +687,6 @@ export default function App() {
         onSelectAdjust={() => {
           setIsAdjustBalanceModalOpen(true)
         }}
-        onSelectReimbursement={() => {
-          setReimbursementShareId(undefined)
-          setIsReimbursementModalOpen(true)
-        }}
-      />
-
-      <ReimbursementModal
-        open={isReimbursementModalOpen}
-        onClose={() => {
-          setIsReimbursementModalOpen(false)
-          setReimbursementShareId(undefined)
-        }}
-        accounts={finance.accounts}
-        transactions={finance.transactions}
-        expenseShares={finance.expenseShares}
-        cashTransactions={finance.cashTransactions}
-        initialShareId={reimbursementShareId}
-        onSubmit={(input) => {
-          finance.recordReimbursement(input)
-          const targetStr = input.paymentMethod === 'cash' ? 'en Efectivo' : 'en Banco'
-          showToast(`Reembolso registrado (+${input.amount.toFixed(2)} € ${targetStr})`, 'success')
-        }}
       />
 
       <PayDebtModal
@@ -740,7 +718,8 @@ export default function App() {
           onRecordReimbursement={(shareId) => {
             setSelectedSharedTx(null)
             setReimbursementShareId(shareId)
-            setIsReimbursementModalOpen(true)
+            setModalDefaultType('income')
+            setIsModalOpen(true)
           }}
           onRecordPayablePayment={(shareId) => {
             setSelectedSharedTx(null)
@@ -782,6 +761,7 @@ export default function App() {
         cashTransactions={finance.cashTransactions}
         defaultType={modalDefaultType}
         initialTransaction={selectedTx}
+        initialReimbursementShareId={reimbursementShareId}
         onAdd={finance.addTransaction}
         onAddShared={finance.addSharedExpense}
         onUpdate={finance.updateTransaction}
@@ -791,7 +771,11 @@ export default function App() {
         onDeleteCashTransaction={finance.deleteCashTransaction}
         onRecordTransfer={finance.recordTransfer}
         onSwitchMedium={finance.switchMovementMedium}
-        onPromptWithdrawalLink={(tx) => setPendingWithdrawalToLink(tx)}
+        onRecordReimbursement={(input) => {
+          finance.recordReimbursement(input)
+          const targetStr = input.paymentMethod === 'cash' ? 'en Efectivo' : 'en Banco'
+          showToast(`Reembolso registrado (+${input.amount.toFixed(2)} € ${targetStr})`, 'success')
+        }}
       />
 
       <AdjustBalanceModal

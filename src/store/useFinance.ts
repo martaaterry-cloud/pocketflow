@@ -48,6 +48,7 @@ import type {
   CashTransaction,
   CreateCashTransactionInput,
   UpdateCashTransactionInput,
+  PaymentMethod,
 } from '../models/finance'
 import { selectCashBalance, createCashAdjustmentInput } from '../utils/cashSelectors'
 import { defaultAppStorage, createIndexedDbAdapter } from '../services/storage/indexedDbAdapter'
@@ -607,7 +608,7 @@ export function useFinance(storage: StorageAdapter = defaultAppStorage) {
       date?: string
       note?: string
       description?: string
-      paymentMethod?: 'bank' | 'cash'
+      paymentMethod?: PaymentMethod
     }) => {
       const paymentMethod = input.paymentMethod || 'bank'
       const share = (state.expenseShares ?? []).find((s) => s.id === input.expenseShareId)
@@ -636,6 +637,7 @@ export function useFinance(storage: StorageAdapter = defaultAppStorage) {
           description: desc,
           note: finalNote,
           bankTransactionId: targetExpenseId,
+          paymentMethod: 'cash',
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString(),
         }
@@ -658,7 +660,7 @@ export function useFinance(storage: StorageAdapter = defaultAppStorage) {
       const desc =
         input.description ||
         (share
-          ? `Bizum ${share.participantName} · ${parentTx?.description || 'Reembolso'}`
+          ? `${paymentMethod === 'bizum' ? 'Bizum' : 'Reembolso'} ${share.participantName} · ${parentTx?.description || 'Reembolso'}`
           : `Reembolso · ${parentTx?.description || 'Gasto'}`)
 
       const fallbackAccountId = parentTx && 'accountId' in parentTx && parentTx.accountId ? parentTx.accountId : 'daily'
@@ -674,6 +676,7 @@ export function useFinance(storage: StorageAdapter = defaultAppStorage) {
         note: input.note,
         parentExpenseId: targetExpenseId,
         expenseShareId: input.expenseShareId,
+        paymentMethod: paymentMethod === 'bizum' ? 'bizum' : 'bank',
       }
 
       commit(

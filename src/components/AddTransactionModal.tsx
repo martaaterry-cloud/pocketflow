@@ -12,10 +12,11 @@ import type {
   CreateCashTransactionInput,
   UpdateCashTransactionInput,
 } from '../models/finance'
-import { money } from '../utils/money'
+import { money, shortDate } from '../utils/money'
 import {
   splitExpenseEqually,
   calculateCustomSplit,
+  selectPendingDebtors,
   type SplitMode,
   type CustomParticipantInput,
 } from '../utils/sharedExpenseSelectors'
@@ -33,6 +34,7 @@ interface AddTransactionModalProps {
   cashTransactions?: CashTransaction[]
   defaultType?: 'expense' | 'income' | 'transfer'
   initialTransaction?: Transaction | CashTransaction | null
+  initialReimbursementShareId?: string
   onAdd?: (value: CreateTransactionInput) => Transaction | void
   onAddShared?: (
     value: CreateTransactionInput,
@@ -71,7 +73,16 @@ interface AddTransactionModalProps {
     transactionData: CreateTransactionInput | CreateCashTransactionInput
     shares?: { participantName: string; contactId?: string; isPayerShare: boolean; isUserShare?: boolean; expectedAmount: number }[]
   }) => void
-  onPromptWithdrawalLink?: (tx: Transaction) => void
+  onRecordReimbursement?: (input: {
+    parentExpenseId?: string
+    expenseShareId?: string
+    amount: number
+    accountId?: string
+    date?: string
+    note?: string
+    description?: string
+    paymentMethod?: 'bank' | 'bizum' | 'cash'
+  }) => void
 }
 
 interface ParticipantEntry {
@@ -92,6 +103,7 @@ export function AddTransactionModal({
   cashTransactions = [],
   defaultType = 'expense',
   initialTransaction,
+  initialReimbursementShareId,
   onAdd,
   onAddShared,
   onUpdate,
@@ -101,7 +113,7 @@ export function AddTransactionModal({
   onDeleteCashTransaction,
   onRecordTransfer,
   onSwitchMedium,
-  onPromptWithdrawalLink,
+  onRecordReimbursement,
 }: AddTransactionModalProps) {
   const isEditing = Boolean(initialTransaction)
   const isInitialCash = Boolean(
@@ -115,36 +127,53 @@ export function AddTransactionModal({
   const [type, setType] = useState<'expense' | 'income' | 'transfer'>(defaultType)
   const [sourceMedium, setSourceMedium] = useState<'bank' | 'cash'>('bank')
   const [incomeKind, setIncomeKind] = useState<IncomeKind>('income')
+  const [selectedReceivableShareId, setSelectedReceivableShareId] = useState<string>('')
   const [amount, setAmount] = useState('')
   const [description, setDescription] = useState('')
   const [categoryId, setCategoryId] = useState('')
   const [accountId, setAccountId] = useState('')
-  const [toAccountId, setToAccountId] = useState('')
   const [transferFrom, setTransferFrom] = useState<string>('')
   const [transferTo, setTransferTo] = useState<string>('')
   const [date, setDate] = useState(() => new Date().toISOString().slice(0, 10))
   const [note, setNote] = useState('')
   const [confirmDelete, setConfirmDelete] = useState(false)
 
-  // Sub-modal / Confirmación de edición de retirada vinculada
-  const [pendingLinkedUpdatePayload, setPendingLinkedUpdatePayload] = useState<CreateTransactionInput | null>(null)
-
   // Confirmación al desmarcar gasto compartido con datos existentes
   const [showUnshareConfirm, setShowUnshareConfirm] = useState(false)
   const [unshareHasReimbursements, setUnshareHasReimbursements] = useState(false)
 
-  // Estados para Bizum, Retirada y Naturaleza
+  // Estados para Bizum y Naturaleza
   const [isBizum, setIsBizum] = useState(false)
-  const [isCashWithdrawal, setIsCashWithdrawal] = useState(false)
-  const [prevCategoryId, setPrevCategoryId] = useState<string>('')
   const [expenseNature, setExpenseNature] = useState<ExpenseNature>('variable')
   const [giftRecipient, setGiftRecipient] = useState('')
 
-  // Identificar si la transacción actual tiene un movimiento de efectivo vinculado
-  const linkedCashTx = useMemo(() => {
-    if (!initialTransaction || ('specialType' in initialTransaction && initialTransaction.specialType !== 'cash_withdrawal')) return undefined
-    return cashTransactions.find((c) => c.bankTransactionId === initialTransaction.id)
-  }, [initialTransaction, cashTransactions])
+  // Lista canónica de cuotas por cobrar pendientes (excluyendo deudas de terceros y pagador)
+  const pendingReceivablesList = useMemo(() => {
+    const debtors = selectPendingDebtors(expenseShares, transactions, cashTransactions)
+    const list: {
+      shareId: string
+      debtorName: string
+      expenseDescription: string
+      pendingAmount: number
+      expenseTransactionId: string
+      date: string
+    }[] = []
+
+    debtors.forEach((d) => {
+      d.pendingShares.forEach((ps) => {
+        list.push({
+          shareId: ps.share.id,
+          debtorName: d.name,
+          expenseDescription: ps.expenseDescription,
+          pendingAmount: ps.pendingAmount,
+          expenseTransactionId: ps.share.expenseTransactionId,
+          date: ps.expenseDate,
+        })
+      })
+    })
+
+    return list
+  }, [expenseShares, transactions, cashTransactions])
 
   // Destinatarios usados previamente en transacciones de regalos
   const previousRecipients = useMemo(() => {
@@ -189,25 +218,10 @@ export function AddTransactionModal({
       setIncomeKind(('incomeKind' in initialTransaction && initialTransaction.incomeKind) ? initialTransaction.incomeKind : 'income')
       setAmount(String(initialTransaction.amount).replace('.', ','))
       setDescription(initialTransaction.description)
-
-      const initialIsWithdrawal = 'specialType' in initialTransaction && initialTransaction.specialType === 'cash_withdrawal'
-      setIsCashWithdrawal(initialIsWithdrawal)
-
-      const atmCat = categories.find((c) => c.id === 'atm' || c.name.toLowerCase() === 'cajero')
-      if (initialIsWithdrawal) {
-        setCategoryId(initialTransaction.categoryId ?? atmCat?.id ?? 'atm')
-      } else {
-        setCategoryId(initialTransaction.categoryId ?? categories[0]?.id ?? '')
-      }
-      setPrevCategoryId(
-        initialTransaction.categoryId && initialTransaction.categoryId !== 'atm'
-          ? initialTransaction.categoryId
-          : categories[0]?.id ?? ''
-      )
+      setCategoryId(initialTransaction.categoryId ?? categories[0]?.id ?? '')
 
       const initialAccId = 'accountId' in initialTransaction && initialTransaction.accountId ? initialTransaction.accountId : accounts[0]?.id ?? 'daily'
       setAccountId(initialAccId)
-      setToAccountId(('toAccountId' in initialTransaction && initialTransaction.toAccountId) ? initialTransaction.toAccountId : accounts.find((a) => a.id !== initialAccId)?.id ?? '')
       
       setTransferFrom(initialAccId)
       setTransferTo(('toAccountId' in initialTransaction && initialTransaction.toAccountId) ? initialTransaction.toAccountId : 'cash')
@@ -270,25 +284,23 @@ export function AddTransactionModal({
       setGiftRecipient(('giftRecipient' in initialTransaction && initialTransaction.giftRecipient) ? initialTransaction.giftRecipient : '')
       setIsBizum(initialTransaction.paymentMethod === 'bizum')
       setConfirmDelete(false)
-      setPendingLinkedUpdatePayload(null)
       setShowUnshareConfirm(false)
+      setSelectedReceivableShareId('')
     } else {
       setType(defaultType)
       setSourceMedium('bank')
-      setIncomeKind('income')
+      setIncomeKind(initialReimbursementShareId ? 'reimbursement' : 'income')
+      setSelectedReceivableShareId(initialReimbursementShareId || '')
       setAmount('')
       setDescription('')
       setCategoryId(categories[0]?.id ?? '')
-      setPrevCategoryId(categories[0]?.id ?? '')
       const firstSpending = accounts.find((a) => a.type === 'spending')?.id ?? accounts[0]?.id ?? ''
       setAccountId(firstSpending)
-      setToAccountId(accounts.find((a) => a.type === 'savings')?.id ?? accounts[1]?.id ?? '')
       setTransferFrom(firstSpending)
       setTransferTo('cash')
       setDate(new Date().toISOString().slice(0, 10))
       setNote('')
       setIsBizum(false)
-      setIsCashWithdrawal(false)
       setExpenseNature('variable')
       setGiftRecipient('')
       setIsShared(false)
@@ -301,9 +313,16 @@ export function AddTransactionModal({
       setCustomAmounts({})
       setNewParticipantInput('')
       setConfirmDelete(false)
-      setPendingLinkedUpdatePayload(null)
+
+      if (initialReimbursementShareId) {
+        const targetShare = pendingReceivablesList.find((p) => p.shareId === initialReimbursementShareId)
+        if (targetShare) {
+          setAmount(String(targetShare.pendingAmount).replace('.', ','))
+          setDescription(`Reembolso ${targetShare.debtorName} · ${targetShare.expenseDescription}`)
+        }
+      }
     }
-  }, [initialTransaction, accounts, categories, open, defaultType])
+  }, [initialTransaction, accounts, categories, open, defaultType, initialReimbursementShareId, pendingReceivablesList])
 
   const numericAmount = Number(amount.replace(',', '.')) || 0
 
@@ -411,19 +430,6 @@ export function AddTransactionModal({
     }
   }
 
-  const handleLinkExistingWithdrawal = () => {
-    if (!initialTransaction || !onAddCashTransaction) return
-    onAddCashTransaction({
-      type: 'income',
-      amount: initialTransaction.amount,
-      date: initialTransaction.date,
-      description: 'Retirada de cajero',
-      bankTransactionId: initialTransaction.id,
-      note: 'Transferido desde Banco',
-      paymentMethod: 'cash',
-    })
-  }
-
   const handleToggleShared = (checked: boolean) => {
     if (
       !checked &&
@@ -436,13 +442,16 @@ export function AddTransactionModal({
           (t) =>
             t.type === 'income' &&
             t.incomeKind === 'reimbursement' &&
-            (t.parentExpenseId === initialTransaction?.id || sharesForTx.some((s) => s.id === t.expenseShareId))
+            (t.parentExpenseId === initialTransaction?.id ||
+              sharesForTx.some((s) => s.id === t.expenseShareId))
         ) ||
         cashTransactions.some(
           (c) =>
             c.type === 'income' &&
-            c.bankTransactionId === initialTransaction?.id
+            (c.bankTransactionId === initialTransaction?.id ||
+              sharesForTx.some((s) => c.note?.includes(`[share:${s.id}]`)))
         )
+
       setUnshareHasReimbursements(hasReimb)
       setShowUnshareConfirm(true)
       return
@@ -458,17 +467,20 @@ export function AddTransactionModal({
     if (type === 'transfer') {
       if (!transferFrom || !transferTo || transferFrom === transferTo) return
 
+      const fromType = transferFrom === 'cash' ? 'cash' : 'account'
+      const fromAccountId = transferFrom === 'cash' ? undefined : transferFrom
+      const toType = transferTo === 'cash' ? 'cash' : 'account'
+      const toAccountId = transferTo === 'cash' ? undefined : transferTo
+
       if (onRecordTransfer) {
-        const fromType = transferFrom === 'cash' ? 'cash' : 'account'
-        const toType = transferTo === 'cash' ? 'cash' : 'account'
         onRecordTransfer({
           fromType,
-          fromAccountId: fromType === 'account' ? transferFrom : undefined,
+          fromAccountId,
           toType,
-          toAccountId: toType === 'account' ? transferTo : undefined,
+          toAccountId,
           amount: numericAmount,
           date: new Date(date).toISOString(),
-          description: description.trim() || undefined,
+          description: description.trim() || 'Transferencia',
           note: note.trim() || undefined,
         })
       }
@@ -476,26 +488,38 @@ export function AddTransactionModal({
       return
     }
 
-    if (type === 'expense' && isShared) {
-      if (splitType === 'custom' && (!customSplitSummary || !customSplitSummary.isValid)) {
-        return
+    // Preparar cuotas de gasto compartido si aplica
+    const sharesInput =
+      type === 'expense' && isShared && computedShares.length > 0
+        ? computedShares.map((s) => ({
+            participantName: s.participantName,
+            contactId: s.contactId,
+            isPayerShare: Boolean(s.isPayerShare),
+            isUserShare: Boolean(s.isUserShare),
+            expectedAmount: s.amount,
+          }))
+        : undefined
+
+    // CASO INGRESO: Devolución / Cobro pendiente vinculado
+    if (type === 'income' && incomeKind === 'reimbursement' && selectedReceivableShareId) {
+      const selectedShare = pendingReceivablesList.find((p) => p.shareId === selectedReceivableShareId)
+      if (selectedShare) {
+        if (onRecordReimbursement) {
+          onRecordReimbursement({
+            parentExpenseId: selectedShare.expenseTransactionId,
+            expenseShareId: selectedShare.shareId,
+            amount: numericAmount,
+            accountId: sourceMedium === 'bank' ? accountId : undefined,
+            date: new Date(date).toISOString(),
+            description: description.trim(),
+            note: note.trim() || undefined,
+            paymentMethod: sourceMedium === 'cash' ? 'cash' : (isBizum ? 'bizum' : 'bank'),
+          })
+          onClose()
+          return
+        }
       }
-      if (participants.length === 0) return
     }
-
-    const isGiftsCategory =
-      type === 'expense' &&
-      (categoryId === 'gifts' || categories.find((c) => c.id === categoryId)?.name.toLowerCase().includes('regalo'))
-
-    const sharesInput = (type === 'expense' && isShared && computedShares.length > 0)
-      ? computedShares.map((s) => ({
-          participantName: s.participantName,
-          contactId: s.contactId,
-          isPayerShare: Boolean(s.isPayerShare),
-          isUserShare: Boolean(s.isUserShare),
-          expectedAmount: s.amount,
-        }))
-      : []
 
     // CASO EFECTIVO
     if (sourceMedium === 'cash') {
@@ -515,7 +539,6 @@ export function AddTransactionModal({
 
       if (isEditing && initialTransaction) {
         if (!isInitialCash && onSwitchMedium) {
-          // Cambio Bank -> Cash
           onSwitchMedium({
             from: 'bank',
             id: initialTransaction.id,
@@ -546,11 +569,13 @@ export function AddTransactionModal({
       categoryId: type === 'expense' ? categoryId : undefined,
       toAccountId: undefined,
       incomeKind: type === 'income' ? incomeKind : undefined,
+      parentExpenseId: type === 'income' && incomeKind === 'reimbursement' && selectedReceivableShareId ? pendingReceivablesList.find((p) => p.shareId === selectedReceivableShareId)?.expenseTransactionId : undefined,
+      expenseShareId: type === 'income' && incomeKind === 'reimbursement' && selectedReceivableShareId ? selectedReceivableShareId : undefined,
       isShared: type === 'expense' && isShared,
       paidBy: type === 'expense' && isShared ? paidBy : undefined,
       payerName: type === 'expense' && isShared && paidBy === 'contact' && payerName.trim() ? payerName.trim() : undefined,
       payerContactId: type === 'expense' && isShared && paidBy === 'contact' ? payerContactId : undefined,
-      specialType: type === 'expense' ? (isCashWithdrawal ? 'cash_withdrawal' : 'normal') : undefined,
+      specialType: 'normal',
       expenseNature: type === 'expense' ? expenseNature : undefined,
       giftRecipient: isGiftsCategory && giftRecipient.trim() ? giftRecipient.trim() : undefined,
       paymentMethod: isBizum ? 'bizum' : 'bank',
@@ -558,7 +583,6 @@ export function AddTransactionModal({
 
     if (isEditing && initialTransaction) {
       if (isInitialCash && onSwitchMedium) {
-        // Cambio Cash -> Bank
         onSwitchMedium({
           from: 'cash',
           id: initialTransaction.id,
@@ -567,34 +591,22 @@ export function AddTransactionModal({
           shares: sharesInput,
         })
       } else if (onUpdate) {
-        if (linkedCashTx) {
-          const amountChanged = numericAmount !== initialTransaction.amount
-          const dateChanged = date !== initialTransaction.date.slice(0, 10)
-          if (amountChanged || dateChanged) {
-            setPendingLinkedUpdatePayload(bankPayload)
-            return
-          }
-        }
-
-        if (type === 'expense' && isShared && sharesInput.length > 0) {
-          onUpdate(initialTransaction.id, { ...bankPayload, isShared: true }, sharesInput)
-        } else if (type === 'expense' && !isShared && initialTransaction.isShared) {
-          onUpdate(initialTransaction.id, { ...bankPayload, isShared: false }, [])
-        } else {
-          onUpdate(initialTransaction.id, bankPayload)
-        }
+        onUpdate(initialTransaction.id, bankPayload, sharesInput)
       }
-    } else if (type === 'expense' && isShared && onAddShared && sharesInput.length > 0) {
-      onAddShared(bankPayload, sharesInput)
-    } else if (onAdd) {
-      const createdTx = onAdd(bankPayload)
-      if (isCashWithdrawal && createdTx && onPromptWithdrawalLink) {
-        onPromptWithdrawalLink(createdTx)
+    } else {
+      if (type === 'expense' && isShared && sharesInput && onAddShared) {
+        onAddShared(bankPayload, sharesInput)
+      } else if (onAdd) {
+        onAdd(bankPayload)
       }
     }
 
     onClose()
   }
+
+  const isGiftsCategory =
+    categoryId === 'gifts' ||
+    categories.find((c) => c.id === categoryId)?.name.toLowerCase().includes('regalo')
 
   const handleDelete = () => {
     if (!initialTransaction) return
@@ -607,6 +619,14 @@ export function AddTransactionModal({
   }
 
   if (!open) return null
+
+  // Texto dinámico para botón principal
+  const getPrimaryButtonText = () => {
+    if (isEditing) return 'Guardar cambios'
+    if (type === 'expense') return 'Añadir gasto'
+    if (type === 'income') return 'Añadir ingreso'
+    return 'Transferir'
+  }
 
   return (
     <div className="modal-backdrop" onClick={onClose} role="dialog" aria-modal="true">
@@ -630,45 +650,17 @@ export function AddTransactionModal({
           </button>
         </div>
 
-        {/* Selector de Tipo si es nuevo movimiento */}
-        {!isEditing && (
-          <div className="segmented">
-            <button
-              type="button"
-              className={type === 'expense' ? 'active' : ''}
-              onClick={() => setType('expense')}
-            >
-              Gasto
-            </button>
-            <button
-              type="button"
-              className={type === 'income' ? 'active' : ''}
-              onClick={() => setType('income')}
-            >
-              Ingreso
-            </button>
-            <button
-              type="button"
-              className={type === 'transfer' ? 'active' : ''}
-              onClick={() => setType('transfer')}
-            >
-              Transferir
-            </button>
-          </div>
-        )}
-
         {/* Selector de Medio: Cuenta vs Efectivo (para Gasto e Ingreso) */}
         {type !== 'transfer' && (
-          <div className="form-group" style={{ marginBottom: 12 }}>
-            <label style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>
+          <div className="form-group" style={{ marginBottom: 14 }}>
+            <label style={{ fontSize: '0.82rem', color: 'var(--text-muted)' }}>
               {type === 'expense' ? 'Origen del dinero' : 'Destino del dinero'}
             </label>
-            <div className="segmented-control" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
+            <div className="segmented-control">
               <button
                 type="button"
                 className={`segmented-btn ${sourceMedium === 'bank' ? 'active' : ''}`}
                 onClick={() => setSourceMedium('bank')}
-                style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}
               >
                 <AppIcon name="landmark" size={15} />
                 <span>Cuenta bancaria</span>
@@ -680,7 +672,6 @@ export function AddTransactionModal({
                   setSourceMedium('cash')
                   setIsBizum(false)
                 }}
-                style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}
               >
                 <AppIcon name="wallet" size={15} />
                 <span>Efectivo</span>
@@ -689,29 +680,80 @@ export function AddTransactionModal({
           </div>
         )}
 
-        {/* Sub-selector para Ingreso: Real vs Reembolso */}
+        {/* Segmented selector para Ingreso: Ingreso normal vs Devolución / Cobro pendiente */}
         {type === 'income' && (
-          <div className="income-kind-selector">
-            <label className={`income-kind-pill ${incomeKind === 'income' ? 'active' : ''}`}>
-              <input
-                type="radio"
-                name="incomeKind"
-                value="income"
-                checked={incomeKind === 'income'}
-                onChange={() => setIncomeKind('income')}
-              />
-              <span>Ingreso real (nómina, regalo)</span>
+          <div className="form-group" style={{ marginBottom: 14 }}>
+            <label style={{ fontSize: '0.82rem', color: 'var(--text-muted)' }}>Tipo de ingreso</label>
+            <div className="income-kind-selector">
+              <label className={`income-kind-pill ${incomeKind === 'income' ? 'active' : ''}`}>
+                <input
+                  type="radio"
+                  name="incomeKind"
+                  value="income"
+                  checked={incomeKind === 'income'}
+                  onChange={() => {
+                    setIncomeKind('income')
+                    setSelectedReceivableShareId('')
+                  }}
+                />
+                <span>Ingreso</span>
+              </label>
+              <label className={`income-kind-pill ${incomeKind === 'reimbursement' ? 'active' : ''}`}>
+                <input
+                  type="radio"
+                  name="incomeKind"
+                  value="reimbursement"
+                  checked={incomeKind === 'reimbursement'}
+                  onChange={() => setIncomeKind('reimbursement')}
+                />
+                <span>Devolución / cobro pendiente</span>
+              </label>
+            </div>
+          </div>
+        )}
+
+        {/* Lista opcional de cobros pendientes (solo si es Devolución / Cobro pendiente) */}
+        {type === 'income' && incomeKind === 'reimbursement' && pendingReceivablesList.length > 0 && (
+          <div className="form-group" style={{ marginBottom: 14 }}>
+            <label style={{ fontSize: '0.82rem', color: 'var(--text-muted)' }}>
+              ¿Está asociado a un cobro pendiente?
             </label>
-            <label className={`income-kind-pill ${incomeKind === 'reimbursement' ? 'active' : ''}`}>
-              <input
-                type="radio"
-                name="incomeKind"
-                value="reimbursement"
-                checked={incomeKind === 'reimbursement'}
-                onChange={() => setIncomeKind('reimbursement')}
-              />
-              <span>Reembolso / Devolución</span>
-            </label>
+            <div className="debt-chip-list">
+              <button
+                type="button"
+                className={`debt-chip ${!selectedReceivableShareId ? 'selected' : ''}`}
+                onClick={() => setSelectedReceivableShareId('')}
+              >
+                <div className="debt-chip-top">
+                  <strong>Ninguno</strong>
+                  <span className="debt-chip-subtitle">Sin vincular a cobro pendiente</span>
+                </div>
+              </button>
+
+              {pendingReceivablesList.map((pr) => {
+                const isSelected = selectedReceivableShareId === pr.shareId
+                return (
+                  <button
+                    key={pr.shareId}
+                    type="button"
+                    className={`debt-chip ${isSelected ? 'selected' : ''}`}
+                    onClick={() => {
+                      setSelectedReceivableShareId(pr.shareId)
+                      setAmount(String(pr.pendingAmount).replace('.', ','))
+                      setDescription(`Reembolso ${pr.debtorName} · ${pr.expenseDescription}`)
+                    }}
+                  >
+                    <div className="debt-chip-top">
+                      <strong>{pr.debtorName}</strong>
+                      <span className="debt-chip-amount">falta {money(pr.pendingAmount)}</span>
+                    </div>
+                    <span className="debt-chip-subtitle">
+                      {pr.expenseDescription} · {shortDate(pr.date)}
+                    </span>
+                  </button>
+                )
+              })}
+            </div>
           </div>
         )}
 
@@ -741,35 +783,21 @@ export function AddTransactionModal({
                   ? 'Mercadona, cena, peluquería...'
                   : type === 'income'
                   ? incomeKind === 'reimbursement'
-                    ? 'Bizum cena, devolución...'
+                    ? 'Reembolso cena, devolución...'
                     : 'Nómina, regalo, venta...'
-                  : 'Traspaso a ahorro, retirada...'
+                  : 'Traspaso a ahorro, cajero...'
               }
             />
           </label>
         </div>
 
         {/* Toggle discreto de Bizum (solo cuando el origen/destino es Cuenta bancaria) */}
-        {sourceMedium === 'bank' && type !== 'transfer' && !isCashWithdrawal && (
+        {sourceMedium === 'bank' && type !== 'transfer' && (
           <div className="form-group" style={{ marginTop: -4, marginBottom: 12 }}>
             <button
               type="button"
               className={`bizum-toggle-chip ${isBizum ? 'active' : ''}`}
               onClick={() => setIsBizum((prev) => !prev)}
-              style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: 6,
-                padding: '6px 14px',
-                borderRadius: 9999,
-                border: isBizum ? '1px solid #10b981' : '1px solid var(--border-color, rgba(255, 255, 255, 0.12))',
-                background: isBizum ? 'rgba(16, 185, 129, 0.15)' : 'var(--bg-card-light, rgba(255, 255, 255, 0.05))',
-                color: isBizum ? '#10b981' : 'var(--text-muted, #888)',
-                fontSize: '0.84rem',
-                fontWeight: isBizum ? 600 : 500,
-                cursor: 'pointer',
-                transition: 'all 0.15s ease',
-              }}
             >
               <AppIcon name="smartphone" size={14} color={isBizum ? '#10b981' : 'currentColor'} />
               <span>
@@ -809,55 +837,53 @@ export function AddTransactionModal({
         )}
 
         {/* Campo contextual Para quién (solo para categoría Regalos) */}
-        {type === 'expense' &&
-          (categoryId === 'gifts' ||
-            categories.find((c) => c.id === categoryId)?.name.toLowerCase().includes('regalo')) && (
-            <div className="form-group">
-              <label>
-                Para quién (opcional)
-                <input
-                  type="text"
-                  list="gift-recipients-list"
-                  placeholder="Nombre del destinatario..."
-                  value={giftRecipient}
-                  onChange={(e) => setGiftRecipient(e.target.value)}
-                />
-                {previousRecipients.length > 0 && (
-                  <datalist id="gift-recipients-list">
-                    {previousRecipients.map((r) => (
-                      <option key={r} value={r} />
-                    ))}
-                  </datalist>
-                )}
-              </label>
+        {type === 'expense' && isGiftsCategory && (
+          <div className="form-group">
+            <label>
+              Para quién (opcional)
+              <input
+                type="text"
+                list="gift-recipients-list"
+                placeholder="Nombre del destinatario..."
+                value={giftRecipient}
+                onChange={(e) => setGiftRecipient(e.target.value)}
+              />
               {previousRecipients.length > 0 && (
-                <div
-                  className="gift-suggestion-pills"
-                  style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 6 }}
-                >
-                  {previousRecipients.slice(0, 8).map((sug) => (
-                    <button
-                      key={sug}
-                      type="button"
-                      className={`chip-button mini ${giftRecipient === sug ? 'active' : ''}`}
-                      style={{
-                        fontSize: 12,
-                        padding: '3px 10px',
-                        borderRadius: 14,
-                        border: '1px solid var(--border, #e2e8f0)',
-                        background: giftRecipient === sug ? 'var(--primary, #1e293b)' : 'var(--card-bg, #fff)',
-                        color: giftRecipient === sug ? '#fff' : 'inherit',
-                        cursor: 'pointer',
-                      }}
-                      onClick={() => setGiftRecipient(giftRecipient === sug ? '' : sug)}
-                    >
-                      {sug}
-                    </button>
+                <datalist id="gift-recipients-list">
+                  {previousRecipients.map((r) => (
+                    <option key={r} value={r} />
                   ))}
-                </div>
+                </datalist>
               )}
-            </div>
-          )}
+            </label>
+            {previousRecipients.length > 0 && (
+              <div
+                className="gift-suggestion-pills"
+                style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 6 }}
+              >
+                {previousRecipients.slice(0, 8).map((sug) => (
+                  <button
+                    key={sug}
+                    type="button"
+                    className={`chip-button mini ${giftRecipient === sug ? 'active' : ''}`}
+                    style={{
+                      fontSize: 12,
+                      padding: '3px 10px',
+                      borderRadius: 14,
+                      border: '1px solid var(--border-light, #eaeae4)',
+                      background: giftRecipient === sug ? 'var(--accent-dark, #1c1d1a)' : 'var(--bg-card, #fff)',
+                      color: giftRecipient === sug ? '#fff' : 'inherit',
+                      cursor: 'pointer',
+                    }}
+                    onClick={() => setGiftRecipient(giftRecipient === sug ? '' : sug)}
+                  >
+                    {sug}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Clasificación de Naturaleza del Gasto (Fijo / Variable / Extraordinario) */}
         {type === 'expense' && (
@@ -889,102 +915,7 @@ export function AddTransactionModal({
           </div>
         )}
 
-        {/* Retirada de Cajero (solo si es Cuenta Bancaria) */}
-        {type === 'expense' && sourceMedium === 'bank' && (
-          <div className="form-group">
-            <label className="checkbox-row-clean">
-              <input
-                type="checkbox"
-                checked={isCashWithdrawal}
-                onChange={(e) => {
-                  const checked = e.target.checked
-                  setIsCashWithdrawal(checked)
-                  if (checked) {
-                    if (!description || description === 'Mercadona' || description === 'Cena') {
-                      setDescription('Retirada cajero')
-                    }
-                    if (categoryId !== 'atm') {
-                      setPrevCategoryId(categoryId)
-                    }
-                    const atmCat = categories.find((c) => c.id === 'atm' || c.name.toLowerCase() === 'cajero')
-                    setCategoryId(atmCat?.id ?? 'atm')
-                  } else {
-                    const atmCat = categories.find((c) => c.id === 'atm' || c.name.toLowerCase() === 'cajero')
-                    if (categoryId === 'atm' || (atmCat && categoryId === atmCat.id)) {
-                      setCategoryId(prevCategoryId || categories[0]?.id || '')
-                    }
-                  }
-                }}
-              />
-              <span className="checkbox-label-text">
-                <strong>Retirada de efectivo / Cajero</strong>
-                <small>Registra la salida en cuenta sin obligar a anotar cada gasto en metálico</small>
-              </span>
-            </label>
-
-            {isEditing && isCashWithdrawal && (
-              <div style={{ marginTop: 8 }}>
-                {linkedCashTx ? (
-                  <div
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: 8,
-                      padding: '10px 14px',
-                      borderRadius: 'var(--radius-md, 12px)',
-                      background: 'rgba(34, 197, 94, 0.1)',
-                      border: '1px solid rgba(34, 197, 94, 0.25)',
-                      color: '#16a34a',
-                      fontSize: '0.86rem',
-                    }}
-                  >
-                    <AppIcon name="banknote" size={18} />
-                    <div style={{ flex: 1 }}>
-                      <strong>Registrado en Efectivo (+{money(linkedCashTx.amount)})</strong>
-                      <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
-                        Movimiento vinculado sin duplicidad en consumo total
-                      </div>
-                    </div>
-                  </div>
-                ) : (
-                  <div
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'space-between',
-                      gap: 8,
-                      padding: '10px 14px',
-                      borderRadius: 'var(--radius-md, 12px)',
-                      background: 'rgba(37, 99, 235, 0.08)',
-                      border: '1px solid rgba(37, 99, 235, 0.2)',
-                      fontSize: '0.86rem',
-                    }}
-                  >
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, color: '#2563eb' }}>
-                      <AppIcon name="banknote" size={16} />
-                      <span>No está añadida a Efectivo</span>
-                    </div>
-                    <button
-                      type="button"
-                      className="primary-button"
-                      style={{
-                        padding: '6px 12px',
-                        fontSize: '0.82rem',
-                        borderRadius: 9999,
-                        background: '#2563eb',
-                      }}
-                      onClick={handleLinkExistingWithdrawal}
-                    >
-                      + Añadir a Efectivo
-                    </button>
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* Sección Gasto Compartido */}
+        {/* Sección de Gasto Compartido (solo para Gastos) */}
         {type === 'expense' && (
           <SharedExpenseSection
             isShared={isShared}
@@ -1039,13 +970,13 @@ export function AddTransactionModal({
             style={{
               padding: '10px 14px',
               borderRadius: 12,
-              background: 'var(--bg-card-light, #f8fafc)',
-              border: '1px solid var(--border-color, #e2e8f0)',
+              background: 'var(--bg-card-subtle, #f8f8f5)',
+              border: '1px solid var(--border-light, #eaeae4)',
               display: 'flex',
               alignItems: 'center',
               gap: 8,
               fontSize: '0.85rem',
-              color: 'var(--text-muted)',
+              color: 'var(--text-muted, #82847c)',
               marginBottom: 12,
             }}
           >
@@ -1143,8 +1074,7 @@ export function AddTransactionModal({
                 </button>
                 <button
                   type="button"
-                  className="btn btn-primary"
-                  style={{ background: '#ef4444', borderColor: '#ef4444' }}
+                  className="btn btn-danger"
                   onClick={() => {
                     setIsShared(false)
                     setShowUnshareConfirm(false)
@@ -1157,7 +1087,7 @@ export function AddTransactionModal({
           </div>
         )}
 
-        <div className="modal-actions" style={{ display: 'flex', gap: 10, marginTop: 12 }}>
+        <div className="modal-actions" style={{ display: 'flex', flexDirection: 'row', gap: 10, marginTop: 16 }}>
           {isEditing && (
             <button
               type="button"
@@ -1171,7 +1101,7 @@ export function AddTransactionModal({
                 }
               }}
             >
-              {confirmDelete ? '¿Seguro que deseas eliminar?' : 'Eliminar'}
+              {confirmDelete ? '¿Confirmar?' : 'Eliminar'}
             </button>
           )}
 
@@ -1190,7 +1120,7 @@ export function AddTransactionModal({
               (type !== 'transfer' && sourceMedium === 'bank' && !accountId)
             }
           >
-            {isEditing ? 'Guardar cambios' : 'Añadir'}
+            {getPrimaryButtonText()}
           </button>
         </div>
       </div>

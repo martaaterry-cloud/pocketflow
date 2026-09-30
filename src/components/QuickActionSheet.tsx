@@ -7,7 +7,6 @@ interface QuickActionSheetProps {
   onSelectIncome: () => void
   onSelectTransfer: () => void
   onSelectAdjust: () => void
-  onSelectReimbursement?: () => void
 }
 
 export function QuickActionSheet({
@@ -17,7 +16,6 @@ export function QuickActionSheet({
   onSelectIncome,
   onSelectTransfer,
   onSelectAdjust,
-  onSelectReimbursement,
 }: QuickActionSheetProps) {
   if (!open) return null
 
@@ -103,26 +101,6 @@ export function QuickActionSheet({
             </div>
             <AppIcon name="chevron-right" size={16} color="var(--text-muted)" />
           </button>
-
-          {onSelectReimbursement && (
-            <button
-              type="button"
-              className="action-sheet-option"
-              onClick={() => {
-                onClose()
-                onSelectReimbursement()
-              }}
-            >
-              <div className="action-sheet-icon reimbursement">
-                <AppIcon name="refresh-cw" size={20} color="#fff" />
-              </div>
-              <div className="action-sheet-text">
-                <strong>Bizum / Reembolso</strong>
-                <span>Cobro de un gasto que adelantaste</span>
-              </div>
-              <AppIcon name="chevron-right" size={16} color="var(--text-muted)" />
-            </button>
-          )}
         </div>
       </div>
     </div>
