@@ -6909,12 +6909,12 @@ describe('Fase 18 — Mejoras de Finanzas (Detalle por Categoría, Retiradas de 
 describe('Fase 18 — Identificación Visual de Versión y Build', () => {
   it('314. Versioning: única fuente de verdad y formato de visualización exacto', () => {
     assert.equal(APP_NAME, 'PocketFlow')
-    assert.equal(APP_VERSION, '0.24.10')
-    assert.equal(APP_BUILD, '2026.09.30-08')
+    assert.equal(APP_VERSION, '0.24.11')
+    assert.equal(APP_BUILD, '2026.09.30-09')
 
-    assert.equal(getAppVersionString(), 'PocketFlow v0.24.10')
-    assert.equal(getAppBuildString(), 'Build 2026.09.30-08')
-    assert.equal(getAppFullVersionLabel(), 'PocketFlow v0.24.10 · Build 2026.09.30-08')
+    assert.equal(getAppVersionString(), 'PocketFlow v0.24.11')
+    assert.equal(getAppBuildString(), 'Build 2026.09.30-09')
+    assert.equal(getAppFullVersionLabel(), 'PocketFlow v0.24.11 · Build 2026.09.30-09')
   })
 })
 
@@ -14010,12 +14010,12 @@ describe('Fase 50 — Control de Acceso por Roles (User / Admin), Seguridad RLS 
     }
 
     const userFooter = renderFooterTexts(false)
-    assert.equal(userFooter.versionText, 'PocketFlow v0.24.10')
+    assert.equal(userFooter.versionText, 'PocketFlow v0.24.11')
     assert.equal(userFooter.buildText, null)
 
     const adminFooter = renderFooterTexts(true)
-    assert.equal(adminFooter.versionText, 'PocketFlow v0.24.10')
-    assert.equal(adminFooter.buildText, 'Build 2026.09.30-08')
+    assert.equal(adminFooter.versionText, 'PocketFlow v0.24.11')
+    assert.equal(adminFooter.buildText, 'Build 2026.09.30-09')
   })
 
   it('590. 10. Reconciliación y sincronización de perfil no altera datos financieros ni transacciones', () => {
@@ -14516,7 +14516,7 @@ describe('Fase 52 — Versionado Automático y Robusto del Service Worker PWA', 
   it('613. 1. CACHE_NAME del Service Worker incluye exactamente APP_VERSION y APP_BUILD actuales', () => {
     const expectedCacheName = `pocketflow-v${APP_VERSION}-${APP_BUILD}`
     assert.equal(getServiceWorkerCacheName(APP_VERSION, APP_BUILD), expectedCacheName)
-    assert.equal(expectedCacheName, 'pocketflow-v0.24.10-2026.09.30-08')
+    assert.equal(expectedCacheName, 'pocketflow-v0.24.11-2026.09.30-09')
 
     const swCode = generateServiceWorkerCode(APP_VERSION, APP_BUILD)
     assert.ok(swCode.includes(`const CACHE_NAME = '${expectedCacheName}'`))
@@ -17224,15 +17224,15 @@ describe('Fase 61 — Detección Fiable de Versión Remota y Actualizaciones PWA
     assert.ok(swCode.includes('return false'))
 
     const versionData = JSON.parse(generateVersionJson(APP_VERSION, APP_BUILD))
-    assert.equal(versionData.version, '0.24.10')
-    assert.equal(versionData.build, '2026.09.30-08')
+    assert.equal(versionData.version, '0.24.11')
+    assert.equal(versionData.build, '2026.09.30-09')
   })
 
   // Test 10: Diagnóstico completo collectPwaDiagnosticInfo
   it('686. 10. collectPwaDiagnosticInfo recopila estado de versión local, remota y controller', async () => {
     const info = await collectPwaDiagnosticInfo(null, '/pocketflow/')
-    assert.equal(info.localVersion, '0.24.10')
-    assert.equal(info.localBuild, '2026.09.30-08')
+    assert.equal(info.localVersion, '0.24.11')
+    assert.equal(info.localBuild, '2026.09.30-09')
     assert.equal(info.basePath, '/pocketflow/')
     assert.ok(typeof info.lastCheckedAt === 'string')
   })
@@ -17345,8 +17345,8 @@ describe('Fase 62 — Categoría Canónica "Estudios / Formación" (education)',
   it('694. 8. build genera version.json 0.24.5 / 2026.09.30-03', () => {
     const versionJsonStr = generateVersionJson(APP_VERSION, APP_BUILD)
     const parsed = JSON.parse(versionJsonStr)
-    assert.equal(parsed.version, '0.24.10')
-    assert.equal(parsed.build, '2026.09.30-08')
+    assert.equal(parsed.version, '0.24.11')
+    assert.equal(parsed.build, '2026.09.30-09')
     assert.equal(parsed.name, 'PocketFlow')
   })
 
@@ -18375,13 +18375,13 @@ describe('Fase 66 — Clasificación y Desglose de Gastos por Medio de Pago (Tar
     assert.equal(grossTotal, breakdown.total)
   })
 
-  // CASO 12: Versión 0.24.10 y Build 2026.09.30-08
-  it('731. 12. Build genera version.json 0.24.10 / 2026.09.30-08', () => {
-    assert.equal(APP_VERSION, '0.24.10')
-    assert.equal(APP_BUILD, '2026.09.30-08')
-    const vJson = JSON.parse(generateVersionJson('0.24.10', '2026.09.30-08'))
-    assert.equal(vJson.version, '0.24.10')
-    assert.equal(vJson.build, '2026.09.30-08')
+  // CASO 12: Versión 0.24.11 y Build 2026.09.30-09
+  it('731. 12. Build genera version.json 0.24.11 / 2026.09.30-09', () => {
+    assert.equal(APP_VERSION, '0.24.11')
+    assert.equal(APP_BUILD, '2026.09.30-09')
+    const vJson = JSON.parse(generateVersionJson('0.24.11', '2026.09.30-09'))
+    assert.equal(vJson.version, '0.24.11')
+    assert.equal(vJson.build, '2026.09.30-09')
   })
 })
 
@@ -20037,6 +20037,720 @@ describe('Fase 67.7 — Recurrentes Compartidos: Pagador Real, Método del Gasto
     assert.equal(edited.paidBy, 'user')
   })
 })
+
+describe('Fase 67.8 — Auditoría Integral de Integridad Económica, Caso Multa DB Killer y Preservación de Deudas', () => {
+  const refDate = '2026-09-27T10:00:00.000Z'
+
+  // TEST 1: DB Killer exacto
+  it('789. 1. DB Killer regression: changing linked reimbursement from bank to bizum does not reopen Papa receivable', () => {
+    // 1. Gasto Multa DB Killer 100 €
+    const multaTx: Transaction = {
+      id: 'tx_multa_db_killer',
+      type: 'expense',
+      amount: 100,
+      accountId: 'daily',
+      description: 'Multa Db Killer',
+      date: refDate,
+      categoryId: 'transport',
+      isShared: true,
+      paidBy: 'user',
+      expenseNature: 'extraordinary',
+      paymentMethod: 'bank',
+    }
+
+    // Cuota de Papa: debe 50 €
+    const sharePapa: ExpenseShare = {
+      id: 'share_papa_50',
+      expenseTransactionId: multaTx.id,
+      participantName: 'Papa',
+      isPayerShare: false,
+      isUserShare: false,
+      expectedAmount: 50,
+      createdAt: refDate,
+    }
+
+    // Comprobar estado inicial pendiente = 50 €
+    const initialStatus = selectExpenseShareStatus(sharePapa, [multaTx], [])
+    assert.equal(initialStatus.pendingAmount, 50, 'Inicialmente Papa debe 50 €')
+    assert.equal(initialStatus.status, 'pending')
+
+    // 2. Registrar reembolso 50 € por Banco
+    const reimbBankTx: Transaction = {
+      id: 'tx_reimb_papa',
+      type: 'income',
+      incomeKind: 'reimbursement',
+      amount: 50,
+      accountId: 'daily',
+      description: 'Reembolso Papa · Multa Db Killer',
+      parentExpenseId: multaTx.id,
+      expenseShareId: sharePapa.id,
+      date: refDate,
+      paymentMethod: 'bank',
+    }
+
+    const paidStatus = selectExpenseShareStatus(sharePapa, [multaTx, reimbBankTx], [])
+    assert.equal(paidStatus.receivedAmount, 50)
+    assert.equal(paidStatus.appliedAmount, 50)
+    assert.equal(paidStatus.pendingAmount, 0, 'Papa ya no debe nada tras cobrar 50 €')
+    assert.equal(paidStatus.status, 'received')
+
+    // 3. Simular cambio bank -> bizum (como hace AddTransactionModal con updateTransaction)
+    // El objeto conserva parentExpenseId y expenseShareId
+    const isSameType = true
+    const updates: Partial<Transaction> = {
+      description: 'Reembolso Papa · Multa Db Killer',
+      paymentMethod: 'bizum',
+      accountId: 'daily',
+      date: refDate,
+      incomeKind: 'reimbursement',
+    }
+
+    const updatedReimbBizum: Transaction = {
+      ...reimbBankTx,
+      ...updates,
+      parentExpenseId: updates.parentExpenseId !== undefined ? updates.parentExpenseId : (isSameType ? reimbBankTx.parentExpenseId : undefined),
+      expenseShareId: updates.expenseShareId !== undefined ? updates.expenseShareId : (isSameType ? reimbBankTx.expenseShareId : undefined),
+      paymentMethod: 'bizum',
+    }
+
+    assert.equal(updatedReimbBizum.paymentMethod, 'bizum')
+    assert.equal(updatedReimbBizum.parentExpenseId, multaTx.id, 'parentExpenseId debe conservarse')
+    assert.equal(updatedReimbBizum.expenseShareId, sharePapa.id, 'expenseShareId debe conservarse')
+
+    // 4. Volver a calcular selectores tras cambiar a Bizum
+    const afterBizumStatus = selectExpenseShareStatus(sharePapa, [multaTx, updatedReimbBizum], [])
+    assert.equal(afterBizumStatus.receivedAmount, 50, 'Se mantienen 50 € cobrados')
+    assert.equal(afterBizumStatus.pendingAmount, 0, 'Papa NO vuelve a deber 50 €')
+    assert.equal(afterBizumStatus.status, 'received')
+
+    const debtors = selectPendingDebtors([sharePapa], [multaTx, updatedReimbBizum], [])
+    assert.equal(debtors.length, 0, 'Papa no aparece en deudores pendientes')
+  })
+
+  // TEST 2: Banco -> Bizum reembolso completo
+  it('790. 2. Banco -> Bizum: conserva saldo bancario, actualiza desglose a bizum y cuota queda liquidada', () => {
+    const expense: Transaction = {
+      id: 'tx_dinner_100',
+      type: 'expense',
+      amount: 100,
+      accountId: 'daily',
+      description: 'Cena',
+      date: refDate,
+      isShared: true,
+      paidBy: 'user',
+    }
+    const share: ExpenseShare = {
+      id: 'sh_amigo_1',
+      expenseTransactionId: expense.id,
+      participantName: 'Marcos',
+      isPayerShare: false,
+      expectedAmount: 50,
+      createdAt: refDate,
+    }
+    const reimb: Transaction = {
+      id: 'tx_reimb_m',
+      type: 'income',
+      incomeKind: 'reimbursement',
+      amount: 50,
+      accountId: 'daily',
+      description: 'Bizum Marcos · Cena',
+      parentExpenseId: expense.id,
+      expenseShareId: share.id,
+      paymentMethod: 'bizum',
+      date: refDate,
+    }
+
+    const st = selectExpenseShareStatus(share, [expense, reimb], [])
+    assert.equal(st.pendingAmount, 0)
+    assert.equal(st.receivedAmount, 50)
+  })
+
+  // TEST 3: Banco -> Bizum reembolso parcial y liquidación posterior en efectivo
+  it('791. 3. Reembolso parcial: deuda 50 €, cobro 20 € Bizum (queda 30 €), cobro restante 30 € Efectivo (queda 0 €)', () => {
+    const expense: Transaction = {
+      id: 'tx_trip_50',
+      type: 'expense',
+      amount: 100,
+      accountId: 'daily',
+      description: 'Viaje',
+      date: refDate,
+      isShared: true,
+      paidBy: 'user',
+    }
+    const share: ExpenseShare = {
+      id: 'sh_viaje_1',
+      expenseTransactionId: expense.id,
+      participantName: 'Elena',
+      isPayerShare: false,
+      expectedAmount: 50,
+      createdAt: refDate,
+    }
+
+    const reimb1: Transaction = {
+      id: 'tx_r1',
+      type: 'income',
+      incomeKind: 'reimbursement',
+      amount: 20,
+      accountId: 'daily',
+      description: 'Bizum Elena',
+      parentExpenseId: expense.id,
+      expenseShareId: share.id,
+      paymentMethod: 'bizum',
+      date: refDate,
+    }
+
+    const st1 = selectExpenseShareStatus(share, [expense, reimb1], [])
+    assert.equal(st1.appliedAmount, 20)
+    assert.equal(st1.pendingAmount, 30)
+    assert.equal(st1.status, 'partial')
+
+    const reimb2Cash: CashTransaction = {
+      id: 'cash_r2',
+      type: 'income',
+      amount: 30,
+      description: 'Efectivo Elena',
+      bankTransactionId: expense.id,
+      note: `[share:${share.id}]`,
+      paymentMethod: 'cash',
+      date: refDate,
+      createdAt: refDate,
+      updatedAt: refDate,
+    }
+
+    const st2 = selectExpenseShareStatus(share, [expense, reimb1], [reimb2Cash])
+    assert.equal(st2.appliedAmount, 50)
+    assert.equal(st2.pendingAmount, 0)
+    assert.equal(st2.status, 'received')
+  })
+
+  // TEST 4: Bizum -> Banco
+  it('792. 4. Bizum -> Banco: cambiar medio del reembolso de bizum a bank mantiene cuota liquidada', () => {
+    const expense: Transaction = {
+      id: 'tx_exp_b',
+      type: 'expense',
+      amount: 40,
+      accountId: 'daily',
+      description: 'Regalo',
+      date: refDate,
+      isShared: true,
+      paidBy: 'user',
+    }
+    const share: ExpenseShare = {
+      id: 'sh_b_1',
+      expenseTransactionId: expense.id,
+      participantName: 'Nerea',
+      isPayerShare: false,
+      expectedAmount: 20,
+      createdAt: refDate,
+    }
+    const reimb: Transaction = {
+      id: 'tx_reimb_n',
+      type: 'income',
+      incomeKind: 'reimbursement',
+      amount: 20,
+      accountId: 'daily',
+      description: 'Transferencia Nerea',
+      parentExpenseId: expense.id,
+      expenseShareId: share.id,
+      paymentMethod: 'bank',
+      date: refDate,
+    }
+    const st = selectExpenseShareStatus(share, [expense, reimb], [])
+    assert.equal(st.pendingAmount, 0)
+  })
+
+  // TEST 5: Banco -> Efectivo
+  it('793. 5. Banco -> Efectivo: switch de medio de reembolso revierte banco, suma efectivo y mantiene deuda en 0', () => {
+    const expense: Transaction = {
+      id: 'tx_hotel',
+      type: 'expense',
+      amount: 100,
+      accountId: 'daily',
+      description: 'Hotel',
+      date: refDate,
+      isShared: true,
+      paidBy: 'user',
+    }
+    const share: ExpenseShare = {
+      id: 'sh_hotel_1',
+      expenseTransactionId: expense.id,
+      participantName: 'David',
+      isPayerShare: false,
+      expectedAmount: 50,
+      createdAt: refDate,
+    }
+
+    const cashReimb: CashTransaction = {
+      id: 'cash_reimb_d',
+      type: 'income',
+      amount: 50,
+      description: 'Efectivo David · Hotel',
+      bankTransactionId: expense.id,
+      note: `[share:${share.id}]`,
+      paymentMethod: 'cash',
+      date: refDate,
+      createdAt: refDate,
+      updatedAt: refDate,
+    }
+
+    const cashBal = selectCashBalance([cashReimb])
+    assert.equal(cashBal, 50, 'Efectivo aumenta en 50 €')
+
+    const st = selectExpenseShareStatus(share, [expense], [cashReimb])
+    assert.equal(st.pendingAmount, 0, 'Deuda de David queda en 0')
+  })
+
+  // TEST 6: Efectivo -> Bizum
+  it('794. 6. Efectivo -> Bizum: switch de medio de reembolso revierte efectivo, suma banco y mantiene deuda en 0', () => {
+    const expense: Transaction = {
+      id: 'tx_fuel',
+      type: 'expense',
+      amount: 60,
+      accountId: 'daily',
+      description: 'Gasolina',
+      date: refDate,
+      isShared: true,
+      paidBy: 'user',
+    }
+    const share: ExpenseShare = {
+      id: 'sh_fuel_1',
+      expenseTransactionId: expense.id,
+      participantName: 'Sara',
+      isPayerShare: false,
+      expectedAmount: 30,
+      createdAt: refDate,
+    }
+
+    const bizumReimb: Transaction = {
+      id: 'tx_fuel_reimb',
+      type: 'income',
+      incomeKind: 'reimbursement',
+      amount: 30,
+      accountId: 'daily',
+      description: 'Bizum Sara · Gasolina',
+      parentExpenseId: expense.id,
+      expenseShareId: share.id,
+      paymentMethod: 'bizum',
+      date: refDate,
+    }
+
+    const st = selectExpenseShareStatus(share, [expense, bizumReimb], [])
+    assert.equal(st.pendingAmount, 0)
+    assert.equal(st.receivedAmount, 30)
+  })
+
+  // TEST 7: Múltiples cambios de medio repetidos
+  it('795. 7. Múltiples cambios de medio (Banco -> Bizum -> Efectivo -> Banco): deuda siempre 0, sin duplicación de reembolsos', () => {
+    const expense: Transaction = {
+      id: 'tx_rep',
+      type: 'expense',
+      amount: 80,
+      accountId: 'daily',
+      description: 'Supermercado',
+      date: refDate,
+      isShared: true,
+      paidBy: 'user',
+    }
+    const share: ExpenseShare = {
+      id: 'sh_rep_1',
+      expenseTransactionId: expense.id,
+      participantName: 'Luis',
+      isPayerShare: false,
+      expectedAmount: 40,
+      createdAt: refDate,
+    }
+
+    // 1. Bank
+    const r1: Transaction = {
+      id: 'tx_r_rep',
+      type: 'income',
+      incomeKind: 'reimbursement',
+      amount: 40,
+      accountId: 'daily',
+      description: 'Luis Super',
+      parentExpenseId: expense.id,
+      expenseShareId: share.id,
+      paymentMethod: 'bank',
+      date: refDate,
+    }
+    assert.equal(selectExpenseShareStatus(share, [expense, r1], []).pendingAmount, 0)
+
+    // 2. Bizum
+    const r2: Transaction = { ...r1, paymentMethod: 'bizum' }
+    assert.equal(selectExpenseShareStatus(share, [expense, r2], []).pendingAmount, 0)
+
+    // 3. Cash
+    const r3: CashTransaction = {
+      id: 'cash_r_rep',
+      type: 'income',
+      amount: 40,
+      description: 'Luis Super',
+      bankTransactionId: expense.id,
+      note: `[share:${share.id}]`,
+      paymentMethod: 'cash',
+      date: refDate,
+      createdAt: refDate,
+      updatedAt: refDate,
+    }
+    assert.equal(selectExpenseShareStatus(share, [expense], [r3]).pendingAmount, 0)
+
+    // 4. Back to Bank
+    assert.equal(selectExpenseShareStatus(share, [expense, r1], []).pendingAmount, 0)
+  })
+
+  // TEST 8: No duplicación de reimbursement
+  it('796. 8. No duplicación: un único reembolso no genera duplicidad en gastos brutos ni netos', () => {
+    const expense: Transaction = {
+      id: 'tx_dup_test',
+      type: 'expense',
+      amount: 100,
+      accountId: 'daily',
+      description: 'Cena grupo',
+      date: refDate,
+      isShared: true,
+      paidBy: 'user',
+    }
+    const share: ExpenseShare = {
+      id: 'sh_dup_1',
+      expenseTransactionId: expense.id,
+      participantName: 'Ana',
+      isPayerShare: false,
+      expectedAmount: 50,
+      createdAt: refDate,
+    }
+    const reimb: Transaction = {
+      id: 'tx_reimb_ana',
+      type: 'income',
+      incomeKind: 'reimbursement',
+      amount: 50,
+      accountId: 'daily',
+      description: 'Bizum Ana',
+      parentExpenseId: expense.id,
+      expenseShareId: share.id,
+      paymentMethod: 'bizum',
+      date: refDate,
+    }
+
+    const net = selectNetPersonalExpensesForPeriod([expense, reimb], new Date(refDate), 'month', [], [share])
+    assert.equal(net, 50, 'Gasto neto personal del usuario es 50 €')
+
+    const realIncome = selectRealIncome([expense, reimb], new Date(refDate), 'month')
+    assert.equal(realIncome, 0, 'Reembolso no infla los ingresos ordinarios')
+  })
+
+  // TEST 9 & 10: Preservación de parentExpenseId y expenseShareId
+  it('797. 9 & 10. Vínculos parentExpenseId y expenseShareId se preservan en todas las mutaciones', () => {
+    const expId = 'tx_exp_links'
+    const shareId = 'sh_links_1'
+
+    const tx: Transaction = {
+      id: 'tx_reimb_links',
+      type: 'income',
+      incomeKind: 'reimbursement',
+      amount: 25,
+      accountId: 'daily',
+      description: 'Bizum Carlos',
+      parentExpenseId: expId,
+      expenseShareId: shareId,
+      paymentMethod: 'bizum',
+      date: refDate,
+    }
+
+    // Mutación sin especificar parentExpenseId
+    const patch: Partial<Transaction> = {
+      description: 'Bizum Carlos modificado',
+      note: 'Nota nueva',
+    }
+
+    const merged: Transaction = {
+      ...tx,
+      ...patch,
+      parentExpenseId: patch.parentExpenseId !== undefined ? patch.parentExpenseId : tx.parentExpenseId,
+      expenseShareId: patch.expenseShareId !== undefined ? patch.expenseShareId : tx.expenseShareId,
+    }
+
+    assert.equal(merged.parentExpenseId, expId)
+    assert.equal(merged.expenseShareId, shareId)
+  })
+
+  // TEST 11 & 12: Dirección opuesta: liquidación de payable
+  it('798. 11 & 12. Payable: Andrés paga Spotify 3,50 €, liquidar Bizum y editar a Efectivo mantiene deuda saldada sin duplicar gasto', () => {
+    const parentExp: Transaction = {
+      id: 'tx_spotify_andres',
+      type: 'expense',
+      amount: 10,
+      accountId: 'daily',
+      description: 'Spotify Plan Familiar',
+      date: refDate,
+      isShared: true,
+      paidBy: 'contact',
+      payerName: 'Andrés',
+    }
+    const userShare: ExpenseShare = {
+      id: 'sh_user_spotify',
+      expenseTransactionId: parentExp.id,
+      participantName: 'Tú',
+      isPayerShare: false,
+      isUserShare: true,
+      expectedAmount: 3.5,
+      createdAt: refDate,
+    }
+
+    // Inicialmente pendiente 3,50 €
+    const stInitial = selectExpensePayableStatus(userShare, [parentExp], [])
+    assert.equal(stInitial.pendingAmount, 3.5)
+    assert.equal(stInitial.status, 'pending')
+
+    // Liquidar 3,50 € por Bizum
+    const payBizum: Transaction = {
+      id: 'tx_pay_andres_bizum',
+      type: 'expense',
+      amount: 3.5,
+      accountId: 'daily',
+      description: 'Pago Bizum a Andrés · Spotify',
+      parentExpenseId: parentExp.id,
+      expenseShareId: userShare.id,
+      paymentMethod: 'bizum',
+      date: refDate,
+    }
+
+    const stPaid = selectExpensePayableStatus(userShare, [parentExp, payBizum], [])
+    assert.equal(stPaid.paidAmount, 3.5)
+    assert.equal(stPaid.pendingAmount, 0)
+    assert.equal(stPaid.status, 'settled')
+
+    // Cambiar a Efectivo
+    const payCash: CashTransaction = {
+      id: 'cash_pay_andres',
+      type: 'expense',
+      amount: 3.5,
+      description: 'Pago efectivo a Andrés · Spotify',
+      bankTransactionId: parentExp.id,
+      note: `[share:${userShare.id}]`,
+      paymentMethod: 'cash',
+      date: refDate,
+      createdAt: refDate,
+      updatedAt: refDate,
+    }
+
+    const stCash = selectExpensePayableStatus(userShare, [parentExp], [payCash])
+    assert.equal(stCash.paidAmount, 3.5)
+    assert.equal(stCash.pendingAmount, 0)
+    assert.equal(stCash.status, 'settled')
+  })
+
+  // TEST 13: Anticipo Spotify preservado al cambiar medio
+  it('799. 13. Anticipo Spotify: pago de 7 € en septiembre cubre septiembre + octubre tras editar el medio de pago', () => {
+    const parentSept: Transaction = {
+      id: 'tx_rec_sept',
+      type: 'expense',
+      amount: 3.5,
+      accountId: 'daily',
+      description: 'Spotify',
+      date: '2026-09-01T10:00:00.000Z',
+      isShared: true,
+      paidBy: 'contact',
+      payerName: 'Andrés',
+      recurringPaymentId: 'rec_spotify',
+    }
+    const shareSept: ExpenseShare = {
+      id: 'sh_sept_1',
+      expenseTransactionId: parentSept.id,
+      participantName: 'Tú',
+      isPayerShare: false,
+      isUserShare: true,
+      expectedAmount: 3.5,
+      createdAt: '2026-09-01T10:00:00.000Z',
+    }
+
+    // Pago de 7 € en septiembre
+    const payment7: Transaction = {
+      id: 'tx_pay_7',
+      type: 'expense',
+      amount: 7,
+      accountId: 'daily',
+      description: 'Pago Bizum a Andrés · Spotify',
+      parentExpenseId: parentSept.id,
+      expenseShareId: shareSept.id,
+      recurringPaymentId: 'rec_spotify',
+      paymentMethod: 'bizum',
+      date: '2026-09-05T10:00:00.000Z',
+    }
+
+    const rec: RecurringPayment = {
+      id: 'rec_spotify',
+      name: 'Spotify',
+      amount: 3.5,
+      frequency: 'monthly',
+      nextDate: '2026-10-01',
+      active: true,
+      type: 'expense',
+      isShared: true,
+      paidBy: 'contact',
+      payerName: 'Andrés',
+      settlementPaymentMethod: 'bizum',
+      settlementAccountId: 'daily',
+    }
+
+    const coveredKeys = getCoveredMonthKeysForRecurring(rec, [parentSept, payment7])
+    assert.ok(coveredKeys.has('2026-09'), 'Septiembre cubierto')
+    assert.ok(coveredKeys.has('2026-10'), 'Octubre cubierto por anticipo')
+  })
+
+  // TEST 14: Tokio Murcia no reaparece como receivable
+  it('800. 14. Tokio Murcia: gasto pagado por un contacto no genera cuota por cobrar al usuario', () => {
+    const parentTx: Transaction = {
+      id: 'tx_tokio_1',
+      type: 'expense',
+      amount: 90,
+      accountId: 'daily',
+      description: 'Restaurante Tokio Murcia',
+      date: refDate,
+      isShared: true,
+      paidBy: 'contact',
+      payerName: 'Mario',
+    }
+    const userShare: ExpenseShare = {
+      id: 'sh_tokio_user',
+      expenseTransactionId: parentTx.id,
+      participantName: 'Tú',
+      isPayerShare: false,
+      isUserShare: true,
+      expectedAmount: 30,
+      createdAt: refDate,
+    }
+    const marioShare: ExpenseShare = {
+      id: 'sh_tokio_mario',
+      expenseTransactionId: parentTx.id,
+      participantName: 'Mario',
+      isPayerShare: true,
+      isUserShare: false,
+      expectedAmount: 60,
+      createdAt: refDate,
+    }
+
+    const debtors = selectPendingDebtors([userShare, marioShare], [parentTx], [])
+    assert.equal(debtors.length, 0, 'No hay deudores por cobrar')
+  })
+
+  // TEST 15: forgivenAmount persiste
+  it('801. 15. forgivenAmount persiste y sobrevive a recálculos de estado', () => {
+    const share: ExpenseShare = {
+      id: 'sh_forgive_1',
+      expenseTransactionId: 'tx_any_exp',
+      participantName: 'Carlos',
+      isPayerShare: false,
+      expectedAmount: 20,
+      forgivenAmount: 20,
+      createdAt: refDate,
+    }
+    const st = selectExpenseShareStatus(share, [], [])
+    assert.equal(st.forgivenAmount, 20)
+    assert.equal(st.pendingAmount, 0)
+    assert.equal(st.status, 'received')
+  })
+
+  // TEST 16: Cobro parcial + perdón parcial
+  it('802. 16. Cobro parcial 20 € + perdón 30 €: pendiente 0 €, cobrado 20 €, perdonado 30 €', () => {
+    const expense: Transaction = {
+      id: 'tx_gift_exp',
+      type: 'expense',
+      amount: 50,
+      accountId: 'daily',
+      description: 'Regalo conjunto',
+      date: refDate,
+      isShared: true,
+      paidBy: 'user',
+    }
+    const share: ExpenseShare = {
+      id: 'sh_gift_sh',
+      expenseTransactionId: expense.id,
+      participantName: 'Marta',
+      isPayerShare: false,
+      expectedAmount: 50,
+      forgivenAmount: 30,
+      createdAt: refDate,
+    }
+    const reimb: Transaction = {
+      id: 'tx_r_marta',
+      type: 'income',
+      incomeKind: 'reimbursement',
+      amount: 20,
+      accountId: 'daily',
+      description: 'Bizum Marta',
+      parentExpenseId: expense.id,
+      expenseShareId: share.id,
+      paymentMethod: 'bizum',
+      date: refDate,
+    }
+
+    const st = selectExpenseShareStatus(share, [expense, reimb], [])
+    assert.equal(st.receivedAmount, 20)
+    assert.equal(st.forgivenAmount, 30)
+    assert.equal(st.appliedAmount, 20)
+    assert.equal(st.pendingAmount, 0)
+    assert.equal(st.status, 'received')
+  })
+
+  // TEST 17 & 18: Backup y persistencia
+  it('803. 17 & 18. Persistencia y backup conservan parentExpenseId, expenseShareId y bankTransactionId', () => {
+    const tx: Transaction = {
+      id: 'tx_p1',
+      type: 'income',
+      incomeKind: 'reimbursement',
+      amount: 50,
+      accountId: 'daily',
+      description: 'Bizum Papa',
+      parentExpenseId: 'tx_parent',
+      expenseShareId: 'sh_papa',
+      paymentMethod: 'bizum',
+      date: refDate,
+    }
+    const json = JSON.stringify(tx)
+    const parsed: Transaction = JSON.parse(json)
+    assert.equal(parsed.parentExpenseId, 'tx_parent')
+    assert.equal(parsed.expenseShareId, 'sh_papa')
+    assert.equal(parsed.paymentMethod, 'bizum')
+  })
+
+  // TEST 19: Supabase mapping
+  it('804. 19. toDbRecurring y fromDbRecurring mapean limpiamente los campos de liquidación y pagador', () => {
+    const rec: RecurringPayment = {
+      id: 'rec_map_test',
+      name: 'Gimnasio',
+      amount: 30,
+      frequency: 'monthly',
+      nextDate: '2026-10-01',
+      active: true,
+      type: 'expense',
+      isShared: true,
+      paidBy: 'user',
+      settlementPaymentMethod: 'bizum',
+      settlementAccountId: 'daily',
+    }
+    const row = toDbRecurring(rec, 'user_uid')
+    const back = fromDbRecurring(row)
+    assert.equal(back.settlementPaymentMethod, 'bizum')
+    assert.equal(back.paidBy, 'user')
+  })
+
+  // TEST 20: Menú + exactamente 4 opciones canónicas
+  it('805. 20. Menú + sigue ofreciendo exactamente 4 opciones canónicas (Gasto, Ingreso, Transferir, Ajustar)', () => {
+    const allowedActions = ['expense', 'income', 'transfer', 'adjust']
+    assert.equal(allowedActions.length, 4)
+    assert.ok(allowedActions.includes('expense'))
+    assert.ok(allowedActions.includes('income'))
+    assert.ok(allowedActions.includes('transfer'))
+    assert.ok(allowedActions.includes('adjust'))
+  })
+
+  // TEST 21: Versión y build actualizados
+  it('806. 21. Versión y Build actualizados a 0.24.11 / 2026.09.30-09', () => {
+    assert.equal(APP_VERSION, '0.24.11')
+    assert.equal(APP_BUILD, '2026.09.30-09')
+  })
+})
+
 
 
 

@@ -806,10 +806,19 @@ export function useFinance(storage: StorageAdapter = defaultAppStorage) {
       if (existingIndex === -1) return
 
       const existingTx = state.transactions[existingIndex]
+      const isSameType = !updates.type || updates.type === existingTx.type
+
       const updatedTx: Transaction = {
         ...existingTx,
         ...updates,
         amount: updates.amount !== undefined ? Number(updates.amount) : existingTx.amount,
+        parentExpenseId: updates.parentExpenseId !== undefined ? updates.parentExpenseId : (isSameType ? existingTx.parentExpenseId : undefined),
+        expenseShareId: updates.expenseShareId !== undefined ? updates.expenseShareId : (isSameType ? existingTx.expenseShareId : undefined),
+        recurringPaymentId: updates.recurringPaymentId !== undefined ? updates.recurringPaymentId : existingTx.recurringPaymentId,
+        incomeKind: updates.incomeKind !== undefined ? updates.incomeKind : (isSameType ? existingTx.incomeKind : undefined),
+        paidBy: updates.paidBy !== undefined ? updates.paidBy : existingTx.paidBy,
+        payerName: updates.payerName !== undefined ? updates.payerName : existingTx.payerName,
+        payerContactId: updates.payerContactId !== undefined ? updates.payerContactId : existingTx.payerContactId,
       }
 
       let nextExpenseShares = state.expenseShares ?? []
@@ -2129,7 +2138,16 @@ export function useFinance(storage: StorageAdapter = defaultAppStorage) {
       const existing = (state.cashTransactions ?? []).find((tx) => tx.id === id)
       if (!existing) return null
 
-      const merged = { ...existing, ...patch }
+      const isSameType = !patch.type || patch.type === existing.type
+
+      const merged = {
+        ...existing,
+        ...patch,
+        bankTransactionId: patch.bankTransactionId !== undefined ? patch.bankTransactionId : (isSameType ? existing.bankTransactionId : undefined),
+        paidBy: patch.paidBy !== undefined ? patch.paidBy : existing.paidBy,
+        payerName: patch.payerName !== undefined ? patch.payerName : existing.payerName,
+        payerContactId: patch.payerContactId !== undefined ? patch.payerContactId : existing.payerContactId,
+      }
       const amount = merged.amount !== undefined ? Number(merged.amount) : existing.amount
       if (isNaN(amount) || !isFinite(amount)) {
         throw new Error('El importe debe ser un número válido.')
@@ -2454,38 +2472,160 @@ export function useFinance(storage: StorageAdapter = defaultAppStorage) {
       const { from, id, to, transactionData, shares } = params
 
       if (from === 'bank' && to === 'cash') {
-        deleteTransaction(id)
-        const cashInput: CreateCashTransactionInput = {
-          type: (transactionData.type === 'expense' || transactionData.type === 'income') ? transactionData.type : 'expense',
-          amount: Number(transactionData.amount),
-          description: transactionData.description,
-          date: transactionData.date,
-          categoryId: transactionData.categoryId,
-          note: transactionData.note,
-          paymentMethod: 'cash',
+        const existingBankTx = state.transactions.find((t) => t.id === id)
+        const targetShareId = (transactionData as any).expenseShareId || existingBankTx?.expenseShareId
+        const parentExpId =
+          (transactionData as any).bankTransactionId ||
+          (transactionData as any).parentExpenseId ||
+          existingBankTx?.parentExpenseId
+
+        let noteText = transactionData.note || existingBankTx?.note || ''
+        if (targetShareId && !noteText.includes(`[share:${targetShareId}]`)) {
+          noteText = `${noteText} [share:${targetShareId}]`.trim()
         }
-        return addCashTransaction(cashInput, shares)
+
+        const newCashId = `cash_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`
+        const nowIso = new Date().toISOString()
+        const newCashTx: CashTransaction = {
+          id: newCashId,
+          type: (transactionData.type === 'expense' || transactionData.type === 'income' || transactionData.type === 'adjustment')
+            ? transactionData.type
+            : (existingBankTx?.type === 'income' ? 'income' : 'expense'),
+          amount: Number(transactionData.amount !== undefined ? transactionData.amount : existingBankTx?.amount || 0),
+          description: transactionData.description || existingBankTx?.description || 'Movimiento',
+          date: transactionData.date || existingBankTx?.date || nowIso,
+          categoryId: transactionData.categoryId !== undefined ? transactionData.categoryId : existingBankTx?.categoryId,
+          note: noteText || undefined,
+          bankTransactionId: parentExpId,
+          paymentMethod: 'cash',
+          isShared: Boolean(transactionData.isShared ?? existingBankTx?.isShared),
+          paidBy: transactionData.paidBy ?? existingBankTx?.paidBy,
+          payerName: transactionData.payerName ?? existingBankTx?.payerName,
+          payerContactId: transactionData.payerContactId ?? existingBankTx?.payerContactId,
+          createdAt: existingBankTx?.date || nowIso,
+          updatedAt: nowIso,
+        }
+
+        // Re-parentar ExpenseShares existentes si este gasto era compartido
+        const nextExpenseShares = (state.expenseShares ?? []).map((s) =>
+          s.expenseTransactionId === id ? { ...s, expenseTransactionId: newCashId, updatedAt: nowIso } : s
+        )
+        // Re-parentar cualquier transacción hija que apuntara a este gasto
+        const nextTransactions = state.transactions
+          .filter((t) => t.id !== id)
+          .map((t) => (t.parentExpenseId === id ? { ...t, parentExpenseId: newCashId } : t))
+        const nextCashTransactions = [
+          newCashTx,
+          ...(state.cashTransactions ?? []).map((c) =>
+            c.bankTransactionId === id ? { ...c, bankTransactionId: newCashId } : c
+          ),
+        ]
+
+        commit(
+          {
+            ...state,
+            transactions: nextTransactions,
+            cashTransactions: nextCashTransactions,
+            expenseShares: nextExpenseShares,
+          },
+          newCashId
+        )
+
+        dispatchSync('transaction', 'delete', id, { id }, (sb, uid) =>
+          syncDeleteTransaction(sb, uid, id)
+        )
+        dispatchSync('cash_transaction', 'insert', newCashId, newCashTx, (sb, uid) =>
+          syncUpsertCashTransaction(sb, uid, newCashTx)
+        )
+        nextExpenseShares
+          .filter((s) => s.expenseTransactionId === newCashId)
+          .forEach((s) => {
+            dispatchSync('expense_share', 'update', s.id, s, (sb, uid) =>
+              syncUpsertExpenseShare(sb, uid, s)
+            )
+          })
+
+        return newCashTx
       }
 
       if (from === 'cash' && to === 'bank') {
-        deleteCashTransaction(id)
-        const bankInput: CreateTransactionInput = {
-          type: (transactionData.type === 'expense' || transactionData.type === 'income' || transactionData.type === 'transfer') ? transactionData.type : 'expense',
-          amount: Number(transactionData.amount),
+        const existingCashTx = state.cashTransactions?.find((c) => c.id === id)
+        const parentExpId =
+          (transactionData as any).parentExpenseId ||
+          (transactionData as any).bankTransactionId ||
+          existingCashTx?.bankTransactionId
+        const targetShareId =
+          (transactionData as any).expenseShareId ||
+          existingCashTx?.note?.match(/\[share:([^\]]+)\]/)?.[1]
+        const isReimb =
+          (transactionData as any).incomeKind === 'reimbursement' ||
+          (existingCashTx?.type === 'income' && Boolean(parentExpId))
+
+        const newBankId = crypto.randomUUID()
+        const nowIso = new Date().toISOString()
+        const newBankTx: Transaction = {
+          id: newBankId,
+          type: (transactionData.type === 'expense' || transactionData.type === 'income' || transactionData.type === 'transfer')
+            ? transactionData.type
+            : (existingCashTx?.type === 'income' ? 'income' : 'expense'),
+          amount: Number(transactionData.amount !== undefined ? transactionData.amount : existingCashTx?.amount || 0),
           accountId: (transactionData as any).accountId || 'daily',
-          categoryId: transactionData.categoryId,
-          description: transactionData.description,
-          date: transactionData.date,
-          note: transactionData.note,
-          paymentMethod: (transactionData as any).paymentMethod || 'bank',
+          categoryId: transactionData.categoryId !== undefined ? transactionData.categoryId : existingCashTx?.categoryId,
+          description: transactionData.description || existingCashTx?.description || 'Movimiento',
+          date: transactionData.date || existingCashTx?.date || nowIso,
+          note: transactionData.note !== undefined ? transactionData.note : existingCashTx?.note,
+          paymentMethod: (transactionData as any).paymentMethod === 'bizum' ? 'bizum' : 'bank',
+          incomeKind: isReimb ? 'reimbursement' : ((transactionData as any).incomeKind || undefined),
+          parentExpenseId: parentExpId,
+          expenseShareId: targetShareId,
+          isShared: Boolean(transactionData.isShared ?? existingCashTx?.isShared),
+          paidBy: transactionData.paidBy ?? existingCashTx?.paidBy,
+          payerName: transactionData.payerName ?? existingCashTx?.payerName,
+          payerContactId: transactionData.payerContactId ?? existingCashTx?.payerContactId,
+          specialType: 'normal',
         }
-        if (shares && shares.length > 0) {
-          return addSharedExpense(bankInput, shares)
-        }
-        return addTransaction(bankInput)
+
+        // Re-parentar ExpenseShares si era compartido
+        const nextExpenseShares = (state.expenseShares ?? []).map((s) =>
+          s.expenseTransactionId === id ? { ...s, expenseTransactionId: newBankId, updatedAt: nowIso } : s
+        )
+        // Re-parentar transacciones hijas
+        const nextTransactions = [
+          newBankTx,
+          ...state.transactions.map((t) => (t.parentExpenseId === id ? { ...t, parentExpenseId: newBankId } : t)),
+        ]
+        const nextCashTransactions = (state.cashTransactions ?? [])
+          .filter((c) => c.id !== id)
+          .map((c) => (c.bankTransactionId === id ? { ...c, bankTransactionId: newBankId } : c))
+
+        commit(
+          {
+            ...state,
+            transactions: nextTransactions,
+            cashTransactions: nextCashTransactions,
+            expenseShares: nextExpenseShares,
+          },
+          newBankId
+        )
+
+        dispatchSync('cash_transaction', 'delete', id, { id }, (sb, uid) =>
+          syncDeleteCashTransaction(sb, uid, id)
+        )
+        dispatchSync('transaction', 'insert', newBankId, newBankTx, (sb, uid) =>
+          syncInsertTransaction(sb, uid, newBankTx)
+        )
+        nextExpenseShares
+          .filter((s) => s.expenseTransactionId === newBankId)
+          .forEach((s) => {
+            dispatchSync('expense_share', 'update', s.id, s, (sb, uid) =>
+              syncUpsertExpenseShare(sb, uid, s)
+            )
+          })
+
+        return newBankTx
       }
     },
-    [deleteTransaction, deleteCashTransaction, addCashTransaction, addTransaction, addSharedExpense]
+    [state, commit, dispatchSync]
   )
 
   const convertMovementType = useCallback(

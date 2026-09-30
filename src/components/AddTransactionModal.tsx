@@ -394,7 +394,11 @@ export function AddTransactionModal({
       setIsBizum(initialTransaction.paymentMethod === 'bizum')
       setConfirmDelete(false)
       setShowUnshareConfirm(false)
-      setSelectedReceivableShareId('')
+      const matchedShareId =
+        ('expenseShareId' in initialTransaction ? initialTransaction.expenseShareId : undefined) ||
+        (initialTransaction.note && initialTransaction.note.match(/\[share:([^\]]+)\]/)?.[1]) ||
+        ''
+      setSelectedReceivableShareId(matchedShareId)
     } else {
       setType(defaultType)
       setSourceMedium('bank')
@@ -659,7 +663,7 @@ export function AddTransactionModal({
     }
 
     // CASO INGRESO: Devolución / Cobro pendiente vinculado (NUEVO)
-    if (type === 'income' && incomeKind === 'reimbursement' && selectedReceivableShareId) {
+    if (!isEditing && type === 'income' && incomeKind === 'reimbursement' && selectedReceivableShareId) {
       const selectedShare = pendingReceivablesList.find((p) => p.shareId === selectedReceivableShareId)
       if (selectedShare) {
         if (onRecordReimbursement) {
@@ -679,15 +683,39 @@ export function AddTransactionModal({
       }
     }
 
+    const finalParentExpenseId =
+      type === 'income' && incomeKind === 'reimbursement'
+        ? (selectedReceivableShareId
+            ? pendingReceivablesList.find((p) => p.shareId === selectedReceivableShareId)?.expenseTransactionId || (initialTransaction as Transaction)?.parentExpenseId || (initialTransaction as CashTransaction)?.bankTransactionId
+            : (initialTransaction as Transaction)?.parentExpenseId || (initialTransaction as CashTransaction)?.bankTransactionId)
+        : type === 'expense'
+        ? ((initialTransaction as Transaction)?.parentExpenseId || (initialTransaction as CashTransaction)?.bankTransactionId)
+        : undefined
+
+    const finalExpenseShareId =
+      type === 'income' && incomeKind === 'reimbursement'
+        ? (selectedReceivableShareId || (initialTransaction as Transaction)?.expenseShareId || (initialTransaction as CashTransaction)?.note?.match(/\[share:([^\]]+)\]/)?.[1])
+        : type === 'expense'
+        ? ((initialTransaction as Transaction)?.expenseShareId || (initialTransaction as CashTransaction)?.note?.match(/\[share:([^\]]+)\]/)?.[1])
+        : undefined
+
     // CASO EFECTIVO
     if (sourceMedium === 'cash') {
+      const cashNoteParts: string[] = []
+      if (note.trim()) cashNoteParts.push(note.trim())
+      if (finalExpenseShareId && !cashNoteParts.some((p) => p.includes(`[share:${finalExpenseShareId}]`))) {
+        cashNoteParts.push(`[share:${finalExpenseShareId}]`)
+      }
+      const finalCashNote = cashNoteParts.join(' ') || undefined
+
       const cashPayload: CreateCashTransactionInput = {
         type: type === 'expense' ? 'expense' : 'income',
         amount: numericAmount,
         description: description.trim(),
         date: new Date(date).toISOString(),
         categoryId: type === 'expense' ? categoryId : undefined,
-        note: note.trim() || undefined,
+        note: finalCashNote,
+        bankTransactionId: finalParentExpenseId,
         isShared: type === 'expense' && isShared,
         paidBy: type === 'expense' && isShared ? paidBy : undefined,
         payerName: type === 'expense' && isShared && paidBy === 'contact' && payerName.trim() ? payerName.trim() : undefined,
@@ -727,8 +755,9 @@ export function AddTransactionModal({
       categoryId: type === 'expense' ? categoryId : undefined,
       toAccountId: undefined,
       incomeKind: type === 'income' ? incomeKind : undefined,
-      parentExpenseId: type === 'income' && incomeKind === 'reimbursement' && selectedReceivableShareId ? pendingReceivablesList.find((p) => p.shareId === selectedReceivableShareId)?.expenseTransactionId : undefined,
-      expenseShareId: type === 'income' && incomeKind === 'reimbursement' && selectedReceivableShareId ? selectedReceivableShareId : undefined,
+      parentExpenseId: finalParentExpenseId,
+      expenseShareId: finalExpenseShareId,
+      recurringPaymentId: (initialTransaction as Transaction)?.recurringPaymentId,
       isShared: type === 'expense' && isShared,
       paidBy: type === 'expense' && isShared ? paidBy : undefined,
       payerName: type === 'expense' && isShared && paidBy === 'contact' && payerName.trim() ? payerName.trim() : undefined,
