@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { App as CapacitorApp } from '@capacitor/app'
 import type { User } from '@supabase/supabase-js'
 import { AddTransactionModal } from './components/AddTransactionModal'
+import { AdjustBalanceModal } from './components/AdjustBalanceModal'
 import { CashWithdrawalLinkModal } from './components/CashWithdrawalLinkModal'
 import { EditCashTransactionModal } from './components/EditCashTransactionModal'
 import { QuickActionSheet } from './components/QuickActionSheet'
@@ -10,6 +11,7 @@ import { PayDebtModal } from './components/PayDebtModal'
 import { SharedExpenseDetailModal } from './components/SharedExpenseDetailModal'
 import type { CashTransaction, Transaction } from './models/finance'
 import { money } from './utils/money'
+import { selectCashBalance } from './utils/cashSelectors'
 import { CalendarPage } from './pages/CalendarPage'
 import { HomePage } from './pages/HomePage'
 import { LoginPage } from './pages/LoginPage'
@@ -448,6 +450,7 @@ export default function App() {
   }, [processIncomingUrl])
 
   const [isActionSheetOpen, setIsActionSheetOpen] = useState(false)
+  const [isAdjustBalanceModalOpen, setIsAdjustBalanceModalOpen] = useState(false)
   const [modalDefaultType, setModalDefaultType] = useState<'expense' | 'income' | 'transfer'>('expense')
   const [isReimbursementModalOpen, setIsReimbursementModalOpen] = useState(false)
   const [reimbursementShareId, setReimbursementShareId] = useState<string | undefined>(undefined)
@@ -463,12 +466,10 @@ export default function App() {
   const handleSelectTransaction = (tx: Transaction | CashTransaction) => {
     if (tx.isShared) {
       setSelectedSharedTx(tx)
-    } else if ('accountId' in tx) {
-      setSelectedTx(tx)
-      setModalDefaultType(tx.type)
-      setIsModalOpen(true)
     } else {
-      setEditingCashTx(tx)
+      setSelectedTx(tx as any)
+      setModalDefaultType(tx.type === 'adjustment' ? 'expense' : tx.type)
+      setIsModalOpen(true)
     }
   }
 
@@ -678,6 +679,14 @@ export default function App() {
           setModalDefaultType('income')
           setIsModalOpen(true)
         }}
+        onSelectTransfer={() => {
+          setSelectedTx(null)
+          setModalDefaultType('transfer')
+          setIsModalOpen(true)
+        }}
+        onSelectAdjust={() => {
+          setIsAdjustBalanceModalOpen(true)
+        }}
         onSelectReimbursement={() => {
           setReimbursementShareId(undefined)
           setIsReimbursementModalOpen(true)
@@ -780,7 +789,24 @@ export default function App() {
         onAddCashTransaction={finance.addCashTransaction}
         onUpdateCashTransaction={finance.updateCashTransaction}
         onDeleteCashTransaction={finance.deleteCashTransaction}
+        onRecordTransfer={finance.recordTransfer}
+        onSwitchMedium={finance.switchMovementMedium}
         onPromptWithdrawalLink={(tx) => setPendingWithdrawalToLink(tx)}
+      />
+
+      <AdjustBalanceModal
+        open={isAdjustBalanceModalOpen}
+        onClose={() => setIsAdjustBalanceModalOpen(false)}
+        accounts={finance.accounts}
+        cashBalance={selectCashBalance(finance.cashTransactions)}
+        onAdjustCash={(realAmt, date, note) => {
+          finance.adjustCashToAmount(realAmt, date, note)
+          showToast('Saldo de efectivo ajustado', 'success')
+        }}
+        onAdjustAccount={(accId, realAmt, date, note) => {
+          finance.adjustAccountToAmount(accId, realAmt, date, note)
+          showToast('Saldo de cuenta bancaria ajustado', 'success')
+        }}
       />
 
       <CashWithdrawalLinkModal

@@ -19,7 +19,7 @@ export interface Category {
 }
 
 export type IncomeKind = 'income' | 'reimbursement'
-export type SpecialMovementType = 'normal' | 'cash_withdrawal' | 'reimbursement' | 'transfer'
+export type SpecialMovementType = 'normal' | 'cash_withdrawal' | 'reimbursement' | 'transfer' | 'account_adjustment'
 export type ExpenseNature = 'fixed' | 'variable' | 'extraordinary'
 
 export type PaymentMethod = 'bank' | 'bizum' | 'cash'
@@ -131,6 +131,7 @@ export interface RecurringPayment {
   type?: 'expense' | 'income'
   incomeSourceType?: RecurringIncomeSourceType | string
   installmentsCount?: number
+  paymentMethod?: PaymentMethod
 }
 
 export type CreateRecurringPaymentInput = Omit<RecurringPayment, 'id'>

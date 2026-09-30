@@ -7,7 +7,6 @@ import type {
   ExpenseShare,
   IncomeKind,
   SharedContact,
-  SpecialMovementType,
   Transaction,
   CashTransaction,
   CreateCashTransactionInput,
@@ -33,7 +32,7 @@ interface AddTransactionModalProps {
   sharedContacts?: SharedContact[]
   cashTransactions?: CashTransaction[]
   defaultType?: 'expense' | 'income' | 'transfer'
-  initialTransaction?: Transaction | null
+  initialTransaction?: Transaction | CashTransaction | null
   onAdd?: (value: CreateTransactionInput) => Transaction | void
   onAddShared?: (
     value: CreateTransactionInput,
@@ -45,9 +44,33 @@ interface AddTransactionModalProps {
     shares?: { participantName: string; contactId?: string; isPayerShare: boolean; isUserShare?: boolean; expectedAmount: number }[]
   ) => void
   onDelete?: (id: string) => void
-  onAddCashTransaction?: (input: CreateCashTransactionInput) => void
-  onUpdateCashTransaction?: (id: string, patch: UpdateCashTransactionInput) => void
+  onAddCashTransaction?: (
+    input: CreateCashTransactionInput,
+    shares?: { participantName: string; contactId?: string; isPayerShare: boolean; isUserShare?: boolean; expectedAmount: number }[]
+  ) => void
+  onUpdateCashTransaction?: (
+    id: string,
+    patch: UpdateCashTransactionInput,
+    shares?: { participantName: string; contactId?: string; isPayerShare: boolean; isUserShare?: boolean; expectedAmount: number }[]
+  ) => void
   onDeleteCashTransaction?: (id: string) => void
+  onRecordTransfer?: (input: {
+    fromType: 'account' | 'cash'
+    fromAccountId?: string
+    toType: 'account' | 'cash'
+    toAccountId?: string
+    amount: number
+    date?: string
+    note?: string
+    description?: string
+  }) => void
+  onSwitchMedium?: (params: {
+    from: 'bank' | 'cash'
+    id: string
+    to: 'bank' | 'cash'
+    transactionData: CreateTransactionInput | CreateCashTransactionInput
+    shares?: { participantName: string; contactId?: string; isPayerShare: boolean; isUserShare?: boolean; expectedAmount: number }[]
+  }) => void
   onPromptWithdrawalLink?: (tx: Transaction) => void
 }
 
@@ -76,17 +99,29 @@ export function AddTransactionModal({
   onAddCashTransaction,
   onUpdateCashTransaction,
   onDeleteCashTransaction,
+  onRecordTransfer,
+  onSwitchMedium,
   onPromptWithdrawalLink,
 }: AddTransactionModalProps) {
   const isEditing = Boolean(initialTransaction)
+  const isInitialCash = Boolean(
+    initialTransaction &&
+      (!('accountId' in initialTransaction) ||
+        (initialTransaction as any).source === 'cash' ||
+        initialTransaction.paymentMethod === 'cash' ||
+        initialTransaction.id.startsWith('cash_'))
+  )
 
-  const [type, setType] = useState<CreateTransactionInput['type']>(defaultType)
+  const [type, setType] = useState<'expense' | 'income' | 'transfer'>(defaultType)
+  const [sourceMedium, setSourceMedium] = useState<'bank' | 'cash'>('bank')
   const [incomeKind, setIncomeKind] = useState<IncomeKind>('income')
   const [amount, setAmount] = useState('')
   const [description, setDescription] = useState('')
   const [categoryId, setCategoryId] = useState('')
   const [accountId, setAccountId] = useState('')
   const [toAccountId, setToAccountId] = useState('')
+  const [transferFrom, setTransferFrom] = useState<string>('')
+  const [transferTo, setTransferTo] = useState<string>('')
   const [date, setDate] = useState(() => new Date().toISOString().slice(0, 10))
   const [note, setNote] = useState('')
   const [confirmDelete, setConfirmDelete] = useState(false)
@@ -98,7 +133,7 @@ export function AddTransactionModal({
   const [showUnshareConfirm, setShowUnshareConfirm] = useState(false)
   const [unshareHasReimbursements, setUnshareHasReimbursements] = useState(false)
 
-  // Estados para Tipo Especial y Naturaleza
+  // Estados para Bizum, Retirada y Naturaleza
   const [isBizum, setIsBizum] = useState(false)
   const [isCashWithdrawal, setIsCashWithdrawal] = useState(false)
   const [prevCategoryId, setPrevCategoryId] = useState<string>('')
@@ -107,7 +142,7 @@ export function AddTransactionModal({
 
   // Identificar si la transacción actual tiene un movimiento de efectivo vinculado
   const linkedCashTx = useMemo(() => {
-    if (!initialTransaction || initialTransaction.specialType !== 'cash_withdrawal') return undefined
+    if (!initialTransaction || ('specialType' in initialTransaction && initialTransaction.specialType !== 'cash_withdrawal')) return undefined
     return cashTransactions.find((c) => c.bankTransactionId === initialTransaction.id)
   }, [initialTransaction, cashTransactions])
 
@@ -143,24 +178,43 @@ export function AddTransactionModal({
 
   useEffect(() => {
     if (initialTransaction) {
-      setType(initialTransaction.type)
-      setIncomeKind(initialTransaction.incomeKind || 'income')
+      const isCash =
+        !('accountId' in initialTransaction) ||
+        (initialTransaction as any).source === 'cash' ||
+        initialTransaction.paymentMethod === 'cash' ||
+        initialTransaction.id.startsWith('cash_')
+
+      setSourceMedium(isCash ? 'cash' : 'bank')
+      setType(initialTransaction.type === 'adjustment' ? 'expense' : initialTransaction.type)
+      setIncomeKind(('incomeKind' in initialTransaction && initialTransaction.incomeKind) ? initialTransaction.incomeKind : 'income')
       setAmount(String(initialTransaction.amount).replace('.', ','))
       setDescription(initialTransaction.description)
-      const initialIsWithdrawal = initialTransaction.specialType === 'cash_withdrawal'
+
+      const initialIsWithdrawal = 'specialType' in initialTransaction && initialTransaction.specialType === 'cash_withdrawal'
       setIsCashWithdrawal(initialIsWithdrawal)
+
       const atmCat = categories.find((c) => c.id === 'atm' || c.name.toLowerCase() === 'cajero')
       if (initialIsWithdrawal) {
         setCategoryId(initialTransaction.categoryId ?? atmCat?.id ?? 'atm')
       } else {
         setCategoryId(initialTransaction.categoryId ?? categories[0]?.id ?? '')
       }
-      setPrevCategoryId(initialTransaction.categoryId && initialTransaction.categoryId !== 'atm' ? initialTransaction.categoryId : categories[0]?.id ?? '')
-      setAccountId(initialTransaction.accountId)
-      setToAccountId(initialTransaction.toAccountId ?? accounts.find((a) => a.id !== initialTransaction.accountId)?.id ?? '')
+      setPrevCategoryId(
+        initialTransaction.categoryId && initialTransaction.categoryId !== 'atm'
+          ? initialTransaction.categoryId
+          : categories[0]?.id ?? ''
+      )
+
+      const initialAccId = 'accountId' in initialTransaction && initialTransaction.accountId ? initialTransaction.accountId : accounts[0]?.id ?? 'daily'
+      setAccountId(initialAccId)
+      setToAccountId(('toAccountId' in initialTransaction && initialTransaction.toAccountId) ? initialTransaction.toAccountId : accounts.find((a) => a.id !== initialAccId)?.id ?? '')
+      
+      setTransferFrom(initialAccId)
+      setTransferTo(('toAccountId' in initialTransaction && initialTransaction.toAccountId) ? initialTransaction.toAccountId : 'cash')
+
       setDate(initialTransaction.date.slice(0, 10))
       setNote(initialTransaction.note ?? '')
-      
+
       const sharesForTx = (expenseShares || []).filter((s) => s.expenseTransactionId === initialTransaction.id)
       const initialIsShared = Boolean(initialTransaction.isShared) || sharesForTx.length > 0
       const initialPaidBy = initialTransaction.paidBy || 'user'
@@ -212,21 +266,25 @@ export function AddTransactionModal({
         setCustomAmounts({})
       }
 
-      setExpenseNature(initialTransaction.expenseNature || 'variable')
-      setGiftRecipient(initialTransaction.giftRecipient ?? '')
+      setExpenseNature(('expenseNature' in initialTransaction && initialTransaction.expenseNature) ? initialTransaction.expenseNature : 'variable')
+      setGiftRecipient(('giftRecipient' in initialTransaction && initialTransaction.giftRecipient) ? initialTransaction.giftRecipient : '')
       setIsBizum(initialTransaction.paymentMethod === 'bizum')
       setConfirmDelete(false)
       setPendingLinkedUpdatePayload(null)
       setShowUnshareConfirm(false)
     } else {
       setType(defaultType)
+      setSourceMedium('bank')
       setIncomeKind('income')
       setAmount('')
       setDescription('')
       setCategoryId(categories[0]?.id ?? '')
       setPrevCategoryId(categories[0]?.id ?? '')
-      setAccountId(accounts.find((a) => a.type === 'spending')?.id ?? accounts[0]?.id ?? '')
+      const firstSpending = accounts.find((a) => a.type === 'spending')?.id ?? accounts[0]?.id ?? ''
+      setAccountId(firstSpending)
       setToAccountId(accounts.find((a) => a.type === 'savings')?.id ?? accounts[1]?.id ?? '')
+      setTransferFrom(firstSpending)
+      setTransferTo('cash')
       setDate(new Date().toISOString().slice(0, 10))
       setNote('')
       setIsBizum(false)
@@ -306,12 +364,14 @@ export function AddTransactionModal({
         payerName,
         payerContactId
       )
-    } else {
-      return customSplitSummary?.shares ?? []
     }
-  }, [isShared, numericAmount, splitType, participants, selfParticipates, paidBy, payerName, payerContactId, customSplitSummary])
 
-  if (!open) return null
+    if (splitType === 'custom' && customSplitSummary?.isValid) {
+      return customSplitSummary.shares
+    }
+
+    return []
+  }, [isShared, numericAmount, splitType, participants, selfParticipates, paidBy, payerName, payerContactId, customSplitSummary])
 
   const handleAddParticipant = (nameToAdd?: string) => {
     const rawName = (nameToAdd || newParticipantInput).trim()
@@ -326,9 +386,10 @@ export function AddTransactionModal({
       (c) => c.displayName.toLowerCase() === rawName.toLowerCase()
     )
 
-    setParticipants([
-      ...participants,
+    setParticipants((prev) => [
+      ...prev,
       {
+        id: crypto.randomUUID(),
         name: matchedContact ? matchedContact.displayName : rawName,
         contactId: matchedContact?.id,
         customAmount: 0,
@@ -338,14 +399,20 @@ export function AddTransactionModal({
   }
 
   const handleRemoveParticipant = (index: number) => {
-    setParticipants(participants.filter((_, i) => i !== index))
+    const target = participants[index]
+    setParticipants((prev) => prev.filter((_, i) => i !== index))
+    if (target) {
+      setCustomAmounts((prev) => {
+        const next = { ...prev }
+        if (target.id) delete next[target.id]
+        delete next[target.name]
+        return next
+      })
+    }
   }
 
   const handleLinkExistingWithdrawal = () => {
     if (!initialTransaction || !onAddCashTransaction) return
-    const alreadyLinked = cashTransactions.some((c) => c.bankTransactionId === initialTransaction.id)
-    if (alreadyLinked) return
-
     onAddCashTransaction({
       type: 'income',
       amount: initialTransaction.amount,
@@ -353,6 +420,7 @@ export function AddTransactionModal({
       description: 'Retirada de cajero',
       bankTransactionId: initialTransaction.id,
       note: 'Transferido desde Banco',
+      paymentMethod: 'cash',
     })
   }
 
@@ -385,8 +453,28 @@ export function AddTransactionModal({
   const submit = () => {
     if (!numericAmount || numericAmount <= 0) return
     if (!description.trim()) return
-    if (!accountId) return
-    if (type === 'transfer' && (!toAccountId || toAccountId === accountId)) return
+
+    // CASO TRANSFERENCIA
+    if (type === 'transfer') {
+      if (!transferFrom || !transferTo || transferFrom === transferTo) return
+
+      if (onRecordTransfer) {
+        const fromType = transferFrom === 'cash' ? 'cash' : 'account'
+        const toType = transferTo === 'cash' ? 'cash' : 'account'
+        onRecordTransfer({
+          fromType,
+          fromAccountId: fromType === 'account' ? transferFrom : undefined,
+          toType,
+          toAccountId: toType === 'account' ? transferTo : undefined,
+          amount: numericAmount,
+          date: new Date(date).toISOString(),
+          description: description.trim() || undefined,
+          note: note.trim() || undefined,
+        })
+      }
+      onClose()
+      return
+    }
 
     if (type === 'expense' && isShared) {
       if (splitType === 'custom' && (!customSplitSummary || !customSplitSummary.isValid)) {
@@ -399,7 +487,56 @@ export function AddTransactionModal({
       type === 'expense' &&
       (categoryId === 'gifts' || categories.find((c) => c.id === categoryId)?.name.toLowerCase().includes('regalo'))
 
-    const payload: CreateTransactionInput = {
+    const sharesInput = (type === 'expense' && isShared && computedShares.length > 0)
+      ? computedShares.map((s) => ({
+          participantName: s.participantName,
+          contactId: s.contactId,
+          isPayerShare: Boolean(s.isPayerShare),
+          isUserShare: Boolean(s.isUserShare),
+          expectedAmount: s.amount,
+        }))
+      : []
+
+    // CASO EFECTIVO
+    if (sourceMedium === 'cash') {
+      const cashPayload: CreateCashTransactionInput = {
+        type: type === 'expense' ? 'expense' : 'income',
+        amount: numericAmount,
+        description: description.trim(),
+        date: new Date(date).toISOString(),
+        categoryId: type === 'expense' ? categoryId : undefined,
+        note: note.trim() || undefined,
+        isShared: type === 'expense' && isShared,
+        paidBy: type === 'expense' && isShared ? paidBy : undefined,
+        payerName: type === 'expense' && isShared && paidBy === 'contact' && payerName.trim() ? payerName.trim() : undefined,
+        payerContactId: type === 'expense' && isShared && paidBy === 'contact' ? payerContactId : undefined,
+        paymentMethod: 'cash',
+      }
+
+      if (isEditing && initialTransaction) {
+        if (!isInitialCash && onSwitchMedium) {
+          // Cambio Bank -> Cash
+          onSwitchMedium({
+            from: 'bank',
+            id: initialTransaction.id,
+            to: 'cash',
+            transactionData: cashPayload,
+            shares: sharesInput,
+          })
+        } else if (onUpdateCashTransaction) {
+          onUpdateCashTransaction(initialTransaction.id, cashPayload, sharesInput)
+        }
+      } else if (onAddCashTransaction) {
+        onAddCashTransaction(cashPayload, sharesInput)
+      }
+      onClose()
+      return
+    }
+
+    // CASO BANCO / BIZUM
+    if (!accountId) return
+
+    const bankPayload: CreateTransactionInput = {
       type,
       amount: numericAmount,
       description: description.trim(),
@@ -407,7 +544,7 @@ export function AddTransactionModal({
       date: new Date(date).toISOString(),
       note: note.trim() || undefined,
       categoryId: type === 'expense' ? categoryId : undefined,
-      toAccountId: type === 'transfer' ? toAccountId : undefined,
+      toAccountId: undefined,
       incomeKind: type === 'income' ? incomeKind : undefined,
       isShared: type === 'expense' && isShared,
       paidBy: type === 'expense' && isShared ? paidBy : undefined,
@@ -416,122 +553,141 @@ export function AddTransactionModal({
       specialType: type === 'expense' ? (isCashWithdrawal ? 'cash_withdrawal' : 'normal') : undefined,
       expenseNature: type === 'expense' ? expenseNature : undefined,
       giftRecipient: isGiftsCategory && giftRecipient.trim() ? giftRecipient.trim() : undefined,
-      paymentMethod: type === 'expense' ? (isBizum ? 'bizum' : 'bank') : undefined,
+      paymentMethod: isBizum ? 'bizum' : 'bank',
     }
 
-    if (isEditing && initialTransaction && onUpdate) {
-      // Si la retirada está vinculada y ha cambiado el importe o la fecha, preguntar
-      if (linkedCashTx) {
-        const amountChanged = numericAmount !== initialTransaction.amount
-        const dateChanged = date !== initialTransaction.date.slice(0, 10)
-        if (amountChanged || dateChanged) {
-          setPendingLinkedUpdatePayload(payload)
-          return
+    if (isEditing && initialTransaction) {
+      if (isInitialCash && onSwitchMedium) {
+        // Cambio Cash -> Bank
+        onSwitchMedium({
+          from: 'cash',
+          id: initialTransaction.id,
+          to: 'bank',
+          transactionData: bankPayload,
+          shares: sharesInput,
+        })
+      } else if (onUpdate) {
+        if (linkedCashTx) {
+          const amountChanged = numericAmount !== initialTransaction.amount
+          const dateChanged = date !== initialTransaction.date.slice(0, 10)
+          if (amountChanged || dateChanged) {
+            setPendingLinkedUpdatePayload(bankPayload)
+            return
+          }
+        }
+
+        if (type === 'expense' && isShared && sharesInput.length > 0) {
+          onUpdate(initialTransaction.id, { ...bankPayload, isShared: true }, sharesInput)
+        } else if (type === 'expense' && !isShared && initialTransaction.isShared) {
+          onUpdate(initialTransaction.id, { ...bankPayload, isShared: false }, [])
+        } else {
+          onUpdate(initialTransaction.id, bankPayload)
         }
       }
-
-      if (type === 'expense' && isShared && computedShares.length > 0) {
-        const sharesInput = computedShares.map((s) => ({
-          participantName: s.participantName,
-          contactId: s.contactId,
-          isPayerShare: Boolean(s.isPayerShare),
-          isUserShare: Boolean(s.isUserShare),
-          expectedAmount: s.amount,
-        }))
-        onUpdate(initialTransaction.id, { ...payload, isShared: true }, sharesInput)
-      } else if (type === 'expense' && !isShared && initialTransaction.isShared) {
-        onUpdate(initialTransaction.id, { ...payload, isShared: false }, [])
-      } else {
-        onUpdate(initialTransaction.id, payload)
-      }
-    } else if (type === 'expense' && isShared && onAddShared && computedShares.length > 0) {
-      const sharesInput = computedShares.map((s) => ({
-        participantName: s.participantName,
-        contactId: s.contactId,
-        isPayerShare: Boolean(s.isPayerShare),
-        isUserShare: Boolean(s.isUserShare),
-        expectedAmount: s.amount,
-      }))
-      onAddShared(payload, sharesInput)
+    } else if (type === 'expense' && isShared && onAddShared && sharesInput.length > 0) {
+      onAddShared(bankPayload, sharesInput)
     } else if (onAdd) {
-      const created = onAdd(payload)
-      if (created && payload.type === 'expense' && payload.specialType === 'cash_withdrawal' && onPromptWithdrawalLink) {
-        onPromptWithdrawalLink(created)
+      const createdTx = onAdd(bankPayload)
+      if (isCashWithdrawal && createdTx && onPromptWithdrawalLink) {
+        onPromptWithdrawalLink(createdTx)
       }
     }
+
     onClose()
   }
 
-  const executeLinkedUpdate = (updateCash: boolean) => {
-    if (!pendingLinkedUpdatePayload || !initialTransaction || !onUpdate) return
-
-    if (pendingLinkedUpdatePayload.type === 'expense' && isShared && computedShares.length > 0) {
-      const sharesInput = computedShares.map((s) => ({
-        participantName: s.participantName,
-        contactId: s.contactId,
-        isPayerShare: Boolean(s.isPayerShare),
-        isUserShare: Boolean(s.isUserShare),
-        expectedAmount: s.amount,
-      }))
-      onUpdate(initialTransaction.id, { ...pendingLinkedUpdatePayload, isShared: true }, sharesInput)
-    } else {
-      onUpdate(initialTransaction.id, pendingLinkedUpdatePayload)
-    }
-
-    if (updateCash && linkedCashTx && onUpdateCashTransaction) {
-      onUpdateCashTransaction(linkedCashTx.id, {
-        amount: pendingLinkedUpdatePayload.amount,
-        date: pendingLinkedUpdatePayload.date,
-      })
-    }
-
-    setPendingLinkedUpdatePayload(null)
-    onClose()
-  }
-
-  const handleDelete = (deleteBoth: boolean = false) => {
-    if (initialTransaction && onDelete) {
+  const handleDelete = () => {
+    if (!initialTransaction) return
+    if (isInitialCash && onDeleteCashTransaction) {
+      onDeleteCashTransaction(initialTransaction.id)
+    } else if (onDelete) {
       onDelete(initialTransaction.id)
-      if (deleteBoth && linkedCashTx && onDeleteCashTransaction) {
-        onDeleteCashTransaction(linkedCashTx.id)
-      }
-      onClose()
     }
+    onClose()
   }
+
+  if (!open) return null
 
   return (
     <div className="modal-backdrop" onClick={onClose} role="dialog" aria-modal="true">
       <div className="modal" onClick={(e) => e.stopPropagation()}>
         <div className="modal-header">
-          <h3>{isEditing ? 'Editar movimiento' : 'Añadir movimiento'}</h3>
+          <h3>
+            {isEditing
+              ? type === 'transfer'
+                ? 'Editar transferencia'
+                : type === 'income'
+                ? 'Editar ingreso'
+                : 'Editar gasto'
+              : type === 'transfer'
+              ? 'Transferir dinero'
+              : type === 'income'
+              ? 'Nuevo ingreso'
+              : 'Nuevo gasto'}
+          </h3>
           <button className="close-btn" onClick={onClose} aria-label="Cerrar">
             <AppIcon name="x" size={18} />
           </button>
         </div>
 
-        <div className="segmented">
-          <button
-            type="button"
-            className={type === 'expense' ? 'active' : ''}
-            onClick={() => setType('expense')}
-          >
-            Gasto
-          </button>
-          <button
-            type="button"
-            className={type === 'income' ? 'active' : ''}
-            onClick={() => setType('income')}
-          >
-            Ingreso
-          </button>
-          <button
-            type="button"
-            className={type === 'transfer' ? 'active' : ''}
-            onClick={() => setType('transfer')}
-          >
-            Transferencia
-          </button>
-        </div>
+        {/* Selector de Tipo si es nuevo movimiento */}
+        {!isEditing && (
+          <div className="segmented">
+            <button
+              type="button"
+              className={type === 'expense' ? 'active' : ''}
+              onClick={() => setType('expense')}
+            >
+              Gasto
+            </button>
+            <button
+              type="button"
+              className={type === 'income' ? 'active' : ''}
+              onClick={() => setType('income')}
+            >
+              Ingreso
+            </button>
+            <button
+              type="button"
+              className={type === 'transfer' ? 'active' : ''}
+              onClick={() => setType('transfer')}
+            >
+              Transferir
+            </button>
+          </div>
+        )}
+
+        {/* Selector de Medio: Cuenta vs Efectivo (para Gasto e Ingreso) */}
+        {type !== 'transfer' && (
+          <div className="form-group" style={{ marginBottom: 12 }}>
+            <label style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>
+              {type === 'expense' ? 'Origen del dinero' : 'Destino del dinero'}
+            </label>
+            <div className="segmented-control" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
+              <button
+                type="button"
+                className={`segmented-btn ${sourceMedium === 'bank' ? 'active' : ''}`}
+                onClick={() => setSourceMedium('bank')}
+                style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}
+              >
+                <AppIcon name="landmark" size={15} />
+                <span>Cuenta bancaria</span>
+              </button>
+              <button
+                type="button"
+                className={`segmented-btn ${sourceMedium === 'cash' ? 'active' : ''}`}
+                onClick={() => {
+                  setSourceMedium('cash')
+                  setIsBizum(false)
+                }}
+                style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}
+              >
+                <AppIcon name="wallet" size={15} />
+                <span>Efectivo</span>
+              </button>
+            </div>
+          </div>
+        )}
 
         {/* Sub-selector para Ingreso: Real vs Reembolso */}
         {type === 'income' && (
@@ -554,7 +710,7 @@ export function AddTransactionModal({
                 checked={incomeKind === 'reimbursement'}
                 onChange={() => setIncomeKind('reimbursement')}
               />
-              <span>Reembolso / Bizum recibido</span>
+              <span>Reembolso / Devolución</span>
             </label>
           </div>
         )}
@@ -582,19 +738,19 @@ export function AddTransactionModal({
               onChange={(e) => setDescription(e.target.value)}
               placeholder={
                 type === 'expense'
-                  ? 'Mercadona, cena, cajero...'
+                  ? 'Mercadona, cena, peluquería...'
                   : type === 'income'
                   ? incomeKind === 'reimbursement'
-                    ? 'Bizum Manuela cena...'
-                    : 'Nómina, ingreso...'
-                  : 'A ahorro...'
+                    ? 'Bizum cena, devolución...'
+                    : 'Nómina, regalo, venta...'
+                  : 'Traspaso a ahorro, retirada...'
               }
             />
           </label>
         </div>
 
-        {/* Pequeño chip/toggle para indicar pago por Bizum */}
-        {type === 'expense' && !isCashWithdrawal && (
+        {/* Toggle discreto de Bizum (solo cuando el origen/destino es Cuenta bancaria) */}
+        {sourceMedium === 'bank' && type !== 'transfer' && !isCashWithdrawal && (
           <div className="form-group" style={{ marginTop: -4, marginBottom: 12 }}>
             <button
               type="button"
@@ -606,8 +762,8 @@ export function AddTransactionModal({
                 gap: 6,
                 padding: '6px 14px',
                 borderRadius: 9999,
-                border: isBizum ? '1px solid #10b981' : '1px solid rgba(255, 255, 255, 0.12)',
-                background: isBizum ? 'rgba(16, 185, 129, 0.15)' : 'rgba(255, 255, 255, 0.05)',
+                border: isBizum ? '1px solid #10b981' : '1px solid var(--border-color, rgba(255, 255, 255, 0.12))',
+                background: isBizum ? 'rgba(16, 185, 129, 0.15)' : 'var(--bg-card-light, rgba(255, 255, 255, 0.05))',
                 color: isBizum ? '#10b981' : 'var(--text-muted, #888)',
                 fontSize: '0.84rem',
                 fontWeight: isBizum ? 600 : 500,
@@ -616,7 +772,15 @@ export function AddTransactionModal({
               }}
             >
               <AppIcon name="smartphone" size={14} color={isBizum ? '#10b981' : 'currentColor'} />
-              <span>{isBizum ? 'Pagado por Bizum' : 'Bizum'}</span>
+              <span>
+                {type === 'income'
+                  ? isBizum
+                    ? 'Bizum recibido'
+                    : 'Marcar como Bizum'
+                  : isBizum
+                  ? 'Pagado por Bizum'
+                  : 'Bizum'}
+              </span>
               {isBizum && <AppIcon name="check" size={12} color="#10b981" />}
             </button>
           </div>
@@ -725,8 +889,8 @@ export function AddTransactionModal({
           </div>
         )}
 
-        {/* Opción Retirada de Cajero / Efectivo */}
-        {type === 'expense' && (
+        {/* Retirada de Cajero (solo si es Cuenta Bancaria) */}
+        {type === 'expense' && sourceMedium === 'bank' && (
           <div className="form-group">
             <label className="checkbox-row-clean">
               <input
@@ -758,7 +922,6 @@ export function AddTransactionModal({
               </span>
             </label>
 
-            {/* Banner de estado de vínculo con Efectivo en edición */}
             {isEditing && isCashWithdrawal && (
               <div style={{ marginTop: 8 }}>
                 {linkedCashTx ? (
@@ -821,7 +984,7 @@ export function AddTransactionModal({
           </div>
         )}
 
-        {/* Sección Gasto Compartido (discreta, OFF por defecto) */}
+        {/* Sección Gasto Compartido */}
         {type === 'expense' && (
           <SharedExpenseSection
             isShared={isShared}
@@ -854,34 +1017,88 @@ export function AddTransactionModal({
           />
         )}
 
-        <div className="form-group">
-          <label>
-            {type === 'transfer' ? 'Cuenta origen' : 'Cuenta'}
-            <select value={accountId} onChange={(e) => setAccountId(e.target.value)}>
-              {accounts.map((a) => (
-                <option key={a.id} value={a.id}>
-                  {a.name} ({a.type === 'spending' ? 'Diaria' : 'Ahorro'})
-                </option>
-              ))}
-            </select>
-          </label>
-        </div>
-
-        {type === 'transfer' && (
+        {/* Selector de Cuenta si origen es Banco */}
+        {type !== 'transfer' && sourceMedium === 'bank' && (
           <div className="form-group">
             <label>
-              Cuenta destino
-              <select value={toAccountId} onChange={(e) => setToAccountId(e.target.value)}>
-                {accounts
-                  .filter((a) => a.id !== accountId)
-                  .map((a) => (
-                    <option key={a.id} value={a.id}>
-                      {a.name} ({a.type === 'spending' ? 'Diaria' : 'Ahorro'})
-                    </option>
-                  ))}
+              Cuenta bancaria
+              <select value={accountId} onChange={(e) => setAccountId(e.target.value)}>
+                {accounts.map((a) => (
+                  <option key={a.id} value={a.id}>
+                    {a.name} ({a.type === 'spending' ? 'Diaria' : 'Ahorro'})
+                  </option>
+                ))}
               </select>
             </label>
           </div>
+        )}
+
+        {/* Info cuando el origen es Efectivo */}
+        {type !== 'transfer' && sourceMedium === 'cash' && (
+          <div
+            style={{
+              padding: '10px 14px',
+              borderRadius: 12,
+              background: 'var(--bg-card-light, #f8fafc)',
+              border: '1px solid var(--border-color, #e2e8f0)',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 8,
+              fontSize: '0.85rem',
+              color: 'var(--text-muted)',
+              marginBottom: 12,
+            }}
+          >
+            <AppIcon name="wallet" size={16} />
+            <span>
+              {type === 'expense'
+                ? 'Se descontará de la caja de efectivo'
+                : 'Se sumará a la caja de efectivo'}
+            </span>
+          </div>
+        )}
+
+        {/* Campos de Transferir */}
+        {type === 'transfer' && (
+          <>
+            <div className="form-group">
+              <label>
+                Desde (Origen)
+                <select value={transferFrom} onChange={(e) => setTransferFrom(e.target.value)}>
+                  <optgroup label="Cuentas bancarias">
+                    {accounts.map((a) => (
+                      <option key={a.id} value={a.id}>
+                        {a.name} ({a.type === 'spending' ? 'Diaria' : 'Ahorro'})
+                      </option>
+                    ))}
+                  </optgroup>
+                  <optgroup label="Físico">
+                    <option value="cash">Efectivo</option>
+                  </optgroup>
+                </select>
+              </label>
+            </div>
+
+            <div className="form-group">
+              <label>
+                Hacia (Destino)
+                <select value={transferTo} onChange={(e) => setTransferTo(e.target.value)}>
+                  <optgroup label="Cuentas bancarias">
+                    {accounts
+                      .filter((a) => a.id !== transferFrom)
+                      .map((a) => (
+                        <option key={a.id} value={a.id}>
+                          {a.name} ({a.type === 'spending' ? 'Diaria' : 'Ahorro'})
+                        </option>
+                      ))}
+                  </optgroup>
+                  <optgroup label="Físico">
+                    {transferFrom !== 'cash' && <option value="cash">Efectivo</option>}
+                  </optgroup>
+                </select>
+              </label>
+            </div>
+          </>
         )}
 
         <div className="form-group">
@@ -896,12 +1113,12 @@ export function AddTransactionModal({
           </label>
         </div>
 
-        {/* Modal / Diálogo de confirmación para actualización de retirada vinculada */}
-        {pendingLinkedUpdatePayload && linkedCashTx && (
+        {/* Sub-modal confirmación desmarcar compartido */}
+        {showUnshareConfirm && (
           <div
             className="modal-backdrop"
             style={{ zIndex: 1100 }}
-            onClick={() => setPendingLinkedUpdatePayload(null)}
+            onClick={() => setShowUnshareConfirm(false)}
           >
             <div
               className="modal-card"
@@ -909,175 +1126,72 @@ export function AddTransactionModal({
               style={{ maxWidth: 440, padding: 24 }}
             >
               <h4 style={{ margin: '0 0 10px', fontSize: '1.15rem', fontWeight: 700 }}>
-                Actualizar movimiento vinculado
+                {unshareHasReimbursements ? '¿Desmarcar gasto compartido con cobros?' : '¿Desmarcar gasto compartido?'}
               </h4>
               <p style={{ margin: '0 0 16px', color: 'var(--text-muted)', fontSize: '0.92rem', lineHeight: 1.5 }}>
-                Esta retirada está vinculada a Efectivo. ¿Quieres actualizar también la entrada de efectivo de{' '}
-                <strong>{money(linkedCashTx.amount)}</strong> a <strong>{money(pendingLinkedUpdatePayload.amount)}</strong>?
-              </p>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                <button
-                  type="button"
-                  className="primary-button"
-                  style={{ width: '100%', padding: '12px', background: '#16a34a' }}
-                  onClick={() => executeLinkedUpdate(true)}
-                >
-                  Actualizar ambos (Banco y Efectivo)
-                </button>
-                <button
-                  type="button"
-                  className="secondary-button"
-                  style={{ width: '100%', padding: '12px' }}
-                  onClick={() => executeLinkedUpdate(false)}
-                >
-                  Solo Banco
-                </button>
-                <button
-                  type="button"
-                  className="secondary-button"
-                  style={{ width: '100%', padding: '10px', background: 'transparent', border: 'none', color: 'var(--text-muted)' }}
-                  onClick={() => setPendingLinkedUpdatePayload(null)}
-                >
-                  Cancelar
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Confirmación al desmarcar reparto compartido */}
-        {showUnshareConfirm && (
-          <div
-            style={{
-              position: 'fixed',
-              top: 0,
-              left: 0,
-              right: 0,
-              bottom: 0,
-              backgroundColor: 'rgba(0, 0, 0, 0.65)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              zIndex: 1200,
-              padding: 16,
-              backdropFilter: 'blur(4px)',
-            }}
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div
-              style={{
-                background: 'var(--card-bg, #ffffff)',
-                borderRadius: 'var(--radius-lg, 16px)',
-                padding: '22px 20px',
-                maxWidth: 380,
-                width: '100%',
-                boxShadow: '0 20px 25px -5px rgba(0,0,0,0.3)',
-                border: '1px solid var(--border, #e2e8f0)',
-              }}
-            >
-              <h4 style={{ margin: '0 0 10px', fontSize: '1.05rem', fontWeight: 700, color: 'var(--text-main)' }}>
-                Eliminar reparto compartido
-              </h4>
-              <p style={{ margin: '0 0 18px', fontSize: '0.88rem', lineHeight: 1.45, color: 'var(--text-muted)' }}>
                 {unshareHasReimbursements
-                  ? 'Atención: Este gasto ya tiene cobros o reembolsos registrados asociados. Si eliminas el reparto, el gasto pasará a contar como 100% gasto personal y se desvincularán los participantes. ¿Deseas continuar?'
-                  : 'Este gasto tiene información de reparto asociada. ¿Quieres eliminar el reparto y que vuelva a contar completo como tu gasto personal?'}
+                  ? 'Este gasto ya tiene cobros o reembolsos registrados. Si lo desmarcas como compartido, se eliminarán las cuotas pendientes de los participantes y el gasto pasará a ser 100% tuyo personal.'
+                  : 'Al desmarcarlo como compartido, se eliminarán las cuotas de los participantes y volverá a ser un gasto 100% individual.'}
               </p>
               <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
                 <button
                   type="button"
-                  className="secondary-button"
-                  style={{ padding: '8px 16px', fontSize: '0.88rem' }}
+                  className="btn btn-secondary"
                   onClick={() => setShowUnshareConfirm(false)}
                 >
                   Cancelar
                 </button>
                 <button
                   type="button"
-                  className="danger-button"
-                  style={{ padding: '8px 16px', fontSize: '0.88rem' }}
+                  className="btn btn-primary"
+                  style={{ background: '#ef4444', borderColor: '#ef4444' }}
                   onClick={() => {
-                    setShowUnshareConfirm(false)
                     setIsShared(false)
-                    setParticipants([])
+                    setShowUnshareConfirm(false)
                   }}
                 >
-                  Eliminar reparto
+                  Sí, desmarcar
                 </button>
               </div>
             </div>
           </div>
         )}
 
-        <div className="modal-actions">
-          <button type="button" className="primary-button" onClick={submit}>
-            {isEditing ? 'Guardar cambios' : 'Añadir movimiento'}
-          </button>
-
-          {isEditing && onDelete && (
-            <>
-              {!confirmDelete ? (
-                <button
-                  type="button"
-                  className="danger-outline-button"
-                  onClick={() => setConfirmDelete(true)}
-                >
-                  Eliminar movimiento
-                </button>
-              ) : (
-                <div className="confirm-delete-box">
-                  <p>
-                    {linkedCashTx
-                      ? `Esta retirada tiene un movimiento vinculado en Efectivo (+${money(linkedCashTx.amount)}).`
-                      : '¿Seguro que quieres eliminar este movimiento? El saldo se revertirá automáticamente.'}
-                  </p>
-                  <div className="confirm-delete-actions" style={{ flexDirection: linkedCashTx ? 'column' : 'row' }}>
-                    {linkedCashTx ? (
-                      <>
-                        <button
-                          type="button"
-                          className="danger-button"
-                          style={{ width: '100%', padding: '10px' }}
-                          onClick={() => handleDelete(true)}
-                        >
-                          Borrar ambos (Banco y Efectivo)
-                        </button>
-                        <button
-                          type="button"
-                          className="secondary-button"
-                          style={{ width: '100%', padding: '10px' }}
-                          onClick={() => handleDelete(false)}
-                        >
-                          Borrar solo de Banco
-                        </button>
-                        <button
-                          type="button"
-                          className="secondary-button"
-                          style={{ width: '100%', padding: '8px', background: 'transparent', border: 'none' }}
-                          onClick={() => setConfirmDelete(false)}
-                        >
-                          Cancelar
-                        </button>
-                      </>
-                    ) : (
-                      <>
-                        <button type="button" className="danger-button" onClick={() => handleDelete(false)}>
-                          Sí, eliminar
-                        </button>
-                        <button
-                          type="button"
-                          className="secondary-button"
-                          onClick={() => setConfirmDelete(false)}
-                        >
-                          Cancelar
-                        </button>
-                      </>
-                    )}
-                  </div>
-                </div>
-              )}
-            </>
+        <div className="modal-actions" style={{ display: 'flex', gap: 10, marginTop: 12 }}>
+          {isEditing && (
+            <button
+              type="button"
+              className="btn btn-danger"
+              style={{ marginRight: 'auto' }}
+              onClick={() => {
+                if (confirmDelete) {
+                  handleDelete()
+                } else {
+                  setConfirmDelete(true)
+                }
+              }}
+            >
+              {confirmDelete ? '¿Seguro que deseas eliminar?' : 'Eliminar'}
+            </button>
           )}
+
+          <button type="button" className="btn btn-secondary" onClick={onClose}>
+            Cancelar
+          </button>
+          <button
+            type="button"
+            className="btn btn-primary"
+            onClick={submit}
+            disabled={
+              !numericAmount ||
+              numericAmount <= 0 ||
+              !description.trim() ||
+              (type === 'transfer' && (!transferFrom || !transferTo || transferFrom === transferTo)) ||
+              (type !== 'transfer' && sourceMedium === 'bank' && !accountId)
+            }
+          >
+            {isEditing ? 'Guardar cambios' : 'Añadir'}
+          </button>
         </div>
       </div>
     </div>

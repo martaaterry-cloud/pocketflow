@@ -107,7 +107,14 @@ export function selectGrossExpensesByPaymentMethod(
 
   // 1. Gastos bancarios (Transaction)
   transactions
-    .filter((t) => t.type === 'expense' && (!t.isShared || t.paidBy !== 'contact'))
+    .filter(
+      (t) =>
+        t.type === 'expense' &&
+        (!t.isShared || t.paidBy !== 'contact') &&
+        t.specialType !== 'cash_withdrawal' &&
+        t.specialType !== 'transfer' &&
+        t.specialType !== 'account_adjustment'
+    )
     .filter((t) => {
       if (scope === 'all') return true
       const d = new Date(t.date)

@@ -678,6 +678,8 @@ export function HomePage({
                 onEdit={(tx) => {
                   if (tx.isShared && onSelectSharedExpense) {
                     onSelectSharedExpense(tx)
+                  } else if (onSelectTransaction) {
+                    onSelectTransaction(tx)
                   } else {
                     setEditingCashTx(tx)
                   }

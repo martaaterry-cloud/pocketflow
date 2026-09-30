@@ -1316,6 +1316,7 @@ export function useFinance(storage: StorageAdapter = defaultAppStorage) {
         date: dateStr,
         recurringPaymentId: rec.id,
         isShared: Boolean(rec.isShared),
+        paymentMethod: rec.paymentMethod || 'bank',
       }
 
       // Si es un recurrente compartido, crear las partes independientes para ESTE ciclo
@@ -2205,6 +2206,192 @@ export function useFinance(storage: StorageAdapter = defaultAppStorage) {
     [state.cashTransactions, addCashTransaction]
   )
 
+  const adjustAccountToAmount = useCallback(
+    (accountId: string, realAmount: number, date?: string, note?: string): Transaction | null => {
+      const targetAcc = reconciledAccounts.find((a) => a.id === accountId)
+      if (!targetAcc) throw new Error('Cuenta no encontrada.')
+
+      const currentBalance = targetAcc.balance ?? 0
+      const diff = Math.round((Number(realAmount) - currentBalance) * 100) / 100
+
+      if (diff === 0) return null
+
+      const dateStr = date || new Date().toISOString()
+      const desc = diff > 0 ? 'Ajuste de saldo (positivo)' : 'Ajuste de saldo (negativo)'
+      const finalNote = note ? `Ajuste: ${note}` : 'Corrección de saldo bancario'
+
+      if (diff > 0) {
+        return addTransaction({
+          type: 'income',
+          amount: diff,
+          accountId,
+          date: dateStr,
+          description: desc,
+          note: finalNote,
+          specialType: 'account_adjustment',
+        })
+      } else {
+        return addTransaction({
+          type: 'expense',
+          amount: Math.abs(diff),
+          accountId,
+          date: dateStr,
+          description: desc,
+          note: finalNote,
+          specialType: 'account_adjustment',
+        })
+      }
+    },
+    [reconciledAccounts, addTransaction]
+  )
+
+  const recordTransfer = useCallback(
+    (input: {
+      fromType: 'account' | 'cash'
+      fromAccountId?: string
+      toType: 'account' | 'cash'
+      toAccountId?: string
+      amount: number
+      date?: string
+      note?: string
+      description?: string
+    }) => {
+      const amt = Math.round(Number(input.amount) * 100) / 100
+      if (isNaN(amt) || amt <= 0) {
+        throw new Error('El importe de la transferencia debe ser mayor que 0.')
+      }
+      const date = input.date || new Date().toISOString()
+      const note = input.note?.trim() || undefined
+
+      // Caso 1: Cuenta -> Cuenta
+      if (input.fromType === 'account' && input.toType === 'account') {
+        if (!input.fromAccountId || !input.toAccountId) {
+          throw new Error('Debes seleccionar cuenta de origen y destino.')
+        }
+        if (input.fromAccountId === input.toAccountId) {
+          throw new Error('La cuenta de origen y destino no pueden ser la misma.')
+        }
+        const toAcc = state.accounts.find((a) => a.id === input.toAccountId)
+        const desc = input.description || `Transferencia a ${toAcc?.name || 'otra cuenta'}`
+        return addTransaction({
+          type: 'transfer',
+          amount: amt,
+          accountId: input.fromAccountId,
+          toAccountId: input.toAccountId,
+          date,
+          description: desc,
+          note,
+        })
+      }
+
+      // Caso 2: Cuenta -> Efectivo (Retirada cajero)
+      if (input.fromType === 'account' && input.toType === 'cash') {
+        if (!input.fromAccountId) {
+          throw new Error('Debes seleccionar la cuenta bancaria de origen.')
+        }
+        const fromAcc = state.accounts.find((a) => a.id === input.fromAccountId)
+        const desc = input.description || `Retirada de efectivo · ${fromAcc?.name || 'Banco'}`
+        const bankTx = addTransaction({
+          type: 'expense',
+          specialType: 'cash_withdrawal',
+          amount: amt,
+          accountId: input.fromAccountId,
+          date,
+          description: desc,
+          note,
+        })
+        const cashTx = addCashTransaction({
+          type: 'income',
+          amount: amt,
+          date,
+          description: 'Retirada de cajero',
+          bankTransactionId: bankTx.id,
+          note: note || `Transferido desde ${fromAcc?.name || 'Banco'}`,
+          paymentMethod: 'cash',
+        })
+        return { bankTx, cashTx }
+      }
+
+      // Caso 3: Efectivo -> Cuenta (Ingreso en cajero / banco)
+      if (input.fromType === 'cash' && input.toType === 'account') {
+        if (!input.toAccountId) {
+          throw new Error('Debes seleccionar la cuenta bancaria de destino.')
+        }
+        const toAcc = state.accounts.find((a) => a.id === input.toAccountId)
+        const desc = input.description || `Ingreso en cuenta desde efectivo`
+        const bankTx = addTransaction({
+          type: 'income',
+          incomeKind: 'reimbursement',
+          specialType: 'reimbursement',
+          amount: amt,
+          accountId: input.toAccountId,
+          date,
+          description: desc,
+          note: note || 'Transferido desde Efectivo',
+          paymentMethod: 'bank',
+        })
+        const cashTx = addCashTransaction({
+          type: 'expense',
+          amount: amt,
+          date,
+          description: `Ingreso en ${toAcc?.name || 'cuenta bancaria'}`,
+          bankTransactionId: bankTx.id,
+          note,
+          paymentMethod: 'cash',
+        })
+        return { bankTx, cashTx }
+      }
+
+      throw new Error('Origen y destino no válidos para la transferencia.')
+    },
+    [state.accounts, addTransaction, addCashTransaction]
+  )
+
+  const switchMovementMedium = useCallback(
+    (params: {
+      from: 'bank' | 'cash'
+      id: string
+      to: 'bank' | 'cash'
+      transactionData: CreateTransactionInput | CreateCashTransactionInput
+      shares?: { participantName: string; contactId?: string; isPayerShare: boolean; isUserShare?: boolean; expectedAmount: number }[]
+    }) => {
+      const { from, id, to, transactionData, shares } = params
+
+      if (from === 'bank' && to === 'cash') {
+        deleteTransaction(id)
+        const cashInput: CreateCashTransactionInput = {
+          type: (transactionData.type === 'expense' || transactionData.type === 'income') ? transactionData.type : 'expense',
+          amount: Number(transactionData.amount),
+          description: transactionData.description,
+          date: transactionData.date,
+          categoryId: transactionData.categoryId,
+          note: transactionData.note,
+          paymentMethod: 'cash',
+        }
+        return addCashTransaction(cashInput, shares)
+      }
+
+      if (from === 'cash' && to === 'bank') {
+        deleteCashTransaction(id)
+        const bankInput: CreateTransactionInput = {
+          type: (transactionData.type === 'expense' || transactionData.type === 'income' || transactionData.type === 'transfer') ? transactionData.type : 'expense',
+          amount: Number(transactionData.amount),
+          accountId: (transactionData as any).accountId || 'daily',
+          categoryId: transactionData.categoryId,
+          description: transactionData.description,
+          date: transactionData.date,
+          note: transactionData.note,
+          paymentMethod: (transactionData as any).paymentMethod || 'bank',
+        }
+        if (shares && shares.length > 0) {
+          return addSharedExpense(bankInput, shares)
+        }
+        return addTransaction(bankInput)
+      }
+    },
+    [deleteTransaction, deleteCashTransaction, addCashTransaction, addTransaction, addSharedExpense]
+  )
+
   /* ==========================================================================
      Totales y Conceptos Financieros Centralizados
      ========================================================================== */
@@ -2896,11 +3083,14 @@ export function useFinance(storage: StorageAdapter = defaultAppStorage) {
     deleteTransaction,
     updateAccountInitialBalance,
 
-    // Efectivo
+    // Efectivo y Operaciones Unificadas
     addCashTransaction,
     updateCashTransaction,
     deleteCashTransaction,
     adjustCashToAmount,
+    adjustAccountToAmount,
+    recordTransfer,
+    switchMovementMedium,
 
     // Perfil
     updateProfile,

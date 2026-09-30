@@ -6909,12 +6909,12 @@ describe('Fase 18 — Mejoras de Finanzas (Detalle por Categoría, Retiradas de 
 describe('Fase 18 — Identificación Visual de Versión y Build', () => {
   it('314. Versioning: única fuente de verdad y formato de visualización exacto', () => {
     assert.equal(APP_NAME, 'PocketFlow')
-    assert.equal(APP_VERSION, '0.24.6')
-    assert.equal(APP_BUILD, '2026.09.30-04')
+    assert.equal(APP_VERSION, '0.24.7')
+    assert.equal(APP_BUILD, '2026.09.30-05')
 
-    assert.equal(getAppVersionString(), 'PocketFlow v0.24.6')
-    assert.equal(getAppBuildString(), 'Build 2026.09.30-04')
-    assert.equal(getAppFullVersionLabel(), 'PocketFlow v0.24.6 · Build 2026.09.30-04')
+    assert.equal(getAppVersionString(), 'PocketFlow v0.24.7')
+    assert.equal(getAppBuildString(), 'Build 2026.09.30-05')
+    assert.equal(getAppFullVersionLabel(), 'PocketFlow v0.24.7 · Build 2026.09.30-05')
   })
 })
 
@@ -14010,12 +14010,12 @@ describe('Fase 50 — Control de Acceso por Roles (User / Admin), Seguridad RLS 
     }
 
     const userFooter = renderFooterTexts(false)
-    assert.equal(userFooter.versionText, 'PocketFlow v0.24.6')
+    assert.equal(userFooter.versionText, 'PocketFlow v0.24.7')
     assert.equal(userFooter.buildText, null)
 
     const adminFooter = renderFooterTexts(true)
-    assert.equal(adminFooter.versionText, 'PocketFlow v0.24.6')
-    assert.equal(adminFooter.buildText, 'Build 2026.09.30-04')
+    assert.equal(adminFooter.versionText, 'PocketFlow v0.24.7')
+    assert.equal(adminFooter.buildText, 'Build 2026.09.30-05')
   })
 
   it('590. 10. Reconciliación y sincronización de perfil no altera datos financieros ni transacciones', () => {
@@ -14516,7 +14516,7 @@ describe('Fase 52 — Versionado Automático y Robusto del Service Worker PWA', 
   it('613. 1. CACHE_NAME del Service Worker incluye exactamente APP_VERSION y APP_BUILD actuales', () => {
     const expectedCacheName = `pocketflow-v${APP_VERSION}-${APP_BUILD}`
     assert.equal(getServiceWorkerCacheName(APP_VERSION, APP_BUILD), expectedCacheName)
-    assert.equal(expectedCacheName, 'pocketflow-v0.24.6-2026.09.30-04')
+    assert.equal(expectedCacheName, 'pocketflow-v0.24.7-2026.09.30-05')
 
     const swCode = generateServiceWorkerCode(APP_VERSION, APP_BUILD)
     assert.ok(swCode.includes(`const CACHE_NAME = '${expectedCacheName}'`))
@@ -17224,15 +17224,15 @@ describe('Fase 61 — Detección Fiable de Versión Remota y Actualizaciones PWA
     assert.ok(swCode.includes('return false'))
 
     const versionData = JSON.parse(generateVersionJson(APP_VERSION, APP_BUILD))
-    assert.equal(versionData.version, '0.24.6')
-    assert.equal(versionData.build, '2026.09.30-04')
+    assert.equal(versionData.version, '0.24.7')
+    assert.equal(versionData.build, '2026.09.30-05')
   })
 
   // Test 10: Diagnóstico completo collectPwaDiagnosticInfo
   it('686. 10. collectPwaDiagnosticInfo recopila estado de versión local, remota y controller', async () => {
     const info = await collectPwaDiagnosticInfo(null, '/pocketflow/')
-    assert.equal(info.localVersion, '0.24.6')
-    assert.equal(info.localBuild, '2026.09.30-04')
+    assert.equal(info.localVersion, '0.24.7')
+    assert.equal(info.localBuild, '2026.09.30-05')
     assert.equal(info.basePath, '/pocketflow/')
     assert.ok(typeof info.lastCheckedAt === 'string')
   })
@@ -17345,8 +17345,8 @@ describe('Fase 62 — Categoría Canónica "Estudios / Formación" (education)',
   it('694. 8. build genera version.json 0.24.5 / 2026.09.30-03', () => {
     const versionJsonStr = generateVersionJson(APP_VERSION, APP_BUILD)
     const parsed = JSON.parse(versionJsonStr)
-    assert.equal(parsed.version, '0.24.6')
-    assert.equal(parsed.build, '2026.09.30-04')
+    assert.equal(parsed.version, '0.24.7')
+    assert.equal(parsed.build, '2026.09.30-05')
     assert.equal(parsed.name, 'PocketFlow')
   })
 
@@ -17850,7 +17850,7 @@ describe('Fase 65 — Resiliencia y Activación Total de Service Worker PWA en i
   it('708. 1. remote == local => up-to-date sin iniciar flujo de activación innecesario', async () => {
     const mockFetch = async () => ({
       ok: true,
-      json: async () => ({ version: '0.24.6', build: '2026.09.30-04' }),
+      json: async () => ({ version: '0.24.7', build: '2026.09.30-05' }),
     }) as any
 
     const fakeReg = {
@@ -18376,12 +18376,435 @@ describe('Fase 66 — Clasificación y Desglose de Gastos por Medio de Pago (Tar
   })
 
   // CASO 12: Versión 0.24.6 y Build 2026.09.30-04
-  it('731. 12. Build genera version.json 0.24.6 / 2026.09.30-04', () => {
-    assert.equal(APP_VERSION, '0.24.6')
-    assert.equal(APP_BUILD, '2026.09.30-04')
-    const vJson = JSON.parse(generateVersionJson('0.24.6', '2026.09.30-04'))
-    assert.equal(vJson.version, '0.24.6')
-    assert.equal(vJson.build, '2026.09.30-04')
+  it('731. 12. Build genera version.json 0.24.7 / 2026.09.30-05', () => {
+    assert.equal(APP_VERSION, '0.24.7')
+    assert.equal(APP_BUILD, '2026.09.30-05')
+    const vJson = JSON.parse(generateVersionJson('0.24.7', '2026.09.30-05'))
+    assert.equal(vJson.version, '0.24.7')
+    assert.equal(vJson.build, '2026.09.30-05')
+  })
+})
+
+describe('Fase 67 — Unificación del Sistema de Movimientos (Gasto, Ingreso, Transferir, Ajustar)', () => {
+  const testAccounts: Account[] = [
+    { id: 'daily', name: 'CaixaBank', type: 'spending', initialBalance: 500, balance: 500 },
+    { id: 'savings', name: 'Ahorro BBVA', type: 'savings', initialBalance: 1000, balance: 1000 },
+  ]
+  const refDate = new Date('2026-09-15T12:00:00.000Z')
+
+  // TEST 1: Crear gasto cuenta normal
+  it('732. 1. Crear gasto cuenta normal: reduce saldo de cuenta, incrementa gasto bruto en bank', () => {
+    const tx: Transaction = {
+      id: 'tx-1',
+      type: 'expense',
+      amount: 40,
+      accountId: 'daily',
+      description: 'Mercadona',
+      date: '2026-09-10T10:00:00.000Z',
+      paymentMethod: 'bank',
+    }
+    const bal = calculateAccountBalance(testAccounts[0], [tx])
+    assert.equal(bal, 460)
+
+    const breakdown = selectGrossExpensesByPaymentMethod([tx], [], refDate, 'month')
+    assert.equal(breakdown.total, 40)
+    assert.equal(breakdown.bank, 40)
+    assert.equal(breakdown.bizum, 0)
+    assert.equal(breakdown.cash, 0)
+  })
+
+  // TEST 2: Crear gasto Bizum
+  it('733. 2. Crear gasto Bizum: reduce saldo de la misma cuenta, incrementa gasto bruto en bizum', () => {
+    const tx: Transaction = {
+      id: 'tx-2',
+      type: 'expense',
+      amount: 25,
+      accountId: 'daily',
+      description: 'Cena Bizum',
+      date: '2026-09-11T21:00:00.000Z',
+      paymentMethod: 'bizum',
+    }
+    const bal = calculateAccountBalance(testAccounts[0], [tx])
+    assert.equal(bal, 475)
+
+    const breakdown = selectGrossExpensesByPaymentMethod([tx], [], refDate, 'month')
+    assert.equal(breakdown.total, 25)
+    assert.equal(breakdown.bank, 0)
+    assert.equal(breakdown.bizum, 25)
+    assert.equal(breakdown.cash, 0)
+  })
+
+  // TEST 3: Crear gasto efectivo
+  it('734. 3. Crear gasto efectivo: reduce saldo de efectivo, incrementa gasto bruto en cash', () => {
+    const cashTxs: CashTransaction[] = [
+      { id: 'c-in', type: 'income', amount: 50, description: 'Inicio', date: '2026-09-01T08:00:00.000Z', paymentMethod: 'cash' },
+      { id: 'c-exp', type: 'expense', amount: 15, description: 'Farmacia', date: '2026-09-12T12:00:00.000Z', paymentMethod: 'cash' },
+    ]
+    const cashBal = selectCashBalance(cashTxs)
+    assert.equal(cashBal, 35)
+
+    const breakdown = selectGrossExpensesByPaymentMethod([], cashTxs, refDate, 'month')
+    assert.equal(breakdown.total, 15)
+    assert.equal(breakdown.bank, 0)
+    assert.equal(breakdown.bizum, 0)
+    assert.equal(breakdown.cash, 15)
+  })
+
+  // TEST 4: Crear ingreso cuenta normal
+  it('735. 4. Crear ingreso cuenta: aumenta saldo de cuenta bancaria', () => {
+    const tx: Transaction = {
+      id: 'tx-inc-1',
+      type: 'income',
+      amount: 1200,
+      accountId: 'daily',
+      description: 'Nómina',
+      date: '2026-09-01T09:00:00.000Z',
+      paymentMethod: 'bank',
+    }
+    const bal = calculateAccountBalance(testAccounts[0], [tx])
+    assert.equal(bal, 1700)
+  })
+
+  // TEST 5: Crear ingreso Bizum recibido
+  it('736. 5. Crear ingreso Bizum recibido: aumenta saldo de cuenta con paymentMethod bizum', () => {
+    const tx: Transaction = {
+      id: 'tx-inc-bizum',
+      type: 'income',
+      amount: 30,
+      accountId: 'daily',
+      description: 'Bizum regalo recibido',
+      date: '2026-09-05T14:00:00.000Z',
+      paymentMethod: 'bizum',
+    }
+    const bal = calculateAccountBalance(testAccounts[0], [tx])
+    assert.equal(bal, 530)
+    assert.equal(tx.paymentMethod, 'bizum')
+  })
+
+  // TEST 6: Crear ingreso efectivo
+  it('737. 6. Crear ingreso efectivo: aumenta saldo de efectivo', () => {
+    const cashTxs: CashTransaction[] = [
+      { id: 'c-1', type: 'income', amount: 80, description: 'Regalo abuela', date: '2026-09-04T10:00:00.000Z', paymentMethod: 'cash' },
+    ]
+    const bal = selectCashBalance(cashTxs)
+    assert.equal(bal, 80)
+  })
+
+  // TEST 7: Edición bank -> bizum y bizum -> bank
+  it('738. 7. Edición bank <-> bizum: mantiene saldo bancario intacto y reasigna desglose con precisión', () => {
+    const tx1: Transaction = { id: 'tx-e', type: 'expense', amount: 50, accountId: 'daily', description: 'Cena', date: '2026-09-02T20:00:00.000Z', paymentMethod: 'bank' }
+    let bd = selectGrossExpensesByPaymentMethod([tx1], [], refDate, 'month')
+    assert.equal(bd.bank, 50)
+    assert.equal(bd.bizum, 0)
+
+    // Editar a bizum
+    const txEdited: Transaction = { ...tx1, paymentMethod: 'bizum' }
+    bd = selectGrossExpensesByPaymentMethod([txEdited], [], refDate, 'month')
+    assert.equal(bd.bank, 0)
+    assert.equal(bd.bizum, 50)
+    assert.equal(bd.total, 50)
+
+    // Saldo banco permanece idéntico (-50 €)
+    assert.equal(calculateAccountBalance(testAccounts[0], [txEdited]), 450)
+  })
+
+  // TEST 8: Edición bank -> cash (reversión de banco, aplicación a efectivo)
+  it('739. 8. Edición bank -> cash: revierte saldo de banco y descuenta de efectivo sin alterar total ni duplicar', () => {
+    // Estado inicial: Gasto de 30 € en banco
+    const initialBankTx: Transaction = { id: 'tx-pelu', type: 'expense', amount: 30, accountId: 'daily', description: 'Peluquería', date: '2026-09-08T11:00:00.000Z', categoryId: 'health', paymentMethod: 'bank' }
+    const initialCash: CashTransaction[] = [
+      { id: 'c-base', type: 'income', amount: 100, description: 'Inicio', date: '2026-09-01T08:00:00.000Z', paymentMethod: 'cash' },
+    ]
+
+    assert.equal(calculateAccountBalance(testAccounts[0], [initialBankTx]), 470)
+    assert.equal(selectCashBalance(initialCash), 100)
+
+    // Convertir a Efectivo (simulando switchMovementMedium)
+    const afterSwitchBankTxs: Transaction[] = [] // Se elimina del banco
+    const convertedCashTx: CashTransaction = {
+      id: initialBankTx.id,
+      type: 'expense',
+      amount: initialBankTx.amount,
+      description: initialBankTx.description,
+      date: initialBankTx.date,
+      categoryId: initialBankTx.categoryId,
+      paymentMethod: 'cash',
+    }
+    const afterSwitchCashTxs = [convertedCashTx, ...initialCash]
+
+    // Banco vuelve a 500 € (revertido)
+    assert.equal(calculateAccountBalance(testAccounts[0], afterSwitchBankTxs), 500)
+    // Efectivo pasa de 100 € a 70 € (-30 € aplicado)
+    assert.equal(selectCashBalance(afterSwitchCashTxs), 70)
+
+    // Desglose: Gasto total 30 € pasa de bank a cash
+    const bd = selectGrossExpensesByPaymentMethod(afterSwitchBankTxs, afterSwitchCashTxs, refDate, 'month')
+    assert.equal(bd.total, 30)
+    assert.equal(bd.bank, 0)
+    assert.equal(bd.cash, 30)
+  })
+
+  // TEST 9: Edición cash -> bank
+  it('740. 9. Edición cash -> bank: revierte saldo de efectivo y descuenta de cuenta bancaria', () => {
+    const initialCashTxs: CashTransaction[] = [
+      { id: 'c-base', type: 'income', amount: 100, description: 'Inicio', date: '2026-09-01T08:00:00.000Z', paymentMethod: 'cash' },
+      { id: 'c-exp', type: 'expense', amount: 20, description: 'Taxi', date: '2026-09-05T18:00:00.000Z', categoryId: 'transport', paymentMethod: 'cash' },
+    ]
+    assert.equal(selectCashBalance(initialCashTxs), 80)
+    assert.equal(calculateAccountBalance(testAccounts[0], []), 500)
+
+    // Convertir a Banco
+    const afterCashTxs = initialCashTxs.filter((c) => c.id !== 'c-exp')
+    const convertedBankTx: Transaction = {
+      id: 'c-exp',
+      type: 'expense',
+      amount: 20,
+      accountId: 'daily',
+      description: 'Taxi',
+      date: '2026-09-05T18:00:00.000Z',
+      categoryId: 'transport',
+      paymentMethod: 'bank',
+    }
+
+    assert.equal(selectCashBalance(afterCashTxs), 100) // Revertido
+    assert.equal(calculateAccountBalance(testAccounts[0], [convertedBankTx]), 480) // Aplicado en banco
+
+    const bd = selectGrossExpensesByPaymentMethod([convertedBankTx], afterCashTxs, refDate, 'month')
+    assert.equal(bd.total, 20)
+    assert.equal(bd.bank, 20)
+    assert.equal(bd.cash, 0)
+  })
+
+  // TEST 10: Transferencia Cuenta -> Cuenta (patrimonio invariable, 0 gastos brutos)
+  it('741. 10. Transferencia Cuenta -> Cuenta: resta de origen, suma a destino, totalMoney invariable, 0 gasto bruto', () => {
+    const transferTx: Transaction = {
+      id: 'tx-tr-1',
+      type: 'transfer',
+      amount: 150,
+      accountId: 'daily',
+      toAccountId: 'savings',
+      description: 'Traspaso a ahorro',
+      date: '2026-09-15T10:00:00.000Z',
+    }
+
+    const dailyBal = calculateAccountBalance(testAccounts[0], [transferTx])
+    const savingsBal = calculateAccountBalance(testAccounts[1], [transferTx])
+
+    assert.equal(dailyBal, 350)
+    assert.equal(savingsBal, 1150)
+    assert.equal(dailyBal + savingsBal, 1500) // Invariante
+
+    const bd = selectGrossExpensesByPaymentMethod([transferTx], [], refDate, 'month')
+    assert.equal(bd.total, 0) // No es gasto
+  })
+
+  // TEST 11: Transferencia Cuenta -> Efectivo (Retirada cajero)
+  it('742. 11. Transferencia Cuenta -> Efectivo (Cajero): descuenta de cuenta, suma a efectivo, totalMoney invariable, 0 gasto bruto', () => {
+    const bankWithdrawal: Transaction = {
+      id: 'tx-atm',
+      type: 'expense',
+      specialType: 'cash_withdrawal',
+      amount: 50,
+      accountId: 'daily',
+      description: 'Retirada cajero',
+      date: '2026-09-14T12:00:00.000Z',
+    }
+    const cashEntry: CashTransaction = {
+      id: 'c-atm',
+      type: 'income',
+      amount: 50,
+      bankTransactionId: 'tx-atm',
+      description: 'Retirada de cajero',
+      date: '2026-09-14T12:00:00.000Z',
+      paymentMethod: 'cash',
+    }
+
+    const dailyBal = calculateAccountBalance(testAccounts[0], [bankWithdrawal])
+    const cashBal = selectCashBalance([cashEntry])
+
+    assert.equal(dailyBal, 450)
+    assert.equal(cashBal, 50)
+    assert.equal(dailyBal + cashBal, 500) // Invariante
+
+    const bd = selectGrossExpensesByPaymentMethod([bankWithdrawal], [cashEntry], refDate, 'month')
+    assert.equal(bd.total, 0) // Excluido de gasto bruto
+  })
+
+  // TEST 12: Transferencia Efectivo -> Cuenta (Ingreso en cajero / banco)
+  it('743. 12. Transferencia Efectivo -> Cuenta (Ingreso banco): descuenta de efectivo, suma a cuenta, totalMoney invariable, 0 gasto bruto', () => {
+    const initialCash: CashTransaction = { id: 'c-init', type: 'income', amount: 100, description: 'Inicio', date: '2026-09-01T08:00:00.000Z', paymentMethod: 'cash' }
+    const cashOut: CashTransaction = {
+      id: 'c-deposit',
+      type: 'expense',
+      bankTransactionId: 'tx-dep',
+      amount: 40,
+      description: 'Ingreso en cuenta bancaria',
+      date: '2026-09-16T15:00:00.000Z',
+      paymentMethod: 'cash',
+    }
+    const bankIn: Transaction = {
+      id: 'tx-dep',
+      type: 'income',
+      incomeKind: 'reimbursement',
+      specialType: 'reimbursement',
+      amount: 40,
+      accountId: 'daily',
+      description: 'Ingreso desde efectivo',
+      date: '2026-09-16T15:00:00.000Z',
+      paymentMethod: 'bank',
+    }
+
+    const dailyBal = calculateAccountBalance(testAccounts[0], [bankIn])
+    const cashBal = selectCashBalance([initialCash, cashOut])
+
+    assert.equal(dailyBal, 540)
+    assert.equal(cashBal, 60)
+    assert.equal(dailyBal + cashBal, 600) // Invariante (500 banco + 100 efectivo = 600)
+  })
+
+  // TEST 13: Ajuste positivo y negativo de cuenta
+  it('744. 13. Ajuste de cuenta bancaria: positivo o negativo corrige el saldo real exactamente a la cifra indicada', () => {
+    // Cuenta con saldo calculado 500 €. Ajuste a 520 € (diff +20)
+    const adjPos: Transaction = {
+      id: 'tx-adj-pos',
+      type: 'income',
+      amount: 20,
+      accountId: 'daily',
+      description: 'Ajuste de saldo (positivo)',
+      date: '2026-09-20T10:00:00.000Z',
+      specialType: 'account_adjustment',
+    }
+    assert.equal(calculateAccountBalance(testAccounts[0], [adjPos]), 520)
+
+    // Ajuste a 480 € (diff -20)
+    const adjNeg: Transaction = {
+      id: 'tx-adj-neg',
+      type: 'expense',
+      amount: 20,
+      accountId: 'daily',
+      description: 'Ajuste de saldo (negativo)',
+      date: '2026-09-20T10:00:00.000Z',
+      specialType: 'account_adjustment',
+    }
+    assert.equal(calculateAccountBalance(testAccounts[0], [adjNeg]), 480)
+
+    // Los ajustes con specialType account_adjustment no inflan el gasto bruto comercial
+    const bd = selectGrossExpensesByPaymentMethod([adjNeg], [], refDate, 'month')
+    assert.equal(bd.total, 0)
+  })
+
+  // TEST 14: Ajuste positivo y negativo de efectivo
+  it('745. 14. Ajuste de efectivo: tipo adjustment corrige saldo real físico', () => {
+    const cashTxs: CashTransaction[] = [
+      { id: 'c-1', type: 'income', amount: 83, description: 'Inicio', date: '2026-09-01T08:00:00.000Z', paymentMethod: 'cash' },
+      { id: 'c-adj', type: 'adjustment', amount: -5, description: 'Arqueo', date: '2026-09-20T10:00:00.000Z' },
+    ]
+    assert.equal(selectCashBalance(cashTxs), 78)
+
+    const cashTxsPos: CashTransaction[] = [
+      { id: 'c-1', type: 'income', amount: 83, description: 'Inicio', date: '2026-09-01T08:00:00.000Z', paymentMethod: 'cash' },
+      { id: 'c-adj', type: 'adjustment', amount: 7.5, description: 'Arqueo', date: '2026-09-20T10:00:00.000Z' },
+    ]
+    assert.equal(selectCashBalance(cashTxsPos), 90.5)
+  })
+
+  // TEST 15: Deudas compartidas — nacimiento y liquidación en banco, Bizum y efectivo
+  it('746. 15. Deudas compartidas: nacimiento no resta saldo; liquidación descuenta según medio elegido (banco, Bizum, efectivo)', () => {
+    // 1. Nacimiento: Sergi paga cena 47,50 € (paidBy contact). Mi parte: 23,75 €
+    const parentTx: Transaction = {
+      id: 'tx-tokio-parent',
+      type: 'expense',
+      amount: 47.5,
+      accountId: 'daily',
+      description: 'Cena Tokio',
+      date: '2026-09-18T21:00:00.000Z',
+      isShared: true,
+      paidBy: 'contact',
+      payerName: 'Sergi',
+    }
+    const myShare: ExpenseShare = {
+      id: 'share-tokio-user',
+      expenseTransactionId: parentTx.id,
+      participantName: 'Tú',
+      isPayerShare: false,
+      isUserShare: true,
+      expectedAmount: 23.75,
+    }
+
+    // Saldo banco y cash intactos en el nacimiento
+    assert.equal(calculateAccountBalance(testAccounts[0], [parentTx]), 500)
+    assert.equal(selectCashBalance([]), 0)
+
+    // Liquidación vía Bizum 24 €
+    const bizumPaymentTx: Transaction = {
+      id: 'tx-bizum-pay',
+      type: 'expense',
+      amount: 24,
+      accountId: 'daily',
+      description: 'Pago Bizum a Sergi · Cena Tokio',
+      date: '2026-09-19T10:00:00.000Z',
+      parentExpenseId: parentTx.id,
+      expenseShareId: myShare.id,
+      paymentMethod: 'bizum',
+    }
+    assert.equal(calculateAccountBalance(testAccounts[0], [parentTx, bizumPaymentTx]), 476)
+
+    // Desglose refleja Bizum 24 €
+    const bd = selectGrossExpensesByPaymentMethod([parentTx, bizumPaymentTx], [], refDate, 'month')
+    assert.equal(bd.total, 24)
+    assert.equal(bd.bizum, 24)
+    assert.equal(bd.bank, 0)
+    assert.equal(bd.cash, 0)
+  })
+
+  // TEST 16: Recurrentes — Plantilla con método y ocurrencia modificada independiente
+  it('747. 16. Recurrentes: plantilla conserva paymentMethod y modificar una ocurrencia concreta no altera la plantilla', () => {
+    const template: RecurringPayment = {
+      id: 'rec-spotify',
+      name: 'Spotify Familiar',
+      amount: 17.99,
+      categoryId: 'subscriptions',
+      accountId: 'daily',
+      frequency: 'monthly',
+      nextDate: '2026-09-25',
+      active: true,
+      paymentMethod: 'bizum',
+    }
+    assert.equal(template.paymentMethod, 'bizum')
+
+    // Ocurrencia generada
+    const occurrenceTx: Transaction = {
+      id: 'tx-occ-1',
+      type: 'expense',
+      amount: 17.99,
+      accountId: 'daily',
+      description: 'Spotify Familiar · Sep 2026',
+      categoryId: 'subscriptions',
+      date: '2026-09-25T08:00:00.000Z',
+      recurringPaymentId: template.id,
+      paymentMethod: template.paymentMethod,
+    }
+    assert.equal(occurrenceTx.paymentMethod, 'bizum')
+
+    // Modificar ocurrencia a tarjeta (bank)
+    const modifiedOccurrence: Transaction = {
+      ...occurrenceTx,
+      paymentMethod: 'bank',
+    }
+    assert.equal(modifiedOccurrence.paymentMethod, 'bank')
+    assert.equal(template.paymentMethod, 'bizum') // Template maestro no muta
+  })
+
+  // TEST 17: Invariantes históricos y compatibilidad retroactiva
+  it('748. 17. Invariantes históricos: movimientos antiguos sin paymentMethod resuelven como bank / cash limpiamente', () => {
+    const legacyBankTx: Transaction = { id: 'leg-b', type: 'expense', amount: 50, accountId: 'daily', description: 'Gasolina', date: '2026-09-02T10:00:00.000Z' }
+    const legacyCashTx: CashTransaction = { id: 'leg-c', type: 'expense', amount: 10, description: 'Pan', date: '2026-09-02T11:00:00.000Z' }
+
+    const bd = selectGrossExpensesByPaymentMethod([legacyBankTx], [legacyCashTx], refDate, 'month')
+    assert.equal(bd.total, 60)
+    assert.equal(bd.bank, 50)
+    assert.equal(bd.cash, 10)
+    assert.equal(bd.bizum, 0)
   })
 })
 

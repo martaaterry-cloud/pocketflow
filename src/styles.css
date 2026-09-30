@@ -3797,6 +3797,14 @@ input:checked + .slider:before {
   background: #8b5cf6;
 }
 
+.action-sheet-icon.transfer {
+  background: #3b82f6;
+}
+
+.action-sheet-icon.adjust {
+  background: #f59e0b;
+}
+
 .action-sheet-text {
   flex: 1;
   display: flex;

@@ -48,6 +48,7 @@ export function RecurringPaymentModal({
   const [accountId, setAccountId] = useState('')
   const [frequency, setFrequency] = useState<RecurringFrequency>('monthly')
   const [nextDate, setNextDate] = useState(() => new Date().toISOString().slice(0, 10))
+  const [paymentMethod, setPaymentMethod] = useState<'bank' | 'bizum' | 'cash'>('bank')
   const [active, setActive] = useState(true)
   const [confirmDelete, setConfirmDelete] = useState(false)
 
@@ -70,6 +71,7 @@ export function RecurringPaymentModal({
       setAccountId(payment.accountId)
       setFrequency(payment.frequency)
       setNextDate(payment.nextDate)
+      setPaymentMethod(payment.paymentMethod || 'bank')
       setActive(payment.active)
       setIsShared(Boolean(payment.isShared))
       setSelfParticipates(payment.sharingTemplate?.includePayer ?? true)
@@ -92,6 +94,7 @@ export function RecurringPaymentModal({
       setAccountId(accounts.find((a) => a.type === 'spending')?.id ?? accounts[0]?.id ?? '')
       setFrequency('monthly')
       setNextDate(new Date().toISOString().slice(0, 10))
+      setPaymentMethod('bank')
       setActive(true)
       setIsShared(false)
       setSelfParticipates(true)
@@ -190,6 +193,7 @@ export function RecurringPaymentModal({
       accountId,
       frequency,
       nextDate,
+      paymentMethod,
       active,
       isShared: type === 'expense' && isShared,
       sharingTemplate: type === 'expense' && isShared
@@ -360,6 +364,33 @@ export function RecurringPaymentModal({
                 ))}
               </select>
             </label>
+          </div>
+
+          {/* Toggle Bizum */}
+          <div className="form-group" style={{ marginTop: -4, marginBottom: 12 }}>
+            <button
+              type="button"
+              className={`bizum-toggle-chip ${paymentMethod === 'bizum' ? 'active' : ''}`}
+              onClick={() => setPaymentMethod((prev) => (prev === 'bizum' ? 'bank' : 'bizum'))}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 6,
+                padding: '6px 14px',
+                borderRadius: 9999,
+                border: paymentMethod === 'bizum' ? '1px solid #10b981' : '1px solid var(--border-color, rgba(255, 255, 255, 0.12))',
+                background: paymentMethod === 'bizum' ? 'rgba(16, 185, 129, 0.15)' : 'var(--bg-card-light, rgba(255, 255, 255, 0.05))',
+                color: paymentMethod === 'bizum' ? '#10b981' : 'var(--text-muted, #888)',
+                fontSize: '0.84rem',
+                fontWeight: paymentMethod === 'bizum' ? 600 : 500,
+                cursor: 'pointer',
+                transition: 'all 0.15s ease',
+              }}
+            >
+              <AppIcon name="smartphone" size={14} color={paymentMethod === 'bizum' ? '#10b981' : 'currentColor'} />
+              <span>{paymentMethod === 'bizum' ? 'Por Bizum' : 'Bizum'}</span>
+              {paymentMethod === 'bizum' && <AppIcon name="check" size={12} color="#10b981" />}
+            </button>
           </div>
 
           {/* Sección Gasto Compartido (solo para gastos) */}
