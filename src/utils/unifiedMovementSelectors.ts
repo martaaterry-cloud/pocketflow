@@ -34,11 +34,13 @@ export interface UnifiedMovement {
 }
 
 export interface UnifiedMovementFilters {
-  source?: 'all' | 'bank' | 'cash'
-  type?: 'all' | 'expense' | 'income' | 'transfer'
+  source?: 'all' | 'bank' | 'bizum' | 'cash'
+  type?: 'all' | 'expense' | 'income' | 'transfer' | 'adjustment'
   incomeSubFilter?: 'all' | 'income' | 'reimbursement'
   search?: string
   categoryId?: string
+  referenceDate?: Date
+  scope?: 'month' | 'all'
 }
 
 /**
@@ -155,20 +157,53 @@ export function toUnifiedMovements(
 }
 
 /**
- * Filtra los movimientos unificados por origen (Todos / Banco / Efectivo), tipo, subfiltro de ingresos y búsqueda.
+ * Filtra los movimientos unificados por medio/origen (Todos / Banco / Bizum / Efectivo), tipo, subfiltro de ingresos, búsqueda y periodo.
  */
 export function filterUnifiedMovements(
   movements: UnifiedMovement[],
   categories: Category[],
   filters: UnifiedMovementFilters
 ): UnifiedMovement[] {
-  const { source = 'all', type = 'all', incomeSubFilter = 'all', search = '', categoryId } = filters
+  const {
+    source = 'all',
+    type = 'all',
+    incomeSubFilter = 'all',
+    search = '',
+    categoryId,
+    referenceDate,
+    scope = 'all',
+  } = filters
   const cleanSearch = search.trim().toLowerCase()
 
   return movements.filter((m) => {
-    // 1. Filtro por origen
-    if (source === 'bank' && m.source !== 'bank') return false
-    if (source === 'cash' && m.source !== 'cash') return false
+    // 0. Filtro por periodo (seguro frente a desfase UTC/zona horaria)
+    if (scope === 'month' && referenceDate) {
+      const dateStr = m.date.slice(0, 10)
+      const parts = dateStr.split('-')
+      if (parts.length === 3) {
+        const y = parseInt(parts[0], 10)
+        const mo = parseInt(parts[1], 10) - 1
+        if (mo !== referenceDate.getMonth() || y !== referenceDate.getFullYear()) {
+          return false
+        }
+      } else {
+        const d = new Date(m.date)
+        if (d.getMonth() !== referenceDate.getMonth() || d.getFullYear() !== referenceDate.getFullYear()) {
+          return false
+        }
+      }
+    }
+
+    // 1. Filtro por medio / origen (Banco, Bizum, Efectivo)
+    if (source === 'bank') {
+      if (m.source !== 'bank' || m.paymentMethod === 'bizum') return false
+    }
+    if (source === 'bizum') {
+      if (m.paymentMethod !== 'bizum') return false
+    }
+    if (source === 'cash') {
+      if (m.source !== 'cash' && m.paymentMethod !== 'cash') return false
+    }
 
     // 2. Filtro por tipo
     if (type === 'expense' && (m.type !== 'expense' || m.isCashWithdrawal)) return false
@@ -176,6 +211,9 @@ export function filterUnifiedMovements(
     if (type === 'transfer') {
       const isTransferLike = m.type === 'transfer' || m.isCashWithdrawal || m.isLinkedCashWithdrawal
       if (!isTransferLike) return false
+    }
+    if (type === 'adjustment') {
+      if (m.type !== 'adjustment' && !m.isAdjustment) return false
     }
 
     // 3. Subfiltro de ingresos
@@ -191,15 +229,17 @@ export function filterUnifiedMovements(
       if (catNorm !== targetNorm) return false
     }
 
-    // 5. Búsqueda por texto (descripción, nota, categoría, regalo)
+    // 5. Búsqueda por texto (descripción, nota, categoría, regalo, pagador, medio)
     if (cleanSearch) {
       const cat = categories.find((c) => c.id === m.categoryId)
       const matchesDesc = m.description.toLowerCase().includes(cleanSearch)
       const matchesNote = Boolean(m.note && m.note.toLowerCase().includes(cleanSearch))
       const matchesCat = Boolean(cat && cat.name.toLowerCase().includes(cleanSearch))
       const matchesGift = Boolean(m.giftRecipient && m.giftRecipient.toLowerCase().includes(cleanSearch))
+      const matchesPayer = Boolean(m.payerName && m.payerName.toLowerCase().includes(cleanSearch))
+      const matchesMethod = Boolean(m.paymentMethod && m.paymentMethod.toLowerCase().includes(cleanSearch))
 
-      if (!matchesDesc && !matchesNote && !matchesCat && !matchesGift) {
+      if (!matchesDesc && !matchesNote && !matchesCat && !matchesGift && !matchesPayer && !matchesMethod) {
         return false
       }
     }

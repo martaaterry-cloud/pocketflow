@@ -197,7 +197,14 @@ import {
   selectSharedReceivablesSummary,
   selectSharedPayablesSummary,
   selectSharedSummaryByContact,
+  selectCategoryMonthlyStats,
+  selectIncomeCategoryBreakdown,
 } from '../src/utils/sharedExpenseSelectors'
+import {
+  toUnifiedMovements,
+  filterUnifiedMovements,
+  type UnifiedMovement,
+} from '../src/utils/unifiedMovementSelectors'
 import { spentByCategoryThisMonth, selectBudgetsSummary } from '../src/utils/budgetSelectors'
 import {
   toDbSharedContact,
@@ -6909,12 +6916,12 @@ describe('Fase 18 — Mejoras de Finanzas (Detalle por Categoría, Retiradas de 
 describe('Fase 18 — Identificación Visual de Versión y Build', () => {
   it('314. Versioning: única fuente de verdad y formato de visualización exacto', () => {
     assert.equal(APP_NAME, 'PocketFlow')
-    assert.equal(APP_VERSION, '0.24.11')
-    assert.equal(APP_BUILD, '2026.09.30-09')
+    assert.equal(APP_VERSION, '0.24.12')
+    assert.equal(APP_BUILD, '2026.09.30-10')
 
-    assert.equal(getAppVersionString(), 'PocketFlow v0.24.11')
-    assert.equal(getAppBuildString(), 'Build 2026.09.30-09')
-    assert.equal(getAppFullVersionLabel(), 'PocketFlow v0.24.11 · Build 2026.09.30-09')
+    assert.equal(getAppVersionString(), 'PocketFlow v0.24.12')
+    assert.equal(getAppBuildString(), 'Build 2026.09.30-10')
+    assert.equal(getAppFullVersionLabel(), 'PocketFlow v0.24.12 · Build 2026.09.30-10')
   })
 })
 
@@ -14010,12 +14017,12 @@ describe('Fase 50 — Control de Acceso por Roles (User / Admin), Seguridad RLS 
     }
 
     const userFooter = renderFooterTexts(false)
-    assert.equal(userFooter.versionText, 'PocketFlow v0.24.11')
+    assert.equal(userFooter.versionText, 'PocketFlow v0.24.12')
     assert.equal(userFooter.buildText, null)
 
     const adminFooter = renderFooterTexts(true)
-    assert.equal(adminFooter.versionText, 'PocketFlow v0.24.11')
-    assert.equal(adminFooter.buildText, 'Build 2026.09.30-09')
+    assert.equal(adminFooter.versionText, 'PocketFlow v0.24.12')
+    assert.equal(adminFooter.buildText, 'Build 2026.09.30-10')
   })
 
   it('590. 10. Reconciliación y sincronización de perfil no altera datos financieros ni transacciones', () => {
@@ -14516,7 +14523,7 @@ describe('Fase 52 — Versionado Automático y Robusto del Service Worker PWA', 
   it('613. 1. CACHE_NAME del Service Worker incluye exactamente APP_VERSION y APP_BUILD actuales', () => {
     const expectedCacheName = `pocketflow-v${APP_VERSION}-${APP_BUILD}`
     assert.equal(getServiceWorkerCacheName(APP_VERSION, APP_BUILD), expectedCacheName)
-    assert.equal(expectedCacheName, 'pocketflow-v0.24.11-2026.09.30-09')
+    assert.equal(expectedCacheName, 'pocketflow-v0.24.12-2026.09.30-10')
 
     const swCode = generateServiceWorkerCode(APP_VERSION, APP_BUILD)
     assert.ok(swCode.includes(`const CACHE_NAME = '${expectedCacheName}'`))
@@ -17224,15 +17231,15 @@ describe('Fase 61 — Detección Fiable de Versión Remota y Actualizaciones PWA
     assert.ok(swCode.includes('return false'))
 
     const versionData = JSON.parse(generateVersionJson(APP_VERSION, APP_BUILD))
-    assert.equal(versionData.version, '0.24.11')
-    assert.equal(versionData.build, '2026.09.30-09')
+    assert.equal(versionData.version, '0.24.12')
+    assert.equal(versionData.build, '2026.09.30-10')
   })
 
   // Test 10: Diagnóstico completo collectPwaDiagnosticInfo
   it('686. 10. collectPwaDiagnosticInfo recopila estado de versión local, remota y controller', async () => {
     const info = await collectPwaDiagnosticInfo(null, '/pocketflow/')
-    assert.equal(info.localVersion, '0.24.11')
-    assert.equal(info.localBuild, '2026.09.30-09')
+    assert.equal(info.localVersion, '0.24.12')
+    assert.equal(info.localBuild, '2026.09.30-10')
     assert.equal(info.basePath, '/pocketflow/')
     assert.ok(typeof info.lastCheckedAt === 'string')
   })
@@ -17341,12 +17348,12 @@ describe('Fase 62 — Categoría Canónica "Estudios / Formación" (education)',
     assert.equal(planSettings.essentialCategoryIds.includes('education'), false)
   })
 
-  // Test 8: generateVersionJson genera 0.24.5 / 2026.09.30-03
+  // Test 8: generateVersionJson genera 0.24.12 / 2026.09.30-10
   it('694. 8. build genera version.json 0.24.5 / 2026.09.30-03', () => {
     const versionJsonStr = generateVersionJson(APP_VERSION, APP_BUILD)
     const parsed = JSON.parse(versionJsonStr)
-    assert.equal(parsed.version, '0.24.11')
-    assert.equal(parsed.build, '2026.09.30-09')
+    assert.equal(parsed.version, '0.24.12')
+    assert.equal(parsed.build, '2026.09.30-10')
     assert.equal(parsed.name, 'PocketFlow')
   })
 
@@ -18375,13 +18382,13 @@ describe('Fase 66 — Clasificación y Desglose de Gastos por Medio de Pago (Tar
     assert.equal(grossTotal, breakdown.total)
   })
 
-  // CASO 12: Versión 0.24.11 y Build 2026.09.30-09
+  // CASO 12: Versión 0.24.12 y Build 2026.09.30-10
   it('731. 12. Build genera version.json 0.24.11 / 2026.09.30-09', () => {
-    assert.equal(APP_VERSION, '0.24.11')
-    assert.equal(APP_BUILD, '2026.09.30-09')
-    const vJson = JSON.parse(generateVersionJson('0.24.11', '2026.09.30-09'))
-    assert.equal(vJson.version, '0.24.11')
-    assert.equal(vJson.build, '2026.09.30-09')
+    assert.equal(APP_VERSION, '0.24.12')
+    assert.equal(APP_BUILD, '2026.09.30-10')
+    const vJson = JSON.parse(generateVersionJson('0.24.12', '2026.09.30-10'))
+    assert.equal(vJson.version, '0.24.12')
+    assert.equal(vJson.build, '2026.09.30-10')
   })
 })
 
@@ -20745,9 +20752,578 @@ describe('Fase 67.8 — Auditoría Integral de Integridad Económica, Caso Multa
   })
 
   // TEST 21: Versión y build actualizados
-  it('806. 21. Versión y Build actualizados a 0.24.11 / 2026.09.30-09', () => {
-    assert.equal(APP_VERSION, '0.24.11')
-    assert.equal(APP_BUILD, '2026.09.30-09')
+  it('806. 21. Versión y Build actualizados a 0.24.12 / 2026.09.30-10', () => {
+    assert.equal(APP_VERSION, '0.24.12')
+    assert.equal(APP_BUILD, '2026.09.30-10')
+  })
+})
+
+describe('Fase 68 — Rediseño de Movimientos (Resumen Mensual, Agrupación Diaria, Categorías y Detalle)', () => {
+  const refDate = new Date('2026-09-15T12:00:00.000Z')
+  const categoriesList: Category[] = [
+    { id: 'leisure', name: 'Ocio', color: '#f59e0b', icon: 'ticket', iconKey: 'ticket' },
+    { id: 'transport', name: 'Transporte', color: '#3b82f6', icon: 'car', iconKey: 'car' },
+    { id: 'subscriptions', name: 'Suscripciones', color: '#8b5cf6', icon: 'refresh-cw', iconKey: 'refresh-cw' },
+    { id: 'food', name: 'Alimentación', color: '#10b981', icon: 'shopping-basket', iconKey: 'shopping-basket' },
+    { id: 'income', name: 'Nómina', color: '#5d9c74', icon: 'arrow-down-left', iconKey: 'arrow-down-left' },
+    { id: 'other', name: 'Otros', color: '#b9b9b9', icon: 'ellipsis', iconKey: 'ellipsis' },
+  ]
+
+  // TEST 1: Resumen mensual usa gasto económico canónico
+  it('807. 1. Resumen mensual calcula el gasto económico neto personal mediante selectNetPersonalExpensesForPeriod', () => {
+    const tx1: Transaction = {
+      id: 'tx-food',
+      type: 'expense',
+      amount: 45.5,
+      categoryId: 'food',
+      description: 'Mercadona',
+      date: '2026-09-02T10:00:00.000Z',
+      accountId: 'daily',
+      paymentMethod: 'bank',
+    }
+    const tx2: Transaction = {
+      id: 'tx-leisure',
+      type: 'expense',
+      amount: 30,
+      categoryId: 'leisure',
+      description: 'Cine y cena',
+      date: '2026-09-05T20:00:00.000Z',
+      accountId: 'daily',
+      paymentMethod: 'bizum',
+    }
+    const cashTx: CashTransaction = {
+      id: 'cash-coffee',
+      type: 'expense',
+      amount: 4.5,
+      categoryId: 'food',
+      description: 'Café',
+      date: '2026-09-06T09:00:00.000Z',
+    }
+
+    const netExpenses = selectNetPersonalExpensesForPeriod([tx1, tx2], refDate, 'month', [cashTx], [])
+    assert.equal(netExpenses, 75.5)
+  })
+
+  // TEST 2: Resumen mensual usa ingreso económico canónico
+  it('808. 2. Resumen mensual calcula el ingreso real mediante selectRealIncome', () => {
+    const salaryTx: Transaction = {
+      id: 'tx-sal',
+      type: 'income',
+      amount: 1500,
+      incomeKind: 'income',
+      description: 'Nómina septiembre',
+      date: '2026-09-01T08:00:00.000Z',
+      accountId: 'daily',
+      paymentMethod: 'bank',
+    }
+    const extraCash: CashTransaction = {
+      id: 'cash-inc',
+      type: 'income',
+      amount: 50,
+      description: 'Clase particular en efectivo',
+      date: '2026-09-10T11:00:00.000Z',
+    }
+
+    const realIncome = selectRealIncome([salaryTx], refDate, 'month', [extraCash])
+    assert.equal(realIncome, 1550)
+  })
+
+  // TEST 3 & 4: Reembolso Bizum aparece en Movimientos pero NO infla Ingresos
+  it('809. 3 & 4. Reembolso Bizum aparece en la cronología de Movimientos pero NO infla los ingresos económicos', () => {
+    const parentTx: Transaction = {
+      id: 'tx-dinner',
+      type: 'expense',
+      amount: 60,
+      categoryId: 'food',
+      description: 'Cena amigos',
+      date: '2026-09-03T21:00:00.000Z',
+      accountId: 'daily',
+      isShared: true,
+      paidBy: 'user',
+    }
+    const reimbTx: Transaction = {
+      id: 'tx-reimb-bizum',
+      type: 'income',
+      incomeKind: 'reimbursement',
+      amount: 30,
+      description: 'Bizum de Carlos (Cena)',
+      date: '2026-09-04T12:00:00.000Z',
+      accountId: 'daily',
+      parentExpenseId: 'tx-dinner',
+      paymentMethod: 'bizum',
+    }
+
+    // 1. Aparece en movimientos unificados
+    const movements = toUnifiedMovements([parentTx, reimbTx], [], [])
+    assert.equal(movements.length, 2)
+    const reimbMovement = movements.find((m) => m.id === 'tx-reimb-bizum')
+    assert.ok(reimbMovement)
+    assert.equal(reimbMovement?.isReimbursement, true)
+    assert.equal(reimbMovement?.paymentMethod, 'bizum')
+
+    // 2. No infla selectRealIncome
+    const realInc = selectRealIncome([parentTx, reimbTx], refDate, 'month', [])
+    assert.equal(realInc, 0)
+
+    // 3. Reduce el gasto neto de la categoría
+    const catExpenses = selectNetExpensesByCategory([parentTx, reimbTx], categoriesList, refDate, 'month', [])
+    const foodCat = catExpenses.find((c) => c.id === 'food')
+    assert.equal(foodCat?.amount, 30)
+  })
+
+  // TEST 5 & 6: Liquidación Bizum aparece en Movimientos pero NO infla Gastos económicos
+  it('810. 5 & 6. Liquidación Bizum por gasto compartido de un contacto aparece en Movimientos pero no crea segundo gasto', () => {
+    const parentExpense: Transaction = {
+      id: 'tx-contact-shared',
+      type: 'expense',
+      amount: 20,
+      categoryId: 'leisure',
+      description: 'Entradas concierto (Pagó Laura)',
+      date: '2026-09-05T18:00:00.000Z',
+      accountId: 'daily',
+      isShared: true,
+      paidBy: 'contact',
+      payerName: 'Laura',
+    }
+    const settlementBizum: Transaction = {
+      id: 'tx-settle-bizum',
+      type: 'expense',
+      amount: 10,
+      description: 'Bizum a Laura · Concierto',
+      date: '2026-09-06T10:00:00.000Z',
+      accountId: 'daily',
+      parentExpenseId: 'tx-contact-shared',
+      paymentMethod: 'bizum',
+    }
+
+    const movements = toUnifiedMovements([parentExpense, settlementBizum], [], [])
+    assert.equal(movements.length, 2)
+
+    // El parentExpense pagado por contacto no crea desembolso bancario inicial
+    const netExpenses = selectNetPersonalExpensesForPeriod([parentExpense], refDate, 'month', [], [])
+    assert.equal(netExpenses, 0)
+  })
+
+  // TEST 7, 8 & 9: Transferencia aparece en Movimientos pero NO infla Gastos ni Ingresos
+  it('811. 7, 8 & 9. Transferencia (CaixaBank -> Efectivo) aparece en Movimientos y NO infla ni Gastos ni Ingresos', () => {
+    const transferTx: Transaction = {
+      id: 'tx-atm-transfer',
+      type: 'transfer',
+      specialType: 'cash_withdrawal',
+      amount: 100,
+      description: 'Retirada cajero',
+      date: '2026-09-07T11:00:00.000Z',
+      accountId: 'daily',
+      toAccountId: 'cash',
+    }
+    const linkedCashIncome: CashTransaction = {
+      id: 'cash-atm-in',
+      type: 'income',
+      amount: 100,
+      description: 'Entrada desde Cajero',
+      date: '2026-09-07T11:00:00.000Z',
+      bankTransactionId: 'tx-atm-transfer',
+    }
+
+    const movements = toUnifiedMovements([transferTx], [linkedCashIncome], [])
+    assert.equal(movements.length, 2)
+
+    // No infla gasto
+    const netExp = selectNetPersonalExpensesForPeriod([transferTx], refDate, 'month', [linkedCashIncome], [])
+    assert.equal(netExp, 0)
+
+    // No infla ingreso real
+    const realInc = selectRealIncome([transferTx], refDate, 'month', [linkedCashIncome])
+    assert.equal(realInc, 0)
+
+    // No aparece en categorías de gasto
+    const catExp = selectNetExpensesByCategory([transferTx], categoriesList, refDate, 'month', [linkedCashIncome])
+    assert.equal(catExp.length, 0)
+  })
+
+  // TEST 10 & 11: Ajuste aparece en Movimientos y no se clasifica como gasto/ingreso económico
+  it('812. 10 & 11. Ajuste de efectivo aparece en la cronología y se clasifica limpiamente como ajuste', () => {
+    const adjTx: CashTransaction = {
+      id: 'cash-adj',
+      type: 'adjustment',
+      amount: 3.25,
+      description: 'Ajuste de monedas en cartera',
+      date: '2026-09-08T15:00:00.000Z',
+    }
+
+    const movements = toUnifiedMovements([], [adjTx], [])
+    assert.equal(movements.length, 1)
+    assert.equal(movements[0].isAdjustment, true)
+    assert.equal(movements[0].type, 'adjustment')
+
+    const filtered = filterUnifiedMovements(movements, categoriesList, { type: 'adjustment' })
+    assert.equal(filtered.length, 1)
+
+    const expFiltered = filterUnifiedMovements(movements, categoriesList, { type: 'expense' })
+    assert.equal(expFiltered.length, 0)
+
+    const incFiltered = filterUnifiedMovements(movements, categoriesList, { type: 'income' })
+    assert.equal(incFiltered.length, 0)
+  })
+
+  // TEST 12: Medio (Banco, Bizum, Efectivo) se filtra independientemente de Tipo
+  it('813. 12. Banco, Bizum y Efectivo se distinguen y filtran correctamente como medio de pago', () => {
+    const txBank: Transaction = {
+      id: 'tx-b1',
+      type: 'expense',
+      amount: 50,
+      description: 'Compra Zara',
+      date: '2026-09-09T17:00:00.000Z',
+      accountId: 'daily',
+      paymentMethod: 'bank',
+    }
+    const txBizum: Transaction = {
+      id: 'tx-z1',
+      type: 'expense',
+      amount: 25,
+      description: 'Regalo cumple Bizum',
+      date: '2026-09-09T18:00:00.000Z',
+      accountId: 'daily',
+      paymentMethod: 'bizum',
+    }
+    const txCash: CashTransaction = {
+      id: 'cash-c1',
+      type: 'expense',
+      amount: 15,
+      description: 'Frutería',
+      date: '2026-09-09T19:00:00.000Z',
+      paymentMethod: 'cash',
+    }
+
+    const movements = toUnifiedMovements([txBank, txBizum], [txCash], [])
+    assert.equal(movements.length, 3)
+
+    const bankOnly = filterUnifiedMovements(movements, categoriesList, { source: 'bank' })
+    assert.equal(bankOnly.length, 1)
+    assert.equal(bankOnly[0].id, 'tx-b1')
+
+    const bizumOnly = filterUnifiedMovements(movements, categoriesList, { source: 'bizum' })
+    assert.equal(bizumOnly.length, 1)
+    assert.equal(bizumOnly[0].id, 'tx-z1')
+
+    const cashOnly = filterUnifiedMovements(movements, categoriesList, { source: 'cash' })
+    assert.equal(cashOnly.length, 1)
+    assert.equal(cashOnly[0].id, 'cash-c1')
+  })
+
+  // TEST 13: Categorías solo incluyen gasto económico real
+  it('814. 13. selectNetExpensesByCategory ordena de mayor a menor gasto con porcentajes', () => {
+    const tx1: Transaction = {
+      id: 'tx-leisure',
+      type: 'expense',
+      amount: 120,
+      categoryId: 'leisure',
+      description: 'Entradas festival',
+      date: '2026-09-10T20:00:00.000Z',
+      accountId: 'daily',
+    }
+    const tx2: Transaction = {
+      id: 'tx-transport',
+      type: 'expense',
+      amount: 80,
+      categoryId: 'transport',
+      description: 'Gasolina',
+      date: '2026-09-11T10:00:00.000Z',
+      accountId: 'daily',
+    }
+
+    const categories = selectNetExpensesByCategory([tx1, tx2], categoriesList, refDate, 'month', [])
+    assert.equal(categories.length, 2)
+    assert.equal(categories[0].id, 'leisure')
+    assert.equal(categories[0].amount, 120)
+    assert.equal(categories[0].percentage, 60)
+
+    assert.equal(categories[1].id, 'transport')
+    assert.equal(categories[1].amount, 80)
+    assert.equal(categories[1].percentage, 40)
+  })
+
+  // TEST 14 & 15: Cajero convertido a transferencia desaparece de categorías; no convertido permanece
+  it('815. 14 & 15. Cajero convertido a transferencia no entra en categorías; gasto histórico no convertido permanece', () => {
+    const convertedAtm: Transaction = {
+      id: 'tx-atm-conv',
+      type: 'transfer',
+      specialType: 'cash_withdrawal',
+      amount: 100,
+      categoryId: 'other',
+      description: 'Cajero CaixaBank',
+      date: '2026-09-12T12:00:00.000Z',
+      accountId: 'daily',
+    }
+    const legacyExpenseAtm: Transaction = {
+      id: 'tx-atm-legacy',
+      type: 'expense',
+      amount: 50,
+      categoryId: 'other',
+      description: 'Cajero antiguo sin convertir',
+      date: '2026-09-12T13:00:00.000Z',
+      accountId: 'daily',
+    }
+
+    // convertedAtm no entra en categories
+    const cats1 = selectNetExpensesByCategory([convertedAtm], categoriesList, refDate, 'month', [])
+    assert.equal(cats1.length, 0)
+
+    // legacyExpenseAtm sí entra porque aún es un gasto registrado
+    const cats2 = selectNetExpensesByCategory([legacyExpenseAtm], categoriesList, refDate, 'month', [])
+    assert.equal(cats2.length, 1)
+    assert.equal(cats2[0].amount, 50)
+  })
+
+  // TEST 16 & 17: Categoría sin movimientos no genera NaN y porcentajes suman coherentemente
+  it('816. 16 & 17. Categoría sin movimientos no genera NaN y estadísticas mensuales manejan mes vacío limpiamente', () => {
+    const emptyStats = selectCategoryMonthlyStats(
+      'leisure',
+      categoriesList,
+      [],
+      [],
+      [],
+      refDate,
+      3
+    )
+
+    assert.equal(emptyStats.currentMonthAmount, 0)
+    assert.equal(emptyStats.currentMonthPercentage, 0)
+    assert.equal(emptyStats.recentAverage, 0)
+    assert.equal(emptyStats.history.length, 3)
+    assert.equal(Number.isNaN(emptyStats.currentMonthPercentage), false)
+    assert.equal(Number.isNaN(emptyStats.recentAverage), false)
+  })
+
+  // TEST 18 & 19: Media de categoría y evolución temporal en selectCategoryMonthlyStats
+  it('817. 18 & 19. selectCategoryMonthlyStats calcula correctamente el total, porcentaje, media y evolución de 3 meses', () => {
+    const txJul: Transaction = {
+      id: 'tx-jul',
+      type: 'expense',
+      amount: 80,
+      categoryId: 'leisure',
+      description: 'Ocio julio',
+      date: '2026-07-15T12:00:00.000Z',
+      accountId: 'daily',
+    }
+    const txAgo: Transaction = {
+      id: 'tx-ago',
+      type: 'expense',
+      amount: 85,
+      categoryId: 'leisure',
+      description: 'Ocio agosto',
+      date: '2026-08-15T12:00:00.000Z',
+      accountId: 'daily',
+    }
+    const txSep: Transaction = {
+      id: 'tx-sep',
+      type: 'expense',
+      amount: 120,
+      categoryId: 'leisure',
+      description: 'Ocio septiembre',
+      date: '2026-09-15T12:00:00.000Z',
+      accountId: 'daily',
+    }
+    const otherSep: Transaction = {
+      id: 'tx-sep-other',
+      type: 'expense',
+      amount: 380,
+      categoryId: 'food',
+      description: 'Supermercado septiembre',
+      date: '2026-09-16T12:00:00.000Z',
+      accountId: 'daily',
+    }
+
+    const allTxs = [txJul, txAgo, txSep, otherSep]
+    const stats = selectCategoryMonthlyStats(
+      'leisure',
+      categoriesList,
+      allTxs,
+      [],
+      [],
+      refDate,
+      3
+    )
+
+    assert.equal(stats.currentMonthAmount, 120)
+    // Total gastos septiembre = 120 (ocio) + 380 (food) = 500. 120/500 = 24%
+    assert.equal(stats.totalMonthExpenses, 500)
+    assert.equal(stats.currentMonthPercentage, 24)
+
+    // Media últimos 3 meses: (80 + 85 + 120) / 3 = 285 / 3 = 95
+    assert.equal(stats.recentAverage, 95)
+    assert.equal(stats.history.length, 3)
+    assert.equal(stats.history[0].amount, 80) // Julio
+    assert.equal(stats.history[1].amount, 85) // Agosto
+    assert.equal(stats.history[2].amount, 120) // Septiembre
+    assert.equal(stats.history[2].isCurrent, true)
+    assert.equal(stats.movements.length, 1)
+  })
+
+  // TEST 20: Búsqueda de movimientos
+  it('818. 20. filterUnifiedMovements busca por concepto, nota, categoría y destinatario de regalo', () => {
+    const tx1: Transaction = {
+      id: 'tx-1',
+      type: 'expense',
+      amount: 15,
+      description: 'Peluquería con tratamiento',
+      date: '2026-09-20T10:00:00.000Z',
+      accountId: 'daily',
+      note: 'Corte de pelo y barba',
+    }
+    const tx2: Transaction = {
+      id: 'tx-2',
+      type: 'expense',
+      amount: 25,
+      description: 'Camiseta Zara',
+      date: '2026-09-21T11:00:00.000Z',
+      accountId: 'daily',
+      giftRecipient: 'Rafa',
+    }
+
+    const movements = toUnifiedMovements([tx1, tx2], [], [])
+
+    const searchNote = filterUnifiedMovements(movements, categoriesList, { search: 'barba' })
+    assert.equal(searchNote.length, 1)
+    assert.equal(searchNote[0].id, 'tx-1')
+
+    const searchGift = filterUnifiedMovements(movements, categoriesList, { search: 'Rafa' })
+    assert.equal(searchGift.length, 1)
+    assert.equal(searchGift[0].id, 'tx-2')
+  })
+
+  // TEST 21: Filtros de movimientos por periodo (scope month)
+  it('819. 21. filterUnifiedMovements respeta estrictamente el mes de referencia seleccionado', () => {
+    const txSep: Transaction = {
+      id: 'tx-sep-1',
+      type: 'expense',
+      amount: 10,
+      description: 'Gasto septiembre',
+      date: '2026-09-30T22:00:00.000Z',
+      accountId: 'daily',
+    }
+    const txOct: Transaction = {
+      id: 'tx-oct-1',
+      type: 'expense',
+      amount: 20,
+      description: 'Gasto octubre',
+      date: '2026-10-01T08:00:00.000Z',
+      accountId: 'daily',
+    }
+
+    const movements = toUnifiedMovements([txSep, txOct], [], [])
+
+    const sepOnly = filterUnifiedMovements(movements, categoriesList, {
+      referenceDate: refDate,
+      scope: 'month',
+    })
+    assert.equal(sepOnly.length, 1)
+    assert.equal(sepOnly[0].id, 'tx-sep-1')
+  })
+
+  // TEST 22: DB Killer mantiene semántica en resumen mensual y categorías
+  it('820. 22. DB Killer: Multa 100 € con reembolso 50 € Bizum muestra 50 € en categorías y no infla ingresos', () => {
+    const parentExp: Transaction = {
+      id: 'tx-db-killer-parent',
+      type: 'expense',
+      amount: 100,
+      categoryId: 'transport',
+      description: 'Multa DB Killer',
+      date: '2026-09-27T10:00:00.000Z',
+      accountId: 'daily',
+      isShared: true,
+      paidBy: 'user',
+      paymentMethod: 'bank',
+    }
+    const reimbPapa: Transaction = {
+      id: 'tx-reimb-papa-bizum',
+      type: 'income',
+      incomeKind: 'reimbursement',
+      amount: 50,
+      description: 'Reembolso Papa · Multa DB Killer',
+      date: '2026-09-27T12:00:00.000Z',
+      accountId: 'daily',
+      parentExpenseId: 'tx-db-killer-parent',
+      paymentMethod: 'bizum',
+    }
+
+    const txs = [parentExp, reimbPapa]
+    const netExp = selectNetPersonalExpensesForPeriod(txs, refDate, 'month', [], [])
+    assert.equal(netExp, 50)
+
+    const realInc = selectRealIncome(txs, refDate, 'month', [])
+    assert.equal(realInc, 0)
+
+    const catExp = selectNetExpensesByCategory(txs, categoriesList, refDate, 'month', [])
+    const transCat = catExp.find((c) => c.id === 'transport')
+    assert.equal(transCat?.amount, 50)
+  })
+
+  // TEST 23: Spotify mantiene semántica económica
+  it('821. 23. Spotify: cuota económica de 3,50 € en suscripciones se preserva limpiamente', () => {
+    const spotifyTx: Transaction = {
+      id: 'tx-spotify-user',
+      type: 'expense',
+      amount: 3.5,
+      categoryId: 'subscriptions',
+      description: 'Spotify Familiar',
+      date: '2026-09-01T09:00:00.000Z',
+      accountId: 'daily',
+      paymentMethod: 'bizum',
+    }
+
+    const catExp = selectNetExpensesByCategory([spotifyTx], categoriesList, refDate, 'month', [])
+    const subCat = catExp.find((c) => c.id === 'subscriptions')
+    assert.equal(subCat?.amount, 3.5)
+  })
+
+  // TEST 24: Desglose de ingresos económicos canónicos (selectIncomeCategoryBreakdown)
+  it('822. 24. selectIncomeCategoryBreakdown agrupa ingresos reales y excluye reembolsos de terceros', () => {
+    const salary: Transaction = {
+      id: 'tx-salary',
+      type: 'income',
+      amount: 1800,
+      categoryId: 'income',
+      description: 'Nómina',
+      date: '2026-09-01T08:00:00.000Z',
+      accountId: 'daily',
+    }
+    const freelance: Transaction = {
+      id: 'tx-freelance',
+      type: 'income',
+      amount: 200,
+      description: 'Proyecto web',
+      date: '2026-09-15T10:00:00.000Z',
+      accountId: 'daily',
+    }
+    const debtReimb: Transaction = {
+      id: 'tx-reimb-excluded',
+      type: 'income',
+      incomeKind: 'reimbursement',
+      amount: 75,
+      description: 'Devolución cena',
+      date: '2026-09-20T12:00:00.000Z',
+      accountId: 'daily',
+    }
+
+    const incomeBreakdown = selectIncomeCategoryBreakdown(
+      [salary, freelance, debtReimb],
+      categoriesList,
+      refDate,
+      'month',
+      [],
+      []
+    )
+
+    assert.equal(incomeBreakdown.total, 2000)
+    assert.equal(incomeBreakdown.movements.length, 2)
+    assert.ok(!incomeBreakdown.movements.some((m) => m.id === 'tx-reimb-excluded'))
+  })
+
+  // TEST 25: Versión y build actualizados
+  it('823. 25. Versión y Build actualizados a 0.24.12 / 2026.09.30-10', () => {
+    assert.equal(APP_VERSION, '0.24.12')
+    assert.equal(APP_BUILD, '2026.09.30-10')
   })
 })
 

@@ -1,5 +1,6 @@
 import type { Category, ExpenseShare, ExpenseShareStatus, Transaction, CashTransaction } from '../models/finance'
 import { normalizeCategoryAlias } from './categoryNormalization'
+import { toUnifiedMovements, type UnifiedMovement } from './unifiedMovementSelectors'
 
 export interface SplitResult {
   participantName: string
@@ -351,14 +352,29 @@ export function selectNetExpensesByCategory(
 
   const periodExpenses = transactions.filter((t) => {
     if (t.type !== 'expense' || (t.isShared && t.paidBy === 'contact')) return false
+    if (t.specialType === 'cash_withdrawal' || t.specialType === 'transfer' || t.specialType === 'account_adjustment') return false
     if (scope === 'all') return true
     const d = new Date(t.date)
+    return d.getMonth() === currentMonth && d.getFullYear() === currentYear
+  })
+
+  const periodCashExpenses = (cashTransactions || []).filter((c) => {
+    if (c.type !== 'expense' || (c.isShared && c.paidBy === 'contact')) return false
+    if (scope === 'all') return true
+    const d = new Date(c.date)
     return d.getMonth() === currentMonth && d.getFullYear() === currentYear
   })
 
   const netByCategory = new Map<string, number>()
 
   periodExpenses.forEach((exp) => {
+    const catId = normalizeCategoryAlias(exp.categoryId || 'other')
+    const linked = selectLinkedReimbursementsForExpense(exp.id, transactions, cashTransactions, expenseShares)
+    const net = Math.max(0, Math.round((exp.amount - linked) * 100) / 100)
+    netByCategory.set(catId, Math.round(((netByCategory.get(catId) ?? 0) + net) * 100) / 100)
+  })
+
+  periodCashExpenses.forEach((exp) => {
     const catId = normalizeCategoryAlias(exp.categoryId || 'other')
     const linked = selectLinkedReimbursementsForExpense(exp.id, transactions, cashTransactions, expenseShares)
     const net = Math.max(0, Math.round((exp.amount - linked) * 100) / 100)
@@ -601,12 +617,13 @@ export function calculateCustomSplit(
 export function selectRealIncome(
   transactions: Transaction[],
   referenceDate: Date = new Date(),
-  scope: 'month' | 'all' = 'month'
+  scope: 'month' | 'all' = 'month',
+  cashTransactions: CashTransaction[] = []
 ): number {
   const currentMonth = referenceDate.getMonth()
   const currentYear = referenceDate.getFullYear()
 
-  const sum = transactions
+  const bankSum = transactions
     .filter((t) => t.type === 'income' && t.incomeKind !== 'reimbursement')
     .filter((t) => {
       if (scope === 'all') return true
@@ -615,7 +632,16 @@ export function selectRealIncome(
     })
     .reduce((acc, t) => acc + t.amount, 0)
 
-  return Math.round(sum * 100) / 100
+  const cashSum = (cashTransactions || [])
+    .filter((c) => c.type === 'income' && !c.bankTransactionId)
+    .filter((c) => {
+      if (scope === 'all') return true
+      const d = new Date(c.date)
+      return d.getMonth() === currentMonth && d.getFullYear() === currentYear
+    })
+    .reduce((acc, c) => acc + Math.abs(Number(c.amount) || 0), 0)
+
+  return Math.round((bankSum + cashSum) * 100) / 100
 }
 
 /**
@@ -1683,4 +1709,210 @@ export function selectSharedSummaryByContact(
       b.forgivenByUser + b.forgivenToUser - (a.forgivenByUser + a.forgivenToUser)
   )
 }
+
+export interface CategoryMonthlyPoint {
+  date: Date
+  monthKey: string
+  monthLabel: string
+  shortMonthLabel: string
+  amount: number
+  isCurrent: boolean
+}
+
+export interface CategoryMonthlyStats {
+  categoryId: string
+  categoryName: string
+  categoryColor: string
+  categoryIcon: string
+  currentMonthAmount: number
+  currentMonthPercentage: number
+  totalMonthExpenses: number
+  recentAverage: number
+  monthsEvaluated: number
+  history: CategoryMonthlyPoint[]
+  movements: UnifiedMovement[]
+}
+
+/**
+ * Estadísticas canónicas de una categoría concreta en el mes de referencia,
+ * incluyendo total del mes, porcentaje respecto al gasto total, media de los últimos N meses
+ * y evolución mensual histórica sin librerías pesadas.
+ */
+export function selectCategoryMonthlyStats(
+  categoryId: string,
+  categories: Category[] = [],
+  transactions: Transaction[] = [],
+  cashTransactions: CashTransaction[] = [],
+  expenseShares: ExpenseShare[] = [],
+  referenceDate: Date = new Date(),
+  monthsCount = 3
+): CategoryMonthlyStats {
+  const normCatId = normalizeCategoryAlias(categoryId)
+  const category = categories.find((c) => normalizeCategoryAlias(c.id) === normCatId)
+  const categoryName = category?.name ?? (normCatId === 'other' ? 'Otros' : categoryId)
+  const categoryColor = category?.color ?? '#8B70A0'
+  const categoryIcon = category?.iconKey || category?.icon || 'ellipsis'
+
+  const refYear = referenceDate.getFullYear()
+  const refMonth = referenceDate.getMonth()
+
+  const monthNames = [
+    'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
+    'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'
+  ]
+  const shortMonthNames = [
+    'Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun',
+    'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'
+  ]
+
+  const history: CategoryMonthlyPoint[] = []
+  let historySum = 0
+
+  for (let i = monthsCount - 1; i >= 0; i--) {
+    const pointDate = new Date(refYear, refMonth - i, 1)
+    const pYear = pointDate.getFullYear()
+    const pMonth = pointDate.getMonth()
+    const monthKey = `${pYear}-${String(pMonth + 1).padStart(2, '0')}`
+    const isCurrent = i === 0
+
+    const catExpenses = selectNetExpensesByCategory(
+      transactions,
+      categories,
+      pointDate,
+      'month',
+      cashTransactions,
+      expenseShares
+    )
+    const found = catExpenses.find((c) => normalizeCategoryAlias(c.id) === normCatId)
+    const amount = found ? found.amount : 0
+
+    historySum += amount
+    history.push({
+      date: pointDate,
+      monthKey,
+      monthLabel: `${monthNames[pMonth]} ${pYear}`,
+      shortMonthLabel: shortMonthNames[pMonth],
+      amount,
+      isCurrent,
+    })
+  }
+
+  const currentMonthAmount = history[history.length - 1]?.amount ?? 0
+  const recentAverage = monthsCount > 0 ? Math.round((historySum / monthsCount) * 100) / 100 : currentMonthAmount
+
+  const allMonthCategories = selectNetExpensesByCategory(
+    transactions,
+    categories,
+    referenceDate,
+    'month',
+    cashTransactions,
+    expenseShares
+  )
+  const totalMonthExpenses = allMonthCategories.reduce((sum, c) => sum + c.amount, 0)
+  const currentMonthPercentage = totalMonthExpenses > 0 ? Math.round((currentMonthAmount / totalMonthExpenses) * 100) : 0
+
+  const allUnified = toUnifiedMovements(transactions, cashTransactions, expenseShares)
+  const movements = allUnified.filter((m) => {
+    if (m.type !== 'expense' || m.isCashWithdrawal) return false
+    const d = new Date(m.date)
+    if (d.getFullYear() !== refYear || d.getMonth() !== refMonth) return false
+    return normalizeCategoryAlias(m.categoryId || 'other') === normCatId
+  })
+
+  return {
+    categoryId: normCatId,
+    categoryName,
+    categoryColor,
+    categoryIcon,
+    currentMonthAmount,
+    currentMonthPercentage,
+    totalMonthExpenses: Math.round(totalMonthExpenses * 100) / 100,
+    recentAverage,
+    monthsEvaluated: monthsCount,
+    history,
+    movements,
+  }
+}
+
+export interface IncomeCategoryBreakdownItem {
+  id: string
+  name: string
+  color: string
+  icon: string
+  amount: number
+  percentage: number
+}
+
+export interface IncomeCategoryBreakdown {
+  total: number
+  items: IncomeCategoryBreakdownItem[]
+  movements: UnifiedMovement[]
+}
+
+/**
+ * Desglose canónico de ingresos económicos del periodo agrupados por categoría/fuente,
+ * garantizando que NUNCA se incluyan devoluciones ni cobros de deudas de terceros.
+ */
+export function selectIncomeCategoryBreakdown(
+  transactions: Transaction[] = [],
+  categories: Category[] = [],
+  referenceDate: Date = new Date(),
+  scope: 'month' | 'all' = 'month',
+  cashTransactions: CashTransaction[] = [],
+  expenseShares: ExpenseShare[] = []
+): IncomeCategoryBreakdown {
+  const refYear = referenceDate.getFullYear()
+  const refMonth = referenceDate.getMonth()
+
+  const allUnified = toUnifiedMovements(transactions, cashTransactions, expenseShares)
+  const periodIncomes = allUnified.filter((m) => {
+    if (m.type !== 'income' || m.isReimbursement || m.isLinkedCashWithdrawal) return false
+    if (scope === 'all') return true
+    const d = new Date(m.date)
+    return d.getFullYear() === refYear && d.getMonth() === refMonth
+  })
+
+  const total = periodIncomes.reduce((acc, m) => acc + m.amount, 0)
+  const groupMap = new Map<string, { name: string; color: string; icon: string; amount: number }>()
+
+  periodIncomes.forEach((m) => {
+    const rawCatId = m.categoryId || 'income'
+    const cat = categories.find((c) => c.id === rawCatId)
+    const groupId = cat ? cat.id : rawCatId
+    const groupName = cat ? cat.name : m.description || 'Ingreso'
+    const groupColor = cat?.color || '#5D9C74'
+    const groupIcon = cat?.iconKey || cat?.icon || 'arrow-down-left'
+
+    const existing = groupMap.get(groupId) || {
+      name: groupName,
+      color: groupColor,
+      icon: groupIcon,
+      amount: 0,
+    }
+    existing.amount = Math.round((existing.amount + m.amount) * 100) / 100
+    groupMap.set(groupId, existing)
+  })
+
+  const items: IncomeCategoryBreakdownItem[] = []
+  groupMap.forEach((val, id) => {
+    const percentage = total > 0 ? Math.round((val.amount / total) * 100) : 0
+    items.push({
+      id,
+      name: val.name,
+      color: val.color,
+      icon: val.icon,
+      amount: val.amount,
+      percentage,
+    })
+  })
+
+  items.sort((a, b) => b.amount - a.amount)
+
+  return {
+    total: Math.round(total * 100) / 100,
+    items,
+    movements: periodIncomes,
+  }
+}
+
 
