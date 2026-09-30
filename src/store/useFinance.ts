@@ -49,6 +49,8 @@ import type {
   CreateCashTransactionInput,
   UpdateCashTransactionInput,
   PaymentMethod,
+  ExpenseNature,
+  IncomeKind,
 } from '../models/finance'
 import { selectCashBalance, createCashAdjustmentInput } from '../utils/cashSelectors'
 import { defaultAppStorage, createIndexedDbAdapter } from '../services/storage/indexedDbAdapter'
@@ -2395,6 +2397,398 @@ export function useFinance(storage: StorageAdapter = defaultAppStorage) {
     [deleteTransaction, deleteCashTransaction, addCashTransaction, addTransaction, addSharedExpense]
   )
 
+  const convertMovementType = useCallback(
+    (params: {
+      id: string
+      fromMedium: 'bank' | 'cash'
+      targetType: 'expense' | 'income' | 'transfer'
+      targetMedium?: 'bank' | 'cash'
+      targetData: {
+        amount: number
+        description: string
+        date: string
+        note?: string
+        categoryId?: string
+        accountId?: string
+        expenseNature?: ExpenseNature
+        giftRecipient?: string
+        isShared?: boolean
+        paidBy?: 'user' | 'contact'
+        payerName?: string
+        payerContactId?: string
+        isBizum?: boolean
+        incomeKind?: IncomeKind
+        parentExpenseId?: string
+        expenseShareId?: string
+        fromType?: 'account' | 'cash'
+        fromAccountId?: string
+        toType?: 'account' | 'cash'
+        toAccountId?: string
+      }
+      shares?: { participantName: string; contactId?: string; isPayerShare: boolean; isUserShare?: boolean; expectedAmount: number }[]
+    }) => {
+      const { id, fromMedium, targetType, targetMedium = 'bank', targetData, shares } = params
+      const amt = Math.round(Number(targetData.amount) * 100) / 100
+      if (isNaN(amt) || amt <= 0) {
+        throw new Error('El importe debe ser mayor que 0.')
+      }
+      const date = targetData.date || new Date().toISOString()
+      const desc = targetData.description.trim() || 'Movimiento'
+      const note = targetData.note?.trim() || undefined
+
+      // CASE 1: TARGET IS TRANSFER
+      if (targetType === 'transfer') {
+        const fromType = targetData.fromType || (fromMedium === 'cash' ? 'cash' : 'account')
+        const toType = targetData.toType || 'cash'
+        const fromAccountId = fromType === 'account' ? (targetData.fromAccountId || 'daily') : undefined
+        const toAccountId = toType === 'account' ? (targetData.toAccountId || 'savings') : undefined
+
+        if (fromType === 'account' && toType === 'account') {
+          if (!fromAccountId || !toAccountId || fromAccountId === toAccountId) {
+            throw new Error('Debes seleccionar cuentas distintas de origen y destino.')
+          }
+        }
+
+        // 1A: From Account -> To Cash (Retirada de efectivo / Cajero)
+        if (fromType === 'account' && toType === 'cash') {
+          if (fromMedium === 'bank') {
+            const updatedBankTx: Transaction = {
+              id,
+              type: 'expense',
+              specialType: 'cash_withdrawal',
+              amount: amt,
+              accountId: fromAccountId || 'daily',
+              date,
+              description: desc,
+              note,
+              categoryId: undefined,
+              isShared: false,
+              toAccountId: undefined,
+            }
+
+            const existingCash = (state.cashTransactions ?? []).find((c) => c.bankTransactionId === id)
+            let nextCashTxs = state.cashTransactions ?? []
+            let newOrUpdatedCash: CashTransaction
+
+            if (existingCash) {
+              newOrUpdatedCash = {
+                ...existingCash,
+                type: 'income',
+                amount: amt,
+                date,
+                description: desc || 'Retirada de cajero',
+                note: note || existingCash.note,
+                paymentMethod: 'cash',
+              }
+              nextCashTxs = nextCashTxs.map((c) => (c.id === existingCash.id ? newOrUpdatedCash : c))
+            } else {
+              newOrUpdatedCash = {
+                id: crypto.randomUUID(),
+                type: 'income',
+                amount: amt,
+                date,
+                description: desc || 'Retirada de cajero',
+                bankTransactionId: id,
+                paymentMethod: 'cash',
+                note: note || 'Transferido desde Banco',
+                createdAt: new Date().toISOString(),
+                updatedAt: new Date().toISOString(),
+              }
+              nextCashTxs = [newOrUpdatedCash, ...nextCashTxs]
+            }
+
+            const nextTxs = state.transactions.map((t) => (t.id === id ? updatedBankTx : t))
+            const nextShares = (state.expenseShares ?? []).filter((s) => s.expenseTransactionId !== id)
+
+            commit({
+              ...state,
+              transactions: nextTxs,
+              cashTransactions: nextCashTxs,
+              expenseShares: nextShares,
+            }, id)
+
+            dispatchSync('transaction', 'update', id, updatedBankTx, (sb, uid) =>
+              syncUpdateTransaction(sb, uid, updatedBankTx)
+            )
+            dispatchSync('cash_transaction', existingCash ? 'update' : 'insert', newOrUpdatedCash.id, newOrUpdatedCash, (sb, uid) =>
+              syncUpsertCashTransaction(sb, uid, newOrUpdatedCash)
+            )
+            return { bankTx: updatedBankTx, cashTx: newOrUpdatedCash }
+          } else {
+            deleteCashTransaction(id)
+            return recordTransfer({
+              fromType: 'account',
+              fromAccountId,
+              toType: 'cash',
+              amount: amt,
+              date,
+              description: desc,
+              note,
+            })
+          }
+        }
+
+        // 1B: From Account -> To Account (Transferencia bancaria interna)
+        if (fromType === 'account' && toType === 'account') {
+          if (fromMedium === 'bank') {
+            const updatedBankTx: Transaction = {
+              id,
+              type: 'transfer',
+              amount: amt,
+              accountId: fromAccountId!,
+              toAccountId: toAccountId!,
+              date,
+              description: desc,
+              note,
+              categoryId: undefined,
+              isShared: false,
+              specialType: undefined,
+            }
+
+            const linkedCash = (state.cashTransactions ?? []).find((c) => c.bankTransactionId === id)
+            const nextCashTxs = (state.cashTransactions ?? []).filter((c) => c.bankTransactionId !== id)
+            const nextTxs = state.transactions.map((t) => (t.id === id ? updatedBankTx : t))
+            const nextShares = (state.expenseShares ?? []).filter((s) => s.expenseTransactionId !== id)
+
+            commit({
+              ...state,
+              transactions: nextTxs,
+              cashTransactions: nextCashTxs,
+              expenseShares: nextShares,
+            }, id)
+
+            dispatchSync('transaction', 'update', id, updatedBankTx, (sb, uid) =>
+              syncUpdateTransaction(sb, uid, updatedBankTx)
+            )
+            if (linkedCash) {
+              dispatchSync('cash_transaction', 'delete', linkedCash.id, { id: linkedCash.id }, (sb, uid) =>
+                syncDeleteCashTransaction(sb, uid, linkedCash.id)
+              )
+            }
+            return updatedBankTx
+          } else {
+            deleteCashTransaction(id)
+            return recordTransfer({
+              fromType: 'account',
+              fromAccountId,
+              toType: 'account',
+              toAccountId,
+              amount: amt,
+              date,
+              description: desc,
+              note,
+            })
+          }
+        }
+
+        // 1C: From Cash -> To Account (Ingreso en cuenta desde efectivo)
+        if (fromType === 'cash' && toType === 'account') {
+          if (fromMedium === 'bank') {
+            deleteTransaction(id)
+          } else {
+            deleteCashTransaction(id)
+          }
+          return recordTransfer({
+            fromType: 'cash',
+            toType: 'account',
+            toAccountId,
+            amount: amt,
+            date,
+            description: desc,
+            note,
+          })
+        }
+      }
+
+      // CASE 2: TARGET IS EXPENSE
+      if (targetType === 'expense') {
+        const isTargetCash = targetMedium === 'cash'
+
+        if (isTargetCash) {
+          if (fromMedium === 'bank') {
+            deleteTransaction(id)
+            const linkedCash = (state.cashTransactions ?? []).find((c) => c.bankTransactionId === id)
+            if (linkedCash) deleteCashTransaction(linkedCash.id)
+
+            const cashPayload: CreateCashTransactionInput = {
+              type: 'expense',
+              amount: amt,
+              description: desc,
+              date,
+              categoryId: targetData.categoryId,
+              note,
+              paymentMethod: 'cash',
+              isShared: Boolean(targetData.isShared),
+              paidBy: targetData.isShared ? targetData.paidBy : undefined,
+              payerName: targetData.isShared && targetData.paidBy === 'contact' ? targetData.payerName : undefined,
+              payerContactId: targetData.isShared && targetData.paidBy === 'contact' ? targetData.payerContactId : undefined,
+            }
+            return addCashTransaction(cashPayload, shares)
+          } else {
+            const patch: UpdateCashTransactionInput = {
+              type: 'expense',
+              amount: amt,
+              description: desc,
+              date,
+              categoryId: targetData.categoryId,
+              note,
+              paymentMethod: 'cash',
+              isShared: Boolean(targetData.isShared),
+              paidBy: targetData.isShared ? targetData.paidBy : undefined,
+              payerName: targetData.isShared && targetData.paidBy === 'contact' ? targetData.payerName : undefined,
+              payerContactId: targetData.isShared && targetData.paidBy === 'contact' ? targetData.payerContactId : undefined,
+            }
+            return updateCashTransaction(id, patch, shares)
+          }
+        } else {
+          // Destino: Banco
+          if (fromMedium === 'bank') {
+            const linkedCash = (state.cashTransactions ?? []).find((c) => c.bankTransactionId === id)
+            if (linkedCash) {
+              deleteCashTransaction(linkedCash.id)
+            }
+
+            const bankPayload: Partial<CreateTransactionInput> = {
+              type: 'expense',
+              specialType: 'normal',
+              toAccountId: undefined,
+              incomeKind: undefined,
+              parentExpenseId: undefined,
+              expenseShareId: undefined,
+              amount: amt,
+              accountId: targetData.accountId || 'daily',
+              categoryId: targetData.categoryId,
+              date,
+              description: desc,
+              note,
+              expenseNature: targetData.expenseNature || 'variable',
+              giftRecipient: targetData.giftRecipient,
+              paymentMethod: targetData.isBizum ? 'bizum' : 'bank',
+              isShared: Boolean(targetData.isShared),
+              paidBy: targetData.isShared ? targetData.paidBy : undefined,
+              payerName: targetData.isShared && targetData.paidBy === 'contact' ? targetData.payerName : undefined,
+              payerContactId: targetData.isShared && targetData.paidBy === 'contact' ? targetData.payerContactId : undefined,
+            }
+            return updateTransaction(id, bankPayload, shares)
+          } else {
+            deleteCashTransaction(id)
+            const bankPayload: CreateTransactionInput = {
+              type: 'expense',
+              amount: amt,
+              accountId: targetData.accountId || 'daily',
+              categoryId: targetData.categoryId,
+              date,
+              description: desc,
+              note,
+              specialType: 'normal',
+              expenseNature: targetData.expenseNature || 'variable',
+              giftRecipient: targetData.giftRecipient,
+              paymentMethod: targetData.isBizum ? 'bizum' : 'bank',
+              isShared: Boolean(targetData.isShared),
+              paidBy: targetData.isShared ? targetData.paidBy : undefined,
+              payerName: targetData.isShared && targetData.paidBy === 'contact' ? targetData.payerName : undefined,
+              payerContactId: targetData.isShared && targetData.paidBy === 'contact' ? targetData.payerContactId : undefined,
+            }
+            if (targetData.isShared && shares && shares.length > 0) {
+              return addSharedExpense(bankPayload, shares)
+            }
+            return addTransaction(bankPayload)
+          }
+        }
+      }
+
+      // CASE 3: TARGET IS INCOME
+      if (targetType === 'income') {
+        const isTargetCash = targetMedium === 'cash'
+
+        if (isTargetCash) {
+          if (fromMedium === 'bank') {
+            deleteTransaction(id)
+            const linkedCash = (state.cashTransactions ?? []).find((c) => c.bankTransactionId === id)
+            if (linkedCash) deleteCashTransaction(linkedCash.id)
+
+            const cashPayload: CreateCashTransactionInput = {
+              type: 'income',
+              amount: amt,
+              description: desc,
+              date,
+              note,
+              paymentMethod: 'cash',
+            }
+            return addCashTransaction(cashPayload)
+          } else {
+            const patch: UpdateCashTransactionInput = {
+              type: 'income',
+              amount: amt,
+              description: desc,
+              date,
+              categoryId: undefined,
+              note,
+              paymentMethod: 'cash',
+              isShared: false,
+            }
+            return updateCashTransaction(id, patch)
+          }
+        } else {
+          // Destino: Banco
+          if (fromMedium === 'bank') {
+            const linkedCash = (state.cashTransactions ?? []).find((c) => c.bankTransactionId === id)
+            if (linkedCash) deleteCashTransaction(linkedCash.id)
+
+            const bankPayload: Partial<CreateTransactionInput> = {
+              type: 'income',
+              incomeKind: targetData.incomeKind || 'income',
+              parentExpenseId: targetData.parentExpenseId,
+              expenseShareId: targetData.expenseShareId,
+              amount: amt,
+              accountId: targetData.accountId || 'daily',
+              categoryId: undefined,
+              expenseNature: undefined,
+              giftRecipient: undefined,
+              isShared: false,
+              toAccountId: undefined,
+              specialType: 'normal',
+              date,
+              description: desc,
+              note,
+              paymentMethod: targetData.isBizum ? 'bizum' : 'bank',
+            }
+            return updateTransaction(id, bankPayload)
+          } else {
+            deleteCashTransaction(id)
+            const bankPayload: CreateTransactionInput = {
+              type: 'income',
+              incomeKind: targetData.incomeKind || 'income',
+              parentExpenseId: targetData.parentExpenseId,
+              expenseShareId: targetData.expenseShareId,
+              amount: amt,
+              accountId: targetData.accountId || 'daily',
+              date,
+              description: desc,
+              note,
+              specialType: 'normal',
+              paymentMethod: targetData.isBizum ? 'bizum' : 'bank',
+            }
+            return addTransaction(bankPayload)
+          }
+        }
+      }
+    },
+    [
+      state,
+      commit,
+      dispatchSync,
+      deleteTransaction,
+      deleteCashTransaction,
+      recordTransfer,
+      addCashTransaction,
+      updateCashTransaction,
+      updateTransaction,
+      addTransaction,
+      addSharedExpense,
+    ]
+  )
+
   /* ==========================================================================
      Totales y Conceptos Financieros Centralizados
      ========================================================================== */
@@ -3094,6 +3488,7 @@ export function useFinance(storage: StorageAdapter = defaultAppStorage) {
     adjustAccountToAmount,
     recordTransfer,
     switchMovementMedium,
+    convertMovementType,
 
     // Perfil
     updateProfile,

@@ -16,6 +16,7 @@ export interface Category {
   color: string
   icon: string // legacy o iconKey
   iconKey?: string
+  isHistorical?: boolean
 }
 
 export type IncomeKind = 'income' | 'reimbursement'

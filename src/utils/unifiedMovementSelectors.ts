@@ -171,8 +171,8 @@ export function filterUnifiedMovements(
     if (source === 'cash' && m.source !== 'cash') return false
 
     // 2. Filtro por tipo
-    if (type === 'expense' && m.type !== 'expense') return false
-    if (type === 'income' && m.type !== 'income') return false
+    if (type === 'expense' && (m.type !== 'expense' || m.isCashWithdrawal)) return false
+    if (type === 'income' && (m.type !== 'income' || m.isLinkedCashWithdrawal)) return false
     if (type === 'transfer') {
       const isTransferLike = m.type === 'transfer' || m.isCashWithdrawal || m.isLinkedCashWithdrawal
       if (!isTransferLike) return false

@@ -208,9 +208,12 @@ export function AddCashTransactionModal({
         isShared: false,
       })
     }
-
     onClose()
   }
+
+  const selectableCategories = useMemo(() => {
+    return categories.filter((c) => !c.isHistorical && c.id !== 'atm' && c.name.toLowerCase() !== 'cajero')
+  }, [categories])
 
   return (
     <div className="modal-backdrop" onClick={onClose} role="dialog" aria-modal="true">
@@ -401,7 +404,7 @@ export function AddCashTransactionModal({
               }}
             >
               <option value="">Sin categoría / Ninguna</option>
-              {categories.map((c) => (
+              {selectableCategories.map((c) => (
                 <option key={c.id} value={c.id}>
                   {c.name}
                 </option>

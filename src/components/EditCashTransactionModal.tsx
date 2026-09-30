@@ -319,6 +319,16 @@ export function EditCashTransactionModal({
     onClose()
   }
 
+  const selectableCategories = useMemo(() => {
+    return categories.filter((c) => {
+      const isAtm = c.id === 'atm' || c.name.toLowerCase() === 'cajero' || c.isHistorical
+      if (isAtm) {
+        return transaction?.categoryId === c.id
+      }
+      return true
+    })
+  }, [categories, transaction])
+
   return (
     <div className="modal-backdrop" onClick={onClose} role="dialog" aria-modal="true">
       <div
@@ -465,7 +475,7 @@ export function EditCashTransactionModal({
                   }}
                 >
                   <option value="">Sin categoría / Ninguna</option>
-                  {categories.map((c) => (
+                  {selectableCategories.map((c) => (
                     <option key={c.id} value={c.id}>
                       {c.name}
                     </option>

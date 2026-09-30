@@ -771,6 +771,7 @@ export default function App() {
         onDeleteCashTransaction={finance.deleteCashTransaction}
         onRecordTransfer={finance.recordTransfer}
         onSwitchMedium={finance.switchMovementMedium}
+        onConvertMovementType={finance.convertMovementType}
         onRecordReimbursement={(input) => {
           finance.recordReimbursement(input)
           const targetStr = input.paymentMethod === 'cash' ? 'en Efectivo' : 'en Banco'

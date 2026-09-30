@@ -73,6 +73,35 @@ interface AddTransactionModalProps {
     transactionData: CreateTransactionInput | CreateCashTransactionInput
     shares?: { participantName: string; contactId?: string; isPayerShare: boolean; isUserShare?: boolean; expectedAmount: number }[]
   }) => void
+  onConvertMovementType?: (params: {
+    id: string
+    fromMedium: 'bank' | 'cash'
+    targetType: 'expense' | 'income' | 'transfer'
+    targetMedium?: 'bank' | 'cash'
+    targetData: {
+      amount: number
+      description: string
+      date: string
+      note?: string
+      categoryId?: string
+      accountId?: string
+      expenseNature?: ExpenseNature
+      giftRecipient?: string
+      isShared?: boolean
+      paidBy?: 'user' | 'contact'
+      payerName?: string
+      payerContactId?: string
+      isBizum?: boolean
+      incomeKind?: IncomeKind
+      parentExpenseId?: string
+      expenseShareId?: string
+      fromType?: 'account' | 'cash'
+      fromAccountId?: string
+      toType?: 'account' | 'cash'
+      toAccountId?: string
+    }
+    shares?: { participantName: string; contactId?: string; isPayerShare: boolean; isUserShare?: boolean; expectedAmount: number }[]
+  }) => void
   onRecordReimbursement?: (input: {
     parentExpenseId?: string
     expenseShareId?: string
@@ -113,6 +142,7 @@ export function AddTransactionModal({
   onDeleteCashTransaction,
   onRecordTransfer,
   onSwitchMedium,
+  onConvertMovementType,
   onRecordReimbursement,
 }: AddTransactionModalProps) {
   const isEditing = Boolean(initialTransaction)
@@ -205,6 +235,64 @@ export function AddTransactionModal({
   const [customAmounts, setCustomAmounts] = useState<Record<string, string>>({})
   const [newParticipantInput, setNewParticipantInput] = useState('')
 
+  // Categorías seleccionables para nuevo gasto / edición (Cajero no seleccionable para nuevos)
+  const selectableCategories = useMemo(() => {
+    return categories.filter((c) => {
+      const isHistorical = c.isHistorical || c.id === 'atm' || c.name.toLowerCase() === 'cajero'
+      if (isHistorical) {
+        return isEditing && initialTransaction?.categoryId === c.id
+      }
+      return true
+    })
+  }, [categories, isEditing, initialTransaction])
+
+  // Comprobación de dependencias financieras que impidan cambiar el tipo arbitrariamente
+  const typeConversionBlockReason = useMemo(() => {
+    if (!isEditing || !initialTransaction) return null
+    const initialRealType =
+      initialTransaction.type === 'transfer' || (initialTransaction as any).specialType === 'cash_withdrawal'
+        ? 'transfer'
+        : initialTransaction.type === 'income'
+        ? 'income'
+        : 'expense'
+
+    if (type === initialRealType) return null
+
+    const sharesForTx = (expenseShares || []).filter((s) => s.expenseTransactionId === initialTransaction.id)
+    const hasExternalShares = sharesForTx.some(
+      (s) => !s.isPayerShare && !s.isUserShare && s.participantName.toLowerCase() !== 'tú'
+    )
+    const hasLinkedReimbursements =
+      transactions.some(
+        (t) =>
+          t.type === 'income' &&
+          t.incomeKind === 'reimbursement' &&
+          (t.parentExpenseId === initialTransaction.id || sharesForTx.some((s) => s.id === t.expenseShareId))
+      ) ||
+      cashTransactions.some(
+        (c) =>
+          c.type === 'income' &&
+          (c.bankTransactionId === initialTransaction.id || sharesForTx.some((s) => c.note?.includes(`[share:${s.id}]`)))
+      )
+
+    if (hasLinkedReimbursements) {
+      return 'Este movimiento tiene cobros o reembolsos vinculados. Para cambiar su tipo, primero elimina o desvincula esos cobros.'
+    }
+    if (hasExternalShares) {
+      return 'Este gasto tiene participantes compartidos. Para cambiar su tipo a transferencia o ingreso, primero desmarca el reparto compartido.'
+    }
+
+    if (
+      'incomeKind' in initialTransaction &&
+      initialTransaction.incomeKind === 'reimbursement' &&
+      (initialTransaction.parentExpenseId || initialTransaction.expenseShareId)
+    ) {
+      return 'Este ingreso está vinculado como reembolso de una deuda o gasto. Para cambiar su tipo, elimínalo o desvincula la cuota.'
+    }
+
+    return null
+  }, [isEditing, initialTransaction, type, expenseShares, transactions, cashTransactions])
+
   useEffect(() => {
     if (initialTransaction) {
       const isCash =
@@ -213,18 +301,39 @@ export function AddTransactionModal({
         initialTransaction.paymentMethod === 'cash' ||
         initialTransaction.id.startsWith('cash_')
 
+      const isInitialTransfer =
+        initialTransaction.type === 'transfer' ||
+        (initialTransaction as any).specialType === 'cash_withdrawal'
+
+      const initialType = isInitialTransfer
+        ? 'transfer'
+        : initialTransaction.type === 'income'
+        ? 'income'
+        : 'expense'
+
       setSourceMedium(isCash ? 'cash' : 'bank')
-      setType(initialTransaction.type === 'adjustment' ? 'expense' : initialTransaction.type)
+      setType(initialType)
       setIncomeKind(('incomeKind' in initialTransaction && initialTransaction.incomeKind) ? initialTransaction.incomeKind : 'income')
       setAmount(String(initialTransaction.amount).replace('.', ','))
       setDescription(initialTransaction.description)
-      setCategoryId(initialTransaction.categoryId ?? categories[0]?.id ?? '')
+      setCategoryId(initialTransaction.categoryId ?? selectableCategories[0]?.id ?? 'food')
 
       const initialAccId = 'accountId' in initialTransaction && initialTransaction.accountId ? initialTransaction.accountId : accounts[0]?.id ?? 'daily'
       setAccountId(initialAccId)
       
-      setTransferFrom(initialAccId)
-      setTransferTo(('toAccountId' in initialTransaction && initialTransaction.toAccountId) ? initialTransaction.toAccountId : 'cash')
+      if (isCash) {
+        setTransferFrom('cash')
+        setTransferTo(accounts[0]?.id || 'daily')
+      } else if ((initialTransaction as any).specialType === 'cash_withdrawal') {
+        setTransferFrom(initialAccId)
+        setTransferTo('cash')
+      } else if (initialTransaction.type === 'transfer') {
+        setTransferFrom(initialAccId)
+        setTransferTo(('toAccountId' in initialTransaction && initialTransaction.toAccountId) ? initialTransaction.toAccountId : (accounts.find((a) => a.id !== initialAccId)?.id ?? 'savings'))
+      } else {
+        setTransferFrom(initialAccId)
+        setTransferTo('cash')
+      }
 
       setDate(initialTransaction.date.slice(0, 10))
       setNote(initialTransaction.note ?? '')
@@ -293,7 +402,7 @@ export function AddTransactionModal({
       setSelectedReceivableShareId(initialReimbursementShareId || '')
       setAmount('')
       setDescription('')
-      setCategoryId(categories[0]?.id ?? '')
+      setCategoryId(selectableCategories[0]?.id ?? 'food')
       const firstSpending = accounts.find((a) => a.type === 'spending')?.id ?? accounts[0]?.id ?? ''
       setAccountId(firstSpending)
       setTransferFrom(firstSpending)
@@ -322,7 +431,7 @@ export function AddTransactionModal({
         }
       }
     }
-  }, [initialTransaction, accounts, categories, open, defaultType, initialReimbursementShareId, pendingReceivablesList])
+  }, [initialTransaction, accounts, selectableCategories, open, defaultType, initialReimbursementShareId, pendingReceivablesList])
 
   const numericAmount = Number(amount.replace(',', '.')) || 0
 
@@ -460,10 +569,71 @@ export function AddTransactionModal({
   }
 
   const submit = () => {
+    if (typeConversionBlockReason) return
     if (!numericAmount || numericAmount <= 0) return
     if (!description.trim()) return
 
-    // CASO TRANSFERENCIA
+    // Preparar cuotas de gasto compartido si aplica
+    const sharesInput =
+      type === 'expense' && isShared && computedShares.length > 0
+        ? computedShares.map((s) => ({
+            participantName: s.participantName,
+            contactId: s.contactId,
+            isPayerShare: Boolean(s.isPayerShare),
+            isUserShare: Boolean(s.isUserShare),
+            expectedAmount: s.amount,
+          }))
+        : undefined
+
+    // MODO EDICIÓN: Conversión de Tipo o cambio complejo
+    if (isEditing && initialTransaction) {
+      const initialRealType =
+        initialTransaction.type === 'transfer' || (initialTransaction as any).specialType === 'cash_withdrawal'
+          ? 'transfer'
+          : initialTransaction.type === 'income'
+          ? 'income'
+          : 'expense'
+
+      const isTypeChanged = type !== initialRealType
+
+      if (isTypeChanged || (type === 'transfer' && onConvertMovementType)) {
+        if (onConvertMovementType) {
+          onConvertMovementType({
+            id: initialTransaction.id,
+            fromMedium: isInitialCash ? 'cash' : 'bank',
+            targetType: type,
+            targetMedium: sourceMedium,
+            targetData: {
+              amount: numericAmount,
+              description: description.trim(),
+              date: new Date(date).toISOString(),
+              note: note.trim() || undefined,
+              categoryId: type === 'expense' ? categoryId : undefined,
+              accountId: sourceMedium === 'bank' ? accountId : undefined,
+              expenseNature: type === 'expense' ? expenseNature : undefined,
+              giftRecipient: isGiftsCategory && giftRecipient.trim() ? giftRecipient.trim() : undefined,
+              isShared: type === 'expense' && isShared,
+              paidBy: type === 'expense' && isShared ? paidBy : undefined,
+              payerName: type === 'expense' && isShared && paidBy === 'contact' && payerName.trim() ? payerName.trim() : undefined,
+              payerContactId: type === 'expense' && isShared && paidBy === 'contact' ? payerContactId : undefined,
+              isBizum: sourceMedium === 'bank' ? isBizum : false,
+              incomeKind: type === 'income' ? incomeKind : undefined,
+              parentExpenseId: type === 'income' && incomeKind === 'reimbursement' && selectedReceivableShareId ? pendingReceivablesList.find((p) => p.shareId === selectedReceivableShareId)?.expenseTransactionId : undefined,
+              expenseShareId: type === 'income' && incomeKind === 'reimbursement' && selectedReceivableShareId ? selectedReceivableShareId : undefined,
+              fromType: type === 'transfer' ? (transferFrom === 'cash' ? 'cash' : 'account') : undefined,
+              fromAccountId: type === 'transfer' && transferFrom !== 'cash' ? transferFrom : undefined,
+              toType: type === 'transfer' ? (transferTo === 'cash' ? 'cash' : 'account') : undefined,
+              toAccountId: type === 'transfer' && transferTo !== 'cash' ? transferTo : undefined,
+            },
+            shares: sharesInput,
+          })
+          onClose()
+          return
+        }
+      }
+    }
+
+    // CASO TRANSFERENCIA (NUEVA)
     if (type === 'transfer') {
       if (!transferFrom || !transferTo || transferFrom === transferTo) return
 
@@ -488,19 +658,7 @@ export function AddTransactionModal({
       return
     }
 
-    // Preparar cuotas de gasto compartido si aplica
-    const sharesInput =
-      type === 'expense' && isShared && computedShares.length > 0
-        ? computedShares.map((s) => ({
-            participantName: s.participantName,
-            contactId: s.contactId,
-            isPayerShare: Boolean(s.isPayerShare),
-            isUserShare: Boolean(s.isUserShare),
-            expectedAmount: s.amount,
-          }))
-        : undefined
-
-    // CASO INGRESO: Devolución / Cobro pendiente vinculado
+    // CASO INGRESO: Devolución / Cobro pendiente vinculado (NUEVO)
     if (type === 'income' && incomeKind === 'reimbursement' && selectedReceivableShareId) {
       const selectedShare = pendingReceivablesList.find((p) => p.shareId === selectedReceivableShareId)
       if (selectedShare) {
@@ -649,6 +807,67 @@ export function AddTransactionModal({
             <AppIcon name="x" size={18} />
           </button>
         </div>
+
+        {/* Selector de Tipo de Movimiento (SOLO en modo edición) */}
+        {isEditing && (
+          <div className="form-group" style={{ marginBottom: 14 }}>
+            <label style={{ fontSize: '0.82rem', color: 'var(--text-muted)' }}>Tipo de movimiento</label>
+            <div className="segmented-control">
+              <button
+                type="button"
+                className={`segmented-btn ${type === 'expense' ? 'active' : ''}`}
+                onClick={() => setType('expense')}
+              >
+                <AppIcon name="trending-down" size={15} />
+                <span>Gasto</span>
+              </button>
+              <button
+                type="button"
+                className={`segmented-btn ${type === 'income' ? 'active' : ''}`}
+                onClick={() => setType('income')}
+              >
+                <AppIcon name="trending-up" size={15} />
+                <span>Ingreso</span>
+              </button>
+              <button
+                type="button"
+                className={`segmented-btn ${type === 'transfer' ? 'active' : ''}`}
+                onClick={() => {
+                  setType('transfer')
+                  if (!transferFrom) setTransferFrom(accountId || accounts[0]?.id || 'daily')
+                  if (!transferTo) setTransferTo('cash')
+                }}
+              >
+                <AppIcon name="arrow-left-right" size={15} />
+                <span>Transferencia</span>
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Mensaje explicativo si la conversión de tipo está bloqueada por dependencias */}
+        {typeConversionBlockReason && (
+          <div
+            style={{
+              padding: '10px 14px',
+              borderRadius: 12,
+              background: 'rgba(239, 68, 68, 0.08)',
+              border: '1px solid rgba(239, 68, 68, 0.25)',
+              display: 'flex',
+              alignItems: 'flex-start',
+              gap: 8,
+              fontSize: '0.84rem',
+              color: 'var(--text-danger, #ef4444)',
+              marginBottom: 14,
+              lineHeight: 1.45,
+            }}
+          >
+            <span style={{ flexShrink: 0, marginTop: 2, display: 'inline-flex' }}>
+              <AppIcon name="circle-alert" size={16} />
+            </span>
+            <span>{typeConversionBlockReason}</span>
+          </div>
+        )}
 
         {/* Selector de Medio: Cuenta vs Efectivo (para Gasto e Ingreso) */}
         {type !== 'transfer' && (
@@ -826,7 +1045,7 @@ export function AddTransactionModal({
             <label>
               Categoría
               <select value={categoryId} onChange={(e) => setCategoryId(e.target.value)}>
-                {categories.map((c) => (
+                {selectableCategories.map((c) => (
                   <option key={c.id} value={c.id}>
                     {c.name}
                   </option>
@@ -1113,6 +1332,7 @@ export function AddTransactionModal({
             className="btn btn-primary"
             onClick={submit}
             disabled={
+              Boolean(typeConversionBlockReason) ||
               !numericAmount ||
               numericAmount <= 0 ||
               !description.trim() ||

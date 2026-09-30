@@ -33,7 +33,7 @@ export const categories: Category[] = [
   { id: 'subscriptions', name: 'Suscripciones', color: '#D5C38E', icon: 'refresh-cw', iconKey: 'refresh-cw' },
   { id: 'sport', name: 'Deporte', color: '#9FC9C4', icon: 'dumbbell', iconKey: 'dumbbell' },
   { id: 'education', name: 'Estudios / Formación', color: '#818CF8', icon: 'graduation-cap', iconKey: 'graduation-cap' },
-  { id: 'atm', name: 'Cajero', color: '#10B981', icon: 'banknote', iconKey: 'banknote' },
+  { id: 'atm', name: 'Cajero', color: '#10B981', icon: 'banknote', iconKey: 'banknote', isHistorical: true },
   { id: 'other', name: 'Otros', color: '#B9B9B9', icon: 'ellipsis', iconKey: 'ellipsis' },
 ]
 

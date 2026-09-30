@@ -6909,12 +6909,12 @@ describe('Fase 18 — Mejoras de Finanzas (Detalle por Categoría, Retiradas de 
 describe('Fase 18 — Identificación Visual de Versión y Build', () => {
   it('314. Versioning: única fuente de verdad y formato de visualización exacto', () => {
     assert.equal(APP_NAME, 'PocketFlow')
-    assert.equal(APP_VERSION, '0.24.8')
-    assert.equal(APP_BUILD, '2026.09.30-06')
+    assert.equal(APP_VERSION, '0.24.9')
+    assert.equal(APP_BUILD, '2026.09.30-07')
 
-    assert.equal(getAppVersionString(), 'PocketFlow v0.24.8')
-    assert.equal(getAppBuildString(), 'Build 2026.09.30-06')
-    assert.equal(getAppFullVersionLabel(), 'PocketFlow v0.24.8 · Build 2026.09.30-06')
+    assert.equal(getAppVersionString(), 'PocketFlow v0.24.9')
+    assert.equal(getAppBuildString(), 'Build 2026.09.30-07')
+    assert.equal(getAppFullVersionLabel(), 'PocketFlow v0.24.9 · Build 2026.09.30-07')
   })
 })
 
@@ -14010,12 +14010,12 @@ describe('Fase 50 — Control de Acceso por Roles (User / Admin), Seguridad RLS 
     }
 
     const userFooter = renderFooterTexts(false)
-    assert.equal(userFooter.versionText, 'PocketFlow v0.24.8')
+    assert.equal(userFooter.versionText, 'PocketFlow v0.24.9')
     assert.equal(userFooter.buildText, null)
 
     const adminFooter = renderFooterTexts(true)
-    assert.equal(adminFooter.versionText, 'PocketFlow v0.24.8')
-    assert.equal(adminFooter.buildText, 'Build 2026.09.30-06')
+    assert.equal(adminFooter.versionText, 'PocketFlow v0.24.9')
+    assert.equal(adminFooter.buildText, 'Build 2026.09.30-07')
   })
 
   it('590. 10. Reconciliación y sincronización de perfil no altera datos financieros ni transacciones', () => {
@@ -14516,7 +14516,7 @@ describe('Fase 52 — Versionado Automático y Robusto del Service Worker PWA', 
   it('613. 1. CACHE_NAME del Service Worker incluye exactamente APP_VERSION y APP_BUILD actuales', () => {
     const expectedCacheName = `pocketflow-v${APP_VERSION}-${APP_BUILD}`
     assert.equal(getServiceWorkerCacheName(APP_VERSION, APP_BUILD), expectedCacheName)
-    assert.equal(expectedCacheName, 'pocketflow-v0.24.8-2026.09.30-06')
+    assert.equal(expectedCacheName, 'pocketflow-v0.24.9-2026.09.30-07')
 
     const swCode = generateServiceWorkerCode(APP_VERSION, APP_BUILD)
     assert.ok(swCode.includes(`const CACHE_NAME = '${expectedCacheName}'`))
@@ -17224,15 +17224,15 @@ describe('Fase 61 — Detección Fiable de Versión Remota y Actualizaciones PWA
     assert.ok(swCode.includes('return false'))
 
     const versionData = JSON.parse(generateVersionJson(APP_VERSION, APP_BUILD))
-    assert.equal(versionData.version, '0.24.8')
-    assert.equal(versionData.build, '2026.09.30-06')
+    assert.equal(versionData.version, '0.24.9')
+    assert.equal(versionData.build, '2026.09.30-07')
   })
 
   // Test 10: Diagnóstico completo collectPwaDiagnosticInfo
   it('686. 10. collectPwaDiagnosticInfo recopila estado de versión local, remota y controller', async () => {
     const info = await collectPwaDiagnosticInfo(null, '/pocketflow/')
-    assert.equal(info.localVersion, '0.24.8')
-    assert.equal(info.localBuild, '2026.09.30-06')
+    assert.equal(info.localVersion, '0.24.9')
+    assert.equal(info.localBuild, '2026.09.30-07')
     assert.equal(info.basePath, '/pocketflow/')
     assert.ok(typeof info.lastCheckedAt === 'string')
   })
@@ -17345,8 +17345,8 @@ describe('Fase 62 — Categoría Canónica "Estudios / Formación" (education)',
   it('694. 8. build genera version.json 0.24.5 / 2026.09.30-03', () => {
     const versionJsonStr = generateVersionJson(APP_VERSION, APP_BUILD)
     const parsed = JSON.parse(versionJsonStr)
-    assert.equal(parsed.version, '0.24.8')
-    assert.equal(parsed.build, '2026.09.30-06')
+    assert.equal(parsed.version, '0.24.9')
+    assert.equal(parsed.build, '2026.09.30-07')
     assert.equal(parsed.name, 'PocketFlow')
   })
 
@@ -18375,13 +18375,13 @@ describe('Fase 66 — Clasificación y Desglose de Gastos por Medio de Pago (Tar
     assert.equal(grossTotal, breakdown.total)
   })
 
-  // CASO 12: Versión 0.24.6 y Build 2026.09.30-04
-  it('731. 12. Build genera version.json 0.24.8 / 2026.09.30-06', () => {
-    assert.equal(APP_VERSION, '0.24.8')
-    assert.equal(APP_BUILD, '2026.09.30-06')
-    const vJson = JSON.parse(generateVersionJson('0.24.8', '2026.09.30-06'))
-    assert.equal(vJson.version, '0.24.8')
-    assert.equal(vJson.build, '2026.09.30-06')
+  // CASO 12: Versión 0.24.9 y Build 2026.09.30-07
+  it('731. 12. Build genera version.json 0.24.9 / 2026.09.30-07', () => {
+    assert.equal(APP_VERSION, '0.24.9')
+    assert.equal(APP_BUILD, '2026.09.30-07')
+    const vJson = JSON.parse(generateVersionJson('0.24.9', '2026.09.30-07'))
+    assert.equal(vJson.version, '0.24.9')
+    assert.equal(vJson.build, '2026.09.30-07')
   })
 })
 
@@ -19168,6 +19168,390 @@ describe('Fase 67.5 — Limpieza UX/UI del Sistema Unificado de Movimientos + Au
     assert.equal(bd.cash, 5)
   })
 })
+
+describe('Fase 67.6 — Corrección del Tipo de Movimientos Históricos + Retirada Definitiva de Cajero como Categoría de Nuevos Gastos', () => {
+  const refDate = '2026-09-20T10:00:00.000Z'
+
+  // TEST 1: Cajero no seleccionable en nuevo gasto
+  it('762. 1. Cajero no es seleccionable al crear un nuevo gasto', () => {
+    const sampleCategories: Category[] = [
+      { id: 'food', name: 'Alimentación', color: '#8DB596', icon: 'shopping-basket' },
+      { id: 'atm', name: 'Cajero', color: '#10B981', icon: 'banknote', isHistorical: true },
+      { id: 'other', name: 'Otros', color: '#B9B9B9', icon: 'ellipsis' },
+    ]
+
+    const filterCategoriesForNew = (cats: Category[]) =>
+      cats.filter((c) => !c.isHistorical && c.id !== 'atm' && c.name.toLowerCase() !== 'cajero')
+
+    const available = filterCategoriesForNew(sampleCategories)
+    assert.equal(available.length, 2)
+    assert.equal(available.some((c) => c.id === 'atm'), false)
+    assert.equal(available.some((c) => c.name.toLowerCase() === 'cajero'), false)
+  })
+
+  // TEST 2: Movimiento histórico con categoría Cajero sigue cargando
+  it('763. 2. Movimiento histórico con categoría Cajero sigue cargando y preserva su categoría al editar', () => {
+    const sampleCategories: Category[] = [
+      { id: 'food', name: 'Alimentación', color: '#8DB596', icon: 'shopping-basket' },
+      { id: 'atm', name: 'Cajero', color: '#10B981', icon: 'banknote', isHistorical: true },
+    ]
+
+    const filterCategoriesForEdit = (cats: Category[], currentCategoryId?: string) =>
+      cats.filter((c) => {
+        const isHist = c.isHistorical || c.id === 'atm' || c.name.toLowerCase() === 'cajero'
+        if (isHist) {
+          return currentCategoryId === c.id
+        }
+        return true
+      })
+
+    // Editando movimiento con categoría Cajero
+    const editWithAtm = filterCategoriesForEdit(sampleCategories, 'atm')
+    assert.equal(editWithAtm.some((c) => c.id === 'atm'), true)
+
+    // Editando movimiento con categoría Alimentación
+    const editWithFood = filterCategoriesForEdit(sampleCategories, 'food')
+    assert.equal(editWithFood.some((c) => c.id === 'atm'), false)
+  })
+
+  // TEST 3: Conversión Gasto -> Transferencia (CaixaBank -> Efectivo 100 €)
+  it('764. 3. Gasto simple CaixaBank (100 € Cajero) -> Transferencia CaixaBank -> Efectivo: sin doble descuento, aumenta efectivo, 0 gasto bruto, patrimonio correcto', () => {
+    const accounts: Account[] = [
+      { id: 'daily', name: 'CaixaBank', type: 'spending', initialBalance: 1000, balance: 1000, createdAt: '2026-09-01T00:00:00.000Z', updatedAt: '2026-09-01T00:00:00.000Z' },
+    ]
+
+    // Estado inicial: Gasto convencional de 100 € con categoría Cajero
+    let transactions: Transaction[] = [
+      {
+        id: 'tx-atm-100',
+        type: 'expense',
+        amount: 100,
+        accountId: 'daily',
+        categoryId: 'atm',
+        description: 'Sacar dinero',
+        date: refDate,
+      },
+    ]
+    let cashTransactions: CashTransaction[] = []
+
+    // 1. Verificamos el estado antes de la conversión:
+    // CaixaBank: 900 €, Efectivo: 0 €, Total disponible: 900 €, Gasto bruto: 100 €
+    let recon = reconcileAccounts(accounts, transactions)
+    let cashBal = selectCashBalance(cashTransactions)
+    let totalAvail = selectTotalAvailableMoney(recon, cashTransactions)
+    let gross = selectGrossExpensesByPaymentMethod(transactions, cashTransactions, new Date(refDate), 'month')
+
+    assert.equal(recon[0].balance, 900)
+    assert.equal(cashBal, 0)
+    assert.equal(totalAvail.total, 900)
+    assert.equal(gross.total, 100)
+
+    // 2. El usuario ejecuta la conversión a Transferencia CaixaBank -> Efectivo:
+    // Actualizamos tx a cash_withdrawal y añadimos la entrada de efectivo vinculada
+    transactions = transactions.map((t) =>
+      t.id === 'tx-atm-100'
+        ? {
+            ...t,
+            type: 'expense',
+            specialType: 'cash_withdrawal',
+            categoryId: undefined,
+          }
+        : t
+    )
+    cashTransactions = [
+      {
+        id: 'c-atm-100',
+        type: 'income',
+        amount: 100,
+        description: 'Retirada de cajero',
+        date: refDate,
+        bankTransactionId: 'tx-atm-100',
+        paymentMethod: 'cash',
+      },
+    ]
+
+    // 3. Verificamos el estado tras la conversión económica:
+    recon = reconcileAccounts(accounts, transactions)
+    cashBal = selectCashBalance(cashTransactions)
+    totalAvail = selectTotalAvailableMoney(recon, cashTransactions)
+    gross = selectGrossExpensesByPaymentMethod(transactions, cashTransactions, new Date(refDate), 'month')
+
+    assert.equal(recon[0].balance, 900, 'CaixaBank mantiene la salida de 100 € sin doble descuento')
+    assert.equal(cashBal, 100, 'Efectivo aumenta +100 €')
+    assert.equal(totalAvail.total, 1000, 'El patrimonio total no se reduce por ser transferencia interna')
+    assert.equal(gross.total, 0, 'El gasto bruto pasa a ser 0 €')
+  })
+
+  // TEST 4: Conversión Transferencia -> Gasto
+  it('765. 4. Conversión Transferencia -> Gasto: revierte destino de efectivo y aplica gasto bancario con categoría', () => {
+    const accounts: Account[] = [
+      { id: 'daily', name: 'CaixaBank', type: 'spending', initialBalance: 1000, balance: 1000, createdAt: '2026-09-01T00:00:00.000Z', updatedAt: '2026-09-01T00:00:00.000Z' },
+    ]
+
+    // Estado inicial: Transferencia bancaria a Efectivo (100 €)
+    let transactions: Transaction[] = [
+      {
+        id: 'tx-trans-1',
+        type: 'expense',
+        specialType: 'cash_withdrawal',
+        amount: 100,
+        accountId: 'daily',
+        description: 'Retirada cajero',
+        date: refDate,
+      },
+    ]
+    let cashTransactions: CashTransaction[] = [
+      {
+        id: 'cash-twin-1',
+        type: 'income',
+        amount: 100,
+        description: 'Retirada de cajero',
+        bankTransactionId: 'tx-trans-1',
+        date: refDate,
+        paymentMethod: 'cash',
+      },
+    ]
+
+    // Conversión a Gasto en Alimentación:
+    // Elimina el gemelo de efectivo y convierte tx en gasto normal
+    cashTransactions = cashTransactions.filter((c) => c.bankTransactionId !== 'tx-trans-1')
+    transactions = transactions.map((t) =>
+      t.id === 'tx-trans-1'
+        ? {
+            ...t,
+            type: 'expense',
+            specialType: 'normal',
+            categoryId: 'food',
+            description: 'Compra Mercadona',
+            paymentMethod: 'bank',
+          }
+        : t
+    )
+
+    const recon = reconcileAccounts(accounts, transactions)
+    const cashBal = selectCashBalance(cashTransactions)
+    const totalAvail = selectTotalAvailableMoney(recon, cashTransactions)
+    const gross = selectGrossExpensesByPaymentMethod(transactions, cashTransactions, new Date(refDate), 'month')
+
+    assert.equal(recon[0].balance, 900)
+    assert.equal(cashBal, 0, 'El efectivo ya no tiene los 100 € de la transferencia revertida')
+    assert.equal(totalAvail.total, 900, 'Patrimonio refleja el gasto de 100 €')
+    assert.equal(gross.total, 100, 'Gasto bruto computa los 100 €')
+    assert.equal(gross.bank, 100)
+  })
+
+  // TEST 5: Conversión Gasto -> Ingreso
+  it('766. 5. Conversión Gasto -> Ingreso: revierte efecto de gasto y aplica ingreso bancario', () => {
+    const accounts: Account[] = [
+      { id: 'daily', name: 'CaixaBank', type: 'spending', initialBalance: 500, balance: 500, createdAt: '2026-09-01T00:00:00.000Z', updatedAt: '2026-09-01T00:00:00.000Z' },
+    ]
+
+    // Estado inicial: Gasto erróneo de 50 €
+    let transactions: Transaction[] = [
+      { id: 'tx-err-1', type: 'expense', amount: 50, accountId: 'daily', description: 'Bizum de Pepe', date: refDate, categoryId: 'other' },
+    ]
+
+    let recon = reconcileAccounts(accounts, transactions)
+    assert.equal(recon[0].balance, 450)
+
+    // Conversión a Ingreso:
+    transactions = transactions.map((t) =>
+      t.id === 'tx-err-1'
+        ? {
+            ...t,
+            type: 'income',
+            incomeKind: 'income',
+            categoryId: undefined,
+            description: 'Bizum recibido de Pepe',
+            paymentMethod: 'bizum',
+          }
+        : t
+    )
+
+    recon = reconcileAccounts(accounts, transactions)
+    const realIncome = selectRealIncome(transactions, new Date(refDate), 'month')
+    const gross = selectGrossExpensesByPaymentMethod(transactions, [], new Date(refDate), 'month')
+
+    assert.equal(recon[0].balance, 550, 'El saldo pasa de 450 a 550 (+50 sobre el saldo inicial)')
+    assert.equal(realIncome, 50)
+    assert.equal(gross.total, 0)
+  })
+
+  // TEST 6: Conversión Ingreso -> Gasto
+  it('767. 6. Conversión Ingreso -> Gasto: revierte ingreso y aplica gasto bancario con categoría', () => {
+    const accounts: Account[] = [
+      { id: 'daily', name: 'CaixaBank', type: 'spending', initialBalance: 500, balance: 500, createdAt: '2026-09-01T00:00:00.000Z', updatedAt: '2026-09-01T00:00:00.000Z' },
+    ]
+
+    let transactions: Transaction[] = [
+      { id: 'tx-rev-1', type: 'income', amount: 30, accountId: 'daily', description: 'Ingreso', date: refDate },
+    ]
+
+    transactions = transactions.map((t) =>
+      t.id === 'tx-rev-1'
+        ? {
+            ...t,
+            type: 'expense',
+            categoryId: 'leisure',
+            description: 'Cine',
+            paymentMethod: 'bank',
+            incomeKind: undefined,
+          }
+        : t
+    )
+
+    const recon = reconcileAccounts(accounts, transactions)
+    const realIncome = selectRealIncome(transactions, new Date(refDate), 'month')
+    const gross = selectGrossExpensesByPaymentMethod(transactions, [], new Date(refDate), 'month')
+
+    assert.equal(recon[0].balance, 470)
+    assert.equal(realIncome, 0)
+    assert.equal(gross.total, 30)
+  })
+
+  // TEST 7: Conversión Ingreso -> Transferencia
+  it('768. 7. Conversión Ingreso -> Transferencia: convierte ingreso a transferencia entre cuentas', () => {
+    const accounts: Account[] = [
+      { id: 'daily', name: 'CaixaBank', type: 'spending', initialBalance: 500, balance: 500, createdAt: '2026-09-01T00:00:00.000Z', updatedAt: '2026-09-01T00:00:00.000Z' },
+      { id: 'savings', name: 'Ahorro', type: 'savings', initialBalance: 1000, balance: 1000, createdAt: '2026-09-01T00:00:00.000Z', updatedAt: '2026-09-01T00:00:00.000Z' },
+    ]
+
+    let transactions: Transaction[] = [
+      { id: 'tx-ing-1', type: 'income', amount: 200, accountId: 'savings', description: 'Traspaso ahorro', date: refDate },
+    ]
+
+    // Convertir a Transferencia CaixaBank -> Ahorro
+    transactions = transactions.map((t) =>
+      t.id === 'tx-ing-1'
+        ? {
+            ...t,
+            type: 'transfer',
+            accountId: 'daily',
+            toAccountId: 'savings',
+            incomeKind: undefined,
+            description: 'Traspaso a ahorro',
+          }
+        : t
+    )
+
+    const recon = reconcileAccounts(accounts, transactions)
+    assert.equal(recon.find((a) => a.id === 'daily')?.balance, 300)
+    assert.equal(recon.find((a) => a.id === 'savings')?.balance, 1200)
+    assert.equal(selectTotalMoney(recon), 1500)
+  })
+
+  // TEST 8: Bloqueo de conversión si existen dependencias financieras activas
+  it('769. 8. Protección: gasto compartido con cobros vinculados bloquea la conversión de tipo', () => {
+    const transactions: Transaction[] = [
+      { id: 'tx-shared-1', type: 'expense', amount: 50, accountId: 'daily', description: 'Cena compartida', date: refDate, isShared: true },
+      { id: 'tx-reimb-1', type: 'income', incomeKind: 'reimbursement', amount: 25, accountId: 'daily', description: 'Reembolso Sergi', date: refDate, parentExpenseId: 'tx-shared-1' },
+    ]
+    const expenseShares: ExpenseShare[] = [
+      { id: 's1', expenseTransactionId: 'tx-shared-1', participantName: 'Tú', isPayerShare: true, expectedAmount: 25 },
+      { id: 's2', expenseTransactionId: 'tx-shared-1', participantName: 'Sergi', isPayerShare: false, expectedAmount: 25 },
+    ]
+
+    const getBlockReason = (tx: Transaction, targetType: string) => {
+      if (targetType === tx.type) return null
+      const hasReimb = transactions.some((t) => t.type === 'income' && t.parentExpenseId === tx.id)
+      if (hasReimb) return 'Cobros vinculados'
+      return null
+    }
+
+    const reason = getBlockReason(transactions[0], 'transfer')
+    assert.equal(reason, 'Cobros vinculados')
+  })
+
+  // TEST 9: Preservación de relaciones al editar
+  it('770. 9. Deuda/reembolso asociado no pierde relaciones en edición normal sin cambio de tipo', () => {
+    const transactions: Transaction[] = [
+      { id: 'tx-p', type: 'expense', amount: 40, accountId: 'daily', description: 'Almuerzo', date: refDate, isShared: true },
+    ]
+    const shares: ExpenseShare[] = [
+      { id: 's-p1', expenseTransactionId: 'tx-p', participantName: 'Tú', isPayerShare: true, expectedAmount: 20 },
+      { id: 's-p2', expenseTransactionId: 'tx-p', participantName: 'Carlos', isPayerShare: false, expectedAmount: 20 },
+    ]
+
+    const status = selectExpenseShareStatus(shares[1], transactions, [])
+    assert.equal(status.pendingAmount, 20)
+    assert.equal(status.status, 'pending')
+  })
+
+  // TEST 10: Conversión a Gasto Bizum asigna paymentMethod bizum
+  it('771. 10. Conversión de movimiento a Gasto con Bizum asigna paymentMethod = "bizum" y computa en desglose', () => {
+    let transactions: Transaction[] = [
+      { id: 'tx-conv-bizum', type: 'transfer', amount: 25, accountId: 'daily', toAccountId: 'savings', description: 'Traspaso', date: refDate },
+    ]
+
+    transactions = transactions.map((t) =>
+      t.id === 'tx-conv-bizum'
+        ? {
+            ...t,
+            type: 'expense',
+            specialType: 'normal',
+            categoryId: 'leisure',
+            description: 'Regalo cumpleaños por Bizum',
+            paymentMethod: 'bizum',
+            toAccountId: undefined,
+          }
+        : t
+    )
+
+    const bd = selectGrossExpensesByPaymentMethod(transactions, [], new Date(refDate), 'month')
+    assert.equal(bd.total, 25)
+    assert.equal(bd.bizum, 25)
+    assert.equal(bd.bank, 0)
+    assert.equal(bd.cash, 0)
+  })
+
+  // TEST 11: Integridad de Backup / Restore
+  it('772. 11. Backup y restore conserva correctamente movimientos convertidos', () => {
+    const rawState = {
+      accounts: [{ id: 'daily', name: 'CaixaBank', type: 'spending' as const, initialBalance: 500, balance: 400 }],
+      transactions: [
+        { id: 'tx-cajero-conv', type: 'expense' as const, specialType: 'cash_withdrawal' as const, amount: 100, accountId: 'daily', description: 'Retirada cajero', date: refDate },
+      ],
+      cashTransactions: [
+        { id: 'cash-cajero-conv', type: 'income' as const, amount: 100, description: 'Retirada de cajero', bankTransactionId: 'tx-cajero-conv', date: refDate, paymentMethod: 'cash' as const },
+      ],
+      expenseShares: [],
+      categories: [],
+      goals: [],
+      recurring: [],
+      budgets: [],
+      reserves: [],
+      specialPeriods: [],
+    }
+
+    const stateJson = JSON.stringify(rawState)
+    const parsed = JSON.parse(stateJson)
+
+    assert.equal(parsed.transactions[0].specialType, 'cash_withdrawal')
+    assert.equal(parsed.cashTransactions[0].bankTransactionId, 'tx-cajero-conv')
+    const totalAvail = selectTotalAvailableMoney(parsed.accounts, parsed.cashTransactions)
+    assert.equal(totalAvail.total, 500)
+  })
+
+  // TEST 12: Selectores de Movimientos reconocen transferencias convertidas
+  it('773. 12. Selectores de Movimientos (toUnifiedMovements, filterUnifiedMovements) reconocen transferencias convertidas', () => {
+    const transactions: Transaction[] = [
+      { id: 'tx-cajero-1', type: 'expense', specialType: 'cash_withdrawal', amount: 100, accountId: 'daily', description: 'Sacar dinero', date: refDate },
+    ]
+    const cashTransactions: CashTransaction[] = [
+      { id: 'cash-cajero-1', type: 'income', amount: 100, description: 'Retirada de cajero', bankTransactionId: 'tx-cajero-1', date: refDate, paymentMethod: 'cash' },
+    ]
+
+    const unified = toUnifiedMovements(transactions, cashTransactions, [])
+    assert.equal(unified.length, 2)
+
+    const transfersOnly = filterUnifiedMovements(unified, [], { type: 'transfer' })
+    assert.equal(transfersOnly.length, 2, 'Ambas patas de la retirada se clasifican como transferencias')
+
+    const expensesOnly = filterUnifiedMovements(unified, [], { type: 'expense' })
+    assert.equal(expensesOnly.length, 0, 'Ninguna pata cuenta como gasto comercial')
+  })
+})
+
 
 
 
