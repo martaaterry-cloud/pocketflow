@@ -126,6 +126,7 @@ export function toDbTransaction(tx: Transaction, userId: string) {
     paid_by: tx.paidBy || 'user',
     payer_contact_id: tx.payerContactId || null,
     payer_name: tx.payerName || null,
+    payment_method: tx.paymentMethod || null,
   }
   if (tx.giftRecipient) {
     row.gift_recipient = tx.giftRecipient
@@ -155,6 +156,7 @@ export function fromDbTransaction(row: Record<string, unknown>): Transaction {
     paidBy: (row.paid_by as 'user' | 'contact') || 'user',
     payerContactId: row.payer_contact_id ? String(row.payer_contact_id) : undefined,
     payerName: row.payer_name ? String(row.payer_name) : undefined,
+    paymentMethod: (row.payment_method as any) || undefined,
   }
 }
 
@@ -600,6 +602,7 @@ export function cleanMissingColumns(row: Record<string, unknown>, errorMessage?:
   if (msg.includes('installments_count') || !errorMessage) delete clean.installments_count
   if (msg.includes('special_type')) delete clean.special_type
   if (msg.includes('expense_nature')) delete clean.expense_nature
+  if (msg.includes('payment_method')) delete clean.payment_method
   return clean
 }
 

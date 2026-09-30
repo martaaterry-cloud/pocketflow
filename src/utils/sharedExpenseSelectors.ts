@@ -67,6 +67,127 @@ export function selectLinkedReimbursementsForExpense(
   return Math.round(Math.min(expenseAmount, rawSum) * 100) / 100
 }
 
+export interface GrossExpenseItem {
+  id: string
+  description: string
+  amount: number
+  date: string
+  categoryId?: string
+  paymentMethod: 'bank' | 'bizum' | 'cash'
+  isCash?: boolean
+  payerName?: string
+  rawTx: Transaction | CashTransaction
+}
+
+export interface GrossExpensesBreakdown {
+  total: number
+  bank: number
+  bizum: number
+  cash: number
+  items: GrossExpenseItem[]
+}
+
+/**
+ * Desglose canónico de gasto bruto por medio de pago (Banco/tarjeta, Bizum, Efectivo).
+ * Reutiliza exactamente el mismo universo de movimientos que el gasto bruto del periodo.
+ */
+export function selectGrossExpensesByPaymentMethod(
+  transactions: Transaction[] = [],
+  cashTransactions: CashTransaction[] = [],
+  referenceDate: Date = new Date(),
+  scope: 'month' | 'all' = 'month'
+): GrossExpensesBreakdown {
+  const currentMonth = referenceDate.getMonth()
+  const currentYear = referenceDate.getFullYear()
+
+  const items: GrossExpenseItem[] = []
+  let bankTotal = 0
+  let bizumTotal = 0
+  let cashTotal = 0
+
+  // 1. Gastos bancarios (Transaction)
+  transactions
+    .filter((t) => t.type === 'expense' && (!t.isShared || t.paidBy !== 'contact'))
+    .filter((t) => {
+      if (scope === 'all') return true
+      const d = new Date(t.date)
+      return d.getMonth() === currentMonth && d.getFullYear() === currentYear
+    })
+    .forEach((t) => {
+      const amt = Math.round(Number(t.amount || 0) * 100) / 100
+      const method: 'bank' | 'bizum' | 'cash' =
+        t.paymentMethod === 'bizum' ? 'bizum' : t.paymentMethod === 'cash' ? 'cash' : 'bank'
+
+      if (method === 'bizum') {
+        bizumTotal += amt
+      } else if (method === 'cash') {
+        cashTotal += amt
+      } else {
+        bankTotal += amt
+      }
+
+      items.push({
+        id: t.id,
+        description: t.description,
+        amount: amt,
+        date: t.date,
+        categoryId: t.categoryId,
+        paymentMethod: method,
+        isCash: false,
+        payerName: t.payerName,
+        rawTx: t,
+      })
+    })
+
+  // 2. Gastos en efectivo (CashTransaction)
+  ;(cashTransactions || [])
+    .filter((c) => c.type === 'expense' && (!c.isShared || c.paidBy !== 'contact'))
+    .filter((c) => {
+      if (scope === 'all') return true
+      const d = new Date(c.date)
+      return d.getMonth() === currentMonth && d.getFullYear() === currentYear
+    })
+    .forEach((c) => {
+      const amt = Math.round(Math.abs(Number(c.amount || 0)) * 100) / 100
+      const method: 'bank' | 'bizum' | 'cash' = c.paymentMethod || 'cash'
+
+      if (method === 'bizum') {
+        bizumTotal += amt
+      } else if (method === 'bank') {
+        bankTotal += amt
+      } else {
+        cashTotal += amt
+      }
+
+      items.push({
+        id: c.id,
+        description: c.description,
+        amount: amt,
+        date: c.date,
+        categoryId: c.categoryId,
+        paymentMethod: method,
+        isCash: true,
+        payerName: c.payerName,
+        rawTx: c,
+      })
+    })
+
+  items.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+
+  const bTotal = Math.round(bankTotal * 100) / 100
+  const zTotal = Math.round(bizumTotal * 100) / 100
+  const cTotal = Math.round(cashTotal * 100) / 100
+  const total = Math.round((bTotal + zTotal + cTotal) * 100) / 100
+
+  return {
+    total,
+    bank: bTotal,
+    bizum: zTotal,
+    cash: cTotal,
+    items,
+  }
+}
+
 /**
  * Gasto bruto del periodo = suma de todos los gastos (expense) realizados en el periodo.
  * Si un gasto compartido fue pagado por otra persona (paidBy === 'contact'), no cuenta como desembolso bancario inicial del usuario.
@@ -74,8 +195,13 @@ export function selectLinkedReimbursementsForExpense(
 export function selectGrossExpensesForPeriod(
   transactions: Transaction[],
   referenceDate: Date = new Date(),
-  scope: 'month' | 'all' = 'month'
+  scope: 'month' | 'all' = 'month',
+  cashTransactions: CashTransaction[] = []
 ): number {
+  if (cashTransactions && cashTransactions.length > 0) {
+    return selectGrossExpensesByPaymentMethod(transactions, cashTransactions, referenceDate, scope).total
+  }
+
   const currentMonth = referenceDate.getMonth()
   const currentYear = referenceDate.getFullYear()
 

@@ -20,7 +20,7 @@ interface PayDebtModalProps {
     date?: string
     note?: string
     description?: string
-    paymentMethod?: 'bank' | 'cash'
+    paymentMethod?: 'bank' | 'bizum' | 'cash'
   }) => void
 }
 
@@ -35,7 +35,7 @@ export function PayDebtModal({
   initialExpenseId,
   onSubmit,
 }: PayDebtModalProps) {
-  const [paymentMethod, setPaymentMethod] = useState<'bank' | 'cash'>('bank')
+  const [paymentMethod, setPaymentMethod] = useState<'bizum' | 'bank' | 'cash'>('bizum')
   const [selectedShareId, setSelectedShareId] = useState<string>(initialShareId || '')
   const [amount, setAmount] = useState('')
   const [accountId, setAccountId] = useState(() => accounts.find((a) => a.type === 'spending')?.id ?? accounts[0]?.id ?? 'daily')
@@ -91,7 +91,7 @@ export function PayDebtModal({
   const handleSubmit = () => {
     if (!numericAmount || numericAmount <= 0) return
     if (!selectedShareId) return
-    if (paymentMethod === 'bank' && !accountId) return
+    if (paymentMethod !== 'cash' && !accountId) return
 
     const creditorName = selectedItem?.creditorName || 'Contacto'
     const expenseDesc = selectedItem?.expenseDescription || 'Gasto compartido'
@@ -99,12 +99,14 @@ export function PayDebtModal({
     onSubmit({
       expenseShareId: selectedShareId,
       amount: numericAmount,
-      accountId: paymentMethod === 'bank' ? accountId : undefined,
+      accountId: paymentMethod !== 'cash' ? accountId : undefined,
       date: new Date(date).toISOString(),
       description:
         paymentMethod === 'cash'
           ? `Pago efectivo a ${creditorName} · ${expenseDesc}`
-          : `Pago Bizum a ${creditorName} · ${expenseDesc}`,
+          : paymentMethod === 'bizum'
+          ? `Pago Bizum a ${creditorName} · ${expenseDesc}`
+          : `Pago a ${creditorName} · ${expenseDesc}`,
       note: note.trim() || undefined,
       paymentMethod,
     })
@@ -122,16 +124,23 @@ export function PayDebtModal({
           </button>
         </div>
 
-        {/* Selector de método de pago: Banco/Bizum vs Efectivo */}
+        {/* Selector de método de pago: Bizum vs Banco vs Efectivo */}
         <div className="form-group">
-          <label className="section-label">¿Desde dónde pagas?</label>
-          <div className="segmented" style={{ marginTop: 4 }}>
+          <label className="section-label">Medio de pago</label>
+          <div className="segmented" style={{ marginTop: 4, display: 'grid', gridTemplateColumns: '1fr 1fr 1fr' }}>
+            <button
+              type="button"
+              className={paymentMethod === 'bizum' ? 'active' : ''}
+              onClick={() => setPaymentMethod('bizum')}
+            >
+              Bizum
+            </button>
             <button
               type="button"
               className={paymentMethod === 'bank' ? 'active' : ''}
               onClick={() => setPaymentMethod('bank')}
             >
-              Banco / Bizum
+              Banco / tarjeta
             </button>
             <button
               type="button"
@@ -234,10 +243,10 @@ export function PayDebtModal({
           )}
         </div>
 
-        {paymentMethod === 'bank' ? (
+        {paymentMethod !== 'cash' ? (
           <div className="form-group">
             <label>
-              Cuenta desde la que pagas
+              Cuenta bancaria desde la que pagas
               <select value={accountId} onChange={(e) => setAccountId(e.target.value)}>
                 {accounts.map((a) => (
                   <option key={a.id} value={a.id}>

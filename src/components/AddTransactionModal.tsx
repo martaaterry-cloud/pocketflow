@@ -99,6 +99,7 @@ export function AddTransactionModal({
   const [unshareHasReimbursements, setUnshareHasReimbursements] = useState(false)
 
   // Estados para Tipo Especial y Naturaleza
+  const [isBizum, setIsBizum] = useState(false)
   const [isCashWithdrawal, setIsCashWithdrawal] = useState(false)
   const [prevCategoryId, setPrevCategoryId] = useState<string>('')
   const [expenseNature, setExpenseNature] = useState<ExpenseNature>('variable')
@@ -213,6 +214,7 @@ export function AddTransactionModal({
 
       setExpenseNature(initialTransaction.expenseNature || 'variable')
       setGiftRecipient(initialTransaction.giftRecipient ?? '')
+      setIsBizum(initialTransaction.paymentMethod === 'bizum')
       setConfirmDelete(false)
       setPendingLinkedUpdatePayload(null)
       setShowUnshareConfirm(false)
@@ -227,6 +229,7 @@ export function AddTransactionModal({
       setToAccountId(accounts.find((a) => a.type === 'savings')?.id ?? accounts[1]?.id ?? '')
       setDate(new Date().toISOString().slice(0, 10))
       setNote('')
+      setIsBizum(false)
       setIsCashWithdrawal(false)
       setExpenseNature('variable')
       setGiftRecipient('')
@@ -413,6 +416,7 @@ export function AddTransactionModal({
       specialType: type === 'expense' ? (isCashWithdrawal ? 'cash_withdrawal' : 'normal') : undefined,
       expenseNature: type === 'expense' ? expenseNature : undefined,
       giftRecipient: isGiftsCategory && giftRecipient.trim() ? giftRecipient.trim() : undefined,
+      paymentMethod: type === 'expense' ? (isBizum ? 'bizum' : 'bank') : undefined,
     }
 
     if (isEditing && initialTransaction && onUpdate) {
@@ -588,6 +592,35 @@ export function AddTransactionModal({
             />
           </label>
         </div>
+
+        {/* Pequeño chip/toggle para indicar pago por Bizum */}
+        {type === 'expense' && !isCashWithdrawal && (
+          <div className="form-group" style={{ marginTop: -4, marginBottom: 12 }}>
+            <button
+              type="button"
+              className={`bizum-toggle-chip ${isBizum ? 'active' : ''}`}
+              onClick={() => setIsBizum((prev) => !prev)}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 6,
+                padding: '6px 14px',
+                borderRadius: 9999,
+                border: isBizum ? '1px solid #10b981' : '1px solid rgba(255, 255, 255, 0.12)',
+                background: isBizum ? 'rgba(16, 185, 129, 0.15)' : 'rgba(255, 255, 255, 0.05)',
+                color: isBizum ? '#10b981' : 'var(--text-muted, #888)',
+                fontSize: '0.84rem',
+                fontWeight: isBizum ? 600 : 500,
+                cursor: 'pointer',
+                transition: 'all 0.15s ease',
+              }}
+            >
+              <AppIcon name="smartphone" size={14} color={isBizum ? '#10b981' : 'currentColor'} />
+              <span>{isBizum ? 'Pagado por Bizum' : 'Bizum'}</span>
+              {isBizum && <AppIcon name="check" size={12} color="#10b981" />}
+            </button>
+          </div>
+        )}
 
         <div className="form-group">
           <label>

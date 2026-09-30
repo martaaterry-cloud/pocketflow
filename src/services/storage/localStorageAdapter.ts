@@ -50,7 +50,12 @@ export function migratePersistedState(parsed: Partial<PersistedState>): Persiste
         return {
           ...t,
           categoryId: 'atm',
+          paymentMethod: t.paymentMethod || 'bank',
         }
+      }
+      return {
+        ...t,
+        paymentMethod: t.paymentMethod || 'bank',
       }
     }
     return t
@@ -78,7 +83,10 @@ export function migratePersistedState(parsed: Partial<PersistedState>): Persiste
       ...s,
       forgivenAmount: Number(s.forgivenAmount ?? 0),
     })),
-    cashTransactions: parsed.cashTransactions ?? [],
+    cashTransactions: (parsed.cashTransactions ?? []).map((c) => ({
+      ...c,
+      paymentMethod: c.paymentMethod || 'cash',
+    })),
   }
 }
 

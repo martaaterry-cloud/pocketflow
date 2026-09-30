@@ -379,6 +379,7 @@ export function generateExcelWorkbook(
     'Hora',
     'Descripción',
     'Tipo',
+    'Método de pago',
     'Importe bruto (€)',
     'Reembolso vinculado (€)',
     'Gasto neto personal (€)',
@@ -406,6 +407,8 @@ export function generateExcelWorkbook(
     }
 
     const typeLabel = t.type === 'expense' ? 'Gasto' : t.type === 'income' ? 'Ingreso' : 'Transferencia'
+    const paymentMethodLabel =
+      t.paymentMethod === 'bizum' ? 'Bizum' : t.paymentMethod === 'cash' ? 'Efectivo' : 'Banco / tarjeta'
     const grossAmount = Math.round(Number(t.amount || 0) * 100) / 100
     const linkedReimb =
       t.type === 'expense'
@@ -453,6 +456,7 @@ export function generateExcelWorkbook(
       timePart,
       t.description || '',
       typeLabel,
+      paymentMethodLabel,
       grossAmount,
       linkedReimb,
       netExpense,
@@ -473,8 +477,8 @@ export function generateExcelWorkbook(
   })
 
   const wsMovimientos = XLSX.utils.aoa_to_sheet([movimientosHeaders, ...movimientosRows])
-  setColWidths(wsMovimientos, [12, 10, 32, 14, 18, 22, 22, 18, 14, 16, 18, 12, 24, 20, 22, 20, 20, 18, 26, 22])
-  wsMovimientos['!autofilter'] = { ref: `A1:T${Math.max(1, movimientosRows.length + 1)}` }
+  setColWidths(wsMovimientos, [12, 10, 32, 14, 16, 18, 22, 22, 18, 14, 16, 18, 12, 24, 20, 22, 20, 20, 18, 26, 22])
+  wsMovimientos['!autofilter'] = { ref: `A1:U${Math.max(1, movimientosRows.length + 1)}` }
   XLSX.utils.book_append_sheet(wb, wsMovimientos, 'MOVIMIENTOS')
 
   // ==========================================

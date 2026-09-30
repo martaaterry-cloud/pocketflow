@@ -48,6 +48,7 @@ import {
   Shirt,
   ShoppingBasket,
   Sliders,
+  Smartphone,
   Sparkles,
   Sun,
   Target,
@@ -151,6 +152,8 @@ export const ICON_MAP: Record<string, React.ComponentType<{ size?: number | stri
   coins: Coins,
   minus: Minus,
   scale: Scale,
+  smartphone: Smartphone,
+  bizum: Smartphone,
 }
 
 // Mapeo retrocompatible de antiguos símbolos y emojis a iconKey

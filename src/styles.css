@@ -5706,6 +5706,11 @@ input:checked + .slider:before {
   background: #f1f5f9;
 }
 
+.pill-source.bizum {
+  color: #00a884;
+  background: rgba(0, 168, 132, 0.12);
+}
+
 .pill-source.cash {
   color: #16a34a;
   background: rgba(34, 197, 94, 0.12);

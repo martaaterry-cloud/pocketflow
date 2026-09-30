@@ -18,11 +18,12 @@ export interface UnifiedMovement {
   incomeKind?: string
   expenseNature?: string
   giftRecipient?: string
-  isShared: boolean
+  isShared?: boolean
   paidBy?: 'user' | 'contact'
   payerName?: string
   payerContactId?: string
   userShareAmount?: number
+  paymentMethod?: 'bank' | 'bizum' | 'cash'
   isCashWithdrawal: boolean
   isLinkedCashWithdrawal: boolean
   isReimbursement: boolean
@@ -87,6 +88,7 @@ export function toUnifiedMovements(
       payerName: t.payerName,
       payerContactId: t.payerContactId,
       userShareAmount: userShare?.expectedAmount,
+      paymentMethod: t.paymentMethod || 'bank',
       isCashWithdrawal,
       isLinkedCashWithdrawal: false,
       isReimbursement,
@@ -128,6 +130,7 @@ export function toUnifiedMovements(
       payerName: c.payerName,
       payerContactId: c.payerContactId,
       userShareAmount: userShare?.expectedAmount,
+      paymentMethod: c.paymentMethod || 'cash',
       isCashWithdrawal: false,
       isLinkedCashWithdrawal,
       isReimbursement,

@@ -9,6 +9,7 @@ import { CashActionSelectorModal } from '../components/CashActionSelectorModal'
 import { CashTransactionList } from '../components/CashTransactionList'
 import { TotalDonutChart } from '../components/TotalDonutChart'
 import { DeleteTransactionModal } from '../components/DeleteTransactionModal'
+import { GrossExpensesModal } from '../components/GrossExpensesModal'
 import type { Category, Transaction, CashTransaction } from '../models/finance'
 import type { ReturnTypeFinance } from '../types'
 import { money } from '../utils/money'
@@ -53,6 +54,7 @@ export function HomePage({
   const [isExpanded, setIsExpanded] = useState(false)
   const [txToDelete, setTxToDelete] = useState<Transaction | null>(null)
   const [selectedCategoryForDetail, setSelectedCategoryForDetail] = useState<Category | null>(null)
+  const [isGrossBreakdownOpen, setIsGrossBreakdownOpen] = useState(false)
 
   // Estados vista Efectivo
   const [isCashActionSelectorOpen, setIsCashActionSelectorOpen] = useState(false)
@@ -388,10 +390,19 @@ export function HomePage({
                         <span>Gastos de este mes</span>
                       </div>
 
-                      <div className="hero-breakdown-row">
+                      <div
+                        className="hero-breakdown-row clickable"
+                        role="button"
+                        tabIndex={0}
+                        onClick={() => setIsGrossBreakdownOpen(true)}
+                        style={{ cursor: 'pointer' }}
+                      >
                         <div className="breakdown-label">
-                          <span>Gasto bruto</span>
-                          <small>Total salido de cuenta en compras y pagos</small>
+                          <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                            Gasto bruto
+                            <AppIcon name="chevron-right" size={14} color="#6b7280" />
+                          </span>
+                          <small>Total de compras y pagos (toca para ver desglose)</small>
                         </div>
                         <strong className="breakdown-value">{money(finance.totals.grossMonthExpenses)}</strong>
                       </div>
@@ -863,6 +874,17 @@ export function HomePage({
         onEditTransaction={onSelectTransaction}
         onDeleteTransaction={(t) => setTxToDelete(t)}
       />
+
+      {/* Modal de Desglose de Gasto Bruto por Método de Pago */}
+      {finance.totals.grossExpensesBreakdown && (
+        <GrossExpensesModal
+          open={isGrossBreakdownOpen}
+          onClose={() => setIsGrossBreakdownOpen(false)}
+          breakdown={finance.totals.grossExpensesBreakdown}
+          categories={finance.categories}
+          onSelectTransaction={onSelectTransaction}
+        />
+      )}
     </main>
   )
 }

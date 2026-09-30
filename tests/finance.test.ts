@@ -171,6 +171,7 @@ import {
   calculateCustomSplit,
   selectGrossExpenses,
   selectGrossExpensesForPeriod,
+  selectGrossExpensesByPaymentMethod,
   selectLinkedReimbursementsForExpense,
   selectLinkedReimbursementsForPeriod,
   selectReimbursementsReceived,
@@ -6908,12 +6909,12 @@ describe('Fase 18 — Mejoras de Finanzas (Detalle por Categoría, Retiradas de 
 describe('Fase 18 — Identificación Visual de Versión y Build', () => {
   it('314. Versioning: única fuente de verdad y formato de visualización exacto', () => {
     assert.equal(APP_NAME, 'PocketFlow')
-    assert.equal(APP_VERSION, '0.24.5')
-    assert.equal(APP_BUILD, '2026.09.30-03')
+    assert.equal(APP_VERSION, '0.24.6')
+    assert.equal(APP_BUILD, '2026.09.30-04')
 
-    assert.equal(getAppVersionString(), 'PocketFlow v0.24.5')
-    assert.equal(getAppBuildString(), 'Build 2026.09.30-03')
-    assert.equal(getAppFullVersionLabel(), 'PocketFlow v0.24.5 · Build 2026.09.30-03')
+    assert.equal(getAppVersionString(), 'PocketFlow v0.24.6')
+    assert.equal(getAppBuildString(), 'Build 2026.09.30-04')
+    assert.equal(getAppFullVersionLabel(), 'PocketFlow v0.24.6 · Build 2026.09.30-04')
   })
 })
 
@@ -14009,12 +14010,12 @@ describe('Fase 50 — Control de Acceso por Roles (User / Admin), Seguridad RLS 
     }
 
     const userFooter = renderFooterTexts(false)
-    assert.equal(userFooter.versionText, 'PocketFlow v0.24.5')
+    assert.equal(userFooter.versionText, 'PocketFlow v0.24.6')
     assert.equal(userFooter.buildText, null)
 
     const adminFooter = renderFooterTexts(true)
-    assert.equal(adminFooter.versionText, 'PocketFlow v0.24.5')
-    assert.equal(adminFooter.buildText, 'Build 2026.09.30-03')
+    assert.equal(adminFooter.versionText, 'PocketFlow v0.24.6')
+    assert.equal(adminFooter.buildText, 'Build 2026.09.30-04')
   })
 
   it('590. 10. Reconciliación y sincronización de perfil no altera datos financieros ni transacciones', () => {
@@ -14515,7 +14516,7 @@ describe('Fase 52 — Versionado Automático y Robusto del Service Worker PWA', 
   it('613. 1. CACHE_NAME del Service Worker incluye exactamente APP_VERSION y APP_BUILD actuales', () => {
     const expectedCacheName = `pocketflow-v${APP_VERSION}-${APP_BUILD}`
     assert.equal(getServiceWorkerCacheName(APP_VERSION, APP_BUILD), expectedCacheName)
-    assert.equal(expectedCacheName, 'pocketflow-v0.24.5-2026.09.30-03')
+    assert.equal(expectedCacheName, 'pocketflow-v0.24.6-2026.09.30-04')
 
     const swCode = generateServiceWorkerCode(APP_VERSION, APP_BUILD)
     assert.ok(swCode.includes(`const CACHE_NAME = '${expectedCacheName}'`))
@@ -17223,15 +17224,15 @@ describe('Fase 61 — Detección Fiable de Versión Remota y Actualizaciones PWA
     assert.ok(swCode.includes('return false'))
 
     const versionData = JSON.parse(generateVersionJson(APP_VERSION, APP_BUILD))
-    assert.equal(versionData.version, '0.24.5')
-    assert.equal(versionData.build, '2026.09.30-03')
+    assert.equal(versionData.version, '0.24.6')
+    assert.equal(versionData.build, '2026.09.30-04')
   })
 
   // Test 10: Diagnóstico completo collectPwaDiagnosticInfo
   it('686. 10. collectPwaDiagnosticInfo recopila estado de versión local, remota y controller', async () => {
     const info = await collectPwaDiagnosticInfo(null, '/pocketflow/')
-    assert.equal(info.localVersion, '0.24.5')
-    assert.equal(info.localBuild, '2026.09.30-03')
+    assert.equal(info.localVersion, '0.24.6')
+    assert.equal(info.localBuild, '2026.09.30-04')
     assert.equal(info.basePath, '/pocketflow/')
     assert.ok(typeof info.lastCheckedAt === 'string')
   })
@@ -17344,8 +17345,8 @@ describe('Fase 62 — Categoría Canónica "Estudios / Formación" (education)',
   it('694. 8. build genera version.json 0.24.5 / 2026.09.30-03', () => {
     const versionJsonStr = generateVersionJson(APP_VERSION, APP_BUILD)
     const parsed = JSON.parse(versionJsonStr)
-    assert.equal(parsed.version, '0.24.5')
-    assert.equal(parsed.build, '2026.09.30-03')
+    assert.equal(parsed.version, '0.24.6')
+    assert.equal(parsed.build, '2026.09.30-04')
     assert.equal(parsed.name, 'PocketFlow')
   })
 
@@ -17849,7 +17850,7 @@ describe('Fase 65 — Resiliencia y Activación Total de Service Worker PWA en i
   it('708. 1. remote == local => up-to-date sin iniciar flujo de activación innecesario', async () => {
     const mockFetch = async () => ({
       ok: true,
-      json: async () => ({ version: '0.24.5', build: '2026.09.30-03' }),
+      json: async () => ({ version: '0.24.6', build: '2026.09.30-04' }),
     }) as any
 
     const fakeReg = {
@@ -18109,6 +18110,281 @@ describe('Fase 65 — Resiliencia y Activación Total de Service Worker PWA en i
     assert.equal(requestedHeaders?.cache, 'no-store')
   })
 })
+
+describe('Fase 66 — Clasificación y Desglose de Gastos por Medio de Pago (Tarjeta, Bizum, Efectivo)', () => {
+  const refDate = new Date('2026-09-15')
+
+  // CASO 1: Gasto tarjeta Mercadona 40 €
+  it('720. CASO 1 — Gasto tarjeta: Mercadona 40 €, paymentMethod bank => gross=40, bank=40, bizum=0, cash=0', () => {
+    const tx: Transaction = {
+      id: 'tx-1',
+      type: 'expense',
+      amount: 40,
+      description: 'Mercadona',
+      date: '2026-09-10T10:00:00.000Z',
+      accountId: 'daily',
+      paymentMethod: 'bank',
+    }
+
+    const breakdown = selectGrossExpensesByPaymentMethod([tx], [], refDate, 'month')
+    assert.equal(breakdown.total, 40)
+    assert.equal(breakdown.bank, 40)
+    assert.equal(breakdown.bizum, 0)
+    assert.equal(breakdown.cash, 0)
+    assert.equal(breakdown.items.length, 1)
+  })
+
+  // CASO 2: Gasto Bizum Cena 25 €
+  it('721. CASO 2 — Gasto Bizum: Cena 25 €, paymentMethod bizum => gross=25, bank=0, bizum=25, cash=0', () => {
+    const tx: Transaction = {
+      id: 'tx-2',
+      type: 'expense',
+      amount: 25,
+      description: 'Cena',
+      date: '2026-09-12T21:00:00.000Z',
+      accountId: 'daily',
+      paymentMethod: 'bizum',
+    }
+
+    const breakdown = selectGrossExpensesByPaymentMethod([tx], [], refDate, 'month')
+    assert.equal(breakdown.total, 25)
+    assert.equal(breakdown.bank, 0)
+    assert.equal(breakdown.bizum, 25)
+    assert.equal(breakdown.cash, 0)
+  })
+
+  // CASO 3: Efectivo Café 5 €
+  it('722. CASO 3 — Efectivo: Café 5 € => gross=5, bank=0, bizum=0, cash=5', () => {
+    const cashTx: CashTransaction = {
+      id: 'cash-1',
+      type: 'expense',
+      amount: 5,
+      description: 'Café',
+      date: '2026-09-14T09:00:00.000Z',
+    }
+
+    const breakdown = selectGrossExpensesByPaymentMethod([], [cashTx], refDate, 'month')
+    assert.equal(breakdown.total, 5)
+    assert.equal(breakdown.bank, 0)
+    assert.equal(breakdown.bizum, 0)
+    assert.equal(breakdown.cash, 5)
+  })
+
+  // CASO 4: Combinado Tarjeta 100, Bizum 40, Efectivo 20
+  it('723. CASO 4 — Combinado: Tarjeta 100, Bizum 40, Efectivo 20 => gross=160, bank=100, bizum=40, cash=20', () => {
+    const tx1: Transaction = {
+      id: 'tx-card',
+      type: 'expense',
+      amount: 100,
+      description: 'Compra Ropa',
+      date: '2026-09-05T12:00:00.000Z',
+      accountId: 'daily',
+      paymentMethod: 'bank',
+    }
+    const tx2: Transaction = {
+      id: 'tx-bizum',
+      type: 'expense',
+      amount: 40,
+      description: 'Regalo cumpleaños',
+      date: '2026-09-08T15:00:00.000Z',
+      accountId: 'daily',
+      paymentMethod: 'bizum',
+    }
+    const cashTx: CashTransaction = {
+      id: 'cash-gas',
+      type: 'expense',
+      amount: 20,
+      description: 'Lavado coche',
+      date: '2026-09-11T18:00:00.000Z',
+    }
+
+    const breakdown = selectGrossExpensesByPaymentMethod([tx1, tx2], [cashTx], refDate, 'month')
+    assert.equal(breakdown.total, 160)
+    assert.equal(breakdown.bank, 100)
+    assert.equal(breakdown.bizum, 40)
+    assert.equal(breakdown.cash, 20)
+    assert.equal(breakdown.items.length, 3)
+  })
+
+  // CASO 5: Tokio parent 47,50 paidBy contact
+  it('724. CASO 5 — Tokio parent: 47,50 € pagado por Sergi (paidBy contact) => gross=0, bank=0, bizum=0', () => {
+    const parentTx: Transaction = {
+      id: 'tx-tokio-parent',
+      type: 'expense',
+      amount: 47.5,
+      description: 'Tokio Murcia',
+      date: '2026-09-01T22:00:00.000Z',
+      accountId: 'daily',
+      isShared: true,
+      paidBy: 'contact',
+      payerName: 'Sergi',
+      paymentMethod: 'bank',
+    }
+
+    const breakdown = selectGrossExpensesByPaymentMethod([parentTx], [], refDate, 'month')
+    assert.equal(breakdown.total, 0)
+    assert.equal(breakdown.bank, 0)
+    assert.equal(breakdown.bizum, 0)
+    assert.equal(breakdown.cash, 0)
+    assert.equal(breakdown.items.length, 0)
+  })
+
+  // CASO 6: Pago Tokio 24 € paymentMethod bizum
+  it('725. CASO 6 — Pago Tokio: 24 € Bizum => gross=24, bizum=24, bank=0, cash=0', () => {
+    const settlementTx: Transaction = {
+      id: 'tx-tokio-settlement',
+      type: 'expense',
+      amount: 24,
+      description: 'Pago Bizum a Sergi · Tokio Murcia',
+      date: '2026-09-02T10:00:00.000Z',
+      accountId: 'daily',
+      parentExpenseId: 'tx-tokio-parent',
+      paymentMethod: 'bizum',
+    }
+
+    const breakdown = selectGrossExpensesByPaymentMethod([settlementTx], [], refDate, 'month')
+    assert.equal(breakdown.total, 24)
+    assert.equal(breakdown.bank, 0)
+    assert.equal(breakdown.bizum, 24)
+    assert.equal(breakdown.cash, 0)
+  })
+
+  // CASO 7: Movimiento histórico bancario sin paymentMethod
+  it('726. CASO 7 — Movimiento histórico bancario sin paymentMethod => se interpreta como bank', () => {
+    const legacyTx: Transaction = {
+      id: 'tx-legacy-1',
+      type: 'expense',
+      amount: 50,
+      description: 'Gasolinera Repsol',
+      date: '2026-09-04T08:00:00.000Z',
+      accountId: 'daily',
+      // Sin paymentMethod
+    }
+
+    const breakdown = selectGrossExpensesByPaymentMethod([legacyTx], [], refDate, 'month')
+    assert.equal(breakdown.total, 50)
+    assert.equal(breakdown.bank, 50)
+    assert.equal(breakdown.bizum, 0)
+    assert.equal(breakdown.cash, 0)
+  })
+
+  // CASO 8: Cash histórico sin paymentMethod
+  it('727. CASO 8 — Cash histórico sin paymentMethod => se interpreta como cash', () => {
+    const legacyCash: CashTransaction = {
+      id: 'cash-legacy-1',
+      type: 'expense',
+      amount: 15,
+      description: 'Panadería',
+      date: '2026-09-07T11:00:00.000Z',
+      // Sin paymentMethod
+    }
+
+    const breakdown = selectGrossExpensesByPaymentMethod([], [legacyCash], refDate, 'month')
+    assert.equal(breakdown.total, 15)
+    assert.equal(breakdown.bank, 0)
+    assert.equal(breakdown.bizum, 0)
+    assert.equal(breakdown.cash, 15)
+  })
+
+  // CASO 9: Editar movimiento bank -> bizum
+  it('728. CASO 9 — Editar movimiento bank -> bizum: no cambia saldos ni gross total, solo traspasa bank a bizum', () => {
+    const acc: Account = { id: 'daily', name: 'Cuenta Diaria', type: 'spending', initialBalance: 500 }
+    const txBefore: Transaction = {
+      id: 'tx-edit',
+      type: 'expense',
+      amount: 30,
+      description: 'Cena amigos',
+      date: '2026-09-10T21:00:00.000Z',
+      accountId: 'daily',
+      paymentMethod: 'bank',
+    }
+
+    const balanceBefore = calculateAccountBalance(acc, [txBefore])
+    const breakdownBefore = selectGrossExpensesByPaymentMethod([txBefore], [], refDate, 'month')
+    assert.equal(balanceBefore, 470)
+    assert.equal(breakdownBefore.total, 30)
+    assert.equal(breakdownBefore.bank, 30)
+    assert.equal(breakdownBefore.bizum, 0)
+
+    // Editar a Bizum
+    const txAfter: Transaction = {
+      ...txBefore,
+      paymentMethod: 'bizum',
+    }
+
+    const balanceAfter = calculateAccountBalance(acc, [txAfter])
+    const breakdownAfter = selectGrossExpensesByPaymentMethod([txAfter], [], refDate, 'month')
+    assert.equal(balanceAfter, 470, 'El saldo bancario sigue siendo 470 €')
+    assert.equal(breakdownAfter.total, 30, 'El gasto bruto total sigue siendo 30 €')
+    assert.equal(breakdownAfter.bank, 0, 'Bank pasa de 30 a 0')
+    assert.equal(breakdownAfter.bizum, 30, 'Bizum pasa de 0 a 30')
+  })
+
+  // CASO 10: migratePersistedState
+  it('729. 10. migratePersistedState normaliza transacciones antiguas asignando bank / cash como fallback', () => {
+    const rawState: Partial<PersistedState> = {
+      transactions: [
+        {
+          id: 'tx-old-1',
+          type: 'expense',
+          amount: 80,
+          accountId: 'daily',
+          description: 'Compra Leroy',
+          date: '2026-09-01T10:00:00.000Z',
+        } as Transaction,
+      ],
+      cashTransactions: [
+        {
+          id: 'cash-old-1',
+          type: 'expense',
+          amount: 12,
+          description: 'Helado',
+          date: '2026-09-01T12:00:00.000Z',
+        } as CashTransaction,
+      ],
+    }
+
+    const migrated = migratePersistedState(rawState)
+    assert.equal(migrated.transactions[0].paymentMethod, 'bank')
+    assert.equal(migrated.cashTransactions[0].paymentMethod, 'cash')
+  })
+
+  // CASO 11: selectGrossExpensesForPeriod con cashTransactions
+  it('730. 11. selectGrossExpensesForPeriod con cashTransactions coincide exactamente con selectGrossExpensesByPaymentMethod', () => {
+    const tx: Transaction = {
+      id: 'tx-g',
+      type: 'expense',
+      amount: 60,
+      description: 'Zapatos',
+      date: '2026-09-03T10:00:00.000Z',
+      accountId: 'daily',
+      paymentMethod: 'bank',
+    }
+    const cashTx: CashTransaction = {
+      id: 'cash-g',
+      type: 'expense',
+      amount: 15,
+      description: 'Frutería',
+      date: '2026-09-03T11:00:00.000Z',
+    }
+
+    const grossTotal = selectGrossExpensesForPeriod([tx], refDate, 'month', [cashTx])
+    const breakdown = selectGrossExpensesByPaymentMethod([tx], [cashTx], refDate, 'month')
+
+    assert.equal(grossTotal, 75)
+    assert.equal(grossTotal, breakdown.total)
+  })
+
+  // CASO 12: Versión 0.24.6 y Build 2026.09.30-04
+  it('731. 12. Build genera version.json 0.24.6 / 2026.09.30-04', () => {
+    assert.equal(APP_VERSION, '0.24.6')
+    assert.equal(APP_BUILD, '2026.09.30-04')
+    const vJson = JSON.parse(generateVersionJson('0.24.6', '2026.09.30-04'))
+    assert.equal(vJson.version, '0.24.6')
+    assert.equal(vJson.build, '2026.09.30-04')
+  })
+})
+
 
 
 

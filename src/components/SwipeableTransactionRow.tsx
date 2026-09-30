@@ -61,6 +61,7 @@ export function SwipeableTransactionRow({
     expenseNature: t!.expenseNature,
     giftRecipient: t!.giftRecipient,
     isShared: Boolean(isShared),
+    paymentMethod: t!.paymentMethod || 'bank',
     isCashWithdrawal: t!.specialType === 'cash_withdrawal',
     isLinkedCashWithdrawal: false,
     isReimbursement: t!.type === 'income' && t!.incomeKind === 'reimbursement',
@@ -335,7 +336,11 @@ export function SwipeableTransactionRow({
               </span>
             )}
             {item.source === 'bank' && !isCashWithdrawal && !isContactPaid && (
-              <span className="pill-source bank">Banco</span>
+              item.paymentMethod === 'bizum' ? (
+                <span className="pill-source bizum">Bizum</span>
+              ) : (
+                <span className="pill-source bank">Banco</span>
+              )
             )}
             {item.source === 'cash' && isLinkedCashWithdrawal && (
               <span className="pill-source cash-linked">Desde Banco</span>

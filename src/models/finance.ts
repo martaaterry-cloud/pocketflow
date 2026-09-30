@@ -22,6 +22,8 @@ export type IncomeKind = 'income' | 'reimbursement'
 export type SpecialMovementType = 'normal' | 'cash_withdrawal' | 'reimbursement' | 'transfer'
 export type ExpenseNature = 'fixed' | 'variable' | 'extraordinary'
 
+export type PaymentMethod = 'bank' | 'bizum' | 'cash'
+
 export interface Transaction {
   id: string
   type: TransactionType
@@ -43,6 +45,7 @@ export interface Transaction {
   paidBy?: 'user' | 'contact'
   payerContactId?: string
   payerName?: string
+  paymentMethod?: PaymentMethod
 }
 
 export type CreateTransactionInput = Omit<Transaction, 'id'>
@@ -263,6 +266,7 @@ export interface CashTransaction {
   paidBy?: 'user' | 'contact'
   payerContactId?: string
   payerName?: string
+  paymentMethod?: PaymentMethod
   createdAt?: string
   updatedAt?: string
 }

@@ -60,6 +60,8 @@ import { calculateVariableEstimatesSummary } from '../utils/variableEstimates'
 import {
   selectGrossExpenses,
   selectGrossExpensesForPeriod,
+  selectGrossExpensesByPaymentMethod,
+  type GrossExpensesBreakdown,
   selectLinkedReimbursementsForPeriod,
   selectReimbursementsReceived,
   selectNetPersonalExpenses,
@@ -506,7 +508,7 @@ export function useFinance(storage: StorageAdapter = defaultAppStorage) {
       date?: string
       note?: string
       description?: string
-      paymentMethod?: 'bank' | 'cash'
+      paymentMethod?: 'bank' | 'bizum' | 'cash'
     }) => {
       const paymentMethod = input.paymentMethod || 'bank'
       const share = (state.expenseShares ?? []).find((s) => s.id === input.expenseShareId)
@@ -536,6 +538,7 @@ export function useFinance(storage: StorageAdapter = defaultAppStorage) {
           categoryId: parentTx?.categoryId,
           note: finalNote,
           bankTransactionId: targetExpenseId,
+          paymentMethod: 'cash',
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString(),
         }
@@ -557,7 +560,9 @@ export function useFinance(storage: StorageAdapter = defaultAppStorage) {
 
       const desc =
         input.description ||
-        `Pago a ${creditorName} · ${parentTx?.description || 'Gasto compartido'}`
+        (paymentMethod === 'bizum'
+          ? `Pago Bizum a ${creditorName} · ${parentTx?.description || 'Gasto compartido'}`
+          : `Pago a ${creditorName} · ${parentTx?.description || 'Gasto compartido'}`)
 
       const fallbackAccountId =
         parentTx && 'accountId' in parentTx && parentTx.accountId ? parentTx.accountId : 'daily'
@@ -573,6 +578,7 @@ export function useFinance(storage: StorageAdapter = defaultAppStorage) {
         note: input.note,
         parentExpenseId: targetExpenseId,
         expenseShareId: input.expenseShareId,
+        paymentMethod: paymentMethod === 'bizum' ? 'bizum' : 'bank',
       }
 
       commit(
@@ -2272,7 +2278,13 @@ export function useFinance(storage: StorageAdapter = defaultAppStorage) {
     const projectedAvailable = Math.round((realAvailable - pendingVariableExpenses) * 100) / 100
 
     // Métricas de gastos brutos vs netos e ingresos reales vs reembolsos
-    const grossMonthExpenses = selectGrossExpensesForPeriod(state.transactions, now, 'month')
+    const grossExpensesBreakdown = selectGrossExpensesByPaymentMethod(
+      state.transactions,
+      state.cashTransactions ?? [],
+      now,
+      'month'
+    )
+    const grossMonthExpenses = grossExpensesBreakdown.total
     const linkedReimbursementsMonth = selectLinkedReimbursementsForPeriod(
       state.transactions,
       now,
@@ -2356,6 +2368,7 @@ export function useFinance(storage: StorageAdapter = defaultAppStorage) {
 
       // Gastos compartidos y reembolsos
       grossMonthExpenses,
+      grossExpensesBreakdown,
       linkedReimbursementsMonth,
       reimbursementsMonth,
       netMonthExpenses,
