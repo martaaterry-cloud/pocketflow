@@ -6907,12 +6907,12 @@ describe('Fase 18 — Mejoras de Finanzas (Detalle por Categoría, Retiradas de 
 describe('Fase 18 — Identificación Visual de Versión y Build', () => {
   it('314. Versioning: única fuente de verdad y formato de visualización exacto', () => {
     assert.equal(APP_NAME, 'PocketFlow')
-    assert.equal(APP_VERSION, '0.24.2')
-    assert.equal(APP_BUILD, '2026.09.29-13')
+    assert.equal(APP_VERSION, '0.24.3')
+    assert.equal(APP_BUILD, '2026.09.30-01')
 
-    assert.equal(getAppVersionString(), 'PocketFlow v0.24.2')
-    assert.equal(getAppBuildString(), 'Build 2026.09.29-13')
-    assert.equal(getAppFullVersionLabel(), 'PocketFlow v0.24.2 · Build 2026.09.29-13')
+    assert.equal(getAppVersionString(), 'PocketFlow v0.24.3')
+    assert.equal(getAppBuildString(), 'Build 2026.09.30-01')
+    assert.equal(getAppFullVersionLabel(), 'PocketFlow v0.24.3 · Build 2026.09.30-01')
   })
 })
 
@@ -14008,12 +14008,12 @@ describe('Fase 50 — Control de Acceso por Roles (User / Admin), Seguridad RLS 
     }
 
     const userFooter = renderFooterTexts(false)
-    assert.equal(userFooter.versionText, 'PocketFlow v0.24.2')
+    assert.equal(userFooter.versionText, 'PocketFlow v0.24.3')
     assert.equal(userFooter.buildText, null)
 
     const adminFooter = renderFooterTexts(true)
-    assert.equal(adminFooter.versionText, 'PocketFlow v0.24.2')
-    assert.equal(adminFooter.buildText, 'Build 2026.09.29-13')
+    assert.equal(adminFooter.versionText, 'PocketFlow v0.24.3')
+    assert.equal(adminFooter.buildText, 'Build 2026.09.30-01')
   })
 
   it('590. 10. Reconciliación y sincronización de perfil no altera datos financieros ni transacciones', () => {
@@ -14514,7 +14514,7 @@ describe('Fase 52 — Versionado Automático y Robusto del Service Worker PWA', 
   it('613. 1. CACHE_NAME del Service Worker incluye exactamente APP_VERSION y APP_BUILD actuales', () => {
     const expectedCacheName = `pocketflow-v${APP_VERSION}-${APP_BUILD}`
     assert.equal(getServiceWorkerCacheName(APP_VERSION, APP_BUILD), expectedCacheName)
-    assert.equal(expectedCacheName, 'pocketflow-v0.24.2-2026.09.29-13')
+    assert.equal(expectedCacheName, 'pocketflow-v0.24.3-2026.09.30-01')
 
     const swCode = generateServiceWorkerCode(APP_VERSION, APP_BUILD)
     assert.ok(swCode.includes(`const CACHE_NAME = '${expectedCacheName}'`))
@@ -17222,15 +17222,15 @@ describe('Fase 61 — Detección Fiable de Versión Remota y Actualizaciones PWA
     assert.ok(swCode.includes('return false'))
 
     const versionData = JSON.parse(generateVersionJson(APP_VERSION, APP_BUILD))
-    assert.equal(versionData.version, '0.24.2')
-    assert.equal(versionData.build, '2026.09.29-13')
+    assert.equal(versionData.version, '0.24.3')
+    assert.equal(versionData.build, '2026.09.30-01')
   })
 
   // Test 10: Diagnóstico completo collectPwaDiagnosticInfo
   it('686. 10. collectPwaDiagnosticInfo recopila estado de versión local, remota y controller', async () => {
     const info = await collectPwaDiagnosticInfo(null, '/pocketflow/')
-    assert.equal(info.localVersion, '0.24.2')
-    assert.equal(info.localBuild, '2026.09.29-13')
+    assert.equal(info.localVersion, '0.24.3')
+    assert.equal(info.localBuild, '2026.09.30-01')
     assert.equal(info.basePath, '/pocketflow/')
     assert.ok(typeof info.lastCheckedAt === 'string')
   })
@@ -17339,12 +17339,12 @@ describe('Fase 62 — Categoría Canónica "Estudios / Formación" (education)',
     assert.equal(planSettings.essentialCategoryIds.includes('education'), false)
   })
 
-  // Test 8: generateVersionJson genera 0.24.2 / 2026.09.29-13
-  it('694. 8. build genera version.json 0.24.2 / 2026.09.29-13', () => {
+  // Test 8: generateVersionJson genera 0.24.3 / 2026.09.30-01
+  it('694. 8. build genera version.json 0.24.3 / 2026.09.30-01', () => {
     const versionJsonStr = generateVersionJson(APP_VERSION, APP_BUILD)
     const parsed = JSON.parse(versionJsonStr)
-    assert.equal(parsed.version, '0.24.2')
-    assert.equal(parsed.build, '2026.09.29-13')
+    assert.equal(parsed.version, '0.24.3')
+    assert.equal(parsed.build, '2026.09.30-01')
     assert.equal(parsed.name, 'PocketFlow')
   })
 
@@ -17357,6 +17357,312 @@ describe('Fase 62 — Categoría Canónica "Estudios / Formación" (education)',
     assert.equal(isRemoteVersionNewer(remoteInfo, localVersion, localBuild), true)
   })
 })
+
+/* ==========================================================================
+   FASE 63 — CORRECCIÓN CONTABLE CANÓNICA DE GASTOS COMPARTIDOS PAGADOS POR CONTACTO
+   ========================================================================== */
+
+describe('Fase 63 — Corrección Contable Canónica de Gastos Compartidos Pagados por Contacto y Liquidación de Deudas', () => {
+  const leisureCat: Category = { id: 'leisure', name: 'Ocio', color: '#F59E0B', icon: 'ticket', iconKey: 'ticket' }
+  const categoriesList: Category[] = [leisureCat]
+
+  const tokioParentTx: Transaction = {
+    id: 'tx-tokio-4750',
+    type: 'expense',
+    amount: 47.5,
+    description: 'Tokio Murcia',
+    accountId: 'daily',
+    categoryId: 'leisure',
+    date: '2026-09-25T21:30:00',
+    isShared: true,
+    paidBy: 'contact',
+    payerContactId: 'contact-sergi',
+    payerName: 'Sergi',
+  }
+
+  const tokioShares: ExpenseShare[] = [
+    {
+      id: 'sh-sergi-payer',
+      expenseTransactionId: 'tx-tokio-4750',
+      participantName: 'Sergi',
+      contactId: 'contact-sergi',
+      isPayerShare: true,
+      expectedAmount: 23.75,
+      createdAt: '2026-09-25T21:30:00',
+      updatedAt: '2026-09-25T21:30:00',
+    },
+    {
+      id: 'sh-user-debt',
+      expenseTransactionId: 'tx-tokio-4750',
+      participantName: 'Tú',
+      isPayerShare: false,
+      expectedAmount: 23.75,
+      createdAt: '2026-09-25T21:30:00',
+      updatedAt: '2026-09-25T21:30:00',
+    },
+  ]
+
+  it('696. CASO TOKIO: Antes del pago — Saldo bancario no se altera, cashflow = 0, Por pagar = 23,75 €', () => {
+    const initialAccounts: Account[] = [
+      { id: 'daily', name: 'Cuenta diaria', type: 'spending', initialBalance: 100, balance: 100 },
+    ]
+
+    // 1. Reconcile Accounts: el gasto del contacto NO debe restar saldo
+    const reconciled = reconcileAccounts(initialAccounts, [tokioParentTx])
+    assert.equal(reconciled[0].balance, 100, 'Saldo debe permanecer 100 € intacto')
+
+    // 2. Estado Por Pagar de la cuota del usuario
+    const payableStatus = selectExpensePayableStatus(tokioShares[1], [tokioParentTx], [])
+    assert.equal(payableStatus.expectedAmount, 23.75)
+    assert.equal(payableStatus.paidAmount, 0)
+    assert.equal(payableStatus.appliedAmount, 0)
+    assert.equal(payableStatus.extraAmount, 0)
+    assert.equal(payableStatus.pendingAmount, 23.75)
+    assert.equal(payableStatus.status, 'pending')
+
+    // 3. selectPendingPayables lista a Sergi con 23,75 € pendientes
+    const pendingPayables = selectPendingPayables(tokioShares, [tokioParentTx], [])
+    assert.equal(pendingPayables.length, 1)
+    assert.equal(pendingPayables[0].creditorName, 'Sergi')
+    assert.equal(pendingPayables[0].totalPending, 23.75)
+
+    // 4. selectNetPersonalExpensesForPeriod: gasto personal = 0 €
+    const netExpenses = selectNetPersonalExpensesForPeriod([tokioParentTx], new Date(2026, 8, 25), 'month', [])
+    assert.equal(netExpenses, 0, 'No hay gasto real del usuario hasta que pague la deuda')
+
+    // 5. Estadísticas de periodo: 0 €
+    const stats = calculatePeriodStatistics([tokioParentTx], categoriesList, 'month', new Date(2026, 8, 25))
+    assert.equal(stats.expenses, 0)
+    assert.equal(stats.netExpenses, 0)
+
+    // 6. Presupuesto: 0 €
+    const budgets: Budget[] = [{ id: 'b-leisure', categoryId: 'leisure', amount: 100, period: 'monthly' }]
+    const spentBudget = spentByCategoryThisMonth([tokioParentTx], 'leisure', new Date(2026, 8, 25))
+    assert.equal(spentBudget, 0)
+  })
+
+  it('697. CASO TOKIO: Tras Bizum 24 € — Saldo banco = 76 €, aplicado = 23,75 €, extra = 0,25 €, pendiente = 0 €', () => {
+    const initialAccounts: Account[] = [
+      { id: 'daily', name: 'Cuenta diaria', type: 'spending', initialBalance: 100, balance: 100 },
+    ]
+
+    const bizumPaymentTx: Transaction = {
+      id: 'tx-bizum-24',
+      type: 'expense',
+      amount: 24,
+      description: 'Pago Bizum a Sergi · Tokio Murcia',
+      accountId: 'daily',
+      categoryId: 'leisure',
+      date: '2026-09-26T10:00:00',
+      parentExpenseId: 'tx-tokio-4750',
+      expenseShareId: 'sh-user-debt',
+    }
+
+    const allTxs = [tokioParentTx, bizumPaymentTx]
+
+    // 1. Reconcile Accounts: 100 - 24 = 76 €
+    const reconciled = reconcileAccounts(initialAccounts, allTxs)
+    assert.equal(reconciled[0].balance, 76, 'Saldo debe descontar exactamente 24 € (100 -> 76)')
+
+    // 2. selectExpensePayableStatus: applied = 23.75, extra = 0.25, pending = 0
+    const payableStatus = selectExpensePayableStatus(tokioShares[1], allTxs, [])
+    assert.equal(payableStatus.expectedAmount, 23.75)
+    assert.equal(payableStatus.paidAmount, 24)
+    assert.equal(payableStatus.appliedAmount, 23.75)
+    assert.equal(payableStatus.extraAmount, 0.25)
+    assert.equal(payableStatus.pendingAmount, 0)
+    assert.equal(payableStatus.status, 'settled')
+
+    // 3. selectPendingPayables: ya no hay deudas pendientes
+    const pendingPayables = selectPendingPayables(tokioShares, allTxs, [])
+    assert.equal(pendingPayables.length, 0)
+
+    // 4. selectSettledPayables: refleja esperado, enviado, aplicado, extra
+    const settledPayables = selectSettledPayables(tokioShares, allTxs, [])
+    assert.equal(settledPayables.length, 1)
+    assert.equal(settledPayables[0].expectedAmount, 23.75)
+    assert.equal(settledPayables[0].paidAmount, 24)
+    assert.equal(settledPayables[0].appliedAmount, 23.75)
+    assert.equal(settledPayables[0].extraAmount, 0.25)
+    assert.equal(settledPayables[0].pendingAmount, undefined) // selectSettledPayables is for 0 pending
+    assert.equal(settledPayables[0].creditorName, 'Sergi')
+
+    // 5. selectExpenseShareDetails: fila "Tú"
+    const details = selectExpenseShareDetails('tx-tokio-4750', allTxs, tokioShares, [])
+    assert.equal(details.isContactPaid, true)
+    assert.equal(details.totalRecovered, 23.75)
+    assert.equal(details.totalPendingToRecover, 0)
+
+    const userShareItem = details.externalSharesWithStatus.find((s) => s.share.participantName === 'Tú')
+    assert.ok(userShareItem)
+    assert.equal(userShareItem?.payableRawStatus, 'settled')
+    assert.equal(userShareItem?.paidAmount, 24)
+    assert.equal(userShareItem?.appliedAmount, 23.75)
+    assert.equal(userShareItem?.extraAmount, 0.25)
+    assert.equal(userShareItem?.pendingAmount, 0)
+
+    // 6. Gasto neto personal: exactamente 24 €
+    const netExpenses = selectNetPersonalExpensesForPeriod(allTxs, new Date(2026, 8, 26), 'month', [])
+    assert.equal(netExpenses, 24, 'Gasto neto debe ser 24 € (el Bizum real)')
+
+    // 7. Categoría Ocio computa exactamente 24 €
+    const catExpenses = selectNetExpensesByCategory(allTxs, categoriesList, new Date(2026, 8, 26), 'month', [])
+    const leisureItem = catExpenses.find((c) => c.id === 'leisure')
+    assert.equal(leisureItem?.amount, 24)
+
+    // 8. Estadísticas: expenses = 24 € (no 47,50 + 24)
+    const stats = calculatePeriodStatistics(allTxs, categoriesList, 'month', new Date(2026, 8, 26))
+    assert.equal(stats.expenses, 24)
+    assert.equal(stats.netExpenses, 24)
+  })
+
+  it('698. Pago exacto 23,75 € -> applied = 23,75, extra = 0, pending = 0', () => {
+    const exactPaymentTx: Transaction = {
+      id: 'tx-exact-2375',
+      type: 'expense',
+      amount: 23.75,
+      description: 'Bizum exacto Sergi',
+      accountId: 'daily',
+      categoryId: 'leisure',
+      date: '2026-09-26T10:00:00',
+      parentExpenseId: 'tx-tokio-4750',
+      expenseShareId: 'sh-user-debt',
+    }
+
+    const allTxs = [tokioParentTx, exactPaymentTx]
+    const payableStatus = selectExpensePayableStatus(tokioShares[1], allTxs, [])
+    assert.equal(payableStatus.appliedAmount, 23.75)
+    assert.equal(payableStatus.extraAmount, 0)
+    assert.equal(payableStatus.pendingAmount, 0)
+    assert.equal(payableStatus.status, 'settled')
+  })
+
+  it('699. Pago parcial de 10 € -> applied = 10, extra = 0, pending = 13,75, status = partial', () => {
+    const partialPaymentTx: Transaction = {
+      id: 'tx-part-10',
+      type: 'expense',
+      amount: 10,
+      description: 'Bizum parcial Sergi',
+      accountId: 'daily',
+      categoryId: 'leisure',
+      date: '2026-09-26T10:00:00',
+      parentExpenseId: 'tx-tokio-4750',
+      expenseShareId: 'sh-user-debt',
+    }
+
+    const allTxs = [tokioParentTx, partialPaymentTx]
+    const payableStatus = selectExpensePayableStatus(tokioShares[1], allTxs, [])
+    assert.equal(payableStatus.appliedAmount, 10)
+    assert.equal(payableStatus.extraAmount, 0)
+    assert.equal(payableStatus.pendingAmount, 13.75)
+    assert.equal(payableStatus.status, 'partial')
+  })
+
+  it('700. Varios pagos parciales (10 € + 13,75 €) liquidan la deuda completamente', () => {
+    const p1: Transaction = {
+      id: 'tx-p1',
+      type: 'expense',
+      amount: 10,
+      description: 'Pago 1',
+      accountId: 'daily',
+      date: '2026-09-26T10:00:00',
+      parentExpenseId: 'tx-tokio-4750',
+      expenseShareId: 'sh-user-debt',
+    }
+    const p2: Transaction = {
+      id: 'tx-p2',
+      type: 'expense',
+      amount: 13.75,
+      description: 'Pago 2',
+      accountId: 'daily',
+      date: '2026-09-27T10:00:00',
+      parentExpenseId: 'tx-tokio-4750',
+      expenseShareId: 'sh-user-debt',
+    }
+
+    const allTxs = [tokioParentTx, p1, p2]
+    const payableStatus = selectExpensePayableStatus(tokioShares[1], allTxs, [])
+    assert.equal(payableStatus.appliedAmount, 23.75)
+    assert.equal(payableStatus.extraAmount, 0)
+    assert.equal(payableStatus.pendingAmount, 0)
+    assert.equal(payableStatus.status, 'settled')
+  })
+
+  it('701. Pago en efectivo de deuda compartida reduce saldo de efectivo y liquida deuda', () => {
+    const cashList: CashTransaction[] = [
+      { id: 'c-init', type: 'income', amount: 50, description: 'Saldo inicial', date: '2026-09-01' },
+      {
+        id: 'c-pay-sergi',
+        type: 'expense',
+        amount: 23.75,
+        description: 'Efectivo a Sergi · Tokio Murcia',
+        date: '2026-09-26',
+        bankTransactionId: 'tx-tokio-4750',
+        note: '[share:sh-user-debt]',
+      },
+    ]
+
+    const cashBalance = selectCashBalance(cashList)
+    assert.equal(cashBalance, 26.25, 'Saldo de efectivo: 50 - 23,75 = 26,25 €')
+
+    const payableStatus = selectExpensePayableStatus(tokioShares[1], [tokioParentTx], cashList)
+    assert.equal(payableStatus.appliedAmount, 23.75)
+    assert.equal(payableStatus.pendingAmount, 0)
+    assert.equal(payableStatus.status, 'settled')
+  })
+
+  it('702. Por pagar con perdón / ajuste (deuda 23,75, pago 20, perdón 3,75 -> pending 0)', () => {
+    const shareWithForgiveness: ExpenseShare = {
+      ...tokioShares[1],
+      forgivenAmount: 3.75,
+    }
+
+    const paymentTx: Transaction = {
+      id: 'tx-pay-20',
+      type: 'expense',
+      amount: 20,
+      description: 'Bizum Sergi',
+      accountId: 'daily',
+      date: '2026-09-26',
+      parentExpenseId: 'tx-tokio-4750',
+      expenseShareId: 'sh-user-debt',
+    }
+
+    const payableStatus = selectExpensePayableStatus(shareWithForgiveness, [tokioParentTx, paymentTx], [])
+    assert.equal(payableStatus.appliedAmount, 20)
+    assert.equal(payableStatus.forgivenAmount, 3.75)
+    assert.equal(payableStatus.pendingAmount, 0)
+    assert.equal(payableStatus.status, 'settled')
+  })
+
+  it('703. Gasto pagado por el usuario sigue descontando banco por el total y registrando cobros en Por Cobrar', () => {
+    const userPaidParentTx: Transaction = {
+      id: 'tx-user-paid-60',
+      type: 'expense',
+      amount: 60,
+      description: 'Cena Pagada por Mí',
+      accountId: 'daily',
+      categoryId: 'leisure',
+      date: '2026-09-20',
+      isShared: true,
+      paidBy: 'user',
+    }
+
+    const shares: ExpenseShare[] = [
+      { id: 'sh-me', expenseTransactionId: 'tx-user-paid-60', participantName: 'Tú', isPayerShare: true, expectedAmount: 30, createdAt: '2026-09-20', updatedAt: '2026-09-20' },
+      { id: 'sh-friend', expenseTransactionId: 'tx-user-paid-60', participantName: 'Amigo', isPayerShare: false, expectedAmount: 30, createdAt: '2026-09-20', updatedAt: '2026-09-20' },
+    ]
+
+    const initialAccounts: Account[] = [{ id: 'daily', name: 'Cuenta', type: 'spending', initialBalance: 200, balance: 200 }]
+    const reconciled = reconcileAccounts(initialAccounts, [userPaidParentTx])
+    assert.equal(reconciled[0].balance, 140, '200 - 60 = 140 €')
+
+    const details = selectExpenseShareDetails('tx-user-paid-60', [userPaidParentTx], shares, [])
+    assert.equal(details.isContactPaid, false)
+    assert.equal(details.totalPendingToRecover, 30)
+  })
+})
+
 
 
 

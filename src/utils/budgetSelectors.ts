@@ -41,7 +41,12 @@ export function spentByCategoryThisMonth(
   const canonicalTargetId = normalizeCategoryAlias(categoryId)
 
   const expenses = transactions
-    .filter((t) => t.type === 'expense' && normalizeCategoryAlias(t.categoryId || 'other') === canonicalTargetId)
+    .filter(
+      (t) =>
+        t.type === 'expense' &&
+        (!t.isShared || t.paidBy !== 'contact') &&
+        normalizeCategoryAlias(t.categoryId || 'other') === canonicalTargetId
+    )
     .filter((t) => {
       const d = new Date(t.date)
       return d.getMonth() === currentMonth && d.getFullYear() === currentYear

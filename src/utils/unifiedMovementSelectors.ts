@@ -19,6 +19,10 @@ export interface UnifiedMovement {
   expenseNature?: string
   giftRecipient?: string
   isShared: boolean
+  paidBy?: 'user' | 'contact'
+  payerName?: string
+  payerContactId?: string
+  userShareAmount?: number
   isCashWithdrawal: boolean
   isLinkedCashWithdrawal: boolean
   isReimbursement: boolean
@@ -56,6 +60,14 @@ export function toUnifiedMovements(
     const isCashWithdrawal = t.specialType === 'cash_withdrawal'
     const isReimbursement = t.type === 'income' && t.incomeKind === 'reimbursement'
 
+    const userShare = isShared
+      ? expenseShares.find(
+          (s) =>
+            s.expenseTransactionId === t.id &&
+            (s.isUserShare || s.participantName.toLowerCase() === 'tú' || (!s.isPayerShare && !s.contactId))
+        )
+      : undefined
+
     return {
       id: t.id,
       source: 'bank',
@@ -71,6 +83,10 @@ export function toUnifiedMovements(
       expenseNature: t.expenseNature,
       giftRecipient: t.giftRecipient,
       isShared,
+      paidBy: t.paidBy,
+      payerName: t.payerName,
+      payerContactId: t.payerContactId,
+      userShareAmount: userShare?.expectedAmount,
       isCashWithdrawal,
       isLinkedCashWithdrawal: false,
       isReimbursement,
@@ -90,6 +106,14 @@ export function toUnifiedMovements(
       c.type === 'income' && Boolean(c.bankTransactionId) && !withdrawalTxIds.has(c.bankTransactionId as string)
     const isAdjustment = c.type === 'adjustment'
 
+    const userShare = isShared
+      ? expenseShares.find(
+          (s) =>
+            s.expenseTransactionId === c.id &&
+            (s.isUserShare || s.participantName.toLowerCase() === 'tú' || (!s.isPayerShare && !s.contactId))
+        )
+      : undefined
+
     return {
       id: c.id,
       source: 'cash',
@@ -100,6 +124,10 @@ export function toUnifiedMovements(
       categoryId: c.categoryId,
       note: c.note,
       isShared,
+      paidBy: c.paidBy,
+      payerName: c.payerName,
+      payerContactId: c.payerContactId,
+      userShareAmount: userShare?.expectedAmount,
       isCashWithdrawal: false,
       isLinkedCashWithdrawal,
       isReimbursement,

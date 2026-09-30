@@ -604,13 +604,18 @@ export function ReceivablesPage({
                       </span>
                       <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: 2 }}>
                         <span>Esperado: {money(item.expectedAmount)}</span>
-                        <span> · Pagado: {money(item.appliedAmount)}</span>
+                        <span> · Enviado: {money(item.paidAmount || item.appliedAmount)}</span>
+                        <span> · Aplicado: {money(item.appliedAmount)}</span>
+                        {item.extraAmount && item.extraAmount > 0 ? (
+                          <span> · Extra: {money(item.extraAmount)}</span>
+                        ) : null}
                         {item.forgivenAmount > 0 && (
                           <span style={{ color: '#fbbf24' }}> · Perdonado a ti: {money(item.forgivenAmount)}</span>
                         )}
+                        <span> · Pendiente: 0,00 €</span>
                       </div>
                     </div>
-                    <strong style={{ color: 'var(--text-main)' }}>-{money(item.appliedAmount)}</strong>
+                    <strong style={{ color: 'var(--text-main)' }}>-{money(item.paidAmount || item.appliedAmount)}</strong>
                   </div>
                 ))}
               </div>

@@ -23,6 +23,7 @@ import {
   selectNetPersonalExpensesForPeriod,
   selectRealIncome,
   selectExpenseShareStatus,
+  selectExpensePayableStatus,
   selectTotalForgivenByUser,
   selectTotalForgivenToUser,
 } from './sharedExpenseSelectors'
@@ -76,7 +77,7 @@ export function auditDataConsistency(
 
   // Movimientos del mes
   const monthExpenses = transactions.filter((t) => {
-    if (t.type !== 'expense') return false
+    if (t.type !== 'expense' || (t.isShared && t.paidBy === 'contact')) return false
     const d = new Date(t.date)
     return d.getMonth() === currentMonth && d.getFullYear() === currentYear
   })
@@ -589,11 +590,40 @@ export function generateExcelWorkbook(
     const parentTx =
       transactions.find((t) => t.id === s.expenseTransactionId) ||
       cashTransactions.find((c) => c.id === s.expenseTransactionId)
-    const isUser = s.isPayerShare || s.isUserShare || s.participantName.toLowerCase() === 'tú'
+    const isContactPaid = parentTx?.paidBy === 'contact'
+    const isUser = s.isPayerShare || s.isUserShare || s.participantName.toLowerCase() === 'tú' || (!s.isPayerShare && !s.contactId)
+
+    if (isContactPaid && isUser) {
+      const payableStatus = selectExpensePayableStatus(s, transactions, cashTransactions)
+      let statusLabel = 'Pendiente'
+      if (payableStatus.status === 'settled') {
+        statusLabel = 'Pagado'
+      } else if (payableStatus.status === 'partial') {
+        statusLabel = 'Parcial'
+      }
+
+      return [
+        parentTx?.description || 'Gasto compartido',
+        parentTx?.date ? parentTx.date.slice(0, 10) : '',
+        parentTx ? Math.round(parentTx.amount * 100) / 100 : 0,
+        s.participantName || '',
+        'Sí',
+        payableStatus.expectedAmount,
+        payableStatus.paidAmount,
+        payableStatus.appliedAmount,
+        payableStatus.forgivenAmount,
+        payableStatus.extraAmount,
+        payableStatus.pendingAmount,
+        statusLabel,
+        s.id,
+        s.expenseTransactionId,
+      ]
+    }
+
     const status = selectExpenseShareStatus(s, transactions, cashTransactions)
 
     let statusLabel = 'Pendiente'
-    if (isUser) {
+    if (isUser && !isContactPaid) {
       statusLabel = 'Tu parte'
     } else if (status.status === 'received') {
       statusLabel = 'Cobrado'

@@ -197,6 +197,12 @@ export function SharedExpenseDetailModal({
                         </span>
                         <strong style={{ color: '#10b981' }}>{money(item.appliedAmount)}</strong>
                       </div>
+                      {item.extraAmount && item.extraAmount > 0 ? (
+                        <div>
+                          <span style={{ color: 'var(--text-muted)', display: 'block' }}>Extra enviado:</span>
+                          <strong style={{ color: 'var(--text-muted)' }}>{money(item.extraAmount)}</strong>
+                        </div>
+                      ) : null}
                       {item.forgivenAmount > 0 && (
                         <div>
                           <span style={{ color: 'var(--text-muted)', display: 'block' }}>
@@ -266,14 +272,24 @@ export function SharedExpenseDetailModal({
               <h4>{isContactPaid ? 'Pagos realizados' : 'Reembolsos recibidos'}</h4>
               <div className="reimbursements-list">
                 {details.externalSharesWithStatus.flatMap((s) =>
-                  s.reimbursements.map((r) => (
-                    <div className="reimbursement-item" key={r.id}>
-                      <div>
-                        <strong>{isContactPaid ? `-${money(r.amount)}` : `+${money(r.amount)}`}</strong>
-                        <span>{r.description} · {shortDate(r.date)}</span>
+                  s.reimbursements.map((r) => {
+                    const hasExtra = isContactPaid && s.extraAmount && s.extraAmount > 0
+                    return (
+                      <div className="reimbursement-item" key={r.id}>
+                        <div>
+                          <strong>{isContactPaid ? `-${money(r.amount)}` : `+${money(r.amount)}`}</strong>
+                          <span>
+                            {r.description} · {shortDate(r.date)}
+                            {hasExtra && (
+                              <span style={{ display: 'block', fontSize: '0.74rem', color: 'var(--text-muted)', marginTop: 2 }}>
+                                Enviado: {money(r.amount)} · Aplicado: {money(s.appliedAmount)} · Extra: {money(s.extraAmount)}
+                              </span>
+                            )}
+                          </span>
+                        </div>
                       </div>
-                    </div>
-                  ))
+                    )
+                  })
                 )}
               </div>
             </div>

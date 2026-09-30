@@ -180,6 +180,9 @@ export function calculatePeriodStatistics(
         realIncome += t.amount
       }
     } else if (t.type === 'expense') {
+      if (t.isShared && t.paidBy === 'contact') {
+        return
+      }
       expenses += t.amount
 
       // Cálculo canónico del gasto neto individual
@@ -322,6 +325,7 @@ export function selectExpensesByNature(
 
   periodTxs.forEach((t) => {
     if (t.type === 'expense') {
+      if (t.isShared && t.paidBy === 'contact') return
       const linked = selectLinkedReimbursementsForExpense(t.id, transactions, cashTransactions, expenseShares)
       const net = Math.max(0, Math.round((t.amount - linked) * 100) / 100)
       totalNet += net
@@ -369,7 +373,7 @@ function generateTimeSeries(
 
   const calcNetForTxs = (txs: Transaction[]) => {
     return txs
-      .filter((t) => t.type === 'expense')
+      .filter((t) => t.type === 'expense' && (!t.isShared || t.paidBy !== 'contact'))
       .reduce((sum, t) => {
         const linked = selectLinkedReimbursementsForExpense(t.id, allTransactions, cashTransactions, expenseShares)
         const net = Math.max(0, Math.round((t.amount - linked) * 100) / 100)

@@ -183,7 +183,7 @@ export function selectNetPersonalExpensesForPeriod(
   const currentYear = referenceDate.getFullYear()
 
   const periodExpenses = transactions.filter((t) => {
-    if (t.type !== 'expense') return false
+    if (t.type !== 'expense' || (t.isShared && t.paidBy === 'contact')) return false
     if (scope === 'all') return true
     const d = new Date(t.date)
     return d.getMonth() === currentMonth && d.getFullYear() === currentYear
@@ -217,7 +217,7 @@ export function selectNetExpensesByCategory(
   const currentYear = referenceDate.getFullYear()
 
   const periodExpenses = transactions.filter((t) => {
-    if (t.type !== 'expense') return false
+    if (t.type !== 'expense' || (t.isShared && t.paidBy === 'contact')) return false
     if (scope === 'all') return true
     const d = new Date(t.date)
     return d.getMonth() === currentMonth && d.getFullYear() === currentYear
@@ -558,6 +558,7 @@ export function selectExpensePayableStatus(
   expectedAmount: number
   paidAmount: number
   appliedAmount: number
+  extraAmount: number
   forgivenAmount: number
   pendingAmount: number
   status: 'pending' | 'partial' | 'settled'
@@ -582,9 +583,11 @@ export function selectExpensePayableStatus(
   const allPayments = [...bankPayments, ...cashPayments]
   const paidAmount = Math.round(allPayments.reduce((sum, p) => sum + p.amount, 0) * 100) / 100
   const expectedAmount = Math.round(share.expectedAmount * 100) / 100
-  const appliedAmount = Math.min(expectedAmount, paidAmount)
   const forgivenAmount = Math.max(0, Math.round((share.forgivenAmount ?? 0) * 100) / 100)
-  const pendingAmount = Math.max(0, Math.round((expectedAmount - appliedAmount - forgivenAmount) * 100) / 100)
+  const effectiveDue = Math.max(0, Math.round((expectedAmount - forgivenAmount) * 100) / 100)
+  const appliedAmount = Math.min(effectiveDue, paidAmount)
+  const extraAmount = Math.max(0, Math.round((paidAmount - effectiveDue) * 100) / 100)
+  const pendingAmount = Math.max(0, Math.round((effectiveDue - appliedAmount) * 100) / 100)
 
   let status: 'pending' | 'partial' | 'settled' = 'pending'
   if (pendingAmount <= 0) {
@@ -597,6 +600,7 @@ export function selectExpensePayableStatus(
     expectedAmount,
     paidAmount,
     appliedAmount,
+    extraAmount,
     forgivenAmount,
     pendingAmount,
     status,
@@ -651,10 +655,38 @@ export function selectExpenseShareDetails(
   const payerShare = expenseShares.find((s) => s.isPayerShare)
   const externalShares = expenseShares.filter((s) => !s.isPayerShare)
 
-  const externalSharesWithStatus = externalShares.map((s) => ({
-    share: s,
-    ...selectExpenseShareStatus(s, transactions, cashTransactions),
-  }))
+  const externalSharesWithStatus = externalShares.map((s) => {
+    const isUserShare = Boolean(s.isUserShare) || s.participantName.toLowerCase() === 'tú' || (!s.isPayerShare && !s.contactId)
+
+    if (isContactPaid && isUserShare) {
+      const payableStatus = selectExpensePayableStatus(s, transactions, cashTransactions)
+      return {
+        share: s,
+        isPayable: true,
+        expectedAmount: payableStatus.expectedAmount,
+        receivedAmount: payableStatus.paidAmount,
+        paidAmount: payableStatus.paidAmount,
+        appliedAmount: payableStatus.appliedAmount,
+        extraAmount: payableStatus.extraAmount,
+        forgivenAmount: payableStatus.forgivenAmount,
+        pendingAmount: payableStatus.pendingAmount,
+        status: (payableStatus.status === 'settled' ? 'received' : payableStatus.status) as ExpenseShareStatus,
+        payableRawStatus: payableStatus.status,
+        reimbursements: payableStatus.payments,
+        payments: payableStatus.payments,
+      }
+    }
+
+    const shareStatus = selectExpenseShareStatus(s, transactions, cashTransactions)
+    return {
+      share: s,
+      isPayable: false,
+      ...shareStatus,
+      paidAmount: shareStatus.receivedAmount,
+      payableRawStatus: shareStatus.status === 'received' ? 'settled' : shareStatus.status,
+      payments: shareStatus.reimbursements,
+    }
+  })
 
   const userShare = expenseShares.find(
     (s) => s.isUserShare || s.participantName.toLowerCase() === 'tú' || (!s.isPayerShare && !s.contactId)
@@ -900,7 +932,9 @@ export function selectSettledPayables(
     share: ExpenseShare
     creditorName: string
     expectedAmount: number
+    paidAmount: number
     appliedAmount: number
+    extraAmount: number
     forgivenAmount: number
     amount: number
     expenseDescription: string
@@ -924,7 +958,9 @@ export function selectSettledPayables(
         share: s,
         creditorName: parentTx.payerName || 'Contacto',
         expectedAmount: status.expectedAmount,
+        paidAmount: status.paidAmount,
         appliedAmount: status.appliedAmount,
+        extraAmount: status.extraAmount,
         forgivenAmount: status.forgivenAmount,
         amount: status.expectedAmount,
         expenseDescription: parentTx.description || 'Gasto compartido',
@@ -952,7 +988,7 @@ export function selectNetCashExpensesForPeriod(
   const currentYear = referenceDate.getFullYear()
 
   const periodExpenses = cashTransactions.filter((c) => {
-    if (c.type !== 'expense') return false
+    if (c.type !== 'expense' || (c.isShared && c.paidBy === 'contact')) return false
     if (scope === 'all') return true
     const d = new Date(c.date)
     return d.getMonth() === currentMonth && d.getFullYear() === currentYear
@@ -985,7 +1021,7 @@ export function selectNetCashExpensesByCategory(
   const currentYear = referenceDate.getFullYear()
 
   const periodExpenses = cashTransactions.filter((c) => {
-    if (c.type !== 'expense') return false
+    if (c.type !== 'expense' || (c.isShared && c.paidBy === 'contact')) return false
     if (scope === 'all') return true
     const d = new Date(c.date)
     return d.getMonth() === currentMonth && d.getFullYear() === currentYear

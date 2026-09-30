@@ -165,7 +165,7 @@ export function selectActualFixedMonthlyExpenses(
   const month = referenceDate.getMonth()
 
   const fixedTxs = transactions.filter((t) => {
-    if (t.type !== 'expense' || t.expenseNature !== 'fixed') return false
+    if (t.type !== 'expense' || (t.isShared && t.paidBy === 'contact') || t.expenseNature !== 'fixed') return false
     const d = new Date(t.date)
     return d.getFullYear() === year && d.getMonth() === month
   })
@@ -218,7 +218,7 @@ export function selectActualVariableMonthlyExpenses(
   const month = referenceDate.getMonth()
 
   const varTxs = transactions.filter((t) => {
-    if (t.type !== 'expense') return false
+    if (t.type !== 'expense' || (t.isShared && t.paidBy === 'contact')) return false
     if (t.expenseNature === 'fixed' || t.expenseNature === 'extraordinary') return false
     const d = new Date(t.date)
     return d.getFullYear() === year && d.getMonth() === month
@@ -248,7 +248,7 @@ export function selectActualExtraordinaryMonthlyExpenses(
   const month = referenceDate.getMonth()
 
   const extraTxs = transactions.filter((t) => {
-    if (t.type !== 'expense' || t.expenseNature !== 'extraordinary') return false
+    if (t.type !== 'expense' || (t.isShared && t.paidBy === 'contact') || t.expenseNature !== 'extraordinary') return false
     const d = new Date(t.date)
     return d.getFullYear() === year && d.getMonth() === month
   })
@@ -279,7 +279,7 @@ export function selectEssentialMonthlyExpenses(
   const essentialSet = new Set(settings?.essentialCategoryIds || [])
 
   const monthTxs = transactions.filter((t) => {
-    if (t.type !== 'expense') return false
+    if (t.type !== 'expense' || (t.isShared && t.paidBy === 'contact')) return false
     const d = new Date(t.date)
     return d.getFullYear() === year && d.getMonth() === month
   })
@@ -311,7 +311,7 @@ export function selectVariableMonthlyExpenses(
   const essentialSet = new Set(settings?.essentialCategoryIds || [])
 
   const monthTxs = transactions.filter((t) => {
-    if (t.type !== 'expense') return false
+    if (t.type !== 'expense' || (t.isShared && t.paidBy === 'contact')) return false
     const d = new Date(t.date)
     return d.getFullYear() === year && d.getMonth() === month
   })

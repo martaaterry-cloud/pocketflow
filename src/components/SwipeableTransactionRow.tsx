@@ -76,6 +76,7 @@ export function SwipeableTransactionRow({
   const isCashWithdrawal = item.isCashWithdrawal
   const isLinkedCashWithdrawal = item.isLinkedCashWithdrawal
   const sharedFlag = isShared ?? item.isShared
+  const isContactPaid = item.type === 'expense' && Boolean(sharedFlag && item.paidBy === 'contact')
 
   // Sincronizar SOLO cuando isOpen cambia externamente y NO estamos arrastrando
   useEffect(() => {
@@ -298,6 +299,8 @@ export function SwipeableTransactionRow({
               ? '#8b70a0'
               : isIncome
               ? '#5d9c74'
+              : isContactPaid
+              ? '#8b5cf6'
               : category?.color ?? '#bbb',
           }}
         >
@@ -311,6 +314,8 @@ export function SwipeableTransactionRow({
             <AppIcon name="refresh-cw" size={15} color="#fff" />
           ) : isIncome ? (
             <AppIcon name="arrow-down-left" size={15} color="#fff" />
+          ) : isContactPaid ? (
+            <AppIcon name="users" size={15} color="#fff" />
           ) : (
             <AppIcon name={category?.iconKey || category?.icon || 'shopping-basket'} size={15} color="#fff" />
           )}
@@ -324,13 +329,18 @@ export function SwipeableTransactionRow({
             {item.source === 'bank' && isCashWithdrawal && (
               <span className="pill-withdrawal">Cajero · Banco → Efectivo</span>
             )}
-            {item.source === 'bank' && !isCashWithdrawal && (
+            {isContactPaid && (
+              <span className="pill-source contact-paid">
+                Pagado por {item.payerName || 'Contacto'}
+              </span>
+            )}
+            {item.source === 'bank' && !isCashWithdrawal && !isContactPaid && (
               <span className="pill-source bank">Banco</span>
             )}
             {item.source === 'cash' && isLinkedCashWithdrawal && (
               <span className="pill-source cash-linked">Desde Banco</span>
             )}
-            {item.source === 'cash' && !isLinkedCashWithdrawal && !isAdjustment && (
+            {item.source === 'cash' && !isLinkedCashWithdrawal && !isAdjustment && !isContactPaid && (
               <span className="pill-source cash">Efectivo</span>
             )}
             {isAdjustment && (
@@ -341,16 +351,27 @@ export function SwipeableTransactionRow({
             {item.expenseNature === 'fixed' && <span className="pill-nature fixed">Fijo</span>}
             {item.expenseNature === 'extraordinary' && <span className="pill-nature extraordinary">Extraordinario</span>}
             {isReimbursement && <span className="pill-reimbursement">Reembolso</span>}
-            {sharedFlag && (
+            {sharedFlag && !isContactPaid && (
               <span className={`pill-shared ${pendingToRecover && pendingToRecover > 0 ? 'pending' : 'completed'}`}>
                 {pendingToRecover && pendingToRecover > 0
                   ? `Faltan ${money(pendingToRecover)}`
                   : 'Compartido'}
               </span>
             )}
+            {isContactPaid && (
+              <span className={`pill-shared ${pendingToRecover && pendingToRecover > 0 ? 'pending' : 'completed'}`}>
+                {pendingToRecover && pendingToRecover > 0
+                  ? `Deuda: ${money(pendingToRecover)}`
+                  : 'Liquidado'}
+              </span>
+            )}
           </div>
           <span>
-            {isCashWithdrawal
+            {isContactPaid
+              ? `Pagado por ${item.payerName || 'Contacto'}${
+                  typeof item.userShareAmount === 'number' ? ` · Tu parte: ${money(item.userShareAmount)}` : ''
+                } · ${category?.name ?? 'Otros'}`
+              : isCashWithdrawal
               ? `Efectivo / Cajero (${category?.name ?? 'Otros'})`
               : isLinkedCashWithdrawal
               ? 'Entrada vinculada desde Banco'
@@ -381,6 +402,8 @@ export function SwipeableTransactionRow({
               ? 'positive'
               : isTransfer || isCashWithdrawal || isLinkedCashWithdrawal
               ? 'transfer'
+              : isContactPaid
+              ? 'informative'
               : ''
           }`}
         >
@@ -392,6 +415,8 @@ export function SwipeableTransactionRow({
             ? '+'
             : isTransfer || isCashWithdrawal || isLinkedCashWithdrawal
             ? '↔ '
+            : isContactPaid
+            ? ''
             : '−'}
           {!isAdjustment && money(item.amount)}
         </strong>

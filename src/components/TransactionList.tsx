@@ -1,7 +1,7 @@
 import { useState, useMemo, useEffect } from 'react'
 import type { CashTransaction, Category, ExpenseShare, Transaction } from '../models/finance'
 import { SwipeableTransactionRow } from './SwipeableTransactionRow'
-import { selectExpenseShareStatus } from '../utils/sharedExpenseSelectors'
+import { selectExpenseShareStatus, selectExpensePayableStatus } from '../utils/sharedExpenseSelectors'
 import { toUnifiedMovements, type UnifiedMovement } from '../utils/unifiedMovementSelectors'
 
 export interface TransactionListProps {
@@ -63,11 +63,41 @@ export function TransactionList({
     const map = new Map<string, number>()
     if (!expenseShares.length) return map
 
-    expenseShares.filter((s) => !s.isPayerShare).forEach((s) => {
-      const { pendingAmount } = selectExpenseShareStatus(s, txSource, cashTransactions)
-      const prev = map.get(s.expenseTransactionId) ?? 0
-      map.set(s.expenseTransactionId, Math.round((prev + pendingAmount) * 100) / 100)
+    const sharesByTx = new Map<string, ExpenseShare[]>()
+    expenseShares.forEach((s) => {
+      const list = sharesByTx.get(s.expenseTransactionId) ?? []
+      list.push(s)
+      sharesByTx.set(s.expenseTransactionId, list)
     })
+
+    sharesByTx.forEach((shares, txId) => {
+      const tx = txSource.find((t) => t.id === txId) || cashTransactions.find((c) => c.id === txId)
+      if (!tx) return
+
+      if (tx.paidBy === 'contact') {
+        const userShare = shares.find(
+          (s) =>
+            s.isUserShare ||
+            s.participantName.toLowerCase() === 'tú' ||
+            (!s.isPayerShare && !s.contactId)
+        )
+        if (userShare) {
+          const { pendingAmount } = selectExpensePayableStatus(userShare, txSource, cashTransactions)
+          map.set(txId, pendingAmount)
+        }
+      } else {
+        const externalShares = shares.filter(
+          (s) => !s.isPayerShare && !s.isUserShare && s.participantName.toLowerCase() !== 'tú'
+        )
+        let totalPending = 0
+        externalShares.forEach((s) => {
+          const { pendingAmount } = selectExpenseShareStatus(s, txSource, cashTransactions)
+          totalPending += pendingAmount
+        })
+        map.set(txId, Math.round(totalPending * 100) / 100)
+      }
+    })
+
     return map
   }, [expenseShares, txSource, cashTransactions])
 
