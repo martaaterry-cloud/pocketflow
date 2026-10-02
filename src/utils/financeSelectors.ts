@@ -1,5 +1,100 @@
 import type { Account, Category, RecurringFrequency, RecurringPayment, SavingsGoal, Transaction } from '../models/finance'
 import { normalizeCategoryAlias } from './categoryNormalization'
+import { splitExpenseEqually } from './sharedExpenseSelectors'
+
+/**
+ * Salida de caja propia prevista para un gasto recurrente:
+ * 1) Si es ingreso: 0 €.
+ * 2) Si es gasto y lo paga otra persona (rec.paidBy === 'contact' o rec.sharingTemplate?.payer === 'contact'):
+ *    - La salida de caja propia es ÚNICAMENTE la parte que la usuaria debe transferir/liquidar a dicha persona.
+ *    - No el importe bruto completo del servicio (ej. 3,50 € para Spotify de 21 € si paga Andrés).
+ * 3) Si es gasto y lo paga la usuaria (rec.paidBy === 'user'):
+ *    - La usuaria debe abonar la factura completa al proveedor (ej. 23 € de ChatGPT),
+ *      aunque posteriormente otras personas le reembolsen su parte.
+ *    - Salida propia = rec.amount * monthsCount.
+ * 4) Si la usuaria no participa (includePayer === false y lo paga otro): 0 €.
+ */
+export function selectRecurringUserOutflow(
+  rec: RecurringPayment,
+  monthsCount = 1
+): number {
+  if (!rec || rec.type === 'income' || rec.categoryId === 'income') {
+    return 0
+  }
+
+  const effectiveMonths = Math.max(1, monthsCount)
+  const baseAmount = Math.max(0, (Number(rec.amount) || 0) * effectiveMonths)
+
+  const isContactPaid = rec.paidBy === 'contact' || rec.sharingTemplate?.payer === 'contact'
+
+  if (!isContactPaid) {
+    // La usuaria paga el gasto íntegro inicialmente al proveedor
+    return Math.round(baseAmount * 100) / 100
+  }
+
+  // Lo paga otra persona -> La salida propia de la usuaria es exclusivamente su parte debida
+  if (!rec.sharingTemplate) {
+    return Math.round(baseAmount * 100) / 100
+  }
+
+  const template = rec.sharingTemplate
+
+  // Si la usuaria no participa en el gasto
+  if (template.includePayer === false) {
+    return 0
+  }
+
+  if (template.splitType === 'equal') {
+    const splitResults = splitExpenseEqually(
+      baseAmount,
+      template.participants,
+      template.includePayer,
+      'Tú'
+    )
+    const userShare = splitResults.find(
+      (s) => s.participantName.toLowerCase() === 'tú' || (s.isUserShare && !s.isPayerShare)
+    )
+    if (userShare) {
+      return Math.round(userShare.amount * 100) / 100
+    }
+    const totalParticipants = Math.max(1, (template.participants?.length || 0) + (template.includePayer ? 1 : 0))
+    return Math.round((baseAmount / totalParticipants) * 100) / 100
+  }
+
+  // splitType === 'custom'
+  if (Array.isArray(template.participants)) {
+    const userPart = template.participants.find(
+      (p) => p.isUserShare || p.name.toLowerCase() === 'tú'
+    )
+    if (userPart) {
+      return Math.round(Number(userPart.amount) * effectiveMonths * 100) / 100
+    }
+    // Si includePayer es true y no está en la lista de participantes externos, el resto es de la usuaria
+    const externalTotal = template.participants.reduce((sum, p) => sum + (Number(p.amount) || 0) * effectiveMonths, 0)
+    const userRemainder = Math.max(0, baseAmount - externalTotal)
+    return Math.round(userRemainder * 100) / 100
+  }
+
+  return Math.round(baseAmount * 100) / 100
+}
+
+/**
+ * Salida mensualizada de caja propia para un gasto recurrente según su periodicidad.
+ */
+export function selectRecurringMonthlyUserOutflow(rec: RecurringPayment): number {
+  const singleCycleOutflow = selectRecurringUserOutflow(rec, 1)
+  const freq = rec.frequency || 'monthly'
+  if (freq === 'monthly') {
+    return Math.round(singleCycleOutflow * 100) / 100
+  }
+  if (freq === 'yearly') {
+    return Math.round((singleCycleOutflow / 12) * 100) / 100
+  }
+  if (freq === 'weekly') {
+    return Math.round(singleCycleOutflow * 4.33 * 100) / 100
+  }
+  return Math.round(singleCycleOutflow * 100) / 100
+}
 
 /**
  * Dinero para gastar = saldo actual de Cuenta diaria.
@@ -101,8 +196,11 @@ export function getCoveredMonthKeysForRecurring(
     const txYear = txDate.getFullYear()
     const txMonth = txDate.getMonth() // 0-11
 
-    if (rec.frequency === 'monthly' && rec.amount > 0) {
-      const monthsCovered = Math.max(1, Math.round((tx.amount / rec.amount) * 100) / 100)
+    const userOutflow = selectRecurringUserOutflow(rec, 1)
+    const baseDivisor = (rec.paidBy === 'contact' && userOutflow > 0 ? userOutflow : rec.amount) || rec.amount
+
+    if (rec.frequency === 'monthly' && baseDivisor > 0) {
+      const monthsCovered = Math.max(1, Math.round((tx.amount / baseDivisor) * 100) / 100)
       const count = Math.max(1, Math.round(monthsCovered))
 
       for (let i = 0; i < count; i++) {
@@ -250,7 +348,7 @@ export function recalculateRecurringNextDate(
 
 /**
  * Obtiene la lista de pagos recurrentes que siguen pendientes de cobro en el periodo (mes en curso).
- * Considera únicamente los recurrentes activos que afectan a la cuenta de gastos diaria.
+ * Considera únicamente los recurrentes activos que afectarán a la liquidez del usuario.
  * Verifica si ya existe una transacción vinculada mediante recurringPaymentId (o heurística de respaldo),
  * o si el periodo ya fue cubierto por adelantado mediante un pago multimensualidad.
  */
@@ -270,8 +368,8 @@ export function selectPendingRecurringPayments(
     // 2. Debe estar activo
     if (!r.active) return false
 
-    // 3. Debe pertenecer a la cuenta diaria
-    if (r.accountId && r.accountId !== spendingAccountId) return false
+    // 3. Debe pertenecer a la cuenta diaria si no es pagado por contacto
+    if (r.accountId && r.accountId !== spendingAccountId && r.paidBy !== 'contact') return false
 
     // 4. Comprobar si está cubierto en el mes de referencia
     if (isRecurringCoveredInMonth(r, transactions, currentYear, currentMonth)) {
@@ -279,6 +377,7 @@ export function selectPendingRecurringPayments(
     }
 
     // 5. Enlace de respaldo por coincidencia de nombre/categoría e importe en el mes en curso
+    const expectedUserAmt = selectRecurringUserOutflow(r)
     const alreadyRegistered = transactions.some((t) => {
       if (t.type !== 'expense') return false
 
@@ -294,7 +393,7 @@ export function selectPendingRecurringPayments(
       // Enlace de respaldo por nombre/concepto o categoría+importe exacto
       const matchesDescription = t.description.toLowerCase().includes(r.name.toLowerCase())
       const matchesCategoryAndAmount =
-        r.categoryId && t.categoryId === r.categoryId && Math.abs(t.amount - r.amount) < 0.01
+        r.categoryId && t.categoryId === r.categoryId && (Math.abs(t.amount - r.amount) < 0.01 || Math.abs(t.amount - expectedUserAmt) < 0.01)
 
       return matchesDescription || matchesCategoryAndAmount
     })
@@ -304,8 +403,8 @@ export function selectPendingRecurringPayments(
 }
 
 /**
- * Dinero comprometido = suma de los gastos recurrentes pendientes que afectarán
- * a la Cuenta diaria dentro del periodo en curso.
+ * Dinero comprometido = suma de las SALIDAS PROPIAS de caja previstas para los gastos
+ * recurrentes pendientes de la usuaria en el periodo en curso.
  */
 export function selectCommittedAmount(
   recurring: RecurringPayment[],
@@ -319,7 +418,7 @@ export function selectCommittedAmount(
     referenceDate,
     spendingAccountId
   )
-  const total = pending.reduce((sum, r) => sum + r.amount, 0)
+  const total = pending.reduce((sum, r) => sum + selectRecurringUserOutflow(r), 0)
   return Math.round(total * 100) / 100
 }
 

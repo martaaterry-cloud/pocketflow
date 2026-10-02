@@ -15,6 +15,7 @@ import type {
 } from '../models/finance'
 import { selectLinkedReimbursementsForExpense, selectRealIncome } from './sharedExpenseSelectors'
 import { calculateMonthlyEstimate } from './variableEstimates'
+import { selectRecurringMonthlyUserOutflow } from './financeSelectors'
 
 /**
  * Convierte cualquier frecuencia de pago recurrente a su equivalente mensual.
@@ -192,7 +193,8 @@ export function selectMonthlyIncome(settings: FinancialPlanSettings | null | und
 }
 
 /**
- * Gasto comprometido / fijo previsto = suma mensualizada de gastos recurrentes activos.
+ * Gasto comprometido / fijo previsto = suma mensualizada de las SALIDAS PROPIAS de gastos recurrentes activos.
+ * No suma el importe bruto total si el gasto lo paga un contacto y la usuaria solo debe abonar su parte.
  */
 export function selectExpectedCommittedExpenses(recurring: RecurringPayment[] = []): number {
   const activeExpenseRecs = Array.isArray(recurring)
@@ -200,7 +202,7 @@ export function selectExpectedCommittedExpenses(recurring: RecurringPayment[] = 
     : []
 
   const sum = activeExpenseRecs.reduce((acc, r) => {
-    return acc + selectMonthlyAmountForFrequency(r.amount, r.frequency)
+    return acc + selectRecurringMonthlyUserOutflow(r)
   }, 0)
 
   return Math.round(sum * 100) / 100
@@ -599,11 +601,13 @@ export interface MonthlyForecastItem {
   year: number
   monthIndex: number
   expectedIncome: number
+  hasIncomeForecast: boolean
+  incomeSource?: 'real' | 'recurring' | 'mixed' | 'manual' | 'none'
   normalExpenses: number
   expectedExtraExpenses: number
   targetSavings: number
   expectedReserves: number
-  estimatedMargin: number
+  estimatedMargin: number | null
   isHighSpend: boolean
   specialPeriodsInMonth?: SpecialPeriod[]
 }
@@ -624,7 +628,10 @@ const MONTH_NAMES = [
 ]
 
 /**
- * Previsión anual sencilla para los próximos 12 meses a partir de la fecha de referencia.
+ * Previsión anual neutral para los próximos 12 meses a partir de la fecha de referencia.
+ * - Mes actual (i = 0): utiliza los ingresos reales ya cobrados + previstos del mes (fuente de verdad).
+ * - Meses futuros (i > 0): utiliza ingresos recurrentes activos o referencia mensual opcional. Si no existen,
+ *   marca hasIncomeForecast=false y estimatedMargin=null para no proyectar falsas pérdidas sin datos.
  */
 export function selectAnnualForecast12Months(
   settings: FinancialPlanSettings | null | undefined,
@@ -632,9 +639,11 @@ export function selectAnnualForecast12Months(
   normalEstimatedExpensesOrPeriods: number | SpecialPeriod[],
   specialPeriodsOrReserves: SpecialPeriod[] | Reserve[],
   reservesOrRefDate?: Reserve[] | Date,
-  referenceDateInput?: Date
+  referenceDateInput?: Date,
+  transactions: Transaction[] = [],
+  cashTransactions: CashTransaction[] = []
 ): MonthlyForecastItem[] {
-  let income = 0
+  let recurringList: RecurringPayment[] = []
   let normalEstimatedExpenses = 0
   let specialPeriods: SpecialPeriod[] = []
   let reserves: Reserve[] = []
@@ -642,23 +651,23 @@ export function selectAnnualForecast12Months(
 
   if (typeof recurringOrExpenses === 'number') {
     // Legacy positional call: (settings, normalEstimatedExpenses, specialPeriods, reserves, referenceDate)
-    income = selectMonthlyIncome(settings)
     normalEstimatedExpenses = recurringOrExpenses
     specialPeriods = Array.isArray(normalEstimatedExpensesOrPeriods) ? normalEstimatedExpensesOrPeriods : []
     reserves = Array.isArray(specialPeriodsOrReserves) ? (specialPeriodsOrReserves as Reserve[]) : []
     refDate = reservesOrRefDate instanceof Date ? reservesOrRefDate : new Date()
   } else {
-    // Canonical Phase 3 call: (settings, recurring, normalEstimatedExpenses, specialPeriods, reserves, referenceDate)
-    const recurring = Array.isArray(recurringOrExpenses) ? recurringOrExpenses : []
-    income = selectExpectedMonthlyIncome(settings, recurring)
+    // Canonical call
+    recurringList = Array.isArray(recurringOrExpenses) ? recurringOrExpenses : []
     normalEstimatedExpenses = typeof normalEstimatedExpensesOrPeriods === 'number' ? normalEstimatedExpensesOrPeriods : 0
     specialPeriods = Array.isArray(specialPeriodsOrReserves) ? (specialPeriodsOrReserves as SpecialPeriod[]) : []
     reserves = Array.isArray(reservesOrRefDate) ? reservesOrRefDate : []
     refDate = referenceDateInput instanceof Date ? referenceDateInput : new Date()
   }
 
+  const recurringIncome = selectExpectedMonthlyIncomeFromRecurring(recurringList)
+  const manualReferenceIncome = Math.max(0, settings?.monthlyIncome || 0)
+
   const items: MonthlyForecastItem[] = []
-  const targetSavings = selectTargetMonthlySavings(settings, income)
 
   for (let i = 0; i < 12; i++) {
     const d = new Date(refDate.getFullYear(), refDate.getMonth() + i, 1)
@@ -666,6 +675,39 @@ export function selectAnnualForecast12Months(
     const m = d.getMonth()
     const monthKey = `${y}-${String(m + 1).padStart(2, '0')}`
     const monthName = MONTH_NAMES[m]
+
+    let monthIncome = 0
+    let hasIncomeForecast = false
+    let incomeSource: 'real' | 'recurring' | 'mixed' | 'manual' | 'none' = 'none'
+
+    if (i === 0) {
+      // Mes actual: resolver ingresos reales cobrados + previsión pendiente
+      const currentDetail = selectExpectedMonthlyIncomeDetail(
+        settings,
+        recurringList,
+        transactions,
+        cashTransactions,
+        refDate
+      )
+      monthIncome = currentDetail.amount
+      incomeSource = currentDetail.source
+      hasIncomeForecast = currentDetail.source !== 'none' || currentDetail.amount > 0
+    } else {
+      // Meses futuros
+      if (recurringIncome > 0) {
+        monthIncome = recurringIncome
+        hasIncomeForecast = true
+        incomeSource = 'recurring'
+      } else if (manualReferenceIncome > 0) {
+        monthIncome = manualReferenceIncome
+        hasIncomeForecast = true
+        incomeSource = 'manual'
+      } else {
+        monthIncome = 0
+        hasIncomeForecast = false
+        incomeSource = 'none'
+      }
+    }
 
     const expectedExtra = selectExpectedExtraSpendingForMonth(specialPeriods, d)
     const monthPeriods = specialPeriods.filter((p) => isMonthInSpecialPeriod(p, y, m))
@@ -678,8 +720,14 @@ export function selectAnnualForecast12Months(
     }
     monthReserves = Math.round(monthReserves * 100) / 100
 
+    const targetSavings = hasIncomeForecast
+      ? selectTargetMonthlySavings(settings, monthIncome)
+      : (settings?.targetSavingsType === 'fixed' ? Math.max(0, settings.targetSavingsValue || 0) : 0)
+
     const totalOutflow = normalEstimatedExpenses + expectedExtra + targetSavings + monthReserves
-    const estimatedMargin = Math.round((income - totalOutflow) * 100) / 100
+    const estimatedMargin = hasIncomeForecast
+      ? Math.round((monthIncome - totalOutflow) * 100) / 100
+      : null
     const isHighSpend = expectedExtra > 0
 
     items.push({
@@ -687,7 +735,9 @@ export function selectAnnualForecast12Months(
       monthName,
       year: y,
       monthIndex: m,
-      expectedIncome: income,
+      expectedIncome: monthIncome,
+      hasIncomeForecast,
+      incomeSource,
       normalExpenses: normalEstimatedExpenses,
       expectedExtraExpenses: expectedExtra,
       targetSavings,

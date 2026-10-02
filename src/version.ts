@@ -1,5 +1,5 @@
-export const APP_VERSION = '0.25.0'
-export const APP_BUILD = '2026.10.02-01'
+export const APP_VERSION = '0.25.1'
+export const APP_BUILD = '2026.10.02-02'
 export const APP_NAME = 'PocketFlow'
 
 export function getAppVersionString(): string {

@@ -14,6 +14,7 @@ import { money } from '../utils/money'
 import {
   recalculateRecurringNextDate,
   selectRecurringPaymentCycleStatus,
+  selectRecurringUserOutflow,
 } from '../utils/financeSelectors'
 import { AppIcon } from '../ui/icons'
 
@@ -223,16 +224,25 @@ export function RecurringPaymentsPage({
                                 ? RECURRING_INCOME_SOURCE_LABELS[r.incomeSourceType as RecurringIncomeSourceType]
                                 : 'Ingreso programado')
                             : (category?.name ?? 'Suscripción')} · {frequencyLabel[r.frequency] ?? 'Mensual'}
-                          {!isIncome && r.isShared && r.paidBy === 'contact' && ` · Lo paga ${r.payerName || 'otra persona'}`}
+                          {!isIncome && r.isShared && r.paidBy === 'contact' && ` · Paga ${r.payerName || 'otra persona'}`}
                           {!isIncome && r.isShared && r.paidBy !== 'contact' && ` · Lo pagas tú`}
                         </span>
                       </div>
                     </div>
 
                     <div className="recurring-amount-box">
-                      <strong className={isIncome ? 'positive' : 'expense-amount'}>
-                        {isIncome ? '+' : '−'}{money(r.amount)}
-                      </strong>
+                      {isIncome ? (
+                        <strong className="positive">+{money(r.amount)}</strong>
+                      ) : r.isShared && r.paidBy === 'contact' ? (
+                        <div>
+                          <strong className="expense-amount">−{money(selectRecurringUserOutflow(r))}</strong>
+                          <span style={{ display: 'block', fontSize: '0.72rem', color: 'var(--text-muted, #888)', textAlign: 'right', marginTop: 2 }}>
+                            Tu parte ({money(r.amount)})
+                          </span>
+                        </div>
+                      ) : (
+                        <strong className="expense-amount">−{money(r.amount)}</strong>
+                      )}
                     </div>
                   </div>
 

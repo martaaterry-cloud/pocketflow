@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import type { PaymentMethod, RecurringPayment } from '../models/finance'
 import { money } from '../utils/money'
-import { getCoveredMonthsList } from '../utils/financeSelectors'
+import { getCoveredMonthsList, selectRecurringUserOutflow } from '../utils/financeSelectors'
 import { AppIcon } from '../ui/icons'
 
 interface ConfirmRecurringPaymentModalProps {
@@ -33,6 +33,8 @@ export function ConfirmRecurringPaymentModal({
 
   const monthlyAmount = Number(payment.amount) || 0
   const expectedTotal = Math.round(monthlyAmount * monthsCount * 100) / 100
+  const isContactPaid = Boolean(payment.isShared && payment.paidBy === 'contact')
+  const userShare = selectRecurringUserOutflow(payment, monthsCount)
   const coveredMonths = getCoveredMonthsList(payment.nextDate || new Date(), monthsCount)
 
   const handleDecrement = () => {
@@ -55,7 +57,8 @@ export function ConfirmRecurringPaymentModal({
           <div>
             <h2 style={{ fontSize: '1.25rem', margin: 0, fontWeight: 700 }}>Confirmar pago</h2>
             <p className="muted" style={{ margin: '4px 0 0 0', fontSize: '0.875rem' }}>
-              {payment.name} · {money(payment.amount)}/mes
+              {payment.name} · {money(isContactPaid ? selectRecurringUserOutflow(payment, 1) : payment.amount)}/mes
+              {isContactPaid && ` (Servicio: ${money(payment.amount)}/mes)`}
             </p>
           </div>
           <button
@@ -163,11 +166,18 @@ export function ConfirmRecurringPaymentModal({
               alignItems: 'center',
             }}
           >
-            <span style={{ fontSize: '0.9rem', color: 'var(--text-color, #333)', fontWeight: 500 }}>
-              Importe esperado
-            </span>
+            <div>
+              <span style={{ fontSize: '0.9rem', color: 'var(--text-color, #333)', fontWeight: 500, display: 'block' }}>
+                {isContactPaid ? 'Importe a pagar (tu parte)' : 'Importe esperado'}
+              </span>
+              {isContactPaid && (
+                <small style={{ fontSize: '0.75rem', color: 'var(--text-muted, #666)' }}>
+                  Paga {payment.payerName || 'contacto'} · Total servicio: {money(expectedTotal)}
+                </small>
+              )}
+            </div>
             <strong style={{ fontSize: '1.2rem', color: 'var(--text-color, #111)' }}>
-              {money(expectedTotal)}
+              {money(isContactPaid ? userShare : expectedTotal)}
             </strong>
           </div>
 

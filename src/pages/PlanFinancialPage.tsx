@@ -55,9 +55,11 @@ export function PlanFinancialPage({
       baseOutflow,
       finance.specialPeriods || [],
       finance.reserves || [],
-      now
+      now,
+      finance.transactions || [],
+      finance.cashTransactions || []
     )
-  }, [settings, finance.recurring, plan, finance.specialPeriods, finance.reserves, now])
+  }, [settings, finance.recurring, plan, finance.specialPeriods, finance.reserves, now, finance.transactions, finance.cashTransactions])
 
   const emergencyBase = plan.expectedCommittedExpenses > 0 ? plan.expectedCommittedExpenses : (plan.essentialMonthlyExpenses || 1)
   const scenario3Months = useMemo(() => {
@@ -578,10 +580,20 @@ export function PlanFinancialPage({
                   ) : null}
                 </div>
 
-                <div className="forecast-kpis">
+                  <div className="forecast-kpis">
                   <div>
-                    <span>Ingresos previstos</span>
-                    <b>{money(item.expectedIncome)}</b>
+                    <span>
+                      {item.incomeSource === 'real'
+                        ? 'Ingresos reales'
+                        : item.incomeSource === 'manual'
+                        ? 'Ingresos (referencia)'
+                        : 'Ingresos previstos'}
+                    </span>
+                    {item.hasIncomeForecast ? (
+                      <b>{money(item.expectedIncome)}</b>
+                    ) : (
+                      <b style={{ color: 'var(--text-muted, #64748b)', fontSize: '0.9rem' }}>Sin previsión</b>
+                    )}
                   </div>
                   <div>
                     <span>Gasto mensual previsto</span>
@@ -602,9 +614,15 @@ export function PlanFinancialPage({
                   </div>
                   <div>
                     <span>Margen estimado</span>
-                    <b className={item.estimatedMargin >= 0 ? 'positive' : 'negative'}>
-                      {money(item.estimatedMargin)}
-                    </b>
+                    {item.estimatedMargin !== null ? (
+                      <b className={item.estimatedMargin >= 0 ? 'positive' : 'negative'}>
+                        {money(item.estimatedMargin)}
+                      </b>
+                    ) : (
+                      <b style={{ color: 'var(--text-muted, #64748b)', fontSize: '0.9rem' }}>
+                        No estimable
+                      </b>
+                    )}
                   </div>
                 </div>
               </div>

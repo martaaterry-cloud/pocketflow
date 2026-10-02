@@ -130,6 +130,8 @@ import {
   selectProjectedAvailable,
   selectRealAvailable,
   selectRecurringPaymentCycleStatus,
+  selectRecurringUserOutflow,
+  selectRecurringMonthlyUserOutflow,
 } from '../src/utils/financeSelectors'
 import {
   calculatePeriodStatistics,
@@ -6918,12 +6920,12 @@ describe('Fase 18 — Mejoras de Finanzas (Detalle por Categoría, Retiradas de 
 describe('Fase 18 — Identificación Visual de Versión y Build', () => {
   it('314. Versioning: única fuente de verdad y formato de visualización exacto', () => {
     assert.equal(APP_NAME, 'PocketFlow')
-    assert.equal(APP_VERSION, '0.25.0')
-    assert.equal(APP_BUILD, '2026.10.02-01')
+    assert.equal(APP_VERSION, '0.25.1')
+    assert.equal(APP_BUILD, '2026.10.02-02')
 
-    assert.equal(getAppVersionString(), 'PocketFlow v0.25.0')
-    assert.equal(getAppBuildString(), 'Build 2026.10.02-01')
-    assert.equal(getAppFullVersionLabel(), 'PocketFlow v0.25.0 · Build 2026.10.02-01')
+    assert.equal(getAppVersionString(), 'PocketFlow v0.25.1')
+    assert.equal(getAppBuildString(), 'Build 2026.10.02-02')
+    assert.equal(getAppFullVersionLabel(), 'PocketFlow v0.25.1 · Build 2026.10.02-02')
   })
 })
 
@@ -14019,12 +14021,12 @@ describe('Fase 50 — Control de Acceso por Roles (User / Admin), Seguridad RLS 
     }
 
     const userFooter = renderFooterTexts(false)
-    assert.equal(userFooter.versionText, 'PocketFlow v0.25.0')
+    assert.equal(userFooter.versionText, 'PocketFlow v0.25.1')
     assert.equal(userFooter.buildText, null)
 
     const adminFooter = renderFooterTexts(true)
-    assert.equal(adminFooter.versionText, 'PocketFlow v0.25.0')
-    assert.equal(adminFooter.buildText, 'Build 2026.10.02-01')
+    assert.equal(adminFooter.versionText, 'PocketFlow v0.25.1')
+    assert.equal(adminFooter.buildText, 'Build 2026.10.02-02')
   })
 
   it('590. 10. Reconciliación y sincronización de perfil no altera datos financieros ni transacciones', () => {
@@ -14525,7 +14527,7 @@ describe('Fase 52 — Versionado Automático y Robusto del Service Worker PWA', 
   it('613. 1. CACHE_NAME del Service Worker incluye exactamente APP_VERSION y APP_BUILD actuales', () => {
     const expectedCacheName = `pocketflow-v${APP_VERSION}-${APP_BUILD}`
     assert.equal(getServiceWorkerCacheName(APP_VERSION, APP_BUILD), expectedCacheName)
-    assert.equal(expectedCacheName, 'pocketflow-v0.25.0-2026.10.02-01')
+    assert.equal(expectedCacheName, 'pocketflow-v0.25.1-2026.10.02-02')
 
     const swCode = generateServiceWorkerCode(APP_VERSION, APP_BUILD)
     assert.ok(swCode.includes(`const CACHE_NAME = '${expectedCacheName}'`))
@@ -17233,15 +17235,15 @@ describe('Fase 61 — Detección Fiable de Versión Remota y Actualizaciones PWA
     assert.ok(swCode.includes('return false'))
 
     const versionData = JSON.parse(generateVersionJson(APP_VERSION, APP_BUILD))
-    assert.equal(versionData.version, '0.25.0')
-    assert.equal(versionData.build, '2026.10.02-01')
+    assert.equal(versionData.version, '0.25.1')
+    assert.equal(versionData.build, '2026.10.02-02')
   })
 
   // Test 10: Diagnóstico completo collectPwaDiagnosticInfo
   it('686. 10. collectPwaDiagnosticInfo recopila estado de versión local, remota y controller', async () => {
     const info = await collectPwaDiagnosticInfo(null, '/pocketflow/')
-    assert.equal(info.localVersion, '0.25.0')
-    assert.equal(info.localBuild, '2026.10.02-01')
+    assert.equal(info.localVersion, '0.25.1')
+    assert.equal(info.localBuild, '2026.10.02-02')
     assert.equal(info.basePath, '/pocketflow/')
     assert.ok(typeof info.lastCheckedAt === 'string')
   })
@@ -17350,12 +17352,12 @@ describe('Fase 62 — Categoría Canónica "Estudios / Formación" (education)',
     assert.equal(planSettings.essentialCategoryIds.includes('education'), false)
   })
 
-  // Test 8: generateVersionJson genera 0.25.0 / 2026.10.02-01
-  it('694. 8. build genera version.json 0.25.0 / 2026.10.02-01', () => {
+  // Test 8: generateVersionJson genera 0.25.1 / 2026.10.02-02
+  it('694. 8. build genera version.json 0.25.1 / 2026.10.02-02', () => {
     const versionJsonStr = generateVersionJson(APP_VERSION, APP_BUILD)
     const parsed = JSON.parse(versionJsonStr)
-    assert.equal(parsed.version, '0.25.0')
-    assert.equal(parsed.build, '2026.10.02-01')
+    assert.equal(parsed.version, '0.25.1')
+    assert.equal(parsed.build, '2026.10.02-02')
     assert.equal(parsed.name, 'PocketFlow')
   })
 
@@ -18384,13 +18386,13 @@ describe('Fase 66 — Clasificación y Desglose de Gastos por Medio de Pago (Tar
     assert.equal(grossTotal, breakdown.total)
   })
 
-  // CASO 12: Versión 0.25.0 y Build 2026.10.02-01
-  it('731. 12. Build genera version.json 0.25.0 / 2026.10.02-01', () => {
-    assert.equal(APP_VERSION, '0.25.0')
-    assert.equal(APP_BUILD, '2026.10.02-01')
-    const vJson = JSON.parse(generateVersionJson('0.25.0', '2026.10.02-01'))
-    assert.equal(vJson.version, '0.25.0')
-    assert.equal(vJson.build, '2026.10.02-01')
+  // CASO 12: Versión 0.25.1 y Build 2026.10.02-02
+  it('731. 12. Build genera version.json 0.25.1 / 2026.10.02-02', () => {
+    assert.equal(APP_VERSION, '0.25.1')
+    assert.equal(APP_BUILD, '2026.10.02-02')
+    const vJson = JSON.parse(generateVersionJson('0.25.1', '2026.10.02-02'))
+    assert.equal(vJson.version, '0.25.1')
+    assert.equal(vJson.build, '2026.10.02-02')
   })
 })
 
@@ -20754,9 +20756,9 @@ describe('Fase 67.8 — Auditoría Integral de Integridad Económica, Caso Multa
   })
 
   // TEST 21: Versión y build actualizados
-  it('806. 21. Versión y Build actualizados a 0.25.0 / 2026.10.02-01', () => {
-    assert.equal(APP_VERSION, '0.25.0')
-    assert.equal(APP_BUILD, '2026.10.02-01')
+  it('806. 21. Versión y Build actualizados a 0.25.1 / 2026.10.02-02', () => {
+    assert.equal(APP_VERSION, '0.25.1')
+    assert.equal(APP_BUILD, '2026.10.02-02')
   })
 })
 
@@ -21323,9 +21325,9 @@ describe('Fase 68 — Rediseño de Movimientos (Resumen Mensual, Agrupación Dia
   })
 
   // TEST 25: Versión y build actualizados
-  it('823. 25. Versión y Build actualizados a 0.25.0 / 2026.10.02-01', () => {
-    assert.equal(APP_VERSION, '0.25.0')
-    assert.equal(APP_BUILD, '2026.10.02-01')
+  it('823. 25. Versión y Build actualizados a 0.25.1 / 2026.10.02-02', () => {
+    assert.equal(APP_VERSION, '0.25.1')
+    assert.equal(APP_BUILD, '2026.10.02-02')
   })
 })
 
@@ -21690,10 +21692,326 @@ describe('Fase 69 — Auditoría y Corrección Completa: Dinero Real, Ingresos V
     assert.equal(gross, 80)
   })
 
-  // Test de versión 0.25.0
-  it('833. PWA Version: 0.25.0 / 2026.10.02-01', () => {
-    assert.equal(APP_VERSION, '0.25.0')
-    assert.equal(APP_BUILD, '2026.10.02-01')
+  // Test de versión 0.25.1
+  it('833. PWA Version: 0.25.1 / 2026.10.02-02', () => {
+    assert.equal(APP_VERSION, '0.25.1')
+    assert.equal(APP_BUILD, '2026.10.02-02')
+  })
+})
+
+describe('Fase 70 — Previsión Anual 12 Meses Real/Futura y Salida Propia de Caja en Recurrentes Compartidos', () => {
+  const emptyPlanSettings: FinancialPlanSettings = {
+    monthlyIncome: 0,
+    savingsTargetType: 'fixed',
+    fixedSavingsTarget: 0,
+    savingsTargetPercent: 0,
+    essentialCategoryIds: ['housing', 'utilities', 'supermarket'],
+  }
+
+  // CASO 1: Spotify 21 €. Paga Andrés. Mi parte = 3,50 €. Dinero comprometido = 3,50 €, NO 21 €.
+  it('834. CASO 1: Spotify 21 € pagado por Andrés compromete únicamente la salida propia de 3,50 €, no 21 €', () => {
+    const spotifyRec: RecurringPayment = {
+      id: 'rec-spotify',
+      name: 'Spotify Familiar',
+      amount: 21,
+      category: 'leisure',
+      frequency: 'monthly',
+      dayOfMonth: 10,
+      nextDate: '2026-10-10T00:00:00.000Z',
+      active: true,
+      paidBy: 'contact',
+      payerName: 'Andrés',
+      payerContactId: 'contact-andres-1',
+      settlementPaymentMethod: 'bizum',
+      isShared: true,
+      sharingTemplate: {
+        splitType: 'equal',
+        includePayer: true,
+        participants: [
+          { name: 'Andrés', amount: 3.5, contactId: 'contact-andres-1' },
+          { name: 'Amigo 1', amount: 3.5 },
+          { name: 'Amigo 2', amount: 3.5 },
+          { name: 'Amigo 3', amount: 3.5 },
+          { name: 'Amigo 4', amount: 3.5 },
+        ],
+      },
+    }
+
+    const userOutflow = selectRecurringUserOutflow(spotifyRec)
+    assert.equal(userOutflow, 3.5)
+
+    const committed = selectCommittedAmount([spotifyRec], [], new Date('2026-10-02T12:00:00.000Z'))
+    assert.equal(committed, 3.5)
+
+    const monthlyCommittedInPlan = selectExpectedCommittedExpenses([spotifyRec])
+    assert.equal(monthlyCommittedInPlan, 3.5)
+  })
+
+  // CASO 2: Mismo Spotify acumulando dos mensualidades (7 €)
+  it('835. CASO 2: Ocurrencia de Spotify cubriendo 2 mensualidades compromete 7 €, sin mutar el bruto de 21 €', () => {
+    const spotifyRec: RecurringPayment = {
+      id: 'rec-spotify',
+      name: 'Spotify Familiar',
+      amount: 21,
+      category: 'leisure',
+      frequency: 'monthly',
+      dayOfMonth: 10,
+      nextDate: '2026-10-10T00:00:00.000Z',
+      active: true,
+      paidBy: 'contact',
+      payerName: 'Andrés',
+      payerContactId: 'contact-andres-1',
+      settlementPaymentMethod: 'bizum',
+      isShared: true,
+      sharingTemplate: {
+        splitType: 'equal',
+        includePayer: true,
+        participants: [
+          { name: 'Andrés', amount: 3.5, contactId: 'contact-andres-1' },
+          { name: 'Amigo 1', amount: 3.5 },
+          { name: 'Amigo 2', amount: 3.5 },
+          { name: 'Amigo 3', amount: 3.5 },
+          { name: 'Amigo 4', amount: 3.5 },
+        ],
+      },
+    }
+
+    const twoMonthsOutflow = selectRecurringUserOutflow(spotifyRec, 2)
+    assert.equal(twoMonthsOutflow, 7.0)
+    assert.equal(spotifyRec.amount, 21) // Bruto original inalterado
+  })
+
+  // CASO 3: ChatGPT 23 €. Pago yo. Sergi reembolsará. Salida inicial comprometida = 23 €.
+  it('836. CASO 3: ChatGPT 23 € pagado por el usuario compromete 23 € de salida inicial de caja', () => {
+    const chatGptRec: RecurringPayment = {
+      id: 'rec-chatgpt',
+      name: 'ChatGPT Plus',
+      amount: 23,
+      category: 'education',
+      frequency: 'monthly',
+      dayOfMonth: 5,
+      nextDate: '2026-10-05T00:00:00.000Z',
+      active: true,
+      paidBy: 'user',
+      isShared: true,
+      sharingTemplate: {
+        splitType: 'equal',
+        includePayer: true,
+        participants: [
+          { name: 'Sergi', amount: 11.5, contactId: 'contact-sergi-1' },
+        ],
+      },
+    }
+
+    const userOutflow = selectRecurringUserOutflow(chatGptRec)
+    assert.equal(userOutflow, 23.0)
+
+    const committed = selectCommittedAmount([chatGptRec], [], new Date('2026-10-02T12:00:00.000Z'))
+    assert.equal(committed, 23.0)
+  })
+
+  // CASO 4: Tras pagar ChatGPT, deja de estar pendiente y crea reembolso esperado
+  it('837. CASO 4: Tras pagar ChatGPT, el recurrente queda cubierto y se crea el reembolso esperado de Sergi', () => {
+    const chatGptRec: RecurringPayment = {
+      id: 'rec-chatgpt',
+      name: 'ChatGPT Plus',
+      amount: 23,
+      category: 'education',
+      frequency: 'monthly',
+      dayOfMonth: 5,
+      nextDate: '2026-10-05T00:00:00.000Z',
+      active: true,
+      paidBy: 'user',
+      isShared: true,
+    }
+
+    const chatGptTx: Transaction = {
+      id: 'tx-chatgpt-oct',
+      amount: 23,
+      type: 'expense',
+      category: 'education',
+      date: '2026-10-05T10:00:00.000Z',
+      concept: 'ChatGPT Plus',
+      accountId: 'daily',
+      isShared: true,
+      recurringPaymentId: 'rec-chatgpt',
+    }
+
+    const sergiShare: ExpenseShare = {
+      id: 'share-sergi-1',
+      expenseTransactionId: 'tx-chatgpt-oct',
+      contactId: 'contact-sergi-1',
+      participantName: 'Sergi',
+      isPayerShare: false,
+      expectedAmount: 11.5,
+    }
+
+    const pendingRecs = selectPendingRecurringPayments([chatGptRec], [chatGptTx], new Date('2026-10-06T12:00:00.000Z'))
+    assert.equal(pendingRecs.length, 0)
+
+    const committed = selectCommittedAmount([chatGptRec], [chatGptTx], new Date('2026-10-06T12:00:00.000Z'))
+    assert.equal(committed, 0)
+
+    const pendingReimb = selectPendingReimbursements([sergiShare], [chatGptTx])
+    assert.equal(pendingReimb, 11.5)
+
+    // Al cobrar el Bizum de Sergi
+    const sergiBizumTx: Transaction = {
+      id: 'tx-sergi-reimb',
+      amount: 11.5,
+      type: 'income',
+      incomeKind: 'reimbursement',
+      category: 'education',
+      date: '2026-10-07T12:00:00.000Z',
+      concept: 'Reembolso Sergi (ChatGPT)',
+      accountId: 'daily',
+      paymentMethod: 'bizum',
+      specialType: 'reimbursement_received',
+      parentExpenseId: 'tx-chatgpt-oct',
+      expenseShareId: 'share-sergi-1',
+    }
+
+    const pendingReimbAfter = selectPendingReimbursements([sergiShare], [chatGptTx, sergiBizumTx])
+    assert.equal(pendingReimbAfter, 0)
+
+    const netCost = selectNetPersonalExpenses([chatGptTx, sergiBizumTx], new Date('2026-10-15'), 'month', [], [sergiShare])
+    assert.equal(netCost, 11.5)
+  })
+
+  // CASO 5: Octubre 2026 con +699,81 € reales -> Previsión de octubre muestra 699,81 €
+  it('838. CASO 5: Previsión anual a 12 meses muestra 699,81 € en el mes actual a partir de movimientos reales', () => {
+    const octTx: Transaction = {
+      id: 'tx-salary-oct',
+      amount: 699.81,
+      type: 'income',
+      category: 'income',
+      date: '2026-10-01T08:00:00.000Z',
+      concept: 'Nómina Septiembre',
+      accountId: 'daily',
+    }
+
+    const forecast = selectAnnualForecast12Months(
+      emptyPlanSettings,
+      [],
+      82.47,
+      [],
+      [],
+      new Date('2026-10-02T12:00:00.000Z'),
+      [octTx]
+    )
+
+    const octItem = forecast.find((f) => f.monthKey === '2026-10')!
+    assert.ok(octItem)
+    assert.equal(octItem.expectedIncome, 699.81)
+    assert.equal(octItem.hasIncomeForecast, true)
+    assert.equal(octItem.incomeSource, 'real')
+    assert.equal(octItem.estimatedMargin, Math.round((699.81 - 82.47) * 100) / 100)
+    assert.ok(octItem.estimatedMargin! > 0)
+  })
+
+  // CASO 6: Noviembre sin referencia ni ingresos recurrentes -> Sin previsión / Margen no estimable
+  it('839. CASO 6: Meses futuros sin referencia ni nómina recurrente devuelven hasIncomeForecast=false y estimatedMargin=null', () => {
+    const octTx: Transaction = {
+      id: 'tx-salary-oct',
+      amount: 699.81,
+      type: 'income',
+      category: 'income',
+      date: '2026-10-01T08:00:00.000Z',
+      concept: 'Nómina Septiembre',
+      accountId: 'daily',
+    }
+
+    const forecast = selectAnnualForecast12Months(
+      emptyPlanSettings,
+      [],
+      82.47,
+      [],
+      [],
+      new Date('2026-10-02T12:00:00.000Z'),
+      [octTx]
+    )
+
+    const novItem = forecast.find((f) => f.monthKey === '2026-11')!
+    assert.ok(novItem)
+    assert.equal(novItem.expectedIncome, 0)
+    assert.equal(novItem.hasIncomeForecast, false)
+    assert.equal(novItem.incomeSource, 'none')
+    assert.equal(novItem.estimatedMargin, null) // No proyecta pérdida falsa de -82,47 €
+  })
+
+  // CASO 7: Configuración posterior de referencia mensual opcional
+  it('840. CASO 7: Con referencia mensual configurada, los meses futuros estiman sobre dicha referencia', () => {
+    const settingsWithRef: FinancialPlanSettings = {
+      ...emptyPlanSettings,
+      monthlyIncome: 1500,
+    }
+
+    const octTx: Transaction = {
+      id: 'tx-salary-oct',
+      amount: 699.81,
+      type: 'income',
+      category: 'income',
+      date: '2026-10-01T08:00:00.000Z',
+      concept: 'Nómina Septiembre',
+      accountId: 'daily',
+    }
+
+    const forecast = selectAnnualForecast12Months(
+      settingsWithRef,
+      [],
+      82.47,
+      [],
+      [],
+      new Date('2026-10-02T12:00:00.000Z'),
+      [octTx]
+    )
+
+    const octItem = forecast.find((f) => f.monthKey === '2026-10')!
+    assert.equal(octItem.expectedIncome, 699.81)
+    assert.equal(octItem.incomeSource, 'real') // Octubre prioriza real
+
+    const novItem = forecast.find((f) => f.monthKey === '2026-11')!
+    assert.equal(novItem.expectedIncome, 1500)
+    assert.equal(novItem.hasIncomeForecast, true)
+    assert.equal(novItem.incomeSource, 'manual')
+    assert.equal(novItem.estimatedMargin, Math.round((1500 - 82.47) * 100) / 100)
+  })
+
+  // CASO 8: Ingreso recurrente previsto futuro sin referencia mensual
+  it('841. CASO 8: Nómina recurrente activa se proyecta a meses futuros sin requerir referencia manual', () => {
+    const recurringSalary: RecurringPayment = {
+      id: 'rec-salary',
+      name: 'Nómina Habitual',
+      amount: 1400,
+      type: 'income',
+      frequency: 'monthly',
+      dayOfMonth: 1,
+      nextDate: '2026-11-01T00:00:00.000Z',
+      active: true,
+    }
+
+    const forecast = selectAnnualForecast12Months(
+      emptyPlanSettings,
+      [recurringSalary],
+      82.47,
+      [],
+      [],
+      new Date('2026-10-02T12:00:00.000Z'),
+      []
+    )
+
+    const novItem = forecast.find((f) => f.monthKey === '2026-11')!
+    assert.ok(novItem)
+    assert.equal(novItem.expectedIncome, 1400)
+    assert.equal(novItem.hasIncomeForecast, true)
+    assert.equal(novItem.incomeSource, 'recurring')
+    assert.equal(novItem.estimatedMargin, Math.round((1400 - 82.47) * 100) / 100)
+  })
+
+  // Test de versión 0.25.1
+  it('842. PWA Version: 0.25.1 / 2026.10.02-02', () => {
+    assert.equal(APP_VERSION, '0.25.1')
+    assert.equal(APP_BUILD, '2026.10.02-02')
   })
 })
 
