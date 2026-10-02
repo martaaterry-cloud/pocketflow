@@ -178,7 +178,9 @@ export function RecurringPaymentsPage({
               const isConfirming = confirmingId === r.id
               const isIncome = r.type === 'income'
 
-              const externalCount = r.sharingTemplate?.participants?.length ?? 0
+              const externalCount = r.sharingTemplate?.participants?.filter(
+                (p) => !p.isUserShare && p.name.trim().toLowerCase() !== 'tú'
+              )?.length ?? 0
               const sharedLabel = externalCount > 0
                 ? (externalCount === 1 ? 'Con 1 persona' : `Con ${externalCount} personas`)
                 : 'Compartido'

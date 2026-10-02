@@ -1,6 +1,6 @@
 import type { Account, Category, RecurringFrequency, RecurringPayment, SavingsGoal, Transaction } from '../models/finance'
 import { normalizeCategoryAlias } from './categoryNormalization'
-import { splitExpenseEqually } from './sharedExpenseSelectors'
+import { getCanonicalRecurringShares } from './sharedExpenseSelectors'
 
 /**
  * Salida de caja propia prevista para un gasto recurrente:
@@ -32,50 +32,9 @@ export function selectRecurringUserOutflow(
     return Math.round(baseAmount * 100) / 100
   }
 
-  // Lo paga otra persona -> La salida propia de la usuaria es exclusivamente su parte debida
-  if (!rec.sharingTemplate) {
-    return Math.round(baseAmount * 100) / 100
-  }
-
-  const template = rec.sharingTemplate
-
-  // Si la usuaria no participa en el gasto
-  if (template.includePayer === false) {
-    return 0
-  }
-
-  if (template.splitType === 'equal') {
-    const splitResults = splitExpenseEqually(
-      baseAmount,
-      template.participants,
-      template.includePayer,
-      'Tú'
-    )
-    const userShare = splitResults.find(
-      (s) => s.participantName.toLowerCase() === 'tú' || (s.isUserShare && !s.isPayerShare)
-    )
-    if (userShare) {
-      return Math.round(userShare.amount * 100) / 100
-    }
-    const totalParticipants = Math.max(1, (template.participants?.length || 0) + (template.includePayer ? 1 : 0))
-    return Math.round((baseAmount / totalParticipants) * 100) / 100
-  }
-
-  // splitType === 'custom'
-  if (Array.isArray(template.participants)) {
-    const userPart = template.participants.find(
-      (p) => p.isUserShare || p.name.toLowerCase() === 'tú'
-    )
-    if (userPart) {
-      return Math.round(Number(userPart.amount) * effectiveMonths * 100) / 100
-    }
-    // Si includePayer es true y no está en la lista de participantes externos, el resto es de la usuaria
-    const externalTotal = template.participants.reduce((sum, p) => sum + (Number(p.amount) || 0) * effectiveMonths, 0)
-    const userRemainder = Math.max(0, baseAmount - externalTotal)
-    return Math.round(userRemainder * 100) / 100
-  }
-
-  return Math.round(baseAmount * 100) / 100
+  // Lo paga otra persona -> La salida propia de la usuaria es exclusivamente su cuota canónica
+  const canonical = getCanonicalRecurringShares(rec, effectiveMonths)
+  return Math.round(canonical.userShareAmount * 100) / 100
 }
 
 /**

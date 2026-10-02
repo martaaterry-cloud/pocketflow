@@ -25,7 +25,12 @@ export function ConfirmRecurringPaymentModal({
   useEffect(() => {
     if (open && payment) {
       setMonthsCount(1)
-      setPaymentMethod(payment.expensePaymentMethod || payment.paymentMethod || 'bank')
+      const isContact = Boolean(payment.isShared && payment.paidBy === 'contact')
+      setPaymentMethod(
+        (isContact
+          ? payment.settlementPaymentMethod || payment.expensePaymentMethod || payment.paymentMethod || 'bizum'
+          : payment.expensePaymentMethod || payment.paymentMethod || 'bank') as PaymentMethod
+      )
     }
   }, [open, payment])
 
@@ -239,7 +244,7 @@ export function ConfirmRecurringPaymentModal({
               disabled={isSubmitting}
               style={{ flex: 2 }}
             >
-              {isSubmitting ? 'Confirmando...' : `Confirmar pago de ${money(expectedTotal)}`}
+              {isSubmitting ? 'Confirmando...' : `Confirmar pago de ${money(isContactPaid ? userShare : expectedTotal)}`}
             </button>
           </div>
         </form>

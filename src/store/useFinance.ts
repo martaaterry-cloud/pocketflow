@@ -132,6 +132,7 @@ import {
   selectPendingRecurringPayments,
   selectProjectedAvailable,
   selectRealAvailable,
+  selectRecurringUserOutflow,
   selectSavingsBalance,
   selectSpendableBalance,
   selectTotalMoney,
@@ -1326,111 +1327,56 @@ export function useFinance(storage: StorageAdapter = defaultAppStorage) {
         : rec.name
 
       const isContactPaid = rec.paidBy === 'contact' || rec.sharingTemplate?.payer === 'contact'
-      const payerName = rec.payerName || rec.sharingTemplate?.payerName || 'Contacto'
+      const payerName = (rec.payerName || rec.sharingTemplate?.payerName || 'Contacto').trim()
       const payerContactId = rec.payerContactId || rec.sharingTemplate?.payerContactId || undefined
 
-      const effectivePaymentMethod = overridePaymentMethod || rec.expensePaymentMethod || rec.paymentMethod || 'bank'
-      const effectiveAccountId = effectivePaymentMethod === 'cash' ? 'cash' : (overrideAccountId || rec.accountId || 'daily')
+      const effectivePaymentMethod =
+        overridePaymentMethod ||
+        (isContactPaid
+          ? (rec.settlementPaymentMethod || 'bizum')
+          : (rec.expensePaymentMethod || rec.paymentMethod || 'bank'))
+      const effectiveAccountId =
+        effectivePaymentMethod === 'cash'
+          ? 'cash'
+          : (overrideAccountId || (isContactPaid ? (rec.settlementAccountId || 'daily') : (rec.accountId || 'daily')))
 
-      // 1. Crear transacción real vinculada con recurringPaymentId
-      const newTx: Transaction = {
-        id: `tx_${crypto.randomUUID()}`,
-        type: 'expense',
-        amount: totalAmount,
-        description,
-        categoryId: rec.categoryId,
-        accountId: effectiveAccountId,
-        date: dateStr,
-        recurringPaymentId: rec.id,
-        isShared: Boolean(rec.isShared),
-        paymentMethod: effectivePaymentMethod,
-        paidBy: isContactPaid ? 'contact' : 'user',
-        payerName: isContactPaid ? payerName : undefined,
-        payerContactId: isContactPaid ? payerContactId : undefined,
-      }
-
-      // Si es un recurrente compartido, crear las partes independientes para ESTE ciclo
+      let newTx: Transaction
       let cycleShares: ExpenseShare[] = []
-      if (rec.isShared && rec.sharingTemplate) {
-        if (isContactPaid) {
-          if (rec.sharingTemplate.splitType === 'equal') {
-            const splitResults = splitExpenseEqually(
-              totalAmount,
-              rec.sharingTemplate.participants,
-              rec.sharingTemplate.includePayer,
-              'Tú'
-            )
-            cycleShares = splitResults.map((s) => {
-              const isPayer =
-                s.participantName.toLowerCase() === payerName.toLowerCase() ||
-                (Boolean(payerContactId) && s.contactId === payerContactId)
-              const isUser = s.participantName.toLowerCase() === 'tú' || s.isPayerShare
-              return {
-                id: crypto.randomUUID(),
-                expenseTransactionId: newTx.id,
-                contactId: s.contactId,
-                participantName: s.participantName,
-                isPayerShare: isPayer,
-                isUserShare: isUser && !isPayer,
-                expectedAmount: s.amount,
-                createdAt: dateStr,
-                updatedAt: dateStr,
-              }
-            })
-          } else {
-            const rawShares: ExpenseShare[] = rec.sharingTemplate.participants.map((p) => {
-              const isPayer =
-                p.name.toLowerCase() === payerName.toLowerCase() ||
-                (Boolean(payerContactId) && p.contactId === payerContactId)
-              return {
-                id: crypto.randomUUID(),
-                expenseTransactionId: newTx.id,
-                contactId: p.contactId,
-                participantName: p.name,
-                isPayerShare: isPayer,
-                isUserShare: !isPayer && (Boolean(p.isUserShare) || p.name.toLowerCase() === 'tú'),
-                expectedAmount: Math.round(Number(p.amount) * effectiveMonths * 100) / 100,
-                createdAt: dateStr,
-                updatedAt: dateStr,
-              }
-            })
 
-            if (rec.sharingTemplate.includePayer && !rawShares.some((s) => s.isUserShare)) {
-              const externalTotal = rawShares.reduce((s, sh) => s + sh.expectedAmount, 0)
-              const userAmount = Math.max(0, Math.round((totalAmount - externalTotal) * 100) / 100)
-              rawShares.unshift({
-                id: crypto.randomUUID(),
-                expenseTransactionId: newTx.id,
-                participantName: 'Tú',
-                isPayerShare: false,
-                isUserShare: true,
-                expectedAmount: userAmount,
-                createdAt: dateStr,
-                updatedAt: dateStr,
-              })
-            }
+      if (isContactPaid) {
+        // La usuaria liquida a Andrés su cuota propia correspondiente a los ciclos cubiertos
+        const userQuotaOutflow = selectRecurringUserOutflow(rec, effectiveMonths)
+        newTx = {
+          id: `tx_${crypto.randomUUID()}`,
+          type: 'expense',
+          amount: userQuotaOutflow,
+          description,
+          categoryId: rec.categoryId,
+          accountId: effectiveAccountId,
+          date: dateStr,
+          recurringPaymentId: rec.id,
+          isShared: false,
+          paymentMethod: effectivePaymentMethod,
+          paidBy: 'user',
+        }
+      } else {
+        // 1. La usuaria paga el total (ej. 23 € ChatGPT) al proveedor
+        newTx = {
+          id: `tx_${crypto.randomUUID()}`,
+          type: 'expense',
+          amount: totalAmount,
+          description,
+          categoryId: rec.categoryId,
+          accountId: effectiveAccountId,
+          date: dateStr,
+          recurringPaymentId: rec.id,
+          isShared: Boolean(rec.isShared),
+          paymentMethod: effectivePaymentMethod,
+          paidBy: 'user',
+        }
 
-            if (!rawShares.some((s) => s.isPayerShare)) {
-              const othersTotal = rawShares
-                .filter((s) => !s.isPayerShare)
-                .reduce((s, sh) => s + sh.expectedAmount, 0)
-              const payerShareAmount = Math.max(0, Math.round((totalAmount - othersTotal) * 100) / 100)
-              rawShares.push({
-                id: crypto.randomUUID(),
-                expenseTransactionId: newTx.id,
-                contactId: payerContactId,
-                participantName: payerName,
-                isPayerShare: true,
-                isUserShare: false,
-                expectedAmount: payerShareAmount,
-                createdAt: dateStr,
-                updatedAt: dateStr,
-              })
-            }
-
-            cycleShares = rawShares
-          }
-        } else {
+        // Si es un recurrente compartido pagado por la usuaria, crear las cuotas por cobrar de terceros
+        if (rec.isShared && rec.sharingTemplate) {
           if (rec.sharingTemplate.splitType === 'equal') {
             const splitResults = splitExpenseEqually(
               totalAmount,

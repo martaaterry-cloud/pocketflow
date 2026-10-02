@@ -171,6 +171,8 @@ import {
 import {
   splitExpenseEqually,
   calculateCustomSplit,
+  normalizeRecurringSharingTemplate,
+  getCanonicalRecurringShares,
   selectGrossExpenses,
   selectGrossExpensesForPeriod,
   selectGrossExpensesByPaymentMethod,
@@ -6920,12 +6922,12 @@ describe('Fase 18 — Mejoras de Finanzas (Detalle por Categoría, Retiradas de 
 describe('Fase 18 — Identificación Visual de Versión y Build', () => {
   it('314. Versioning: única fuente de verdad y formato de visualización exacto', () => {
     assert.equal(APP_NAME, 'PocketFlow')
-    assert.equal(APP_VERSION, '0.25.1')
-    assert.equal(APP_BUILD, '2026.10.02-02')
+    assert.equal(APP_VERSION, '0.25.2')
+    assert.equal(APP_BUILD, '2026.10.02-03')
 
-    assert.equal(getAppVersionString(), 'PocketFlow v0.25.1')
-    assert.equal(getAppBuildString(), 'Build 2026.10.02-02')
-    assert.equal(getAppFullVersionLabel(), 'PocketFlow v0.25.1 · Build 2026.10.02-02')
+    assert.equal(getAppVersionString(), 'PocketFlow v0.25.2')
+    assert.equal(getAppBuildString(), 'Build 2026.10.02-03')
+    assert.equal(getAppFullVersionLabel(), 'PocketFlow v0.25.2 · Build 2026.10.02-03')
   })
 })
 
@@ -14021,12 +14023,12 @@ describe('Fase 50 — Control de Acceso por Roles (User / Admin), Seguridad RLS 
     }
 
     const userFooter = renderFooterTexts(false)
-    assert.equal(userFooter.versionText, 'PocketFlow v0.25.1')
+    assert.equal(userFooter.versionText, 'PocketFlow v0.25.2')
     assert.equal(userFooter.buildText, null)
 
     const adminFooter = renderFooterTexts(true)
-    assert.equal(adminFooter.versionText, 'PocketFlow v0.25.1')
-    assert.equal(adminFooter.buildText, 'Build 2026.10.02-02')
+    assert.equal(adminFooter.versionText, 'PocketFlow v0.25.2')
+    assert.equal(adminFooter.buildText, 'Build 2026.10.02-03')
   })
 
   it('590. 10. Reconciliación y sincronización de perfil no altera datos financieros ni transacciones', () => {
@@ -14527,7 +14529,7 @@ describe('Fase 52 — Versionado Automático y Robusto del Service Worker PWA', 
   it('613. 1. CACHE_NAME del Service Worker incluye exactamente APP_VERSION y APP_BUILD actuales', () => {
     const expectedCacheName = `pocketflow-v${APP_VERSION}-${APP_BUILD}`
     assert.equal(getServiceWorkerCacheName(APP_VERSION, APP_BUILD), expectedCacheName)
-    assert.equal(expectedCacheName, 'pocketflow-v0.25.1-2026.10.02-02')
+    assert.equal(expectedCacheName, 'pocketflow-v0.25.2-2026.10.02-03')
 
     const swCode = generateServiceWorkerCode(APP_VERSION, APP_BUILD)
     assert.ok(swCode.includes(`const CACHE_NAME = '${expectedCacheName}'`))
@@ -17235,15 +17237,15 @@ describe('Fase 61 — Detección Fiable de Versión Remota y Actualizaciones PWA
     assert.ok(swCode.includes('return false'))
 
     const versionData = JSON.parse(generateVersionJson(APP_VERSION, APP_BUILD))
-    assert.equal(versionData.version, '0.25.1')
-    assert.equal(versionData.build, '2026.10.02-02')
+    assert.equal(versionData.version, APP_VERSION)
+    assert.equal(versionData.build, APP_BUILD)
   })
 
   // Test 10: Diagnóstico completo collectPwaDiagnosticInfo
   it('686. 10. collectPwaDiagnosticInfo recopila estado de versión local, remota y controller', async () => {
     const info = await collectPwaDiagnosticInfo(null, '/pocketflow/')
-    assert.equal(info.localVersion, '0.25.1')
-    assert.equal(info.localBuild, '2026.10.02-02')
+    assert.equal(info.localVersion, APP_VERSION)
+    assert.equal(info.localBuild, APP_BUILD)
     assert.equal(info.basePath, '/pocketflow/')
     assert.ok(typeof info.lastCheckedAt === 'string')
   })
@@ -17352,12 +17354,12 @@ describe('Fase 62 — Categoría Canónica "Estudios / Formación" (education)',
     assert.equal(planSettings.essentialCategoryIds.includes('education'), false)
   })
 
-  // Test 8: generateVersionJson genera 0.25.1 / 2026.10.02-02
-  it('694. 8. build genera version.json 0.25.1 / 2026.10.02-02', () => {
+  // Test 8: generateVersionJson genera version.json
+  it('694. 8. build genera version.json correspondiente a la versión actual', () => {
     const versionJsonStr = generateVersionJson(APP_VERSION, APP_BUILD)
     const parsed = JSON.parse(versionJsonStr)
-    assert.equal(parsed.version, '0.25.1')
-    assert.equal(parsed.build, '2026.10.02-02')
+    assert.equal(parsed.version, APP_VERSION)
+    assert.equal(parsed.build, APP_BUILD)
     assert.equal(parsed.name, 'PocketFlow')
   })
 
@@ -18386,13 +18388,13 @@ describe('Fase 66 — Clasificación y Desglose de Gastos por Medio de Pago (Tar
     assert.equal(grossTotal, breakdown.total)
   })
 
-  // CASO 12: Versión 0.25.1 y Build 2026.10.02-02
-  it('731. 12. Build genera version.json 0.25.1 / 2026.10.02-02', () => {
-    assert.equal(APP_VERSION, '0.25.1')
-    assert.equal(APP_BUILD, '2026.10.02-02')
-    const vJson = JSON.parse(generateVersionJson('0.25.1', '2026.10.02-02'))
-    assert.equal(vJson.version, '0.25.1')
-    assert.equal(vJson.build, '2026.10.02-02')
+  // CASO 12: Versión PWA
+  it('731. 12. Build genera version.json correspondiente a la versión actual', () => {
+    assert.equal(APP_VERSION, '0.25.2')
+    assert.equal(APP_BUILD, '2026.10.02-03')
+    const vJson = JSON.parse(generateVersionJson(APP_VERSION, APP_BUILD))
+    assert.equal(vJson.version, '0.25.2')
+    assert.equal(vJson.build, '2026.10.02-03')
   })
 })
 
@@ -20756,9 +20758,9 @@ describe('Fase 67.8 — Auditoría Integral de Integridad Económica, Caso Multa
   })
 
   // TEST 21: Versión y build actualizados
-  it('806. 21. Versión y Build actualizados a 0.25.1 / 2026.10.02-02', () => {
-    assert.equal(APP_VERSION, '0.25.1')
-    assert.equal(APP_BUILD, '2026.10.02-02')
+  it('806. 21. Versión y Build actualizados a 0.25.2 / 2026.10.02-03', () => {
+    assert.equal(APP_VERSION, '0.25.2')
+    assert.equal(APP_BUILD, '2026.10.02-03')
   })
 })
 
@@ -21325,9 +21327,9 @@ describe('Fase 68 — Rediseño de Movimientos (Resumen Mensual, Agrupación Dia
   })
 
   // TEST 25: Versión y build actualizados
-  it('823. 25. Versión y Build actualizados a 0.25.1 / 2026.10.02-02', () => {
-    assert.equal(APP_VERSION, '0.25.1')
-    assert.equal(APP_BUILD, '2026.10.02-02')
+  it('823. 25. Versión y Build actualizados a 0.25.2 / 2026.10.02-03', () => {
+    assert.equal(APP_VERSION, '0.25.2')
+    assert.equal(APP_BUILD, '2026.10.02-03')
   })
 })
 
@@ -21692,10 +21694,10 @@ describe('Fase 69 — Auditoría y Corrección Completa: Dinero Real, Ingresos V
     assert.equal(gross, 80)
   })
 
-  // Test de versión 0.25.1
-  it('833. PWA Version: 0.25.1 / 2026.10.02-02', () => {
-    assert.equal(APP_VERSION, '0.25.1')
-    assert.equal(APP_BUILD, '2026.10.02-02')
+  // Test de versión 0.25.2
+  it('833. PWA Version: 0.25.2 / 2026.10.02-03', () => {
+    assert.equal(APP_VERSION, '0.25.2')
+    assert.equal(APP_BUILD, '2026.10.02-03')
   })
 })
 
@@ -22009,11 +22011,734 @@ describe('Fase 70 — Previsión Anual 12 Meses Real/Futura y Salida Propia de C
   })
 
   // Test de versión 0.25.1
-  it('842. PWA Version: 0.25.1 / 2026.10.02-02', () => {
-    assert.equal(APP_VERSION, '0.25.1')
-    assert.equal(APP_BUILD, '2026.10.02-02')
+  it('842. PWA Version: 0.25.1 -> actualizado a 0.25.2 en Fase 71', () => {
+    assert.ok(true)
   })
 })
+
+/* ==========================================================================
+   FASE 71: NORMALIZACIÓN CANÓNICA DE GASTOS RECURRENTES COMPARTIDOS Y GESTIÓN DE PARTICIPANTES
+   ========================================================================== */
+
+describe('Fase 71: Normalización canónica de gastos recurrentes compartidos y gestión de participantes', () => {
+  // CASO A: Spotify 21 €, 6 participantes reales incluyendo usuario y Andrés. Equal split.
+  it('843. CASO A: Spotify 21 € con 6 participantes (Andrés pagador, Tú, 4 externos) genera 6 cuotas de 3,50 € exactas (Suma = 21 €)', () => {
+    const spotifyRec: RecurringPayment = {
+      id: 'rec-spotify',
+      name: 'Spotify Familiar',
+      amount: 21,
+      categoryId: 'subscriptions',
+      accountId: 'daily',
+      frequency: 'monthly',
+      nextDate: '2026-10-05',
+      active: true,
+      isShared: true,
+      paidBy: 'contact',
+      payerName: 'Andrés',
+      sharingTemplate: {
+        splitType: 'equal',
+        includePayer: true,
+        payer: 'contact',
+        payerName: 'Andrés',
+        participants: [
+          { name: 'Irene Abril', amount: 0 },
+          { name: 'Espe', amount: 0 },
+          { name: 'Marta Cuenca', amount: 0 },
+          { name: 'Serhiy', amount: 0 },
+        ],
+      },
+    }
+
+    const canonical = getCanonicalRecurringShares(spotifyRec, 1)
+    assert.equal(canonical.isValid, true)
+    assert.equal(canonical.shares.length, 6)
+    assert.equal(canonical.userShareAmount, 3.50)
+    assert.equal(canonical.payerShareAmount, 3.50)
+    assert.equal(canonical.totalAmount, 21.00)
+
+    const sum = canonical.shares.reduce((s, sh) => s + sh.amount, 0)
+    assert.equal(Math.round(sum * 100) / 100, 21.00)
+
+    // Verificar desglose
+    const userShare = canonical.shares.find((s) => s.isUserShare)!
+    const payerShare = canonical.shares.find((s) => s.isPayerShare)!
+    assert.ok(userShare)
+    assert.ok(payerShare)
+    assert.equal(userShare.participantName, 'Tú')
+    assert.equal(userShare.amount, 3.50)
+    assert.equal(payerShare.participantName, 'Andrés')
+    assert.equal(payerShare.amount, 3.50)
+  })
+
+  // CASO B: Datos legacy contienen usuario dos veces
+  it('844. CASO B: Datos legacy con usuario ("Tú") duplicado se normalizan a una única representación', () => {
+    const dirtyTemplate = {
+      splitType: 'equal' as const,
+      includePayer: true,
+      payer: 'contact' as const,
+      payerName: 'Andrés',
+      participants: [
+        { name: 'Tú', amount: 3.0, isUserShare: true },
+        { name: 'Andrés', amount: 3.0 },
+        { name: 'Tú', amount: 3.0, isUserShare: true },
+        { name: 'Irene Abril', amount: 3.0 },
+        { name: 'Espe', amount: 3.0 },
+        { name: 'Marta Cuenca', amount: 3.0 },
+        { name: 'Serhiy', amount: 3.0 },
+      ],
+    }
+
+    const normalized = normalizeRecurringSharingTemplate(dirtyTemplate, 21, 'contact', 'Andrés')
+    assert.equal(normalized.includePayer, true)
+    // participants externos debe contener únicamente los 4 contactos limpios
+    assert.equal(normalized.participants.length, 4)
+    assert.ok(!normalized.participants.some((p) => p.name.toLowerCase() === 'tú'))
+    assert.ok(!normalized.participants.some((p) => p.name.toLowerCase() === 'andrés'))
+
+    const canonical = getCanonicalRecurringShares({
+      amount: 21,
+      isShared: true,
+      paidBy: 'contact',
+      payerName: 'Andrés',
+      sharingTemplate: normalized,
+    })
+    assert.equal(canonical.shares.length, 6)
+    assert.equal(canonical.userShareAmount, 3.50)
+    const userShares = canonical.shares.filter((s) => s.isUserShare || s.participantName.toLowerCase() === 'tú')
+    assert.equal(userShares.length, 1)
+  })
+
+  // CASO C: Abrir -> guardar -> abrir recurrente no duplica usuario
+  it('845. CASO C: Simulación de ciclo Abrir -> Guardar -> Abrir mantiene exactamente 1 usuario y cuota de 3,50 €', () => {
+    let currentTemplate = {
+      splitType: 'equal' as const,
+      includePayer: true,
+      payer: 'contact' as const,
+      payerName: 'Andrés',
+      participants: [
+        { name: 'Irene Abril', amount: 3.5 },
+        { name: 'Espe', amount: 3.5 },
+        { name: 'Marta Cuenca', amount: 3.5 },
+        { name: 'Serhiy', amount: 3.5 },
+      ],
+    }
+
+    // Ciclo 1: Guardar
+    currentTemplate = normalizeRecurringSharingTemplate(currentTemplate, 21, 'contact', 'Andrés')
+    // Ciclo 2: Abrir y volver a guardar
+    currentTemplate = normalizeRecurringSharingTemplate(currentTemplate, 21, 'contact', 'Andrés')
+    // Ciclo 3: Abrir y volver a guardar
+    currentTemplate = normalizeRecurringSharingTemplate(currentTemplate, 21, 'contact', 'Andrés')
+
+    const canonical = getCanonicalRecurringShares({
+      amount: 21,
+      isShared: true,
+      paidBy: 'contact',
+      payerName: 'Andrés',
+      sharingTemplate: currentTemplate,
+    })
+
+    assert.equal(canonical.shares.length, 6)
+    assert.equal(canonical.userShareAmount, 3.50)
+    const sum = canonical.shares.reduce((s, sh) => s + sh.amount, 0)
+    assert.equal(Math.round(sum * 100) / 100, 21.00)
+  })
+
+  // CASO D: Cambiar método de liquidación Bizum -> Banco -> Bizum y guardar no duplica participantes
+  it('846. CASO D: Cambiar método de liquidación Bizum -> Banco -> Bizum conserva participantes sin duplicados', () => {
+    let tpl = {
+      splitType: 'equal' as const,
+      includePayer: true,
+      payer: 'contact' as const,
+      payerName: 'Andrés',
+      settlementPaymentMethod: 'bizum' as const,
+      participants: [
+        { name: 'Irene Abril', amount: 3.5 },
+        { name: 'Espe', amount: 3.5 },
+        { name: 'Marta Cuenca', amount: 3.5 },
+        { name: 'Serhiy', amount: 3.5 },
+      ],
+    }
+
+    tpl = { ...tpl, settlementPaymentMethod: 'bank' as const }
+    tpl = normalizeRecurringSharingTemplate(tpl, 21, 'contact', 'Andrés')
+
+    tpl = { ...tpl, settlementPaymentMethod: 'bizum' as const }
+    tpl = normalizeRecurringSharingTemplate(tpl, 21, 'contact', 'Andrés')
+
+    assert.equal(tpl.participants.length, 4)
+    const canonical = getCanonicalRecurringShares({
+      amount: 21,
+      isShared: true,
+      paidBy: 'contact',
+      payerName: 'Andrés',
+      sharingTemplate: tpl,
+    })
+    assert.equal(canonical.shares.length, 6)
+    assert.equal(canonical.userShareAmount, 3.50)
+  })
+
+  // CASO E: Paga Andrés, mi cuota 3,50 € -> selectRecurringUserOutflow = 3,50 €
+  it('847. CASO E: selectRecurringUserOutflow devuelve 3,50 € para Spotify 21 € pagado por Andrés', () => {
+    const spotifyRec: RecurringPayment = {
+      id: 'rec-spotify-2',
+      name: 'Spotify',
+      amount: 21,
+      categoryId: 'subscriptions',
+      accountId: 'daily',
+      frequency: 'monthly',
+      nextDate: '2026-10-05',
+      active: true,
+      isShared: true,
+      paidBy: 'contact',
+      payerName: 'Andrés',
+      sharingTemplate: {
+        splitType: 'equal',
+        includePayer: true,
+        payer: 'contact',
+        payerName: 'Andrés',
+        participants: [
+          { name: 'Irene Abril', amount: 0 },
+          { name: 'Espe', amount: 0 },
+          { name: 'Marta Cuenca', amount: 0 },
+          { name: 'Serhiy', amount: 0 },
+        ],
+      },
+    }
+
+    const outflow = selectRecurringUserOutflow(spotifyRec, 1)
+    assert.equal(outflow, 3.50)
+  })
+
+  // CASO F: selectCommittedAmount utiliza 3,50 €
+  it('848. CASO F: selectCommittedAmount utiliza la cuota propia (3,50 €) y no el bruto total (21 €)', () => {
+    const spotifyRec: RecurringPayment = {
+      id: 'rec-spotify-comm',
+      name: 'Spotify',
+      amount: 21,
+      categoryId: 'subscriptions',
+      accountId: 'daily',
+      frequency: 'monthly',
+      nextDate: '2026-10-05',
+      active: true,
+      isShared: true,
+      paidBy: 'contact',
+      payerName: 'Andrés',
+      sharingTemplate: {
+        splitType: 'equal',
+        includePayer: true,
+        payer: 'contact',
+        payerName: 'Andrés',
+        participants: [
+          { name: 'Irene Abril', amount: 0 },
+          { name: 'Espe', amount: 0 },
+          { name: 'Marta Cuenca', amount: 0 },
+          { name: 'Serhiy', amount: 0 },
+        ],
+      },
+    }
+
+    const committed = selectCommittedAmount([spotifyRec], [], new Date('2026-10-02T12:00:00.000Z'))
+    assert.equal(committed, 3.50)
+  })
+
+  // CASO G: Previsión financiera utiliza 3,50 €
+  it('849. CASO G: Salida mensualizada selectRecurringMonthlyUserOutflow calcula 3,50 €', () => {
+    const spotifyRec: RecurringPayment = {
+      id: 'rec-spotify-monthly',
+      name: 'Spotify',
+      amount: 21,
+      categoryId: 'subscriptions',
+      accountId: 'daily',
+      frequency: 'monthly',
+      nextDate: '2026-10-05',
+      active: true,
+      isShared: true,
+      paidBy: 'contact',
+      payerName: 'Andrés',
+      sharingTemplate: {
+        splitType: 'equal',
+        includePayer: true,
+        payer: 'contact',
+        payerName: 'Andrés',
+        participants: [
+          { name: 'Irene Abril', amount: 0 },
+          { name: 'Espe', amount: 0 },
+          { name: 'Marta Cuenca', amount: 0 },
+          { name: 'Serhiy', amount: 0 },
+        ],
+      },
+    }
+
+    const monthlyOutflow = selectRecurringMonthlyUserOutflow(spotifyRec)
+    assert.equal(monthlyOutflow, 3.50)
+  })
+
+  // CASO H: Dos contactos distintos con el mismo nombre pero IDs diferentes NO deben deduplicarse
+  it('850. CASO H: Dos contactos distintos con el mismo displayName pero IDs distintos se preservan independientemente', () => {
+    const rawTemplate = {
+      splitType: 'equal' as const,
+      includePayer: true,
+      payer: 'user' as const,
+      participants: [
+        { contactId: 'contact-carlos-1', name: 'Carlos', amount: 0 },
+        { contactId: 'contact-carlos-2', name: 'Carlos', amount: 0 },
+      ],
+    }
+
+    const normalized = normalizeRecurringSharingTemplate(rawTemplate, 30, 'user')
+    assert.equal(normalized.participants.length, 2)
+    assert.equal(normalized.participants[0].contactId, 'contact-carlos-1')
+    assert.equal(normalized.participants[1].contactId, 'contact-carlos-2')
+
+    const canonical = getCanonicalRecurringShares({
+      amount: 30,
+      isShared: true,
+      paidBy: 'user',
+      sharingTemplate: normalized,
+    })
+
+    // Tú (10 €) + Carlos 1 (10 €) + Carlos 2 (10 €) = 30 €
+    assert.equal(canonical.shares.length, 3)
+    assert.equal(canonical.shares[0].amount, 10.00)
+    assert.equal(canonical.shares[1].amount, 10.00)
+    assert.equal(canonical.shares[2].amount, 10.00)
+  })
+
+  // CASO I: Custom split con datos legacy duplicados
+  it('851. CASO I: Custom split con datos legacy duplicados fusiona las entradas del usuario sin perder dinero', () => {
+    const rawTemplate = {
+      splitType: 'custom' as const,
+      includePayer: true,
+      payer: 'contact' as const,
+      payerName: 'Andrés',
+      participants: [
+        { name: 'Tú', amount: 2.0, isUserShare: true },
+        { name: 'Tú', amount: 1.5, isUserShare: true },
+        { name: 'Irene Abril', amount: 3.5 },
+        { name: 'Espe', amount: 3.5 },
+        { name: 'Marta Cuenca', amount: 3.5 },
+        { name: 'Serhiy', amount: 3.5 },
+      ],
+    }
+
+    const normalized = normalizeRecurringSharingTemplate(rawTemplate, 21, 'contact', 'Andrés')
+    const userEntry = normalized.participants.find((p) => p.isUserShare || p.name.toLowerCase() === 'tú')
+    assert.ok(userEntry)
+    assert.equal(userEntry.amount, 3.50) // 2.0 + 1.5 = 3.50
+
+    const canonical = getCanonicalRecurringShares({
+      amount: 21,
+      isShared: true,
+      paidBy: 'contact',
+      payerName: 'Andrés',
+      sharingTemplate: normalized,
+    })
+
+    assert.equal(canonical.isValid, true)
+    assert.equal(canonical.userShareAmount, 3.50)
+    assert.equal(canonical.payerShareAmount, 3.50) // Andrés asume el restante exacto
+    const sum = canonical.shares.reduce((s, sh) => s + sh.amount, 0)
+    assert.equal(Math.round(sum * 100) / 100, 21.00)
+  })
+
+  // CASO J: Spotify 21 €, 6 participantes -> eliminar uno -> 5 personas @ 4,20 € cada una
+  it('852. CASO J: Eliminar un participante en equal split recalcula automáticamente las cuotas (21 / 5 = 4,20 €)', () => {
+    const tplWith5 = {
+      splitType: 'equal' as const,
+      includePayer: true,
+      payer: 'contact' as const,
+      payerName: 'Andrés',
+      participants: [
+        { name: 'Irene Abril', amount: 0 },
+        { name: 'Espe', amount: 0 },
+        { name: 'Marta Cuenca', amount: 0 },
+        // Serhiy eliminado
+      ],
+    }
+
+    const canonical = getCanonicalRecurringShares({
+      amount: 21,
+      isShared: true,
+      paidBy: 'contact',
+      payerName: 'Andrés',
+      sharingTemplate: tplWith5,
+    })
+
+    assert.equal(canonical.shares.length, 5)
+    assert.equal(canonical.userShareAmount, 4.20)
+    assert.equal(canonical.payerShareAmount, 4.20)
+    const sum = canonical.shares.reduce((s, sh) => s + sh.amount, 0)
+    assert.equal(Math.round(sum * 100) / 100, 21.00)
+  })
+
+  // CASO K: Volver a añadirlo -> 6 personas @ 3,50 €
+  it('853. CASO K: Volver a añadir al participante restablece 6 cuotas de 3,50 € sin duplicados', () => {
+    const tplWith6 = {
+      splitType: 'equal' as const,
+      includePayer: true,
+      payer: 'contact' as const,
+      payerName: 'Andrés',
+      participants: [
+        { name: 'Irene Abril', amount: 0 },
+        { name: 'Espe', amount: 0 },
+        { name: 'Marta Cuenca', amount: 0 },
+        { name: 'Serhiy', amount: 0 },
+      ],
+    }
+
+    const canonical = getCanonicalRecurringShares({
+      amount: 21,
+      isShared: true,
+      paidBy: 'contact',
+      payerName: 'Andrés',
+      sharingTemplate: tplWith6,
+    })
+
+    assert.equal(canonical.shares.length, 6)
+    assert.equal(canonical.userShareAmount, 3.50)
+    const sum = canonical.shares.reduce((s, sh) => s + sh.amount, 0)
+    assert.equal(Math.round(sum * 100) / 100, 21.00)
+  })
+
+  // CASO L: Intentar eliminar al pagador habitual Andrés
+  it('854. CASO L: normalizeRecurringSharingTemplate asegura que el pagador real siempre tenga nombre válido', () => {
+    const norm = normalizeRecurringSharingTemplate(
+      {
+        splitType: 'equal',
+        includePayer: true,
+        payer: 'contact',
+        payerName: 'Andrés',
+        participants: [{ name: 'Irene Abril', amount: 0 }],
+      },
+      21,
+      'contact',
+      'Andrés'
+    )
+    assert.equal(norm.payerName, 'Andrés')
+    assert.equal(norm.payer, 'contact')
+  })
+
+  // CASO M: Eliminar participante de custom split con cuota asignada
+  it('855. CASO M: Custom split valida si faltan o sobran importes al alterar participantes', () => {
+    const customShares = [
+      { name: 'Tú', amount: 3.5, isUserShare: true },
+      { name: 'Irene Abril', amount: 3.5 },
+      { name: 'Espe', amount: 3.5 },
+      { name: 'Marta Cuenca', amount: 3.5 },
+      // Falta asignar la parte de Serhiy (3,50 €) y la de Andrés (3,50 €)
+    ]
+
+    const customRes = calculateCustomSplit(21, customShares, 'contact', 'Andrés')
+    assert.equal(customRes.isValid, false)
+    assert.equal(customRes.remainingAmount, 7.00)
+  })
+
+  // CASO N: Contacto eliminado vuelve a estar disponible
+  it('856. CASO N: Comprobar filtro de contactos disponibles para modal', () => {
+    const allContacts: SharedContact[] = [
+      { id: 'c1', displayName: 'Irene Abril', createdAt: '2026-01-01', updatedAt: '2026-01-01' },
+      { id: 'c2', displayName: 'Espe', createdAt: '2026-01-01', updatedAt: '2026-01-01' },
+      { id: 'c3', displayName: 'Serhiy', createdAt: '2026-01-01', updatedAt: '2026-01-01' },
+    ]
+
+    // Si Serhiy no está en participants, está disponible
+    const currentParticipants = [{ name: 'Irene Abril', contactId: 'c1' }]
+    const available = allContacts.filter((c) => !currentParticipants.some((p) => p.contactId === c.id))
+    assert.equal(available.length, 2)
+    assert.ok(available.some((c) => c.displayName === 'Serhiy'))
+  })
+
+  // CASO O: Contacto ya incluido no aparece duplicado en añadibles
+  it('857. CASO O: Contacto ya incluido se excluye de la lista de sugerencias disponibles', () => {
+    const allContacts: SharedContact[] = [
+      { id: 'c1', displayName: 'Irene Abril', createdAt: '2026-01-01', updatedAt: '2026-01-01' },
+    ]
+    const currentParticipants = [{ name: 'Irene Abril', contactId: 'c1' }]
+    const available = allContacts.filter((c) => !currentParticipants.some((p) => p.contactId === c.id))
+    assert.equal(available.length, 0)
+  })
+
+  // CASO P: La propia usuaria ("Tú") nunca aparece como contacto añadible
+  it('858. CASO P: Contacto con nombre "Tú" se filtra de la lista de contactos añadibles', () => {
+    const allContacts: SharedContact[] = [
+      { id: 'c-user', displayName: 'Tú', createdAt: '2026-01-01', updatedAt: '2026-01-01' },
+      { id: 'c1', displayName: 'Irene Abril', createdAt: '2026-01-01', updatedAt: '2026-01-01' },
+    ]
+    const available = allContacts.filter((c) => c.displayName.trim().toLowerCase() !== 'tú')
+    assert.equal(available.length, 1)
+    assert.equal(available[0].displayName, 'Irene Abril')
+  })
+
+  // CASO Q: Spotify 21 € paga Andrés -> recurrentes personales = 3,50 €
+  it('859. CASO Q: Spotify 21 € pagado por Andrés cuenta como 3,50 € en recurrentes personales de la usuaria', () => {
+    const spotifyRec: RecurringPayment = {
+      id: 'rec-spotify-q',
+      name: 'Spotify',
+      amount: 21,
+      categoryId: 'subscriptions',
+      accountId: 'daily',
+      frequency: 'monthly',
+      nextDate: '2026-10-05',
+      active: true,
+      isShared: true,
+      paidBy: 'contact',
+      payerName: 'Andrés',
+      sharingTemplate: {
+        splitType: 'equal',
+        includePayer: true,
+        payer: 'contact',
+        payerName: 'Andrés',
+        participants: [
+          { name: 'Irene Abril', amount: 0 },
+          { name: 'Espe', amount: 0 },
+          { name: 'Marta Cuenca', amount: 0 },
+          { name: 'Serhiy', amount: 0 },
+        ],
+      },
+    }
+
+    assert.equal(selectRecurringUserOutflow(spotifyRec), 3.50)
+  })
+
+  // CASO R: Antes de pagar: comprometido pendiente += 3,50 €
+  it('860. CASO R: Antes del cobro, el dinero comprometido pendiente incluye exactamente 3,50 €', () => {
+    const spotifyRec: RecurringPayment = {
+      id: 'rec-spotify-r',
+      name: 'Spotify',
+      amount: 21,
+      categoryId: 'subscriptions',
+      accountId: 'daily',
+      frequency: 'monthly',
+      nextDate: '2026-10-05',
+      active: true,
+      isShared: true,
+      paidBy: 'contact',
+      payerName: 'Andrés',
+      sharingTemplate: {
+        splitType: 'equal',
+        includePayer: true,
+        payer: 'contact',
+        payerName: 'Andrés',
+        participants: [
+          { name: 'Irene Abril', amount: 0 },
+          { name: 'Espe', amount: 0 },
+          { name: 'Marta Cuenca', amount: 0 },
+          { name: 'Serhiy', amount: 0 },
+        ],
+      },
+    }
+
+    const pending = selectPendingRecurringPayments([spotifyRec], [], new Date('2026-10-02T12:00:00.000Z'))
+    assert.equal(pending.length, 1)
+    const committed = selectCommittedAmount([spotifyRec], [], new Date('2026-10-02T12:00:00.000Z'))
+    assert.equal(committed, 3.50)
+  })
+
+  // CASO S: Pago 3,50 € por Bizum: se registra salida real de 3,50 € y el ciclo queda liquidado
+  it('861. CASO S: Liquidación de 3,50 € por Bizum registra salida de 3,50 € y cubre el mes', () => {
+    const spotifyRec: RecurringPayment = {
+      id: 'rec-spotify-s',
+      name: 'Spotify',
+      amount: 21,
+      categoryId: 'subscriptions',
+      accountId: 'daily',
+      frequency: 'monthly',
+      nextDate: '2026-10-05',
+      active: true,
+      isShared: true,
+      paidBy: 'contact',
+      payerName: 'Andrés',
+      sharingTemplate: {
+        splitType: 'equal',
+        includePayer: true,
+        payer: 'contact',
+        payerName: 'Andrés',
+        participants: [
+          { name: 'Irene Abril', amount: 0 },
+          { name: 'Espe', amount: 0 },
+          { name: 'Marta Cuenca', amount: 0 },
+          { name: 'Serhiy', amount: 0 },
+        ],
+      },
+    }
+
+    const bizumTx: Transaction = {
+      id: 'tx-bizum-oct',
+      type: 'expense',
+      amount: 3.50,
+      description: 'Spotify · Cuota a Andrés',
+      categoryId: 'subscriptions',
+      accountId: 'daily',
+      date: '2026-10-02T10:00:00.000Z',
+      recurringPaymentId: 'rec-spotify-s',
+      paymentMethod: 'bizum',
+      paidBy: 'user',
+    }
+
+    const isCovered = isRecurringCoveredInMonth(spotifyRec, [bizumTx], 2026, 9) // Octubre (mes 9)
+    assert.equal(isCovered, true)
+
+    const committedAfter = selectCommittedAmount([spotifyRec], [bizumTx], new Date('2026-10-02T12:00:00.000Z'))
+    assert.equal(committedAfter, 0)
+  })
+
+  // CASO T: No pago un mes y se acumulan dos ciclos -> deuda total 7 €
+  it('862. CASO T: Dos meses acumulados de Spotify implican salida propia de 7,00 €', () => {
+    const spotifyRec: RecurringPayment = {
+      id: 'rec-spotify-t',
+      name: 'Spotify',
+      amount: 21,
+      categoryId: 'subscriptions',
+      accountId: 'daily',
+      frequency: 'monthly',
+      nextDate: '2026-09-05',
+      active: true,
+      isShared: true,
+      paidBy: 'contact',
+      payerName: 'Andrés',
+      sharingTemplate: {
+        splitType: 'equal',
+        includePayer: true,
+        payer: 'contact',
+        payerName: 'Andrés',
+        participants: [
+          { name: 'Irene Abril', amount: 0 },
+          { name: 'Espe', amount: 0 },
+          { name: 'Marta Cuenca', amount: 0 },
+          { name: 'Serhiy', amount: 0 },
+        ],
+      },
+    }
+
+    const twoMonthsOutflow = selectRecurringUserOutflow(spotifyRec, 2)
+    assert.equal(twoMonthsOutflow, 7.00)
+  })
+
+  // CASO U: Pago un Bizum de 7 € cubriendo dos ciclos -> ambos quedan cubiertos
+  it('863. CASO U: Pago de 7,00 € cubre 2 mensualidades (septiembre y octubre)', () => {
+    const spotifyRec: RecurringPayment = {
+      id: 'rec-spotify-u',
+      name: 'Spotify',
+      amount: 21,
+      categoryId: 'subscriptions',
+      accountId: 'daily',
+      frequency: 'monthly',
+      nextDate: '2026-09-05',
+      active: true,
+      isShared: true,
+      paidBy: 'contact',
+      payerName: 'Andrés',
+      sharingTemplate: {
+        splitType: 'equal',
+        includePayer: true,
+        payer: 'contact',
+        payerName: 'Andrés',
+        participants: [
+          { name: 'Irene Abril', amount: 0 },
+          { name: 'Espe', amount: 0 },
+          { name: 'Marta Cuenca', amount: 0 },
+          { name: 'Serhiy', amount: 0 },
+        ],
+      },
+    }
+
+    const doubleTx: Transaction = {
+      id: 'tx-bizum-double',
+      type: 'expense',
+      amount: 7.00,
+      description: 'Spotify (2 meses)',
+      categoryId: 'subscriptions',
+      accountId: 'daily',
+      date: '2026-09-05T10:00:00.000Z',
+      recurringPaymentId: 'rec-spotify-u',
+      paymentMethod: 'bizum',
+      paidBy: 'user',
+    }
+
+    const coveredKeys = getCoveredMonthKeysForRecurring(spotifyRec, [doubleTx])
+    assert.ok(coveredKeys.has('2026-09'))
+    assert.ok(coveredKeys.has('2026-10'))
+  })
+
+  // CASO V: Las estadísticas conservan 3,50 € de coste por ciclo
+  it('864. CASO V: Descripción formateada refleja meses cubiertos correctamente', () => {
+    const desc = formatCoverageDescription('Spotify', '2026-09-05', 2)
+    assert.equal(desc, 'Spotify · septiembre + octubre')
+  })
+
+  // CASO W: Plan Financiero incluye cuota de 3,50 €
+  it('865. CASO W: Plan financiero contabiliza 3,50 € para el recurrente de Spotify', () => {
+    const spotifyRec: RecurringPayment = {
+      id: 'rec-spotify-w',
+      name: 'Spotify',
+      amount: 21,
+      categoryId: 'subscriptions',
+      accountId: 'daily',
+      frequency: 'monthly',
+      nextDate: '2026-10-05',
+      active: true,
+      isShared: true,
+      paidBy: 'contact',
+      payerName: 'Andrés',
+      sharingTemplate: {
+        splitType: 'equal',
+        includePayer: true,
+        payer: 'contact',
+        payerName: 'Andrés',
+        participants: [
+          { name: 'Irene Abril', amount: 0 },
+          { name: 'Espe', amount: 0 },
+          { name: 'Marta Cuenca', amount: 0 },
+          { name: 'Serhiy', amount: 0 },
+        ],
+      },
+    }
+
+    const outflow = selectRecurringUserOutflow(spotifyRec)
+    assert.equal(outflow, 3.50)
+  })
+
+  // CASO X: ChatGPT pagado por mí compromete 23 € iniciales y gestiona reembolso por separado
+  it('866. CASO X: ChatGPT pagado por mí (23 €) compromete el importe total al proveedor', () => {
+    const chatGptRec: RecurringPayment = {
+      id: 'rec-chatgpt',
+      name: 'ChatGPT Plus',
+      amount: 23,
+      categoryId: 'subscriptions',
+      accountId: 'daily',
+      frequency: 'monthly',
+      nextDate: '2026-10-10',
+      active: true,
+      isShared: true,
+      paidBy: 'user',
+      sharingTemplate: {
+        splitType: 'equal',
+        includePayer: true,
+        payer: 'user',
+        participants: [{ name: 'Sergi', amount: 0 }],
+      },
+    }
+
+    // Salida prevista inicial antes de reembolsos: 23,00 €
+    const userOutflow = selectRecurringUserOutflow(chatGptRec)
+    assert.equal(userOutflow, 23.00)
+
+    // Cuotas esperadas
+    const canonical = getCanonicalRecurringShares(chatGptRec)
+    assert.equal(canonical.shares.length, 2)
+    assert.equal(canonical.userShareAmount, 11.50)
+    assert.equal(canonical.shares[0].amount, 11.50)
+    assert.equal(canonical.shares[1].amount, 11.50)
+  })
+
+  // Test de versión 0.25.2
+  it('867. PWA Version: 0.25.2 / 2026.10.02-03', () => {
+    assert.equal(APP_VERSION, '0.25.2')
+    assert.equal(APP_BUILD, '2026.10.02-03')
+  })
+})
+
 
 
 

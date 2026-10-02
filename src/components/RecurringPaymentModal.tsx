@@ -11,7 +11,12 @@ import type {
   UpdateRecurringPaymentInput,
 } from '../models/finance'
 import { money } from '../utils/money'
-import { splitExpenseEqually } from '../utils/sharedExpenseSelectors'
+import {
+  splitExpenseEqually,
+  normalizeRecurringSharingTemplate,
+  getCanonicalRecurringShares,
+  type SplitResult,
+} from '../utils/sharedExpenseSelectors'
 import { AppIcon } from '../ui/icons'
 
 interface RecurringPaymentModalProps {
@@ -53,6 +58,7 @@ export function RecurringPaymentModal({
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('bank')
   const [active, setActive] = useState(true)
   const [confirmDelete, setConfirmDelete] = useState(false)
+  const [formError, setFormError] = useState<string | null>(null)
 
   // Estados para Gasto Compartido
   const [isShared, setIsShared] = useState(false)
@@ -66,6 +72,7 @@ export function RecurringPaymentModal({
   const [selfParticipates, setSelfParticipates] = useState(true)
   const [splitType, setSplitType] = useState<'equal' | 'custom'>('equal')
   const [participants, setParticipants] = useState<ParticipantEntry[]>([])
+  const [userCustomAmount, setUserCustomAmount] = useState<number>(0)
   const [newParticipantInput, setNewParticipantInput] = useState('')
 
   const isEditing = Boolean(payment)
@@ -99,24 +106,48 @@ export function RecurringPaymentModal({
       setIsShared(shared)
       const pBy = payment.paidBy || payment.sharingTemplate?.payer || 'user'
       setPaidBy(pBy)
-      setPayerName(payment.payerName || payment.sharingTemplate?.payerName || '')
-      setPayerContactId(payment.payerContactId || payment.sharingTemplate?.payerContactId || undefined)
+      const pName = payment.payerName || payment.sharingTemplate?.payerName || ''
+      setPayerName(pName)
+      const pContactId = payment.payerContactId || payment.sharingTemplate?.payerContactId || undefined
+      setPayerContactId(pContactId)
       setExpensePaymentMethod(payment.expensePaymentMethod || payment.paymentMethod || 'bank')
       setSettlementPaymentMethod(payment.settlementPaymentMethod || payment.sharingTemplate?.settlementPaymentMethod || 'bizum')
       setSettlementAccountId(payment.settlementAccountId || payment.sharingTemplate?.settlementAccountId || defaultAcc)
 
-      setSelfParticipates(payment.sharingTemplate?.includePayer ?? true)
-      setSplitType(payment.sharingTemplate?.splitType ?? 'equal')
-      setParticipants(
-        payment.sharingTemplate?.participants.map((p) => ({
+      // Normalizar plantilla para deduplicar usuario y pagador
+      const normTpl = normalizeRecurringSharingTemplate(
+        payment.sharingTemplate,
+        Number(payment.amount) || 0,
+        pBy,
+        pName,
+        pContactId
+      )
+
+      setSelfParticipates(normTpl.includePayer)
+      setSplitType(normTpl.splitType)
+
+      // Cargar solo los participantes externos (sin "Tú" y sin el pagador si paidBy === 'contact')
+      const cleanParticipants: ParticipantEntry[] = normTpl.participants
+        .filter((p) => !p.isUserShare && p.name.trim().toLowerCase() !== 'tú')
+        .map((p) => ({
           name: p.name,
           contactId: p.contactId,
           customAmount: p.amount,
-          isUserShare: p.isUserShare,
-        })) ?? []
-      )
+          isUserShare: false,
+        }))
+      setParticipants(cleanParticipants)
+
+      // Si es custom, rescatar la cuota propia del usuario
+      const userShareEntry = normTpl.participants.find((p) => p.isUserShare || p.name.trim().toLowerCase() === 'tú')
+      if (userShareEntry) {
+        setUserCustomAmount(userShareEntry.amount)
+      } else {
+        setUserCustomAmount(0)
+      }
+
       setNewParticipantInput('')
       setConfirmDelete(false)
+      setFormError(null)
     } else {
       setType('expense')
       setName('')
@@ -138,116 +169,160 @@ export function RecurringPaymentModal({
       setSelfParticipates(true)
       setSplitType('equal')
       setParticipants([])
+      setUserCustomAmount(0)
       setNewParticipantInput('')
       setConfirmDelete(false)
+      setFormError(null)
     }
   }, [payment, open, accounts, selectableCategories])
 
   const numericAmount = Number(amount.replace(',', '.')) || 0
 
-  // Cálculo de reparto en tiempo real con exactitud de céntimos
-  const computedShares = useMemo(() => {
+  // Contactos disponibles para añadir (filtrando Tú, pagador actual y los ya añadidos)
+  const availableContacts = useMemo(() => {
+    return sharedContacts.filter((c) => {
+      const cName = c.displayName.trim().toLowerCase()
+      if (cName === 'tú') return false
+
+      if (paidBy === 'contact') {
+        if (payerContactId && c.id === payerContactId) return false
+        if (!payerContactId && payerName && cName === payerName.trim().toLowerCase()) return false
+      }
+
+      const alreadyInList = participants.some((p) => {
+        if (p.contactId && c.id) return p.contactId === c.id
+        return p.name.trim().toLowerCase() === cName
+      })
+
+      return !alreadyInList
+    })
+  }, [sharedContacts, participants, paidBy, payerContactId, payerName])
+
+  // Cálculo de reparto en tiempo real con exactitud canónica de céntimos
+  const computedShares: SplitResult[] = useMemo(() => {
     if (!isShared || numericAmount <= 0) return []
 
-    if (paidBy === 'user') {
-      if (splitType === 'equal') {
-        const externalList = participants.map((p) => ({
-          name: p.name,
-          contactId: p.contactId,
-        }))
-        return splitExpenseEqually(numericAmount, externalList, selfParticipates, 'Tú')
-      } else {
-        const results = []
-        if (selfParticipates) {
-          const externalTotal = participants.reduce((s, p) => s + (p.customAmount || 0), 0)
-          const payerAmount = Math.max(0, Math.round((numericAmount - externalTotal) * 100) / 100)
-          results.push({
-            participantName: 'Tú',
-            isPayerShare: true,
-            isUserShare: false,
-            amount: payerAmount,
-          })
+    // Filtrar participantes externos limpios (garantizar que no incluyan 'tú' ni al pagador si paidBy === 'contact')
+    const effectivePayerName = (payerName || 'Contacto').trim()
+    const cleanExternalList = participants
+      .filter((p) => {
+        const pName = p.name.trim().toLowerCase()
+        if (pName === 'tú') return false
+        if (paidBy === 'contact' && (pName === effectivePayerName.toLowerCase() || (payerContactId && p.contactId === payerContactId))) {
+          return false
         }
-        participants.forEach((p) => {
-          results.push({
-            participantName: p.name,
-            contactId: p.contactId,
-            isPayerShare: false,
-            isUserShare: false,
-            amount: p.customAmount || 0,
-          })
+        return true
+      })
+      .map((p) => ({
+        name: p.name.trim(),
+        contactId: p.contactId,
+        amount: p.customAmount || 0,
+      }))
+
+    if (splitType === 'equal') {
+      return splitExpenseEqually(
+        numericAmount,
+        cleanExternalList,
+        selfParticipates,
+        'Tú',
+        paidBy,
+        effectivePayerName,
+        payerContactId
+      )
+    }
+
+    // splitType === 'custom'
+    const results: SplitResult[] = []
+
+    if (paidBy === 'contact') {
+      if (selfParticipates && userCustomAmount > 0) {
+        results.push({
+          participantName: 'Tú',
+          isPayerShare: false,
+          isUserShare: true,
+          amount: userCustomAmount,
         })
-        return results
       }
+
+      cleanExternalList.forEach((p) => {
+        results.push({
+          participantName: p.name,
+          contactId: p.contactId,
+          isPayerShare: false,
+          isUserShare: false,
+          amount: p.amount,
+        })
+      })
+
+      const othersTotal = results.reduce((acc, s) => acc + s.amount, 0)
+      const payerPart = Math.max(0, Math.round((numericAmount - othersTotal) * 100) / 100)
+
+      results.unshift({
+        participantName: effectivePayerName,
+        contactId: payerContactId,
+        isPayerShare: true,
+        isUserShare: false,
+        amount: payerPart,
+      })
+
+      return results
     } else {
-      // Paga otra persona (paidBy === 'contact')
-      const effectivePayerName = payerName.trim() || 'Contacto'
-      if (splitType === 'equal') {
-        const externalList = participants
-          .filter((p) => p.name.toLowerCase() !== effectivePayerName.toLowerCase())
-          .map((p) => ({
-            name: p.name,
-            contactId: p.contactId,
-          }))
-
-        // Si el pagador no está en la lista de participantes externos, lo incluimos
-        const listWithPayer = [
-          { name: effectivePayerName, contactId: payerContactId },
-          ...externalList,
-        ]
-
-        const split = splitExpenseEqually(numericAmount, listWithPayer, selfParticipates, 'Tú')
-        return split.map((s) => {
-          const isPayer = s.participantName.toLowerCase() === effectivePayerName.toLowerCase()
-          return {
-            ...s,
-            isPayerShare: isPayer,
-            isUserShare: !isPayer && (s.participantName.toLowerCase() === 'tú' || s.isPayerShare),
-          }
+      // paidBy === 'user'
+      cleanExternalList.forEach((p) => {
+        results.push({
+          participantName: p.name,
+          contactId: p.contactId,
+          isPayerShare: false,
+          isUserShare: false,
+          amount: p.amount,
         })
-      } else {
-        // Personalizado
-        const results: { participantName: string; contactId?: string; isPayerShare: boolean; isUserShare: boolean; amount: number }[] = []
-        let userAmount = 0
-        const userEntry = participants.find((p) => p.isUserShare || p.name.toLowerCase() === 'tú')
-        if (userEntry) {
-          userAmount = userEntry.customAmount || 0
-        }
+      })
 
-        if (selfParticipates && userAmount > 0) {
-          results.push({
-            participantName: 'Tú',
-            isPayerShare: false,
-            isUserShare: true,
-            amount: userAmount,
-          })
-        }
+      const externalTotal = results.reduce((acc, s) => acc + s.amount, 0)
+      const userAmountCalc = selfParticipates
+        ? (userCustomAmount > 0 ? userCustomAmount : Math.max(0, Math.round((numericAmount - externalTotal) * 100) / 100))
+        : 0
 
-        const others = participants.filter((p) => !p.isUserShare && p.name.toLowerCase() !== 'tú' && p.name.toLowerCase() !== effectivePayerName.toLowerCase())
-        others.forEach((p) => {
-          results.push({
-            participantName: p.name,
-            contactId: p.contactId,
-            isPayerShare: false,
-            isUserShare: false,
-            amount: p.customAmount || 0,
-          })
-        })
-
-        const nonPayerTotal = results.reduce((acc, r) => acc + r.amount, 0)
-        const payerPart = Math.max(0, Math.round((numericAmount - nonPayerTotal) * 100) / 100)
+      if (selfParticipates) {
         results.unshift({
-          participantName: effectivePayerName,
-          contactId: payerContactId,
+          participantName: 'Tú',
           isPayerShare: true,
           isUserShare: false,
-          amount: payerPart,
+          amount: userAmountCalc,
         })
+      }
 
-        return results
+      return results
+    }
+  }, [isShared, numericAmount, paidBy, payerName, payerContactId, splitType, participants, selfParticipates, userCustomAmount])
+
+  // Validación de suma para reparto personalizado
+  const customSplitValidation = useMemo(() => {
+    if (!isShared || splitType !== 'custom' || numericAmount <= 0) {
+      return { isValid: true, difference: 0, message: '' }
+    }
+
+    const assignedTotal = computedShares.reduce((s, sh) => s + sh.amount, 0)
+    const diff = Math.round((numericAmount - assignedTotal) * 100) / 100
+
+    if (Math.abs(diff) < 0.01) {
+      return { isValid: true, difference: 0, message: '' }
+    }
+
+    if (diff > 0) {
+      return {
+        isValid: false,
+        difference: diff,
+        message: `Faltan ${money(diff)} por asignar en el reparto.`,
       }
     }
-  }, [isShared, numericAmount, paidBy, payerName, payerContactId, splitType, participants, selfParticipates])
+
+    return {
+      isValid: false,
+      difference: diff,
+      message: `Has asignado ${money(Math.abs(diff))} de más sobre el total de ${money(numericAmount)}.`,
+    }
+  }, [isShared, splitType, numericAmount, computedShares])
 
   if (!open) return null
 
@@ -255,13 +330,27 @@ export function RecurringPaymentModal({
     const rawName = (nameToAdd || newParticipantInput).trim()
     if (!rawName) return
 
-    if (participants.some((p) => p.name.toLowerCase() === rawName.toLowerCase())) {
+    // Nunca permitir añadir "Tú" como contacto externo
+    if (rawName.toLowerCase() === 'tú') {
+      setNewParticipantInput('')
+      return
+    }
+
+    // Si es pagador habitual, no añadir a la lista de terceros
+    if (paidBy === 'contact' && rawName.toLowerCase() === payerName.trim().toLowerCase()) {
+      setFormError(`"${rawName}" ya es el pagador habitual de este gasto.`)
+      setNewParticipantInput('')
+      return
+    }
+
+    // Comprobar si ya existe en participants
+    if (participants.some((p) => p.name.trim().toLowerCase() === rawName.toLowerCase())) {
       setNewParticipantInput('')
       return
     }
 
     const matchedContact = sharedContacts.find(
-      (c) => c.displayName.toLowerCase() === rawName.toLowerCase()
+      (c) => c.displayName.trim().toLowerCase() === rawName.toLowerCase()
     )
 
     setParticipants((prev) => [
@@ -270,13 +359,16 @@ export function RecurringPaymentModal({
         name: rawName,
         contactId: matchedContact?.id,
         customAmount: 0,
+        isUserShare: false,
       },
     ])
     setNewParticipantInput('')
+    setFormError(null)
   }
 
   const handleRemoveParticipant = (index: number) => {
     setParticipants((prev) => prev.filter((_, i) => i !== index))
+    setFormError(null)
   }
 
   const handleCustomAmountChange = (index: number, val: string) => {
@@ -284,19 +376,81 @@ export function RecurringPaymentModal({
     setParticipants((prev) =>
       prev.map((p, i) => (i === index ? { ...p, customAmount: num } : p))
     )
+    setFormError(null)
   }
 
   const handleSelectPayerContact = (nameVal: string) => {
     setPayerName(nameVal)
-    const match = sharedContacts.find((c) => c.displayName.toLowerCase() === nameVal.toLowerCase())
+    const match = sharedContacts.find((c) => c.displayName.trim().toLowerCase() === nameVal.trim().toLowerCase())
     setPayerContactId(match?.id)
+
+    // Si la persona seleccionada como pagador estaba en participants, la quitamos de terceros
+    if (nameVal.trim()) {
+      setParticipants((prev) =>
+        prev.filter((p) => p.name.trim().toLowerCase() !== nameVal.trim().toLowerCase())
+      )
+    }
+    setFormError(null)
   }
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
-    if (!name.trim() || numericAmount <= 0) return
+    setFormError(null)
+
+    if (!name.trim()) {
+      setFormError('Por favor, introduce un nombre para el movimiento.')
+      return
+    }
+
+    if (numericAmount <= 0) {
+      setFormError('Por favor, introduce un importe válido.')
+      return
+    }
+
+    if (type === 'expense' && isShared && paidBy === 'contact' && !payerName.trim()) {
+      setFormError('Por favor, indica el nombre de la persona que paga habitualmente este gasto.')
+      return
+    }
+
+    if (type === 'expense' && isShared && splitType === 'custom' && !customSplitValidation.isValid) {
+      setFormError(customSplitValidation.message || 'El reparto personalizado debe sumar exactamente el importe total.')
+      return
+    }
 
     const effectiveExpenseMethod = isShared ? expensePaymentMethod : paymentMethod
+
+    // Normalizar plantilla final antes de persistir
+    const cleanExternalParticipants = participants
+      .filter((p) => !p.isUserShare && p.name.trim().toLowerCase() !== 'tú')
+      .map((p) => ({
+        name: p.name.trim(),
+        contactId: p.contactId,
+        amount: splitType === 'custom' ? (p.customAmount || 0) : 0,
+      }))
+
+    const initialTemplate = {
+      splitType,
+      includePayer: paidBy === 'user' ? selfParticipates : selfParticipates,
+      payer: paidBy,
+      payerName: paidBy === 'contact' ? payerName.trim() : undefined,
+      payerContactId: paidBy === 'contact' ? payerContactId : undefined,
+      settlementPaymentMethod,
+      settlementAccountId: settlementPaymentMethod !== 'cash' ? settlementAccountId : undefined,
+      participants: splitType === 'custom' && selfParticipates && userCustomAmount > 0
+        ? [
+            { name: 'Tú', amount: userCustomAmount, isUserShare: true },
+            ...cleanExternalParticipants,
+          ]
+        : cleanExternalParticipants,
+    }
+
+    const normalizedTemplate = normalizeRecurringSharingTemplate(
+      initialTemplate,
+      numericAmount,
+      paidBy,
+      payerName,
+      payerContactId
+    )
 
     const data: CreateRecurringPaymentInput = {
       type,
@@ -316,25 +470,7 @@ export function RecurringPaymentModal({
       settlementAccountId: type === 'expense' && isShared && settlementPaymentMethod !== 'cash' ? settlementAccountId : undefined,
       active,
       isShared: type === 'expense' && isShared,
-      sharingTemplate: type === 'expense' && isShared
-        ? {
-            splitType,
-            includePayer: paidBy === 'user' ? selfParticipates : true,
-            payer: paidBy,
-            payerName: paidBy === 'contact' ? (payerName.trim() || undefined) : undefined,
-            payerContactId: paidBy === 'contact' ? payerContactId : undefined,
-            settlementPaymentMethod,
-            settlementAccountId: settlementPaymentMethod !== 'cash' ? settlementAccountId : undefined,
-            participants: computedShares
-              .filter((s) => (paidBy === 'user' ? !s.isPayerShare : true))
-              .map((s) => ({
-                contactId: s.contactId,
-                name: s.participantName,
-                amount: s.amount,
-                isUserShare: s.isUserShare,
-              })),
-          }
-        : undefined,
+      sharingTemplate: type === 'expense' && isShared ? normalizedTemplate : undefined,
     }
 
     if (isEditing && payment) {
@@ -370,69 +506,106 @@ export function RecurringPaymentModal({
           </button>
         </div>
 
-        {/* Selector de Tipo: Gasto vs Ingreso recurrente */}
-        <div className="segmented" style={{ marginBottom: 16 }}>
-          <button
-            type="button"
-            className={type === 'expense' ? 'active' : ''}
-            onClick={() => setType('expense')}
-          >
-            Gasto recurrente
-          </button>
-          <button
-            type="button"
-            className={type === 'income' ? 'active' : ''}
-            onClick={() => {
-              setType('income')
-              setIsShared(false)
-            }}
-          >
-            Ingreso previsto (Nómina)
-          </button>
-        </div>
+        {formError && (
+          <div className="banner error" style={{ margin: '0 0 12px 0', padding: '8px 12px', fontSize: '0.85rem' }}>
+            <span>{formError}</span>
+          </div>
+        )}
 
-        <form onSubmit={handleSubmit} className="modal-form">
-          {/* DATOS DEL GASTO */}
+        <form onSubmit={handleSubmit}>
+          {!isEditing && (
+            <div className="form-group">
+              <label>Tipo de recurrente</label>
+              <div className="segmented" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr' }}>
+                <button
+                  type="button"
+                  className={type === 'expense' ? 'active' : ''}
+                  onClick={() => setType('expense')}
+                >
+                  Gasto
+                </button>
+                <button
+                  type="button"
+                  className={type === 'income' ? 'active' : ''}
+                  onClick={() => setType('income')}
+                >
+                  Ingreso
+                </button>
+              </div>
+            </div>
+          )}
+
           <div className="form-group">
             <label>
-              {type === 'income' ? 'Nombre o concepto del ingreso' : 'Concepto del gasto'}
+              {type === 'income' ? 'Concepto del ingreso' : 'Nombre del servicio / gasto'}
               <input
                 type="text"
-                placeholder={
-                  type === 'income'
-                    ? 'Nómina, pensión, alquiler...'
-                    : 'Spotify, Gimnasio, Alquiler...'
-                }
                 value={name}
                 onChange={(e) => setName(e.target.value)}
+                placeholder={type === 'income' ? 'ej. Nómina Empresa, Alquiler...' : 'ej. Alquiler, Gimnasio, Spotify...'}
+                required
                 autoFocus
               />
             </label>
           </div>
 
-          <div className="form-group">
-            <label>
-              {type === 'income' ? 'Importe previsto (€)' : 'Importe total (€)'}
-              <input
-                type="text"
-                inputMode="decimal"
-                placeholder="0,00"
-                value={amount}
-                onChange={(e) => setAmount(e.target.value)}
-              />
-            </label>
-          </div>
-
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+          <div className="form-row">
             <div className="form-group">
               <label>
-                Frecuencia
+                Importe (€)
+                <input
+                  type="text"
+                  inputMode="decimal"
+                  value={amount}
+                  onChange={(e) => setAmount(e.target.value)}
+                  placeholder="0,00"
+                  required
+                />
+              </label>
+            </div>
+
+            {type === 'income' ? (
+              <div className="form-group">
+                <label>
+                  Origen del ingreso
+                  <select
+                    value={incomeSourceType}
+                    onChange={(e) => setIncomeSourceType(e.target.value as RecurringIncomeSourceType)}
+                  >
+                    <option value="salary">Nómina</option>
+                    <option value="pension">Pensión</option>
+                    <option value="rental">Alquiler</option>
+                    <option value="benefit">Prestación / ayuda</option>
+                    <option value="other">Otros ingresos</option>
+                  </select>
+                </label>
+              </div>
+            ) : (
+              <div className="form-group">
+                <label>
+                  Categoría
+                  <select value={categoryId} onChange={(e) => setCategoryId(e.target.value)}>
+                    {selectableCategories.map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+            )}
+          </div>
+
+          <div className="form-row">
+            <div className="form-group">
+              <label>
+                Periodicidad
                 <select
                   value={frequency}
                   onChange={(e) => setFrequency(e.target.value as RecurringFrequency)}
                 >
-                  <option value="weekly">Semanal</option>
                   <option value="monthly">Mensual</option>
+                  <option value="weekly">Semanal</option>
                   <option value="yearly">Anual</option>
                 </select>
               </label>
@@ -440,55 +613,24 @@ export function RecurringPaymentModal({
 
             <div className="form-group">
               <label>
-                {type === 'income' ? 'Fecha estimada' : 'Próxima fecha'}
+                Próximo cobro
                 <input
                   type="date"
                   value={nextDate}
                   onChange={(e) => setNextDate(e.target.value)}
+                  required
                 />
               </label>
             </div>
           </div>
 
-          {/* Categoría para gastos, Tipo de ingreso para ingresos */}
-          {type === 'expense' ? (
-            <div className="form-group">
-              <label>
-                Categoría
-                <select value={categoryId} onChange={(e) => setCategoryId(e.target.value)}>
-                  {selectableCategories.map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {c.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            </div>
-          ) : (
-            <div className="form-group">
-              <label>
-                Tipo de ingreso
-                <select
-                  value={incomeSourceType}
-                  onChange={(e) => setIncomeSourceType(e.target.value as RecurringIncomeSourceType)}
-                >
-                  <option value="salary">Nómina</option>
-                  <option value="pension">Pensión</option>
-                  <option value="rental">Alquiler</option>
-                  <option value="benefit">Prestación / ayuda</option>
-                  <option value="other">Otros ingresos</option>
-                </select>
-              </label>
-            </div>
-          )}
-
-          {/* CÓMO SE PAGA (Si NO es compartido) */}
+          {/* MÉTODO DE PAGO Y CUENTA (SI NO ES COMPARTIDO) */}
           {type === 'expense' && !isShared && (
-            <div style={{ padding: '12px 14px', borderRadius: 12, background: 'var(--bg-card-light, rgba(255,255,255,0.03))', border: '1px solid var(--border-color, rgba(255,255,255,0.08))', marginBottom: 14 }}>
-              <label className="section-label" style={{ marginBottom: 6, display: 'block', fontSize: '0.82rem', color: 'var(--text-muted)' }}>
-                Cómo se paga el gasto
+            <div className="form-group">
+              <label className="section-label" style={{ fontSize: '0.82rem', color: 'var(--text-muted)' }}>
+                Medio de pago
               </label>
-              <div className="segmented" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', marginBottom: 10 }}>
+              <div className="segmented" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', marginTop: 4, marginBottom: 8 }}>
                 <button
                   type="button"
                   className={paymentMethod === 'bank' ? 'active' : ''}
@@ -577,14 +719,20 @@ export function RecurringPaymentModal({
                       <button
                         type="button"
                         className={paidBy === 'user' ? 'active' : ''}
-                        onClick={() => setPaidBy('user')}
+                        onClick={() => {
+                          setPaidBy('user')
+                          setFormError(null)
+                        }}
                       >
                         Yo
                       </button>
                       <button
                         type="button"
                         className={paidBy === 'contact' ? 'active' : ''}
-                        onClick={() => setPaidBy('contact')}
+                        onClick={() => {
+                          setPaidBy('contact')
+                          setFormError(null)
+                        }}
                       >
                         Otra persona
                       </button>
@@ -638,7 +786,7 @@ export function RecurringPaymentModal({
                         </div>
                       )}
 
-                      {/* Reparto */}
+                      {/* Participación propia */}
                       <label className="checkbox-custom-row" style={{ marginTop: 8 }}>
                         <input
                           type="checkbox"
@@ -683,7 +831,7 @@ export function RecurringPaymentModal({
                             list="shared-recurring-contacts-list"
                           />
                           <datalist id="shared-recurring-contacts-list">
-                            {sharedContacts.map((c) => (
+                            {availableContacts.map((c) => (
                               <option key={c.id} value={c.displayName} />
                             ))}
                           </datalist>
@@ -698,11 +846,11 @@ export function RecurringPaymentModal({
                         </button>
                       </div>
 
-                      {/* Lista de participantes */}
+                      {/* Lista de participantes con acción de eliminar */}
                       {participants.length > 0 && (
                         <div className="participant-chips-wrap" style={{ marginTop: 8 }}>
                           {participants.map((p, idx) => (
-                            <div className="participant-chip-item" key={idx}>
+                            <div className="participant-chip-item" key={`${p.name}-${idx}`}>
                               <span className="participant-name-label">{p.name}</span>
                               {splitType === 'custom' && (
                                 <div className="participant-custom-field">
@@ -796,6 +944,16 @@ export function RecurringPaymentModal({
                         </label>
                       </div>
 
+                      {/* Participación propia */}
+                      <label className="checkbox-custom-row" style={{ marginTop: 8 }}>
+                        <input
+                          type="checkbox"
+                          checked={selfParticipates}
+                          onChange={(e) => setSelfParticipates(e.target.checked)}
+                        />
+                        <span>Yo también participo en este gasto</span>
+                      </label>
+
                       {/* Reparto */}
                       <div className="segmented" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', margin: '10px 0' }}>
                         <button
@@ -814,7 +972,7 @@ export function RecurringPaymentModal({
                         </button>
                       </div>
 
-                      {/* Añadir participantes adicionales si aplica */}
+                      {/* Añadir participantes adicionales */}
                       <div className="participant-add-container">
                         <div className="participant-input-wrapper">
                           <input
@@ -831,6 +989,11 @@ export function RecurringPaymentModal({
                             }}
                             list="shared-recurring-contacts-list"
                           />
+                          <datalist id="shared-recurring-contacts-list">
+                            {availableContacts.map((c) => (
+                              <option key={c.id} value={c.displayName} />
+                            ))}
+                          </datalist>
                         </div>
                         <button
                           type="button"
@@ -842,35 +1005,50 @@ export function RecurringPaymentModal({
                         </button>
                       </div>
 
+                      {/* Lista de participantes en modo partes iguales */}
+                      {splitType === 'equal' && participants.length > 0 && (
+                        <div className="participant-chips-wrap" style={{ marginTop: 8 }}>
+                          {participants.map((p, idx) => (
+                            <div className="participant-chip-item" key={`${p.name}-${idx}`}>
+                              <span className="participant-name-label">{p.name}</span>
+                              <button
+                                type="button"
+                                className="chip-delete-btn"
+                                onClick={() => handleRemoveParticipant(idx)}
+                                aria-label={`Quitar ${p.name}`}
+                              >
+                                <AppIcon name="x" size={13} />
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+
                       {/* Lista de participantes en modo personalizado */}
                       {splitType === 'custom' && (
                         <div style={{ marginTop: 10 }}>
-                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
-                            <span style={{ fontSize: '0.82rem', color: 'var(--text-muted)' }}>Mi parte correspondiente (Tú):</span>
-                            <div className="participant-custom-field" style={{ width: 100 }}>
-                              <input
-                                type="text"
-                                inputMode="decimal"
-                                className="participant-amount-input"
-                                value={String(participants.find((p) => p.isUserShare || p.name.toLowerCase() === 'tú')?.customAmount ?? 0).replace('.', ',')}
-                                onChange={(e) => {
-                                  const num = Number(e.target.value.replace(',', '.')) || 0
-                                  setParticipants((prev) => {
-                                    const exists = prev.some((p) => p.isUserShare || p.name.toLowerCase() === 'tú')
-                                    if (exists) {
-                                      return prev.map((p) => (p.isUserShare || p.name.toLowerCase() === 'tú') ? { ...p, customAmount: num } : p)
-                                    }
-                                    return [...prev, { name: 'Tú', isUserShare: true, customAmount: num }]
-                                  })
-                                }}
-                                placeholder="0,00"
-                              />
-                              <span className="unit-label">€</span>
+                          {selfParticipates && (
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                              <span style={{ fontSize: '0.82rem', color: 'var(--text-muted)' }}>Mi parte correspondiente (Tú):</span>
+                              <div className="participant-custom-field" style={{ width: 100 }}>
+                                <input
+                                  type="text"
+                                  inputMode="decimal"
+                                  className="participant-amount-input"
+                                  value={String(userCustomAmount).replace('.', ',')}
+                                  onChange={(e) => {
+                                    const num = Number(e.target.value.replace(',', '.')) || 0
+                                    setUserCustomAmount(num)
+                                  }}
+                                  placeholder="0,00"
+                                />
+                                <span className="unit-label">€</span>
+                              </div>
                             </div>
-                          </div>
+                          )}
 
-                          {participants.filter((p) => !p.isUserShare && p.name.toLowerCase() !== 'tú').map((p, idx) => (
-                            <div className="participant-chip-item" key={idx} style={{ marginTop: 6 }}>
+                          {participants.map((p, idx) => (
+                            <div className="participant-chip-item" key={`${p.name}-${idx}`} style={{ marginTop: 6 }}>
                               <span className="participant-name-label">{p.name}</span>
                               <div className="participant-custom-field">
                                 <input
@@ -878,12 +1056,7 @@ export function RecurringPaymentModal({
                                   inputMode="decimal"
                                   className="participant-amount-input"
                                   value={String(p.customAmount ?? 0).replace('.', ',')}
-                                  onChange={(e) => {
-                                    const num = Number(e.target.value.replace(',', '.')) || 0
-                                    setParticipants((prev) =>
-                                      prev.map((item) => item.name === p.name ? { ...item, customAmount: num } : item)
-                                    )
-                                  }}
+                                  onChange={(e) => handleCustomAmountChange(idx, e.target.value)}
                                   placeholder="0,00"
                                 />
                                 <span className="unit-label">€</span>
@@ -891,7 +1064,7 @@ export function RecurringPaymentModal({
                               <button
                                 type="button"
                                 className="chip-delete-btn"
-                                onClick={() => setParticipants((prev) => prev.filter((item) => item.name !== p.name))}
+                                onClick={() => handleRemoveParticipant(idx)}
                                 aria-label={`Quitar ${p.name}`}
                               >
                                 <AppIcon name="x" size={13} />
@@ -952,13 +1125,21 @@ export function RecurringPaymentModal({
                     </>
                   )}
 
+                  {/* Aviso si custom split no cuadra */}
+                  {splitType === 'custom' && !customSplitValidation.isValid && (
+                    <div className="banner warning" style={{ marginTop: 10, padding: '8px 10px', fontSize: '0.8rem' }}>
+                      <AppIcon name="alert-triangle" size={14} />
+                      <span>{customSplitValidation.message}</span>
+                    </div>
+                  )}
+
                   {/* Previsualización del reparto exacto */}
                   {computedShares.length > 0 && (
                     <div className="split-preview-card" style={{ marginTop: 14 }}>
                       <span className="split-preview-header">Reparto previsto de cada ciclo</span>
                       <div className="split-preview-table">
                         {computedShares.map((s, idx) => (
-                          <div className="split-preview-row" key={idx}>
+                          <div className="split-preview-row" key={`${s.participantName}-${idx}`}>
                             <span className="split-person-name">
                               {s.participantName} {s.isPayerShare ? `(Pagador real)` : (s.isUserShare || s.participantName.toLowerCase() === 'tú') ? '(Tu cuota)' : ''}
                             </span>
@@ -1004,7 +1185,11 @@ export function RecurringPaymentModal({
           </div>
 
           <div className="modal-actions" style={{ marginTop: 20 }}>
-            <button type="submit" className="primary-button">
+            <button
+              type="submit"
+              className="primary-button"
+              disabled={type === 'expense' && isShared && splitType === 'custom' && !customSplitValidation.isValid}
+            >
               {isEditing
                 ? 'Guardar cambios'
                 : type === 'income'

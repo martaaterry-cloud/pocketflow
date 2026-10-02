@@ -1,4 +1,13 @@
-import type { Category, ExpenseShare, ExpenseShareStatus, Transaction, CashTransaction } from '../models/finance'
+import type {
+  Category,
+  ExpenseShare,
+  ExpenseShareStatus,
+  Transaction,
+  CashTransaction,
+  RecurringPayment,
+  RecurringSharingTemplate,
+  RecurringSharingParticipant,
+} from '../models/finance'
 import { normalizeCategoryAlias } from './categoryNormalization'
 import { toUnifiedMovements, type UnifiedMovement } from './unifiedMovementSelectors'
 
@@ -608,6 +617,331 @@ export function calculateCustomSplit(
     remainingAmount,
     errorMessage,
     shares,
+  }
+}
+
+export interface CanonicalRecurringSharesResult {
+  shares: SplitResult[]
+  userShareAmount: number
+  payerShareAmount: number
+  totalAmount: number
+  isValid: boolean
+  errorMessage?: string
+}
+
+/**
+ * Normaliza y deduplica semánticamente una plantilla de reparto recurrente.
+ * Garantiza:
+ * 1) Exactamente una representación canónica de la usuaria ("Tú"), si includePayer es true.
+ * 2) Exactamente una representación del pagador real (si paidBy === 'contact').
+ * 3) Contactos externos deduplicados respetando IDs estables (dos contactos con mismo nombre pero distinto ID se conservan).
+ * 4) Suma de cuotas == importe total bruto (con redondeo a céntimos).
+ */
+export function normalizeRecurringSharingTemplate(
+  template: RecurringSharingTemplate | undefined,
+  totalAmount: number,
+  paidBy: 'user' | 'contact' = 'user',
+  payerName?: string,
+  payerContactId?: string
+): RecurringSharingTemplate {
+  const cleanAmount = Math.max(0, Math.round(Number(totalAmount) * 100) / 100)
+  const isContactPaid = paidBy === 'contact' || template?.payer === 'contact'
+  const effectivePayerName = (payerName || template?.payerName || 'Contacto').trim()
+  const effectivePayerContactId = payerContactId || template?.payerContactId
+
+  const rawParticipants = template?.participants ?? []
+  const splitType = template?.splitType || 'equal'
+  const includePayer = template?.includePayer ?? true
+
+  // 1. Separar representaciones de la usuaria, pagador y otros participantes
+  const userEntries = rawParticipants.filter(
+    (p) => p.isUserShare || p.name.trim().toLowerCase() === 'tú' || p.contactId === 'user'
+  )
+
+  // Participantes puramente externos (ni Tú ni el pagador externo)
+  const rawOthers = rawParticipants.filter((p) => {
+    const isUser = p.isUserShare || p.name.trim().toLowerCase() === 'tú' || p.contactId === 'user'
+    if (isUser) return false
+    if (isContactPaid) {
+      const isPayer =
+        (Boolean(effectivePayerContactId) && p.contactId === effectivePayerContactId) ||
+        p.name.trim().toLowerCase() === effectivePayerName.toLowerCase()
+      if (isPayer) return false
+    }
+    return true
+  })
+
+  // Deduplicar otros participantes respetando contactId
+  const cleanOthers: RecurringSharingParticipant[] = []
+  rawOthers.forEach((p) => {
+    const trimmedName = p.name.trim()
+    if (!trimmedName) return
+    const exists = cleanOthers.some((existing) => {
+      if (p.contactId && existing.contactId) {
+        return p.contactId === existing.contactId
+      }
+      if (!p.contactId && !existing.contactId) {
+        return existing.name.trim().toLowerCase() === trimmedName.toLowerCase()
+      }
+      return false
+    })
+    if (!exists) {
+      cleanOthers.push({
+        name: trimmedName,
+        contactId: p.contactId,
+        amount: Math.round(Number(p.amount || 0) * 100) / 100,
+        isUserShare: false,
+      })
+    } else {
+      // Si existe duplicado en custom, sumamos el importe para no perder dinero
+      const existingIdx = cleanOthers.findIndex((existing) => {
+        if (p.contactId && existing.contactId) return p.contactId === existing.contactId
+        return existing.name.trim().toLowerCase() === trimmedName.toLowerCase()
+      })
+      if (existingIdx >= 0) {
+        cleanOthers[existingIdx].amount =
+          Math.round((cleanOthers[existingIdx].amount + Number(p.amount || 0)) * 100) / 100
+      }
+    }
+  })
+
+  if (splitType === 'equal') {
+    // Calculamos cuotas iguales limpias
+    const splitResults = splitExpenseEqually(
+      cleanAmount,
+      cleanOthers,
+      includePayer,
+      'Tú',
+      isContactPaid ? 'contact' : 'user',
+      effectivePayerName,
+      effectivePayerContactId
+    )
+
+    // Almacenamos los participantes externos en la plantilla
+    const normalizedParticipants: RecurringSharingParticipant[] = cleanOthers.map((p) => {
+      const share = splitResults.find(
+        (s) =>
+          (p.contactId && s.contactId === p.contactId) ||
+          s.participantName.trim().toLowerCase() === p.name.trim().toLowerCase()
+      )
+      return {
+        name: p.name,
+        contactId: p.contactId,
+        amount: share?.amount ?? 0,
+        isUserShare: false,
+      }
+    })
+
+    return {
+      splitType: 'equal',
+      includePayer,
+      payer: isContactPaid ? 'contact' : 'user',
+      payerName: isContactPaid ? effectivePayerName : undefined,
+      payerContactId: isContactPaid ? effectivePayerContactId : undefined,
+      settlementPaymentMethod: template?.settlementPaymentMethod,
+      settlementAccountId: template?.settlementAccountId,
+      participants: normalizedParticipants,
+    }
+  }
+
+  // splitType === 'custom'
+  let userAmount = 0
+  if (includePayer) {
+    userAmount = userEntries.reduce((sum, u) => sum + Number(u.amount || 0), 0)
+    userAmount = Math.round(userAmount * 100) / 100
+  }
+
+  const normalizedParticipants: RecurringSharingParticipant[] = cleanOthers.map((p) => ({
+    name: p.name,
+    contactId: p.contactId,
+    amount: Math.round(Number(p.amount || 0) * 100) / 100,
+    isUserShare: false,
+  }))
+
+  if (includePayer && userAmount > 0) {
+    normalizedParticipants.unshift({
+      name: 'Tú',
+      amount: userAmount,
+      isUserShare: true,
+    })
+  }
+
+  return {
+    splitType: 'custom',
+    includePayer,
+    payer: isContactPaid ? 'contact' : 'user',
+    payerName: isContactPaid ? effectivePayerName : undefined,
+    payerContactId: isContactPaid ? effectivePayerContactId : undefined,
+    settlementPaymentMethod: template?.settlementPaymentMethod,
+    settlementAccountId: template?.settlementAccountId,
+    participants: normalizedParticipants,
+  }
+}
+
+/**
+ * Obtiene el desglose canónico completo de cuotas para un gasto recurrente,
+ * deduplicando la usuaria y el pagador y garantizando la invariante de suma = total.
+ */
+export function getCanonicalRecurringShares(
+  rec: Pick<RecurringPayment, 'amount' | 'isShared' | 'paidBy' | 'payerName' | 'payerContactId' | 'sharingTemplate'>,
+  monthsCount = 1
+): CanonicalRecurringSharesResult {
+  const effectiveMonths = Math.max(1, monthsCount)
+  const totalAmount = Math.max(0, Math.round((Number(rec.amount) || 0) * effectiveMonths * 100) / 100)
+
+  if (!rec.isShared || totalAmount <= 0) {
+    return {
+      shares: [
+        {
+          participantName: 'Tú',
+          isPayerShare: true,
+          isUserShare: false,
+          amount: totalAmount,
+        },
+      ],
+      userShareAmount: totalAmount,
+      payerShareAmount: totalAmount,
+      totalAmount,
+      isValid: true,
+    }
+  }
+
+  const isContactPaid = rec.paidBy === 'contact' || rec.sharingTemplate?.payer === 'contact'
+  const payerName = (rec.payerName || rec.sharingTemplate?.payerName || 'Contacto').trim()
+  const payerContactId = rec.payerContactId || rec.sharingTemplate?.payerContactId
+  const normTpl = normalizeRecurringSharingTemplate(
+    rec.sharingTemplate,
+    totalAmount,
+    isContactPaid ? 'contact' : 'user',
+    payerName,
+    payerContactId
+  )
+
+  const splitType = normTpl.splitType
+  const includePayer = normTpl.includePayer
+
+  if (splitType === 'equal') {
+    const externalParticipants = normTpl.participants.filter(
+      (p) => !p.isUserShare && p.name.trim().toLowerCase() !== 'tú'
+    )
+    const shares = splitExpenseEqually(
+      totalAmount,
+      externalParticipants,
+      includePayer,
+      'Tú',
+      isContactPaid ? 'contact' : 'user',
+      payerName,
+      payerContactId
+    )
+
+    const userShare = shares.find(
+      (s) => s.isUserShare || s.participantName.toLowerCase() === 'tú'
+    )
+    const payerShare = shares.find((s) => s.isPayerShare)
+
+    const sum = shares.reduce((acc, s) => acc + s.amount, 0)
+    const isValid = Math.abs(sum - totalAmount) < 0.015
+
+    return {
+      shares,
+      userShareAmount: includePayer ? (userShare?.amount ?? (isContactPaid ? 0 : totalAmount)) : 0,
+      payerShareAmount: payerShare?.amount ?? totalAmount,
+      totalAmount,
+      isValid,
+    }
+  }
+
+  // splitType === 'custom'
+  const rawParticipants = normTpl.participants
+  const userEntry = rawParticipants.find((p) => p.isUserShare || p.name.trim().toLowerCase() === 'tú')
+  const userAmount = userEntry ? userEntry.amount : 0
+
+  const externalList = rawParticipants.filter(
+    (p) =>
+      !p.isUserShare &&
+      p.name.trim().toLowerCase() !== 'tú' &&
+      p.name.trim().toLowerCase() !== payerName.toLowerCase()
+  )
+
+  const shares: SplitResult[] = []
+
+  if (isContactPaid) {
+    if (includePayer && userAmount > 0) {
+      shares.push({
+        participantName: 'Tú',
+        isPayerShare: false,
+        isUserShare: true,
+        amount: userAmount,
+      })
+    }
+
+    externalList.forEach((p) => {
+      shares.push({
+        participantName: p.name,
+        contactId: p.contactId,
+        isPayerShare: false,
+        isUserShare: false,
+        amount: p.amount,
+      })
+    })
+
+    const othersTotal = shares.reduce((acc, s) => acc + s.amount, 0)
+    const payerAmount = Math.max(0, Math.round((totalAmount - othersTotal) * 100) / 100)
+
+    shares.unshift({
+      participantName: payerName,
+      contactId: payerContactId,
+      isPayerShare: true,
+      isUserShare: false,
+      amount: payerAmount,
+    })
+
+    const sum = shares.reduce((acc, s) => acc + s.amount, 0)
+    const isValid = Math.abs(sum - totalAmount) < 0.015
+
+    return {
+      shares,
+      userShareAmount: includePayer ? userAmount : 0,
+      payerShareAmount: payerAmount,
+      totalAmount,
+      isValid,
+      errorMessage: !isValid ? `El reparto no suma ${totalAmount.toFixed(2)} €` : undefined,
+    }
+  } else {
+    // Paga usuario
+    externalList.forEach((p) => {
+      shares.push({
+        participantName: p.name,
+        contactId: p.contactId,
+        isPayerShare: false,
+        isUserShare: false,
+        amount: p.amount,
+      })
+    })
+
+    const externalTotal = shares.reduce((acc, s) => acc + s.amount, 0)
+    const userAmountCalculated =
+      userAmount > 0 ? userAmount : Math.max(0, Math.round((totalAmount - externalTotal) * 100) / 100)
+
+    if (includePayer) {
+      shares.unshift({
+        participantName: 'Tú',
+        isPayerShare: true,
+        isUserShare: false,
+        amount: userAmountCalculated,
+      })
+    }
+
+    const sum = shares.reduce((acc, s) => acc + s.amount, 0)
+    const isValid = Math.abs(sum - totalAmount) < 0.015
+
+    return {
+      shares,
+      userShareAmount: includePayer ? userAmountCalculated : 0,
+      payerShareAmount: userAmountCalculated,
+      totalAmount,
+      isValid,
+    }
   }
 }
 
