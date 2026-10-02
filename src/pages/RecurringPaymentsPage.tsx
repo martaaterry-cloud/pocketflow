@@ -3,6 +3,7 @@ import { RecurringPaymentModal } from '../components/RecurringPaymentModal'
 import { ConfirmRecurringPaymentModal } from '../components/ConfirmRecurringPaymentModal'
 import type {
   CreateRecurringPaymentInput,
+  PaymentMethod,
   RecurringIncomeSourceType,
   RecurringPayment,
   UpdateRecurringPaymentInput,
@@ -42,11 +43,11 @@ export function RecurringPaymentsPage({
     }
   }
 
-  const handleDirectConfirm = async (paymentId: string, monthsCount = 1) => {
+  const handleDirectConfirm = async (paymentId: string, monthsCount = 1, paymentMethod?: PaymentMethod) => {
     if (confirmingId) return
     setConfirmingId(paymentId)
     try {
-      finance.confirmRecurringPayment(paymentId, monthsCount)
+      finance.confirmRecurringPayment(paymentId, monthsCount, undefined, paymentMethod)
     } finally {
       setTimeout(() => setConfirmingId(null), 300)
     }
@@ -352,9 +353,9 @@ export function RecurringPaymentsPage({
         open={Boolean(confirmModalPayment)}
         payment={confirmModalPayment}
         onClose={() => setConfirmModalPayment(null)}
-        onConfirm={(paymentId, monthsCount) => {
+        onConfirm={(paymentId, monthsCount, paymentMethod) => {
           setConfirmModalPayment(null)
-          handleDirectConfirm(paymentId, monthsCount)
+          handleDirectConfirm(paymentId, monthsCount, paymentMethod)
         }}
         isSubmitting={Boolean(confirmingId)}
       />

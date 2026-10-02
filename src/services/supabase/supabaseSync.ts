@@ -238,6 +238,21 @@ export function fromDbReserve(row: Record<string, unknown>): Reserve {
 export function toDbRecurring(r: RecurringPayment, userId: string) {
   const isIncome = r.type === 'income'
   const categoryId = isIncome && r.categoryId === 'income' ? null : (r.categoryId || null)
+  const sharingTemplateWithDetails =
+    r.isShared && r.sharingTemplate
+      ? {
+          ...r.sharingTemplate,
+          payer: r.paidBy || r.sharingTemplate.payer || 'user',
+          payerName: r.payerName || r.sharingTemplate.payerName || undefined,
+          payerContactId: r.payerContactId || r.sharingTemplate.payerContactId || undefined,
+          expensePaymentMethod: r.expensePaymentMethod || r.paymentMethod || 'bank',
+          settlementPaymentMethod:
+            r.settlementPaymentMethod || r.sharingTemplate.settlementPaymentMethod || 'bizum',
+          settlementAccountId:
+            r.settlementAccountId || r.sharingTemplate.settlementAccountId || undefined,
+        }
+      : r.sharingTemplate || null
+
   const row: Record<string, unknown> = {
     id: r.id,
     user_id: userId,
@@ -249,7 +264,7 @@ export function toDbRecurring(r: RecurringPayment, userId: string) {
     next_date: r.nextDate,
     active: r.active,
     is_shared: Boolean(r.isShared),
-    sharing_template: r.sharingTemplate || null,
+    sharing_template: sharingTemplateWithDetails,
     type: r.type || 'expense',
     installments_count: r.installmentsCount || null,
     payment_method: r.paymentMethod || null,
@@ -269,7 +284,9 @@ export function toDbRecurring(r: RecurringPayment, userId: string) {
 export function fromDbRecurring(row: Record<string, unknown>): RecurringPayment {
   const isIncome = (row.type as string) === 'income'
   const categoryId = row.category_id ? String(row.category_id) : (isIncome ? 'income' : 'other')
-  const sharingTpl = (row.sharing_template as RecurringSharingTemplate) || undefined
+  const sharingTpl = (row.sharing_template as RecurringSharingTemplate & {
+    expensePaymentMethod?: PaymentMethod
+  }) || undefined
   return {
     id: String(row.id),
     name: String(row.name),
@@ -288,9 +305,17 @@ export function fromDbRecurring(row: Record<string, unknown>): RecurringPayment 
     paidBy: (row.paid_by as 'user' | 'contact') || sharingTpl?.payer || 'user',
     payerName: (row.payer_name as string) || sharingTpl?.payerName || undefined,
     payerContactId: (row.payer_contact_id as string) || sharingTpl?.payerContactId || undefined,
-    expensePaymentMethod: (row.expense_payment_method as PaymentMethod) || undefined,
-    settlementPaymentMethod: (row.settlement_payment_method as PaymentMethod) || sharingTpl?.settlementPaymentMethod || undefined,
-    settlementAccountId: (row.settlement_account_id as string) || sharingTpl?.settlementAccountId || undefined,
+    expensePaymentMethod:
+      (row.expense_payment_method as PaymentMethod) ||
+      sharingTpl?.expensePaymentMethod ||
+      (row.payment_method as PaymentMethod) ||
+      undefined,
+    settlementPaymentMethod:
+      (row.settlement_payment_method as PaymentMethod) ||
+      sharingTpl?.settlementPaymentMethod ||
+      undefined,
+    settlementAccountId:
+      (row.settlement_account_id as string) || sharingTpl?.settlementAccountId || undefined,
   }
 }
 
@@ -613,12 +638,35 @@ export async function syncMissingDefaultCategories(
 export function cleanMissingColumns(row: Record<string, unknown>, errorMessage?: string): Record<string, unknown> {
   const clean = { ...row }
   const msg = (errorMessage || '').toLowerCase()
-  if (msg.includes('gift_recipient') || !errorMessage) delete clean.gift_recipient
-  if (msg.includes('income_source_type') || !errorMessage) delete clean.income_source_type
-  if (msg.includes('installments_count') || !errorMessage) delete clean.installments_count
-  if (msg.includes('special_type')) delete clean.special_type
-  if (msg.includes('expense_nature')) delete clean.expense_nature
-  if (msg.includes('payment_method')) delete clean.payment_method
+
+  // Match any column dynamically from PostgREST/Postgres schema errors
+  const matches = msg.matchAll(/(?:column|the)\s+["']?([a-z0-9_]+)["']?(?:\s+column)?/gi)
+  for (const match of matches) {
+    if (match[1] && match[1] in clean) {
+      delete clean[match[1]]
+    }
+  }
+
+  // All known optional and extension columns
+  const extensionColumns = [
+    'gift_recipient',
+    'income_source_type',
+    'installments_count',
+    'special_type',
+    'expense_nature',
+    'payment_method',
+    'paid_by',
+    'payer_name',
+    'payer_contact_id',
+    'expense_payment_method',
+    'settlement_payment_method',
+    'settlement_account_id',
+  ]
+  for (const col of extensionColumns) {
+    if (msg.includes(col.toLowerCase()) || !errorMessage) {
+      delete clean[col]
+    }
+  }
   return clean
 }
 
@@ -760,7 +808,25 @@ export async function safeUpsertRecurring(
     if (error.code === 'PGRST204' || error.code === '42703' || error.message.toLowerCase().includes('column')) {
       const clean = cleanMissingColumns(row, error.message)
       const { error: retryError } = await supabase.from('recurring_payments').upsert(clean)
-      if (retryError) throw retryError
+      if (!retryError) return
+
+      // Fallback final: guardar columnas núcleo + sharing_template jsonb
+      const coreOnly: Record<string, unknown> = {
+        id: row.id,
+        user_id: row.user_id,
+        name: row.name,
+        amount: row.amount,
+        category_id: row.category_id,
+        account_id: row.account_id,
+        frequency: row.frequency,
+        next_date: row.next_date,
+        active: row.active,
+        is_shared: row.is_shared,
+        sharing_template: row.sharing_template,
+        type: row.type || 'expense',
+      }
+      const { error: finalError } = await supabase.from('recurring_payments').upsert(coreOnly)
+      if (finalError) throw finalError
       return
     }
     throw error

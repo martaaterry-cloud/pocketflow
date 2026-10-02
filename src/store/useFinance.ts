@@ -1291,7 +1291,9 @@ export function useFinance(storage: StorageAdapter = defaultAppStorage) {
     (
       id: string,
       monthsCountOrDate: number | string = 1,
-      confirmationDate?: string
+      confirmationDate?: string,
+      overridePaymentMethod?: PaymentMethod,
+      overrideAccountId?: string
     ): Transaction | null => {
       const rec = state.recurring.find((r) => r.id === id)
       if (!rec) return null
@@ -1327,6 +1329,9 @@ export function useFinance(storage: StorageAdapter = defaultAppStorage) {
       const payerName = rec.payerName || rec.sharingTemplate?.payerName || 'Contacto'
       const payerContactId = rec.payerContactId || rec.sharingTemplate?.payerContactId || undefined
 
+      const effectivePaymentMethod = overridePaymentMethod || rec.expensePaymentMethod || rec.paymentMethod || 'bank'
+      const effectiveAccountId = effectivePaymentMethod === 'cash' ? 'cash' : (overrideAccountId || rec.accountId || 'daily')
+
       // 1. Crear transacción real vinculada con recurringPaymentId
       const newTx: Transaction = {
         id: `tx_${crypto.randomUUID()}`,
@@ -1334,11 +1339,11 @@ export function useFinance(storage: StorageAdapter = defaultAppStorage) {
         amount: totalAmount,
         description,
         categoryId: rec.categoryId,
-        accountId: rec.accountId || 'daily',
+        accountId: effectiveAccountId,
         date: dateStr,
         recurringPaymentId: rec.id,
         isShared: Boolean(rec.isShared),
-        paymentMethod: rec.expensePaymentMethod || rec.paymentMethod || 'bank',
+        paymentMethod: effectivePaymentMethod,
         paidBy: isContactPaid ? 'contact' : 'user',
         payerName: isContactPaid ? payerName : undefined,
         payerContactId: isContactPaid ? payerContactId : undefined,
@@ -3059,7 +3064,13 @@ export function useFinance(storage: StorageAdapter = defaultAppStorage) {
     )
 
     // Métricas del plan financiero (Fase 3: Unificación canónica)
-    const expectedIncomeDetail = selectExpectedMonthlyIncomeDetail(state.planSettings, state.recurring)
+    const expectedIncomeDetail = selectExpectedMonthlyIncomeDetail(
+      state.planSettings,
+      state.recurring,
+      state.transactions,
+      state.cashTransactions ?? [],
+      now
+    )
     const monthlyIncome = expectedIncomeDetail.amount
     const expectedCommittedExpenses = selectExpectedCommittedExpenses(state.recurring)
     const actualFixedExpenses = selectActualFixedMonthlyExpenses(state.transactions, now)
@@ -3149,7 +3160,8 @@ export function useFinance(storage: StorageAdapter = defaultAppStorage) {
       state.variableExpenseEstimates,
       state.budgets,
       committed,
-      now
+      now,
+      state.cashTransactions ?? []
     )
 
     const estimatedMonthlyMargin = monthlyPlanSummary.plannedMargin

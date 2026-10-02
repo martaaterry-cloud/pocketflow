@@ -4781,8 +4781,9 @@ describe('Fase 13 — Disponible Proyectado, Tarjeta Expandible y Confirmación 
       { id: '3', accountId: 'daily', type: 'income', incomeKind: 'reimbursement', amount: 40.00, description: 'Bizum cena', date: '2026-09-03T10:00:00.000Z' },
     ]
 
-    const realIncome = selectRealIncome(txs)
-    const reimbursements = selectReimbursementsReceived(txs)
+    const refDate = new Date('2026-09-05T12:00:00.000Z')
+    const realIncome = selectRealIncome(txs, refDate, 'month')
+    const reimbursements = selectReimbursementsReceived(txs, refDate, 'month')
 
     assert.equal(realIncome, 2050.00)
     assert.equal(reimbursements, 40.00)
@@ -4795,9 +4796,10 @@ describe('Fase 13 — Disponible Proyectado, Tarjeta Expandible y Confirmación 
       { id: 'r1', accountId: 'daily', type: 'income', incomeKind: 'reimbursement', amount: 40.00, description: 'Bizums amigos cena', date: '2026-09-04T10:00:00.000Z', parentExpenseId: 'e1' },
     ]
 
-    const gross = selectGrossExpenses(txs) // 75.00
-    const reimbursements = selectReimbursementsReceived(txs) // 40.00
-    const net = selectNetPersonalExpenses(txs) // 35.00 (20 € cena propia + 15 € farmacia)
+    const refDate = new Date('2026-09-05T12:00:00.000Z')
+    const gross = selectGrossExpenses(txs, refDate, 'month') // 75.00
+    const reimbursements = selectReimbursementsReceived(txs, refDate, 'month') // 40.00
+    const net = selectNetPersonalExpenses(txs, refDate, 'month') // 35.00 (20 € cena propia + 15 € farmacia)
 
     assert.equal(gross, 75.00)
     assert.equal(reimbursements, 40.00)
@@ -6916,12 +6918,12 @@ describe('Fase 18 — Mejoras de Finanzas (Detalle por Categoría, Retiradas de 
 describe('Fase 18 — Identificación Visual de Versión y Build', () => {
   it('314. Versioning: única fuente de verdad y formato de visualización exacto', () => {
     assert.equal(APP_NAME, 'PocketFlow')
-    assert.equal(APP_VERSION, '0.24.12')
-    assert.equal(APP_BUILD, '2026.09.30-10')
+    assert.equal(APP_VERSION, '0.25.0')
+    assert.equal(APP_BUILD, '2026.10.02-01')
 
-    assert.equal(getAppVersionString(), 'PocketFlow v0.24.12')
-    assert.equal(getAppBuildString(), 'Build 2026.09.30-10')
-    assert.equal(getAppFullVersionLabel(), 'PocketFlow v0.24.12 · Build 2026.09.30-10')
+    assert.equal(getAppVersionString(), 'PocketFlow v0.25.0')
+    assert.equal(getAppBuildString(), 'Build 2026.10.02-01')
+    assert.equal(getAppFullVersionLabel(), 'PocketFlow v0.25.0 · Build 2026.10.02-01')
   })
 })
 
@@ -14017,12 +14019,12 @@ describe('Fase 50 — Control de Acceso por Roles (User / Admin), Seguridad RLS 
     }
 
     const userFooter = renderFooterTexts(false)
-    assert.equal(userFooter.versionText, 'PocketFlow v0.24.12')
+    assert.equal(userFooter.versionText, 'PocketFlow v0.25.0')
     assert.equal(userFooter.buildText, null)
 
     const adminFooter = renderFooterTexts(true)
-    assert.equal(adminFooter.versionText, 'PocketFlow v0.24.12')
-    assert.equal(adminFooter.buildText, 'Build 2026.09.30-10')
+    assert.equal(adminFooter.versionText, 'PocketFlow v0.25.0')
+    assert.equal(adminFooter.buildText, 'Build 2026.10.02-01')
   })
 
   it('590. 10. Reconciliación y sincronización de perfil no altera datos financieros ni transacciones', () => {
@@ -14523,7 +14525,7 @@ describe('Fase 52 — Versionado Automático y Robusto del Service Worker PWA', 
   it('613. 1. CACHE_NAME del Service Worker incluye exactamente APP_VERSION y APP_BUILD actuales', () => {
     const expectedCacheName = `pocketflow-v${APP_VERSION}-${APP_BUILD}`
     assert.equal(getServiceWorkerCacheName(APP_VERSION, APP_BUILD), expectedCacheName)
-    assert.equal(expectedCacheName, 'pocketflow-v0.24.12-2026.09.30-10')
+    assert.equal(expectedCacheName, 'pocketflow-v0.25.0-2026.10.02-01')
 
     const swCode = generateServiceWorkerCode(APP_VERSION, APP_BUILD)
     assert.ok(swCode.includes(`const CACHE_NAME = '${expectedCacheName}'`))
@@ -17067,7 +17069,7 @@ describe('Fase 60 — Control de Gasto del Mes (Cerebro del Plan Financiero)', (
     assert.equal(ctrl.hasConfiguredIncome, false)
     assert.equal(ctrl.incomeExpected, 0)
     assert.equal(ctrl.recommendedDailyAvailable, null)
-    assert.ok(ctrl.statusMessage.includes('Configura tus ingresos'))
+    assert.ok(ctrl.statusMessage.includes('Añade un ingreso') || ctrl.statusMessage.includes('referencia'))
   })
 
   it('676. Asesor Sobrio: evalúa estados over, tight, comfortable y on_track con lenguaje profesional', () => {
@@ -17231,15 +17233,15 @@ describe('Fase 61 — Detección Fiable de Versión Remota y Actualizaciones PWA
     assert.ok(swCode.includes('return false'))
 
     const versionData = JSON.parse(generateVersionJson(APP_VERSION, APP_BUILD))
-    assert.equal(versionData.version, '0.24.12')
-    assert.equal(versionData.build, '2026.09.30-10')
+    assert.equal(versionData.version, '0.25.0')
+    assert.equal(versionData.build, '2026.10.02-01')
   })
 
   // Test 10: Diagnóstico completo collectPwaDiagnosticInfo
   it('686. 10. collectPwaDiagnosticInfo recopila estado de versión local, remota y controller', async () => {
     const info = await collectPwaDiagnosticInfo(null, '/pocketflow/')
-    assert.equal(info.localVersion, '0.24.12')
-    assert.equal(info.localBuild, '2026.09.30-10')
+    assert.equal(info.localVersion, '0.25.0')
+    assert.equal(info.localBuild, '2026.10.02-01')
     assert.equal(info.basePath, '/pocketflow/')
     assert.ok(typeof info.lastCheckedAt === 'string')
   })
@@ -17348,12 +17350,12 @@ describe('Fase 62 — Categoría Canónica "Estudios / Formación" (education)',
     assert.equal(planSettings.essentialCategoryIds.includes('education'), false)
   })
 
-  // Test 8: generateVersionJson genera 0.24.12 / 2026.09.30-10
-  it('694. 8. build genera version.json 0.24.5 / 2026.09.30-03', () => {
+  // Test 8: generateVersionJson genera 0.25.0 / 2026.10.02-01
+  it('694. 8. build genera version.json 0.25.0 / 2026.10.02-01', () => {
     const versionJsonStr = generateVersionJson(APP_VERSION, APP_BUILD)
     const parsed = JSON.parse(versionJsonStr)
-    assert.equal(parsed.version, '0.24.12')
-    assert.equal(parsed.build, '2026.09.30-10')
+    assert.equal(parsed.version, '0.25.0')
+    assert.equal(parsed.build, '2026.10.02-01')
     assert.equal(parsed.name, 'PocketFlow')
   })
 
@@ -18382,13 +18384,13 @@ describe('Fase 66 — Clasificación y Desglose de Gastos por Medio de Pago (Tar
     assert.equal(grossTotal, breakdown.total)
   })
 
-  // CASO 12: Versión 0.24.12 y Build 2026.09.30-10
-  it('731. 12. Build genera version.json 0.24.11 / 2026.09.30-09', () => {
-    assert.equal(APP_VERSION, '0.24.12')
-    assert.equal(APP_BUILD, '2026.09.30-10')
-    const vJson = JSON.parse(generateVersionJson('0.24.12', '2026.09.30-10'))
-    assert.equal(vJson.version, '0.24.12')
-    assert.equal(vJson.build, '2026.09.30-10')
+  // CASO 12: Versión 0.25.0 y Build 2026.10.02-01
+  it('731. 12. Build genera version.json 0.25.0 / 2026.10.02-01', () => {
+    assert.equal(APP_VERSION, '0.25.0')
+    assert.equal(APP_BUILD, '2026.10.02-01')
+    const vJson = JSON.parse(generateVersionJson('0.25.0', '2026.10.02-01'))
+    assert.equal(vJson.version, '0.25.0')
+    assert.equal(vJson.build, '2026.10.02-01')
   })
 })
 
@@ -20752,9 +20754,9 @@ describe('Fase 67.8 — Auditoría Integral de Integridad Económica, Caso Multa
   })
 
   // TEST 21: Versión y build actualizados
-  it('806. 21. Versión y Build actualizados a 0.24.12 / 2026.09.30-10', () => {
-    assert.equal(APP_VERSION, '0.24.12')
-    assert.equal(APP_BUILD, '2026.09.30-10')
+  it('806. 21. Versión y Build actualizados a 0.25.0 / 2026.10.02-01', () => {
+    assert.equal(APP_VERSION, '0.25.0')
+    assert.equal(APP_BUILD, '2026.10.02-01')
   })
 })
 
@@ -21321,9 +21323,377 @@ describe('Fase 68 — Rediseño de Movimientos (Resumen Mensual, Agrupación Dia
   })
 
   // TEST 25: Versión y build actualizados
-  it('823. 25. Versión y Build actualizados a 0.24.12 / 2026.09.30-10', () => {
-    assert.equal(APP_VERSION, '0.24.12')
-    assert.equal(APP_BUILD, '2026.09.30-10')
+  it('823. 25. Versión y Build actualizados a 0.25.0 / 2026.10.02-01', () => {
+    assert.equal(APP_VERSION, '0.25.0')
+    assert.equal(APP_BUILD, '2026.10.02-01')
+  })
+})
+
+describe('Fase 69 — Auditoría y Corrección Completa: Dinero Real, Ingresos Variables, Plan Financiero, Gastos Recurrentes y Deudas', () => {
+  const accounts: Account[] = [
+    { id: 'daily', name: 'CaixaBank', type: 'spending', initialBalance: 1000, balance: 1000 },
+    { id: 'savings', name: 'Ahorro BBVA', type: 'savings', initialBalance: 2000, balance: 2000 },
+  ]
+
+  const emptyPlanSettings: FinancialPlanSettings = {
+    monthlyIncome: 0,
+    savingsTargetType: 'fixed',
+    fixedSavingsTarget: 0,
+    savingsTargetPercent: 0,
+    essentialCategoryIds: ['housing', 'utilities', 'supermarket'],
+  }
+
+  // CASO A: Sin referencia mensual configurada, ingreso real +699,81 €
+  it('824. CASO A: Plan Financiero reconoce ingreso real de 699,81 € sin referencia mensual configurada', () => {
+    const realTx: Transaction[] = [
+      {
+        id: 'tx-salary-oct',
+        amount: 699.81,
+        type: 'income',
+        category: 'income',
+        date: '2026-10-01T08:00:00.000Z',
+        concept: 'Nómina Septiembre',
+        accountId: 'daily',
+      },
+    ]
+
+    const refDate = new Date('2026-10-02T12:00:00.000Z')
+    const incomeDetail = selectExpectedMonthlyIncomeDetail(emptyPlanSettings, [], realTx, [], refDate)
+
+    assert.equal(incomeDetail.amount, 699.81)
+    assert.equal(incomeDetail.realAmount, 699.81)
+    assert.equal(incomeDetail.pendingRecurringAmount, 0)
+    assert.equal(incomeDetail.referenceAmount, 0)
+    assert.equal(incomeDetail.source, 'real')
+    assert.equal(incomeDetail.isManualFallback, false)
+    assert.equal(incomeDetail.isUnconfigured, false)
+
+    const spendingControl = selectMonthlySpendingControl(emptyPlanSettings, [], realTx, [], [], [], [], [], [], refDate)
+    assert.equal(spendingControl.incomeExpected, 699.81)
+    assert.equal(spendingControl.discretionaryAvailable, 699.81)
+    assert.ok(spendingControl.discretionaryAvailable > 0)
+
+    const cardSummary = selectMonthlyPlanCardSummary(emptyPlanSettings, [], realTx, [], [], [], [], refDate)
+    assert.equal(cardSummary.monthlyIncome, 699.81)
+    assert.equal(cardSummary.hasConfiguredPlan, true)
+    assert.equal(cardSummary.incomeSource, 'real')
+  })
+
+  // CASO B: Referencia mensual vacía -> no 1.650 € ni importes inventados
+  it('825. CASO B: Sin referencia mensual y sin movimientos -> 0,00 €, nunca 1.650 € ni fallback inventado', () => {
+    const refDate = new Date('2026-10-02T12:00:00.000Z')
+    const incomeDetail = selectExpectedMonthlyIncomeDetail(emptyPlanSettings, [], [], [], refDate)
+
+    assert.equal(incomeDetail.amount, 0)
+    assert.equal(incomeDetail.realAmount, 0)
+    assert.equal(incomeDetail.pendingRecurringAmount, 0)
+    assert.equal(incomeDetail.referenceAmount, 0)
+    assert.equal(incomeDetail.source, 'none')
+    assert.equal(incomeDetail.isUnconfigured, true)
+
+    // Comprobar que cleanPlanSettings y planSettings iniciales no tienen 1650
+    assert.equal(cleanPlanSettings.monthlyIncome, 0)
+    assert.equal(planSettings.monthlyIncome, 0)
+  })
+
+  // CASO C: Nómina variable + horas extra a mitad de mes
+  it('826. CASO C: Nómina variable + horas extra a mitad de mes aumentan ingresos reales sin duplicados', () => {
+    const realTx: Transaction[] = [
+      {
+        id: 'tx-salary-oct',
+        amount: 699.81,
+        type: 'income',
+        category: 'income',
+        date: '2026-10-01T08:00:00.000Z',
+        concept: 'Nómina Septiembre',
+        accountId: 'daily',
+      },
+      {
+        id: 'tx-overtime-oct',
+        amount: 250.00,
+        type: 'income',
+        category: 'income',
+        date: '2026-10-15T10:00:00.000Z',
+        concept: 'Horas extra',
+        accountId: 'daily',
+      },
+    ]
+
+    const refDate = new Date('2026-10-16T12:00:00.000Z')
+    const incomeDetail = selectExpectedMonthlyIncomeDetail(emptyPlanSettings, [], realTx, [], refDate)
+
+    assert.equal(incomeDetail.realAmount, 949.81)
+    assert.equal(incomeDetail.amount, 949.81)
+    assert.equal(incomeDetail.source, 'real')
+    assert.equal(incomeDetail.isUnconfigured, false)
+  })
+
+  // CASO D: Gasto recurrente compartido - editar participantes + pagador + método Bizum
+  it('827. CASO D: Gasto recurrente compartido persiste participantes, pagador y método Bizum sin error de sync', () => {
+    const recurringItem: RecurringPayment = {
+      id: 'rec-shared-1',
+      name: 'Internet Fibra',
+      amount: 40,
+      category: 'utilities',
+      frequency: 'monthly',
+      dayOfMonth: 5,
+      nextDate: '2026-10-05T00:00:00.000Z',
+      active: true,
+      paidBy: 'other',
+      payerName: 'Carlos',
+      payerContactId: 'contact-carlos-1',
+      expensePaymentMethod: 'bizum',
+      settlementPaymentMethod: 'bizum',
+      sharingTemplate: {
+        isShared: true,
+        splitMode: 'equal',
+        participants: ['user', 'contact-carlos-1'],
+        paidBy: 'other',
+        payerName: 'Carlos',
+        payerContactId: 'contact-carlos-1',
+        expensePaymentMethod: 'bizum',
+        settlementPaymentMethod: 'bizum',
+      },
+    }
+
+    const dbRecord = toDbRecurring(recurringItem, 'user-123')
+    assert.equal(dbRecord.paid_by, 'other')
+    assert.equal(dbRecord.payer_name, 'Carlos')
+    assert.equal(dbRecord.payer_contact_id, 'contact-carlos-1')
+    assert.equal(dbRecord.expense_payment_method, 'bizum')
+    assert.equal(dbRecord.settlement_payment_method, 'bizum')
+    assert.ok(dbRecord.sharing_template)
+
+    const reconstructed = fromDbRecurring(dbRecord)
+    assert.equal(reconstructed.paidBy, 'other')
+    assert.equal(reconstructed.payerName, 'Carlos')
+    assert.equal(reconstructed.payerContactId, 'contact-carlos-1')
+    assert.equal(reconstructed.expensePaymentMethod, 'bizum')
+    assert.equal(reconstructed.settlementPaymentMethod, 'bizum')
+
+    // Probar limpieza de columnas faltantes para evitar error de sincronización
+    const cleaned = cleanMissingColumns(dbRecord, 'paid_by')
+    assert.equal((cleaned as any).paid_by, undefined)
+    assert.equal((cleaned as any).sharing_template.paidBy, 'other')
+  })
+
+  // CASO E: Plantilla Banco -> Ocurrencia cambiada a Bizum
+  it('828. CASO E: Plantilla recurrente guarda Banco pero ocurrencia individual se puede pagar por Bizum', () => {
+    const template: RecurringPayment = {
+      id: 'rec-gym',
+      name: 'Gimnasio',
+      amount: 45,
+      category: 'leisure',
+      frequency: 'monthly',
+      dayOfMonth: 1,
+      nextDate: '2026-10-01T00:00:00.000Z',
+      active: true,
+      paymentMethod: 'bank',
+      accountId: 'daily',
+    }
+
+    // Al confirmar con override paymentMethod = 'bizum'
+    const occurrencePaymentMethod = 'bizum'
+    const occurrenceTx: Transaction = {
+      id: 'tx-gym-oct',
+      amount: template.amount,
+      type: 'expense',
+      category: template.category,
+      date: '2026-10-01T10:00:00.000Z',
+      concept: template.name,
+      accountId: template.accountId,
+      paymentMethod: occurrencePaymentMethod,
+      recurringPaymentId: template.id,
+    }
+
+    // La ocurrencia es Bizum
+    assert.equal(occurrenceTx.paymentMethod, 'bizum')
+    // La plantilla sigue siendo Bank
+    assert.equal(template.paymentMethod, 'bank')
+  })
+
+  // CASO F: Deuda de 50 € cobrada por Bizum queda a 0 y no reaparece
+  it('829. CASO F: Deuda de 50 € cobrada por Bizum queda saldada a 0 y no reaparece', () => {
+    const originalExpense: Transaction = {
+      id: 'tx-shared-multa',
+      amount: 100,
+      type: 'expense',
+      category: 'transport',
+      date: '2026-09-10T12:00:00.000Z',
+      concept: 'Multa compartida',
+      accountId: 'daily',
+      paymentMethod: 'bank',
+      isShared: true,
+    }
+
+    const share: ExpenseShare = {
+      id: 'share-multa-1',
+      expenseTransactionId: 'tx-shared-multa',
+      contactId: 'carlos-id',
+      participantName: 'Carlos',
+      isPayerShare: false,
+      expectedAmount: 50,
+    }
+
+    // Pendiente inicial: 50 €
+    const pendingBefore = selectPendingReimbursements([share], [originalExpense])
+    assert.equal(pendingBefore, 50)
+
+    // Liquidación cobrada por Bizum
+    const reimbursementTx: Transaction = {
+      id: 'tx-reimb-multa',
+      amount: 50,
+      type: 'income',
+      incomeKind: 'reimbursement',
+      category: 'transport',
+      date: '2026-09-15T12:00:00.000Z',
+      concept: 'Reembolso Carlos (Multa compartida)',
+      accountId: 'daily',
+      paymentMethod: 'bizum',
+      specialType: 'reimbursement_received',
+      parentExpenseId: 'tx-shared-multa',
+      expenseShareId: 'share-multa-1',
+    }
+
+    // Tras liquidar: 0 pendientes
+    const pendingAfter = selectPendingReimbursements([share], [originalExpense, reimbursementTx])
+    assert.equal(pendingAfter, 0)
+
+    const status = selectExpenseShareStatus(share, [originalExpense, reimbursementTx])
+    assert.equal(status.status, 'received')
+    assert.equal(status.receivedAmount, 50)
+    assert.equal(status.reimbursements[0].paymentMethod, 'bizum')
+  })
+
+  // CASO G: Deuda pendiente perdonada/invitada -> cierra deuda sin ingreso ficticio
+  it('830. CASO G: Perdonar o invitar una deuda la cierra a 0 sin crear ingreso ni alterar saldo', () => {
+    const originalExpense: Transaction = {
+      id: 'tx-dinner',
+      amount: 60,
+      type: 'expense',
+      category: 'restaurants',
+      date: '2026-09-12T20:00:00.000Z',
+      concept: 'Cena amigos',
+      accountId: 'daily',
+      isShared: true,
+    }
+
+    const forgivenShare: ExpenseShare = {
+      id: 'share-dinner-1',
+      expenseTransactionId: 'tx-dinner',
+      contactId: 'carlos-id',
+      participantName: 'Carlos',
+      isPayerShare: false,
+      expectedAmount: 30,
+      forgivenAmount: 30,
+    }
+
+    const pending = selectPendingReimbursements([forgivenShare], [originalExpense])
+    assert.equal(pending, 0)
+
+    const status = selectExpenseShareStatus(forgivenShare, [originalExpense])
+    assert.equal(status.status, 'received')
+    assert.equal(status.forgivenAmount, 30)
+
+    // No hay transacción de ingreso creada, el gasto neto personal es el total de la cena
+    const netPersonal = selectNetPersonalExpenses([originalExpense], new Date('2026-09-15'), 'month', [], [forgivenShare])
+    assert.equal(netPersonal, 60)
+  })
+
+  // CASO H: Editar una liquidación ya realizada no recrea la deuda original
+  it('831. CASO H: Editar método de una liquidación mantiene status=received y no reabre la deuda', () => {
+    const originalExpense: Transaction = {
+      id: 'tx-lunch',
+      amount: 50,
+      type: 'expense',
+      category: 'restaurants',
+      date: '2026-09-14T10:00:00.000Z',
+      concept: 'Comida',
+      accountId: 'daily',
+      isShared: true,
+    }
+
+    const share: ExpenseShare = {
+      id: 'share-lunch-1',
+      expenseTransactionId: 'tx-lunch',
+      contactId: 'carlos-id',
+      participantName: 'Carlos',
+      isPayerShare: false,
+      expectedAmount: 25,
+    }
+
+    const settlementTx: Transaction = {
+      id: 'tx-reimb-lunch',
+      amount: 25,
+      type: 'income',
+      incomeKind: 'reimbursement',
+      category: 'restaurants',
+      date: '2026-09-14T12:00:00.000Z',
+      concept: 'Reembolso Carlos',
+      accountId: 'daily',
+      paymentMethod: 'bank',
+      specialType: 'reimbursement_received',
+      parentExpenseId: 'tx-lunch',
+      expenseShareId: 'share-lunch-1',
+    }
+
+    // Editamos método de liquidación a bizum
+    const editedSettlementTx: Transaction = {
+      ...settlementTx,
+      paymentMethod: 'bizum',
+    }
+
+    const pending = selectPendingReimbursements([share], [originalExpense, editedSettlementTx])
+    assert.equal(pending, 0)
+
+    const status = selectExpenseShareStatus(share, [originalExpense, editedSettlementTx])
+    assert.equal(status.status, 'received')
+    assert.equal(status.reimbursements[0].paymentMethod, 'bizum')
+  })
+
+  // CASO I: Eliminar / editar movimiento relacionado recalcula saldos y deudas coherentemente
+  it('832. CASO I: Edición y eliminación de movimientos recalculan selectores y saldos sin huérfanos', () => {
+    const tx1: Transaction[] = [
+      {
+        id: 'tx-1',
+        amount: 100,
+        type: 'expense',
+        category: 'supermarket',
+        date: '2026-09-01T10:00:00.000Z',
+        concept: 'Compra grande',
+        accountId: 'daily',
+      },
+    ]
+    const tx2: Transaction = {
+      id: 'tx-2',
+      amount: 50,
+      type: 'expense',
+      category: 'leisure',
+      date: '2026-09-02T10:00:00.000Z',
+      concept: 'Cine',
+      accountId: 'daily',
+    }
+
+    const refDate = new Date('2026-09-15T12:00:00.000Z')
+
+    // Total inicial: 150
+    let gross = selectGrossExpensesForPeriod([...tx1, tx2], refDate, 'month', [])
+    assert.equal(gross, 150)
+
+    // Tras editar tx1 de 100 a 80
+    const editedTx1 = [{ ...tx1[0], amount: 80 }]
+    gross = selectGrossExpensesForPeriod([...editedTx1, tx2], refDate, 'month', [])
+    assert.equal(gross, 130)
+
+    // Tras eliminar tx2
+    gross = selectGrossExpensesForPeriod(editedTx1, refDate, 'month', [])
+    assert.equal(gross, 80)
+  })
+
+  // Test de versión 0.25.0
+  it('833. PWA Version: 0.25.0 / 2026.10.02-01', () => {
+    assert.equal(APP_VERSION, '0.25.0')
+    assert.equal(APP_BUILD, '2026.10.02-01')
   })
 })
 

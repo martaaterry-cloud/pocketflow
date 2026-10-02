@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import type { RecurringPayment } from '../models/finance'
+import type { PaymentMethod, RecurringPayment } from '../models/finance'
 import { money } from '../utils/money'
 import { getCoveredMonthsList } from '../utils/financeSelectors'
 import { AppIcon } from '../ui/icons'
@@ -8,7 +8,7 @@ interface ConfirmRecurringPaymentModalProps {
   open: boolean
   payment: RecurringPayment | null
   onClose: () => void
-  onConfirm: (paymentId: string, monthsCount: number) => void
+  onConfirm: (paymentId: string, monthsCount: number, paymentMethod?: PaymentMethod) => void
   isSubmitting?: boolean
 }
 
@@ -20,12 +20,14 @@ export function ConfirmRecurringPaymentModal({
   isSubmitting = false,
 }: ConfirmRecurringPaymentModalProps) {
   const [monthsCount, setMonthsCount] = useState<number>(1)
+  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('bank')
 
   useEffect(() => {
-    if (open) {
+    if (open && payment) {
       setMonthsCount(1)
+      setPaymentMethod(payment.expensePaymentMethod || payment.paymentMethod || 'bank')
     }
-  }, [open, payment?.id])
+  }, [open, payment])
 
   if (!open || !payment) return null
 
@@ -43,7 +45,7 @@ export function ConfirmRecurringPaymentModal({
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
-    onConfirm(payment.id, monthsCount)
+    onConfirm(payment.id, monthsCount, paymentMethod)
   }
 
   return (
@@ -67,6 +69,39 @@ export function ConfirmRecurringPaymentModal({
         </div>
 
         <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
+          {/* Medio de pago para este pago puntual */}
+          <div className="form-group">
+            <label style={{ fontSize: '0.875rem', fontWeight: 600, color: 'var(--text-muted, #666)' }}>
+              Método de pago para esta ocurrencia
+            </label>
+            <div className="segmented mini" style={{ marginTop: 6 }}>
+              <button
+                type="button"
+                className={paymentMethod === 'bank' ? 'active' : ''}
+                onClick={() => setPaymentMethod('bank')}
+              >
+                Banco
+              </button>
+              <button
+                type="button"
+                className={paymentMethod === 'bizum' ? 'active' : ''}
+                onClick={() => setPaymentMethod('bizum')}
+              >
+                Bizum
+              </button>
+              <button
+                type="button"
+                className={paymentMethod === 'cash' ? 'active' : ''}
+                onClick={() => setPaymentMethod('cash')}
+              >
+                Efectivo
+              </button>
+            </div>
+            <span className="field-hint" style={{ fontSize: '0.75rem', marginTop: 4 }}>
+              Predeterminado habitual: {payment.expensePaymentMethod === 'bizum' ? 'Bizum' : payment.expensePaymentMethod === 'cash' ? 'Efectivo' : 'Banco'}. Cambiarlo aquí no altera la plantilla recurrente.
+            </span>
+          </div>
+
           {/* Selector de Mensualidades Cubiertas */}
           <div className="form-group">
             <label style={{ fontSize: '0.875rem', fontWeight: 600, color: 'var(--text-muted, #666)' }}>

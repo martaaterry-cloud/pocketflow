@@ -129,18 +129,18 @@ export function PlanSettingsModal({
               {showManualIncome && (
                 <div style={{ marginTop: 8 }}>
                   <label style={{ fontSize: 12, color: '#64748b' }}>
-                    Importe manual alternativo (€)
+                    Referencia mensual opcional (€)
                     <input
                       type="text"
                       inputMode="decimal"
-                      placeholder="Ej. 1.650,00"
+                      placeholder="Opcional (ej. 1.200,00)"
                       value={monthlyIncome}
                       onChange={(e) => setMonthlyIncome(e.target.value)}
                       style={{ marginTop: 4 }}
                     />
                   </label>
                   <span className="field-hint" style={{ fontSize: 11 }}>
-                    Nota: Los ingresos recurrentes activos tienen prioridad automática para no duplicar datos.
+                    Nota: Los ingresos recurrentes activos o los movimientos reales tienen prioridad para no duplicar datos.
                   </span>
                 </div>
               )}
@@ -148,18 +148,18 @@ export function PlanSettingsModal({
           ) : (
             <div className="form-group">
               <label>
-                Ingresos mensuales netos (€)
+                Referencia mensual de ingresos (opcional)
                 <input
                   type="text"
                   inputMode="decimal"
-                  placeholder="1.650,00"
+                  placeholder="Opcional"
                   value={monthlyIncome}
                   onChange={(e) => setMonthlyIncome(e.target.value)}
                   autoFocus
                 />
               </label>
               <span className="field-hint">
-                Referencia base del plan. También puedes añadir una nómina en <b>Recurrentes</b> para detectarla de forma automática.
+                Estimación opcional de referencia. No es dinero cobrado ni es obligatorio configurarla. El Plan Financiero calculará con tus ingresos reales registrados en Movimientos.
               </span>
             </div>
           )}

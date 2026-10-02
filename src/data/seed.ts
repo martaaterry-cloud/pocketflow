@@ -106,12 +106,12 @@ export const specialPeriods: SpecialPeriod[] = [
 ]
 
 export const planSettings: FinancialPlanSettings = {
-  monthlyIncome: 1650,
+  monthlyIncome: 0,
   targetSavingsType: 'percentage',
-  targetSavingsValue: 15,
+  targetSavingsValue: 0,
   emergencyFundTargetType: 'months',
   emergencyFundTargetValue: 3,
-  emergencyFundCurrent: 300,
+  emergencyFundCurrent: 0,
   essentialCategoryIds: ['food', 'transport', 'subscriptions'],
 }
 

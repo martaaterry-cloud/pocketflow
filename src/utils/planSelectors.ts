@@ -13,7 +13,7 @@ import type {
   Transaction,
   VariableExpenseEstimate,
 } from '../models/finance'
-import { selectLinkedReimbursementsForExpense } from './sharedExpenseSelectors'
+import { selectLinkedReimbursementsForExpense, selectRealIncome } from './sharedExpenseSelectors'
 import { calculateMonthlyEstimate } from './variableEstimates'
 
 /**
@@ -66,54 +66,107 @@ export interface ExpectedIncomeItemDetail {
 
 export interface ExpectedMonthlyIncomeDetail {
   amount: number
-  source: 'recurring' | 'manual' | 'none'
+  source: 'real' | 'recurring' | 'mixed' | 'manual' | 'none'
+  realAmount: number
+  pendingRecurringAmount: number
+  referenceAmount: number
   items: ExpectedIncomeItemDetail[]
+  isManualFallback: boolean
+  isUnconfigured: boolean
 }
 
 /**
- * Resuelve la fuente canónica de ingresos previstos mensuales:
- * A) Si existen ingresos recurrentes activos, usa automáticamente su suma mensualizada.
- * B) Si NO existen ingresos recurrentes, usa `FinancialPlanSettings.monthlyIncome` como fallback manual.
- * C) Si ambos existen, prioriza los recurrentes y NO duplica ni suma ambos.
+ * Resuelve la fuente canónica de ingresos mensuales del plan:
+ * 1) Ingresos reales cobrados en el mes (fuente de verdad).
+ * 2) Previsión pendiente de ingresos recurrentes activos (no duplicando si ya entró el ingreso real).
+ * 3) Referencia mensual opcional configurada manualmente.
+ * 4) 0 si no hay ninguna de las anteriores (Plan opera con los datos disponibles sin inventar salarios).
  */
 export function selectExpectedMonthlyIncomeDetail(
   settings: FinancialPlanSettings | null | undefined,
-  recurring: RecurringPayment[] = []
+  recurring: RecurringPayment[] = [],
+  transactions: Transaction[] = [],
+  cashTransactions: CashTransaction[] = [],
+  referenceDate: Date = new Date()
 ): ExpectedMonthlyIncomeDetail {
+  const refDate = referenceDate instanceof Date ? referenceDate : new Date()
+
+  // 1. Ingresos reales cobrados este mes (Banco + Efectivo excluyendo reembolsos)
+  const realAmount =
+    (Array.isArray(transactions) && transactions.length > 0) ||
+    (Array.isArray(cashTransactions) && cashTransactions.length > 0)
+      ? selectRealIncome(transactions || [], refDate, 'month', cashTransactions || [])
+      : 0
+
+  // 2. Ingresos recurrentes activos
   const activeIncomeRecs = Array.isArray(recurring)
     ? recurring.filter((r) => r.active !== false && (r.type === 'income' || r.categoryId === 'income'))
     : []
 
-  if (activeIncomeRecs.length > 0) {
-    const items: ExpectedIncomeItemDetail[] = activeIncomeRecs.map((r) => ({
-      id: r.id,
-      name: r.name,
-      amount: r.amount,
-      frequency: r.frequency,
-      monthlyAmount: selectMonthlyAmountForFrequency(r.amount, r.frequency),
-    }))
+  const items: ExpectedIncomeItemDetail[] = activeIncomeRecs.map((r) => ({
+    id: r.id,
+    name: r.name,
+    amount: r.amount,
+    frequency: r.frequency,
+    monthlyAmount: selectMonthlyAmountForFrequency(r.amount, r.frequency),
+  }))
 
-    const sum = items.reduce((acc, it) => acc + it.monthlyAmount, 0)
-    return {
-      amount: Math.round(sum * 100) / 100,
-      source: 'recurring',
-      items,
+  const recurringTotal = Math.round(items.reduce((acc, it) => acc + it.monthlyAmount, 0) * 100) / 100
+
+  // 3. Previsión recurrente pendiente (no duplicar si ya entró el ingreso real)
+  let pendingRecurringAmount = 0
+  if (recurringTotal > 0) {
+    if (realAmount >= recurringTotal) {
+      pendingRecurringAmount = 0
+    } else if (realAmount > 0) {
+      pendingRecurringAmount = Math.max(0, Math.round((recurringTotal - realAmount) * 100) / 100)
+    } else {
+      pendingRecurringAmount = recurringTotal
     }
   }
 
-  const manualIncome = Math.max(0, settings?.monthlyIncome || 0)
-  if (manualIncome > 0) {
+  // 4. Referencia mensual opcional
+  const referenceAmount = Math.max(0, Math.round((settings?.monthlyIncome || 0) * 100) / 100)
+
+  // 5. Determinación de importe y fuente computable
+  if (realAmount > 0 || pendingRecurringAmount > 0) {
+    const total = Math.round((realAmount + pendingRecurringAmount) * 100) / 100
+    const source =
+      realAmount > 0 && pendingRecurringAmount > 0 ? 'mixed' : realAmount > 0 ? 'real' : 'recurring'
     return {
-      amount: Math.round(manualIncome * 100) / 100,
+      amount: total,
+      source,
+      realAmount,
+      pendingRecurringAmount,
+      referenceAmount,
+      items,
+      isManualFallback: false,
+      isUnconfigured: false,
+    }
+  }
+
+  if (referenceAmount > 0) {
+    return {
+      amount: referenceAmount,
       source: 'manual',
+      realAmount: 0,
+      pendingRecurringAmount: 0,
+      referenceAmount,
       items: [],
+      isManualFallback: true,
+      isUnconfigured: false,
     }
   }
 
   return {
     amount: 0,
     source: 'none',
+    realAmount: 0,
+    pendingRecurringAmount: 0,
+    referenceAmount: 0,
     items: [],
+    isManualFallback: false,
+    isUnconfigured: true,
   }
 }
 
@@ -122,9 +175,12 @@ export function selectExpectedMonthlyIncomeDetail(
  */
 export function selectExpectedMonthlyIncome(
   settings: FinancialPlanSettings | null | undefined,
-  recurring: RecurringPayment[] = []
+  recurring: RecurringPayment[] = [],
+  transactions: Transaction[] = [],
+  cashTransactions: CashTransaction[] = [],
+  referenceDate: Date = new Date()
 ): number {
-  return selectExpectedMonthlyIncomeDetail(settings, recurring).amount
+  return selectExpectedMonthlyIncomeDetail(settings, recurring, transactions, cashTransactions, referenceDate).amount
 }
 
 /**
@@ -647,7 +703,7 @@ export function selectAnnualForecast12Months(
 
 export interface MonthlyPlanCardSummary {
   hasConfiguredPlan: boolean
-  incomeSource: 'recurring' | 'manual' | 'none'
+  incomeSource: 'real' | 'recurring' | 'mixed' | 'manual' | 'none'
   monthlyIncome: number
   targetSavings: number
   expectedCommittedExpenses: number
@@ -677,7 +733,8 @@ export function selectMonthlyPlanCardSummary(
   estimatesOrRefDate?: VariableExpenseEstimate[] | Date,
   budgets?: Budget[],
   pendingCommittedExpenses = 0,
-  referenceDate: Date = new Date()
+  referenceDate: Date = new Date(),
+  cashTransactions: CashTransaction[] = []
 ): MonthlyPlanCardSummary {
   // Manejo de compatibilidad para llamadas heredadas donde el 2º argumento es un número
   if (typeof recurringOrEssential === 'number') {
@@ -747,7 +804,7 @@ export function selectMonthlyPlanCardSummary(
   const estimates = Array.isArray(estimatesOrRefDate) ? estimatesOrRefDate : []
   const refDate = referenceDate instanceof Date ? referenceDate : new Date()
 
-  const incomeDetail = selectExpectedMonthlyIncomeDetail(settings, recurring)
+  const incomeDetail = selectExpectedMonthlyIncomeDetail(settings, recurring, transactions, cashTransactions, refDate)
   const monthlyIncome = incomeDetail.amount
   const hasConfiguredPlan = monthlyIncome > 0
 
@@ -894,7 +951,10 @@ export interface ReserveMonthlyNeedItem {
 export interface MonthlySpendingControl {
   hasConfiguredIncome: boolean
   incomeExpected: number
-  incomeSource: 'recurring' | 'manual' | 'none'
+  incomeReal: number
+  incomePending: number
+  incomeReference: number
+  incomeSource: 'real' | 'recurring' | 'mixed' | 'manual' | 'none'
   incomeItemCount: number
 
   // 1. Necesario / Comprometido
@@ -941,7 +1001,7 @@ export interface MonthlySpendingControl {
 /**
  * Selector canónico de Control de Gasto del Mes.
  * Unifica:
- * - Ingresos previstos (recurrentes activos o configuración manual)
+ * - Ingresos reales cobrados y previstos pendientes (o referencia manual opcional)
  * - Necesario / comprometido (fijos, recurrentes, estimaciones variables esenciales y gastos esenciales)
  * - Planificado para gastos futuros (cuota mensual de reservas y estacionalidad de periodos especiales)
  * - Objetivo de ahorro
@@ -968,9 +1028,12 @@ export function selectMonthlySpendingControl(
   const daysElapsed = Math.min(totalDaysInMonth, Math.max(1, refDate.getDate()))
   const daysRemaining = Math.max(0, totalDaysInMonth - daysElapsed)
 
-  // 2. Ingresos previstos
-  const incomeDetail = selectExpectedMonthlyIncomeDetail(settings, recurring)
+  // 2. Ingresos calculados del mes
+  const incomeDetail = selectExpectedMonthlyIncomeDetail(settings, recurring, transactions, cashTransactions, refDate)
   const incomeExpected = incomeDetail.amount
+  const incomeReal = incomeDetail.realAmount
+  const incomePending = incomeDetail.pendingRecurringAmount
+  const incomeReference = incomeDetail.referenceAmount
   const hasConfiguredIncome = incomeExpected > 0
 
   // 3. Clasificación de gastos reales del mes (Banco + Efectivo con deducción de reembolsos)
@@ -1118,8 +1181,8 @@ export function selectMonthlySpendingControl(
 
   if (!hasConfiguredIncome) {
     status = 'on_track'
-    statusMessage = 'Configura tus ingresos en los ajustes del plan para calcular el margen libre diario y evaluar el mes.'
-    detailedExplanation = 'Sin ingresos configurados no es posible calcular el margen disponible para gasto libre.'
+    statusMessage = 'Añade un ingreso en Movimientos o configura una referencia para calcular el margen libre diario.'
+    detailedExplanation = 'Sin ingresos registrados ni referencia configurada no es posible calcular el margen disponible para gasto libre.'
   } else if (discretionaryAvailable < 0) {
     status = 'over'
     statusMessage = 'El gasto libre ha superado el margen previsto del mes.'
@@ -1150,6 +1213,9 @@ export function selectMonthlySpendingControl(
   return {
     hasConfiguredIncome,
     incomeExpected,
+    incomeReal,
+    incomePending,
+    incomeReference,
     incomeSource: incomeDetail.source,
     incomeItemCount: incomeDetail.items.length,
 

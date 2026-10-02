@@ -118,11 +118,15 @@ export function PlanFinancialPage({
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <span className="hero-tag">Control del mes</span>
           <span style={{ fontSize: 12, color: '#64748b' }}>
-            {ctrl.incomeSource === 'recurring'
-              ? 'Nómina / Recurrente'
+            {ctrl.incomeSource === 'real'
+              ? 'Ingresos reales (cobrados)'
+              : ctrl.incomeSource === 'mixed'
+              ? 'Cobrado + Previsto'
+              : ctrl.incomeSource === 'recurring'
+              ? 'Previsto recurrente'
               : ctrl.incomeSource === 'manual'
-              ? 'Manual'
-              : 'Sin configurar'}
+              ? 'Referencia opcional'
+              : 'Sin ingresos'}
           </span>
         </div>
 
@@ -146,8 +150,26 @@ export function PlanFinancialPage({
             border: '1px solid #e2e8f0',
           }}
         >
+          {ctrl.incomeReal > 0 && (
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, color: '#475569', marginBottom: 6 }}>
+              <span>Ingresos reales cobrados</span>
+              <span style={{ fontWeight: 600, color: '#16a34a' }}>+ {money(ctrl.incomeReal)}</span>
+            </div>
+          )}
+          {ctrl.incomePending > 0 && (
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, color: '#475569', marginBottom: 6 }}>
+              <span>Ingresos previstos pendientes</span>
+              <span style={{ fontWeight: 600, color: '#6366f1' }}>+ {money(ctrl.incomePending)}</span>
+            </div>
+          )}
+          {ctrl.incomeReal === 0 && ctrl.incomePending === 0 && ctrl.incomeReference > 0 && (
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, color: '#475569', marginBottom: 6 }}>
+              <span>Referencia mensual estimada</span>
+              <span style={{ fontWeight: 600, color: '#64748b' }}>{money(ctrl.incomeReference)}</span>
+            </div>
+          )}
           <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, color: '#475569', marginBottom: 6 }}>
-            <span>Ingresos disponibles/previsibles</span>
+            <span>Total ingresos disponibles / previstos</span>
             <span style={{ fontWeight: 600, color: '#0f172a' }}>{money(ctrl.incomeExpected)}</span>
           </div>
           <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, color: '#475569', marginBottom: 6 }}>
