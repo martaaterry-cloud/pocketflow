@@ -174,6 +174,8 @@ import {
   toUnifiedMovements,
   filterUnifiedMovements,
   calculateUnifiedMovementStats,
+  isSameMonthYear,
+  selectUnifiedMovementsForPeriod,
 } from '../src/utils/unifiedMovementSelectors'
 import {
   splitExpenseEqually,
@@ -6929,12 +6931,12 @@ describe('Fase 18 — Mejoras de Finanzas (Detalle por Categoría, Retiradas de 
 describe('Fase 18 — Identificación Visual de Versión y Build', () => {
   it('314. Versioning: única fuente de verdad y formato de visualización exacto', () => {
     assert.equal(APP_NAME, 'PocketFlow')
-    assert.equal(APP_VERSION, '0.25.3')
-    assert.equal(APP_BUILD, '2026.10.05-01')
+    assert.equal(APP_VERSION, '0.25.4')
+    assert.equal(APP_BUILD, '2026.10.05-02')
 
-    assert.equal(getAppVersionString(), 'PocketFlow v0.25.3')
-    assert.equal(getAppBuildString(), 'Build 2026.10.05-01')
-    assert.equal(getAppFullVersionLabel(), 'PocketFlow v0.25.3 · Build 2026.10.05-01')
+    assert.equal(getAppVersionString(), 'PocketFlow v0.25.4')
+    assert.equal(getAppBuildString(), 'Build 2026.10.05-02')
+    assert.equal(getAppFullVersionLabel(), 'PocketFlow v0.25.4 · Build 2026.10.05-02')
   })
 })
 
@@ -14030,12 +14032,12 @@ describe('Fase 50 — Control de Acceso por Roles (User / Admin), Seguridad RLS 
     }
 
     const userFooter = renderFooterTexts(false)
-    assert.equal(userFooter.versionText, 'PocketFlow v0.25.3')
+    assert.equal(userFooter.versionText, 'PocketFlow v0.25.4')
     assert.equal(userFooter.buildText, null)
 
     const adminFooter = renderFooterTexts(true)
-    assert.equal(adminFooter.versionText, 'PocketFlow v0.25.3')
-    assert.equal(adminFooter.buildText, 'Build 2026.10.05-01')
+    assert.equal(adminFooter.versionText, 'PocketFlow v0.25.4')
+    assert.equal(adminFooter.buildText, 'Build 2026.10.05-02')
   })
 
   it('590. 10. Reconciliación y sincronización de perfil no altera datos financieros ni transacciones', () => {
@@ -14536,7 +14538,7 @@ describe('Fase 52 — Versionado Automático y Robusto del Service Worker PWA', 
   it('613. 1. CACHE_NAME del Service Worker incluye exactamente APP_VERSION y APP_BUILD actuales', () => {
     const expectedCacheName = `pocketflow-v${APP_VERSION}-${APP_BUILD}`
     assert.equal(getServiceWorkerCacheName(APP_VERSION, APP_BUILD), expectedCacheName)
-    assert.equal(expectedCacheName, 'pocketflow-v0.25.3-2026.10.05-01')
+    assert.equal(expectedCacheName, 'pocketflow-v0.25.4-2026.10.05-02')
 
     const swCode = generateServiceWorkerCode(APP_VERSION, APP_BUILD)
     assert.ok(swCode.includes(`const CACHE_NAME = '${expectedCacheName}'`))
@@ -18397,11 +18399,11 @@ describe('Fase 66 — Clasificación y Desglose de Gastos por Medio de Pago (Tar
 
   // CASO 12: Versión PWA
   it('731. 12. Build genera version.json correspondiente a la versión actual', () => {
-    assert.equal(APP_VERSION, '0.25.3')
-    assert.equal(APP_BUILD, '2026.10.05-01')
+    assert.equal(APP_VERSION, '0.25.4')
+    assert.equal(APP_BUILD, '2026.10.05-02')
     const vJson = JSON.parse(generateVersionJson(APP_VERSION, APP_BUILD))
-    assert.equal(vJson.version, '0.25.3')
-    assert.equal(vJson.build, '2026.10.05-01')
+    assert.equal(vJson.version, '0.25.4')
+    assert.equal(vJson.build, '2026.10.05-02')
   })
 })
 
@@ -20765,9 +20767,9 @@ describe('Fase 67.8 — Auditoría Integral de Integridad Económica, Caso Multa
   })
 
   // TEST 21: Versión y build actualizados
-  it('806. 21. Versión y Build actualizados a 0.25.3 / 2026.10.05-01', () => {
-    assert.equal(APP_VERSION, '0.25.3')
-    assert.equal(APP_BUILD, '2026.10.05-01')
+  it('806. 21. Versión y Build actualizados a 0.25.4 / 2026.10.05-02', () => {
+    assert.equal(APP_VERSION, '0.25.4')
+    assert.equal(APP_BUILD, '2026.10.05-02')
   })
 })
 
@@ -21334,9 +21336,9 @@ describe('Fase 68 — Rediseño de Movimientos (Resumen Mensual, Agrupación Dia
   })
 
   // TEST 25: Versión y build actualizados
-  it('823. 25. Versión y Build actualizados a 0.25.3 / 2026.10.05-01', () => {
-    assert.equal(APP_VERSION, '0.25.3')
-    assert.equal(APP_BUILD, '2026.10.05-01')
+  it('823. 25. Versión y Build actualizados a 0.25.4 / 2026.10.05-02', () => {
+    assert.equal(APP_VERSION, '0.25.4')
+    assert.equal(APP_BUILD, '2026.10.05-02')
   })
 })
 
@@ -21701,10 +21703,10 @@ describe('Fase 69 — Auditoría y Corrección Completa: Dinero Real, Ingresos V
     assert.equal(gross, 80)
   })
 
-  // Test de versión 0.25.3
-  it('833. PWA Version: 0.25.3 / 2026.10.05-01', () => {
-    assert.equal(APP_VERSION, '0.25.3')
-    assert.equal(APP_BUILD, '2026.10.05-01')
+  // Test de versión 0.25.4
+  it('833. PWA Version: 0.25.4 / 2026.10.05-02', () => {
+    assert.equal(APP_VERSION, '0.25.4')
+    assert.equal(APP_BUILD, '2026.10.05-02')
   })
 })
 
@@ -23225,12 +23227,325 @@ describe('Fase 71: Normalización canónica de gastos recurrentes compartidos y 
     assert.equal(economicShare, 10.00, '40 € entre 4 personas = 10,00 € de coste personal, NO 40,00 €')
   })
 
-  // TEST 12: Versión PWA 0.25.3 / Build 2026.10.05-01
-  it('878. PWA Version: 0.25.3 / 2026.10.05-01', () => {
-    assert.equal(APP_VERSION, '0.25.3')
-    assert.equal(APP_BUILD, '2026.10.05-01')
+  // TEST 12: Versión PWA 0.25.4 / Build 2026.10.05-02
+  it('878. PWA Version: 0.25.4 / 2026.10.05-02', () => {
+    assert.equal(APP_VERSION, '0.25.4')
+    assert.equal(APP_BUILD, '2026.10.05-02')
   })
 })
+
+/* ==========================================================================
+   FASE 73: PANTALLA INICIO ACOTADA ESTRICTAMENTE AL MES ACTUAL (v0.25.4)
+   ========================================================================== */
+
+describe('Fase 73: Pantalla Inicio acotada estrictamente al Mes Actual', () => {
+  const testCategories: Category[] = [
+    { id: 'food', name: 'Alimentación', color: '#10b981', icon: 'shopping-basket', iconKey: 'shopping-basket' },
+    { id: 'leisure', name: 'Ocio', color: '#f59e0b', icon: 'ticket', iconKey: 'ticket' },
+    { id: 'subscriptions', name: 'Suscripciones', color: '#8b5cf6', icon: 'refresh-cw', iconKey: 'refresh-cw' },
+    { id: 'transport', name: 'Transporte', color: '#3b82f6', icon: 'car', iconKey: 'car' },
+    { id: 'other', name: 'Otros', color: '#b9b9b9', icon: 'ellipsis', iconKey: 'ellipsis' },
+  ]
+
+  // CASO A: Hay movimientos en septiembre y octubre. Estamos en octubre. Últimos movimientos solo contiene octubre.
+  it('879. CASO A: Hay movimientos en septiembre y octubre. En octubre, Últimos movimientos solo contiene octubre', () => {
+    const octRefDate = new Date(2026, 9, 5) // 5 de octubre de 2026
+
+    const septTx: Transaction = {
+      id: 'tx-sep-1',
+      type: 'expense',
+      amount: 45.00,
+      description: 'Cena Septiembre',
+      categoryId: 'leisure',
+      accountId: 'daily',
+      date: '2026-09-28T21:00:00.000Z',
+    }
+
+    const octTx1: Transaction = {
+      id: 'tx-oct-1',
+      type: 'expense',
+      amount: 18.50,
+      description: 'Mercadona',
+      categoryId: 'food',
+      accountId: 'daily',
+      date: '2026-10-02T10:00:00.000Z',
+    }
+
+    const octTx2: Transaction = {
+      id: 'tx-oct-2',
+      type: 'expense',
+      amount: 12.00,
+      description: 'Cine',
+      categoryId: 'leisure',
+      accountId: 'daily',
+      date: '2026-10-04T18:00:00.000Z',
+    }
+
+    const allTxs = [septTx, octTx1, octTx2]
+    const homeMovements = selectUnifiedMovementsForPeriod(allTxs, [], [], octRefDate, 'month')
+
+    assert.equal(homeMovements.length, 2, 'Solo debe contener los 2 movimientos de octubre')
+    assert.ok(homeMovements.some((m) => m.id === 'tx-oct-1'))
+    assert.ok(homeMovements.some((m) => m.id === 'tx-oct-2'))
+    assert.ok(!homeMovements.some((m) => m.id === 'tx-sep-1'), 'Septiembre queda estrictamente excluido')
+  })
+
+  // CASO B: Hay 20 movimientos históricos y 3 de octubre. Límite 5 enseña 3 de octubre, no 5.
+  it('880. CASO B: Con 20 movimientos históricos y 3 de octubre, límite 5 muestra exactamente los 3 de octubre (no rellena con septiembre)', () => {
+    const octRefDate = new Date(2026, 9, 15)
+
+    const historicalTxs: Transaction[] = Array.from({ length: 20 }, (_, i) => ({
+      id: `tx-sep-${i + 1}`,
+      type: 'expense',
+      amount: 10 + i,
+      description: `Gasto histórico ${i + 1}`,
+      categoryId: 'food',
+      accountId: 'daily',
+      date: `2026-09-${String(Math.min(28, i + 1)).padStart(2, '0')}T10:00:00.000Z`,
+    }))
+
+    const octTxs: Transaction[] = [
+      { id: 'tx-oct-1', type: 'expense', amount: 15, description: 'Oct 1', categoryId: 'food', accountId: 'daily', date: '2026-10-01T10:00:00.000Z' },
+      { id: 'tx-oct-2', type: 'expense', amount: 20, description: 'Oct 2', categoryId: 'leisure', accountId: 'daily', date: '2026-10-05T10:00:00.000Z' },
+      { id: 'tx-oct-3', type: 'expense', amount: 25, description: 'Oct 3', categoryId: 'transport', accountId: 'daily', date: '2026-10-10T10:00:00.000Z' },
+    ]
+
+    const allTxs = [...historicalTxs, ...octTxs]
+    const homeMovements = selectUnifiedMovementsForPeriod(allTxs, [], [], octRefDate, 'month')
+    const displayedRows = homeMovements.slice(0, 5)
+
+    assert.equal(displayedRows.length, 3, 'Debe mostrar exactamente 3 movimientos, NO 5')
+    assert.equal(displayedRows[0].id, 'tx-oct-3', 'El más reciente primero')
+    assert.equal(displayedRows[1].id, 'tx-oct-2')
+    assert.equal(displayedRows[2].id, 'tx-oct-1')
+    assert.ok(!displayedRows.some((m) => m.id.startsWith('tx-sep-')), 'Ningún movimiento de septiembre se cuela en la lista')
+  })
+
+  // CASO C: Abrir rosquilla en octubre: detalle de categoría contiene solo movimientos de octubre y cuadra con la rosquilla
+  it('881. CASO C: Abrir rosquilla en octubre: detalle de categoría contiene solo movimientos de octubre y la suma es idéntica a la rosquilla', () => {
+    const octRefDate = new Date(2026, 9, 20)
+
+    const septFoodTx: Transaction = {
+      id: 'tx-food-sep',
+      type: 'expense',
+      amount: 150.00,
+      description: 'Compra Grande Septiembre',
+      categoryId: 'food',
+      accountId: 'daily',
+      date: '2026-09-25T14:00:00.000Z',
+    }
+
+    const octFoodTx1: Transaction = {
+      id: 'tx-food-oct-1',
+      type: 'expense',
+      amount: 35.50,
+      description: 'Frutería Octubre',
+      categoryId: 'food',
+      accountId: 'daily',
+      date: '2026-10-03T11:00:00.000Z',
+    }
+
+    const octFoodTx2: Transaction = {
+      id: 'tx-food-oct-2',
+      type: 'expense',
+      amount: 44.50,
+      description: 'Supermercado Octubre',
+      categoryId: 'food',
+      accountId: 'daily',
+      date: '2026-10-15T18:00:00.000Z',
+    }
+
+    const allTxs = [septFoodTx, octFoodTx1, octFoodTx2]
+
+    // 1. Rosquilla: cálculo mensual
+    const donutCategories = selectNetExpensesByCategory(allTxs, testCategories, octRefDate, 'month')
+    const foodDonutItem = donutCategories.find((c) => c.id === 'food')
+    assert.ok(foodDonutItem)
+    assert.equal(foodDonutItem?.amount, 80.00, 'Rosquilla de alimentación en octubre: 35,50 + 44,50 = 80,00 €')
+
+    // 2. Detalle de categoría acotado a octubre
+    const categoryDetailTxs = allTxs.filter(
+      (t) => t.type === 'expense' && t.categoryId === 'food' && isSameMonthYear(t.date, octRefDate)
+    )
+
+    assert.equal(categoryDetailTxs.length, 2, 'Solo 2 movimientos en el modal de detalle')
+    const detailSum = categoryDetailTxs.reduce((sum, t) => sum + t.amount, 0)
+    assert.equal(detailSum, 80.00, 'Suma del detalle coincide exactamente con el valor de la rosquilla (80,00 €)')
+  })
+
+  // CASO D: Movimiento económico del 30 de septiembre creado/importado el 1 de octubre permanece en septiembre
+  it('882. CASO D: Movimiento económico del 30 de septiembre creado/importado el 1 de octubre pertenece a septiembre (no a octubre)', () => {
+    const octRefDate = new Date(2026, 9, 5)
+
+    const importedTx: Transaction = {
+      id: 'tx-imported-end-sep',
+      type: 'expense',
+      amount: 60.00,
+      description: 'Gasolinera Fin de Mes',
+      categoryId: 'transport',
+      accountId: 'daily',
+      date: '2026-09-30T23:30:00.000Z', // Fecha económica: 30 de septiembre
+    }
+
+    assert.equal(isSameMonthYear(importedTx.date, octRefDate), false, 'No pertenece al mes de octubre')
+
+    const septRefDate = new Date(2026, 8, 30)
+    assert.equal(isSameMonthYear(importedTx.date, septRefDate), true, 'Pertenece estrictamente al mes de septiembre')
+
+    const homeOctMovements = selectUnifiedMovementsForPeriod([importedTx], [], [], octRefDate, 'month')
+    assert.equal(homeOctMovements.length, 0, 'No aparece en Inicio de octubre')
+  })
+
+  // CASO E: Primer día de noviembre: Inicio pasa automáticamente a noviembre
+  it('883. CASO E: Primer día de noviembre: Inicio evalúa automáticamente noviembre sin cachear octubre', () => {
+    const novRefDate = new Date(2026, 10, 1) // 1 de noviembre de 2026
+
+    const octTx: Transaction = {
+      id: 'tx-oct-31',
+      type: 'expense',
+      amount: 22.00,
+      description: 'Halloween',
+      categoryId: 'leisure',
+      accountId: 'daily',
+      date: '2026-10-31T20:00:00.000Z',
+    }
+
+    const novTx: Transaction = {
+      id: 'tx-nov-1',
+      type: 'expense',
+      amount: 15.00,
+      description: 'Desayuno Festivo',
+      categoryId: 'food',
+      accountId: 'daily',
+      date: '2026-11-01T09:30:00.000Z',
+    }
+
+    const homeMovements = selectUnifiedMovementsForPeriod([octTx, novTx], [], [], novRefDate, 'month')
+    assert.equal(homeMovements.length, 1)
+    assert.equal(homeMovements[0].id, 'tx-nov-1')
+  })
+
+  // CASO F: Noviembre sin movimientos: estado vacío correcto
+  it('884. CASO F: Noviembre sin movimientos: selectUnifiedMovementsForPeriod devuelve array vacío para estado vacío claro', () => {
+    const novRefDate = new Date(2026, 10, 1)
+
+    const octTxs: Transaction[] = [
+      { id: 'tx-1', type: 'expense', amount: 10, description: 'T1', date: '2026-10-15', accountId: 'daily' },
+      { id: 'tx-2', type: 'expense', amount: 20, description: 'T2', date: '2026-10-20', accountId: 'daily' },
+    ]
+
+    const novMovements = selectUnifiedMovementsForPeriod(octTxs, [], [], novRefDate, 'month')
+    assert.equal(novMovements.length, 0, 'No hay movimientos en noviembre -> dispara estado vacío')
+  })
+
+  // CASO G: Rosquilla, detalle de rosquilla y Últimos movimientos utilizan exactamente el mismo mes
+  it('885. CASO G: Rosquilla, detalle de rosquilla y Últimos movimientos utilizan exactamente la misma fecha canónica de referencia', () => {
+    const refDate = new Date(2026, 9, 10)
+
+    const txs: Transaction[] = [
+      { id: 't-sep', type: 'expense', amount: 100, description: 'Sep', categoryId: 'food', date: '2026-09-20', accountId: 'daily' },
+      { id: 't-oct-1', type: 'expense', amount: 40, description: 'Oct Food', categoryId: 'food', date: '2026-10-05', accountId: 'daily' },
+      { id: 't-oct-2', type: 'expense', amount: 30, description: 'Oct Leisure', categoryId: 'leisure', date: '2026-10-08', accountId: 'daily' },
+    ]
+
+    // 1. Rosquilla
+    const donutItems = selectNetExpensesByCategory(txs, testCategories, refDate, 'month')
+    const totalDonut = donutItems.reduce((sum, item) => sum + item.amount, 0)
+    assert.equal(totalDonut, 70)
+
+    // 2. Últimos movimientos
+    const homeMovements = selectUnifiedMovementsForPeriod(txs, [], [], refDate, 'month')
+    const totalMovements = homeMovements.filter((m) => m.type === 'expense').reduce((sum, m) => sum + m.amount, 0)
+    assert.equal(totalMovements, 70)
+
+    // 3. Detalle de categoría
+    const foodInDetail = txs.filter((t) => t.categoryId === 'food' && isSameMonthYear(t.date, refDate))
+    assert.equal(foodInDetail.reduce((s, t) => s + t.amount, 0), 40)
+    assert.equal(donutItems.find((c) => c.id === 'food')?.amount, 40)
+  })
+
+  // CASO H: Comprobar Banco, Bizum, Efectivo, Compartidos y Reembolsos en el mes actual
+  it('886. CASO H: Todos los orígenes (Banco, Bizum, Efectivo, Gastos Compartidos y Reembolsos) se unifican y filtran por el mes actual', () => {
+    const octRefDate = new Date(2026, 9, 15)
+
+    const bankExpense: Transaction = {
+      id: 'tx-bank-card',
+      type: 'expense',
+      amount: 50.00,
+      description: 'Compra Zara',
+      categoryId: 'other',
+      accountId: 'daily',
+      paymentMethod: 'bank',
+      date: '2026-10-02T12:00:00.000Z',
+    }
+
+    const bizumExpense: Transaction = {
+      id: 'tx-bizum-dinner',
+      type: 'expense',
+      amount: 25.00,
+      description: 'Bizum Cena',
+      categoryId: 'leisure',
+      accountId: 'daily',
+      paymentMethod: 'bizum',
+      date: '2026-10-05T21:00:00.000Z',
+    }
+
+    const bankIncome: Transaction = {
+      id: 'tx-salary',
+      type: 'income',
+      amount: 1500.00,
+      description: 'Nómina',
+      accountId: 'daily',
+      incomeKind: 'income',
+      date: '2026-10-01T08:00:00.000Z',
+    }
+
+    const cashExpense: CashTransaction = {
+      id: 'cash-coffee',
+      type: 'expense',
+      amount: 2.50,
+      description: 'Café Efectivo',
+      categoryId: 'food',
+      date: '2026-10-07T09:00:00.000Z',
+    }
+
+    const sepCashExpense: CashTransaction = {
+      id: 'cash-sep',
+      type: 'expense',
+      amount: 10.00,
+      description: 'Café Septiembre',
+      categoryId: 'food',
+      date: '2026-09-20T09:00:00.000Z',
+    }
+
+    const allBank = [bankExpense, bizumExpense, bankIncome]
+    const allCash = [cashExpense, sepCashExpense]
+
+    const unified = selectUnifiedMovementsForPeriod(allBank, allCash, [], octRefDate, 'month')
+
+    assert.equal(unified.length, 4, 'Contiene los 4 movimientos de octubre (Banco, Bizum, Nómina y Efectivo)')
+    assert.ok(!unified.some((m) => m.id === 'cash-sep'), 'Efectivo de septiembre queda excluido')
+
+    // Verificar fuentes asignadas correctamente
+    const zara = unified.find((m) => m.id === 'tx-bank-card')
+    assert.equal(zara?.source, 'bank')
+    assert.equal(zara?.paymentMethod, 'bank')
+
+    const bizum = unified.find((m) => m.id === 'tx-bizum-dinner')
+    assert.equal(bizum?.source, 'bank')
+    assert.equal(bizum?.paymentMethod, 'bizum')
+
+    const coffee = unified.find((m) => m.id === 'cash-coffee')
+    assert.equal(coffee?.source, 'cash')
+  })
+
+  // TEST Versión PWA 0.25.4 / Build 2026.10.05-02
+  it('887. PWA Version: 0.25.4 / 2026.10.05-02', () => {
+    assert.equal(APP_VERSION, '0.25.4')
+    assert.equal(APP_BUILD, '2026.10.05-02')
+  })
+})
+
 
 
 

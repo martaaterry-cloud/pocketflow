@@ -1,20 +1,25 @@
 import React, { useMemo } from 'react'
-import type { Category, ExpenseShare, Transaction } from '../models/finance'
+import type { Category, ExpenseShare, Transaction, CashTransaction } from '../models/finance'
 import { money } from '../utils/money'
 import { normalizeCategoryAlias } from '../utils/categoryNormalization'
 import { selectLinkedReimbursementsForExpense } from '../utils/sharedExpenseSelectors'
+import { isSameMonthYear } from '../utils/unifiedMovementSelectors'
 import { SwipeableTransactionRow } from './SwipeableTransactionRow'
 import { AppIcon } from '../ui/icons'
 
-interface CategoryDetailModalProps {
+export interface CategoryDetailModalProps {
   open: boolean
   onClose: () => void
   category: Category | null
   transactions: Transaction[]
   categories: Category[]
   expenseShares?: ExpenseShare[]
+  cashTransactions?: CashTransaction[]
+  allTransactions?: Transaction[]
   mode?: 'net' | 'gross'
   periodLabel?: string
+  referenceDate?: Date
+  scope?: 'month' | 'all'
   onSelectTransaction?: (transaction: Transaction) => void
   onEditTransaction?: (transaction: Transaction) => void
   onDeleteTransaction?: (transaction: Transaction) => void
@@ -27,8 +32,12 @@ export function CategoryDetailModal({
   transactions,
   categories,
   expenseShares = [],
+  cashTransactions = [],
+  allTransactions,
   mode = 'net',
   periodLabel,
+  referenceDate,
+  scope = 'month',
   onSelectTransaction,
   onEditTransaction,
   onDeleteTransaction,
@@ -37,16 +46,21 @@ export function CategoryDetailModal({
 
   const canonicalCategoryId = normalizeCategoryAlias(category.id)
 
-  // Filtrar las transacciones de esta categoría
+  // Filtrar las transacciones de esta categoría en el periodo indicado
   const categoryTransactions = useMemo(() => {
     return transactions
       .filter((t) => {
         if (t.type !== 'expense') return false
+        if (scope === 'month' && referenceDate && !isSameMonthYear(t.date, referenceDate)) {
+          return false
+        }
         const catId = normalizeCategoryAlias(t.categoryId || 'other')
         return catId === canonicalCategoryId
       })
       .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
-  }, [transactions, canonicalCategoryId])
+  }, [transactions, canonicalCategoryId, scope, referenceDate])
+
+  const lookupTransactions = allTransactions ?? transactions
 
   // Cálculo de totales bruto, neto y reembolsos vinculados
   const { grossTotal, linkedReimbursementsTotal, netTotal } = useMemo(() => {
@@ -56,7 +70,12 @@ export function CategoryDetailModal({
 
     categoryTransactions.forEach((t) => {
       gross += t.amount
-      const linked = selectLinkedReimbursementsForExpense(t.id, transactions)
+      const linked = selectLinkedReimbursementsForExpense(
+        t.id,
+        lookupTransactions,
+        cashTransactions,
+        expenseShares
+      )
       linkedReimb += Math.min(t.amount, linked)
       net += Math.max(0, t.amount - linked)
     })
@@ -66,7 +85,7 @@ export function CategoryDetailModal({
       linkedReimbursementsTotal: Math.round(linkedReimb * 100) / 100,
       netTotal: Math.round(net * 100) / 100,
     }
-  }, [categoryTransactions, transactions])
+  }, [categoryTransactions, lookupTransactions, cashTransactions, expenseShares])
 
   const displayedAmount = mode === 'net' ? netTotal : grossTotal
 
@@ -79,7 +98,12 @@ export function CategoryDetailModal({
     const map = new Map<string, number>()
     categoryTransactions.forEach((t) => {
       const recipient = t.giftRecipient?.trim() || 'Sin especificar'
-      const linked = selectLinkedReimbursementsForExpense(t.id, transactions)
+      const linked = selectLinkedReimbursementsForExpense(
+        t.id,
+        lookupTransactions,
+        cashTransactions,
+        expenseShares
+      )
       const amt = mode === 'net' ? Math.max(0, t.amount - linked) : t.amount
       map.set(recipient, (map.get(recipient) || 0) + amt)
     })
@@ -89,7 +113,7 @@ export function CategoryDetailModal({
         amount: Math.round(amount * 100) / 100,
       }))
       .sort((a, b) => b.amount - a.amount)
-  }, [isGiftsCategory, categoryTransactions, transactions, mode])
+  }, [isGiftsCategory, categoryTransactions, lookupTransactions, cashTransactions, expenseShares, mode])
 
   return (
     <div className="modal-backdrop" onClick={onClose} role="dialog" aria-modal="true">

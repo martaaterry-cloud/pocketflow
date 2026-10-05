@@ -44,6 +44,41 @@ export interface UnifiedMovementFilters {
 }
 
 /**
+ * Determina si una fecha (string 'YYYY-MM-DD', ISO o Date) pertenece al mismo mes y año
+ * que la fecha de referencia económica, evitando desfases por huso horario.
+ */
+export function isSameMonthYear(dateInput: string | Date | undefined, referenceDate: Date = new Date()): boolean {
+  if (!dateInput) return false
+  if (typeof dateInput === 'string') {
+    const clean = dateInput.slice(0, 10)
+    const parts = clean.split('-')
+    if (parts.length === 3) {
+      const y = parseInt(parts[0], 10)
+      const m = parseInt(parts[1], 10) - 1
+      return y === referenceDate.getFullYear() && m === referenceDate.getMonth()
+    }
+  }
+  const d = typeof dateInput === 'string' ? new Date(dateInput) : dateInput
+  return !isNaN(d.getTime()) && d.getFullYear() === referenceDate.getFullYear() && d.getMonth() === referenceDate.getMonth()
+}
+
+/**
+ * Selector canónico para obtener los movimientos unificados de un período específico (por defecto, mes actual),
+ * ordenados cronológicamente descendente.
+ */
+export function selectUnifiedMovementsForPeriod(
+  transactions: Transaction[] = [],
+  cashTransactions: CashTransaction[] = [],
+  expenseShares: ExpenseShare[] = [],
+  referenceDate: Date = new Date(),
+  scope: 'month' | 'all' = 'month'
+): UnifiedMovement[] {
+  const allUnified = toUnifiedMovements(transactions, cashTransactions, expenseShares)
+  if (scope === 'all') return allUnified
+  return allUnified.filter((m) => isSameMonthYear(m.date, referenceDate))
+}
+
+/**
  * Convierte y unifica los movimientos bancarios (Transaction) y de efectivo (CashTransaction)
  * en una única cronología ordenada por fecha descendente, sin mutar ni duplicar la persistencia.
  */
@@ -178,19 +213,8 @@ export function filterUnifiedMovements(
   return movements.filter((m) => {
     // 0. Filtro por periodo (seguro frente a desfase UTC/zona horaria)
     if (scope === 'month' && referenceDate) {
-      const dateStr = m.date.slice(0, 10)
-      const parts = dateStr.split('-')
-      if (parts.length === 3) {
-        const y = parseInt(parts[0], 10)
-        const mo = parseInt(parts[1], 10) - 1
-        if (mo !== referenceDate.getMonth() || y !== referenceDate.getFullYear()) {
-          return false
-        }
-      } else {
-        const d = new Date(m.date)
-        if (d.getMonth() !== referenceDate.getMonth() || d.getFullYear() !== referenceDate.getFullYear()) {
-          return false
-        }
+      if (!isSameMonthYear(m.date, referenceDate)) {
+        return false
       }
     }
 

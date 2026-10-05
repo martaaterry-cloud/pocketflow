@@ -6,6 +6,7 @@ interface CashTransactionListProps {
   transactions: CashTransaction[]
   categories: Category[]
   limit?: number
+  emptyMessage?: string
   onEdit?: (tx: CashTransaction) => void
   onDelete?: (tx: CashTransaction) => void
 }
@@ -14,6 +15,7 @@ export function CashTransactionList({
   transactions,
   categories,
   limit,
+  emptyMessage,
   onEdit,
   onDelete,
 }: CashTransactionListProps) {
@@ -49,7 +51,9 @@ export function CashTransactionList({
         >
           <AppIcon name="banknote" size={24} />
         </div>
-        <p style={{ margin: '0 0 4px', fontWeight: 600, fontSize: '0.98rem' }}>Sin movimientos de efectivo</p>
+        <p style={{ margin: '0 0 4px', fontWeight: 600, fontSize: '0.98rem' }}>
+          {emptyMessage || 'Sin movimientos de efectivo'}
+        </p>
         <p style={{ margin: 0, fontSize: '0.86rem', color: 'var(--text-muted)' }}>
           Registra una entrada, salida o haz un ajuste rápido de tu efectivo físico.
         </p>

@@ -12,6 +12,7 @@ export interface TransactionListProps {
   cashTransactions?: CashTransaction[]
   allTransactions?: Transaction[]
   limit?: number
+  emptyMessage?: string
   onSelect?: (transaction: Transaction | CashTransaction) => void
   onEdit?: (transaction: Transaction | CashTransaction) => void
   onDelete?: (transaction: Transaction) => void
@@ -26,6 +27,7 @@ export function TransactionList({
   cashTransactions = [],
   allTransactions,
   limit,
+  emptyMessage,
   onSelect,
   onEdit,
   onDelete,
@@ -104,7 +106,7 @@ export function TransactionList({
   if (rows.length === 0) {
     return (
       <div className="transaction-list empty">
-        <p className="muted">No hay movimientos para mostrar.</p>
+        <p className="muted">{emptyMessage || 'No hay movimientos para mostrar.'}</p>
       </div>
     )
   }

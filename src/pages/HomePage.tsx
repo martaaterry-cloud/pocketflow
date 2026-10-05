@@ -23,6 +23,10 @@ import {
   selectTotalEconomicConsumptionForPeriod,
 } from '../utils/cashSelectors'
 import { selectLinkedReimbursementsForExpense } from '../utils/sharedExpenseSelectors'
+import {
+  isSameMonthYear,
+  selectUnifiedMovementsForPeriod,
+} from '../utils/unifiedMovementSelectors'
 import { calculateSwipeNextIndex, type HomeModeIndex } from '../utils/swipeGestures'
 import { AppIcon } from '../ui/icons'
 
@@ -73,17 +77,45 @@ export function HomePage({
     finance.transactions ?? []
   )
 
+  // 0. Período único canónico para Inicio: Mes natural actual
+  const now = new Date()
+  const homeReferenceDate = useMemo(
+    () => new Date(now.getFullYear(), now.getMonth(), 1),
+    [now.getFullYear(), now.getMonth()]
+  )
+  const MONTH_NAMES_LOWER = [
+    'enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio',
+    'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'
+  ]
+  const currentMonthName = MONTH_NAMES_LOWER[homeReferenceDate.getMonth()]
+
+  // Movimientos unificados del mes actual para la sección "Últimos movimientos"
+  const homeMonthUnifiedMovements = useMemo(() => {
+    return selectUnifiedMovementsForPeriod(
+      finance.transactions ?? [],
+      finance.cashTransactions ?? [],
+      finance.expenseShares ?? [],
+      homeReferenceDate,
+      'month'
+    )
+  }, [finance.transactions, finance.cashTransactions, finance.expenseShares, homeReferenceDate])
+
   // Cálculos de Efectivo
   const cashTransactions = finance.cashTransactions ?? []
   const cashBalance = useMemo(() => selectCashBalance(cashTransactions), [cashTransactions])
   const cashMonthExpenses = useMemo(
-    () => selectCashExpensesForPeriod(cashTransactions, new Date(), 'month', finance.transactions ?? []),
-    [cashTransactions, finance.transactions]
+    () => selectCashExpensesForPeriod(cashTransactions, homeReferenceDate, 'month', finance.transactions ?? []),
+    [cashTransactions, homeReferenceDate, finance.transactions]
   )
   const cashMonthIncome = useMemo(
-    () => selectCashIncomeForPeriod(cashTransactions, new Date(), 'month'),
-    [cashTransactions]
+    () => selectCashIncomeForPeriod(cashTransactions, homeReferenceDate, 'month'),
+    [cashTransactions, homeReferenceDate]
   )
+
+  // Movimientos de efectivo filtrados para el mes actual
+  const currentMonthCashTransactions = useMemo(() => {
+    return cashTransactions.filter((c) => isSameMonthYear(c.date, homeReferenceDate))
+  }, [cashTransactions, homeReferenceDate])
 
   // Gastos de efectivo convertidos a formato Transaction compatible para DonutChart
   const cashExpensesAsTransactions = useMemo<Transaction[]>(() => {
@@ -123,11 +155,11 @@ export function HomePage({
       selectTotalEconomicConsumptionForPeriod(
         finance.transactions ?? [],
         cashTransactions,
-        new Date(),
+        homeReferenceDate,
         'month',
         finance.expenseShares ?? []
       ),
-    [finance.transactions, cashTransactions, finance.expenseShares]
+    [finance.transactions, cashTransactions, homeReferenceDate, finance.expenseShares]
   )
 
   // Handlers para Swipe táctil (Mobile First)
@@ -573,6 +605,7 @@ export function HomePage({
                 transactions={finance.transactions}
                 categories={finance.categories}
                 netCategoryItems={finance.totals.netCategoryExpenses}
+                referenceDate={homeReferenceDate}
                 onSelectCategoryFilter={(catId) => {
                   const canonical = normalizeCategoryAlias(catId)
                   const cat = finance.categories.find((c) => normalizeCategoryAlias(c.id) === canonical) || {
@@ -592,12 +625,13 @@ export function HomePage({
                 <h2>Últimos movimientos</h2>
               </div>
               <TransactionList
-                transactions={finance.transactions}
+                movements={homeMonthUnifiedMovements}
                 categories={finance.categories}
                 expenseShares={finance.expenseShares}
                 cashTransactions={finance.cashTransactions}
                 allTransactions={finance.transactions}
                 limit={5}
+                emptyMessage={`Todavía no hay movimientos en ${currentMonthName}.`}
                 onSelect={(t) => {
                   if (t.isShared && onSelectSharedExpense) {
                     onSelectSharedExpense(t)
@@ -663,6 +697,7 @@ export function HomePage({
               <DonutChart
                 transactions={cashExpensesAsTransactions}
                 categories={finance.categories}
+                referenceDate={homeReferenceDate}
               />
             </section>
 
@@ -670,11 +705,12 @@ export function HomePage({
             <section className="section">
               <div className="section-title">
                 <h2>Movimientos de efectivo</h2>
-                <span>{cashTransactions.length} registrados</span>
+                <span>{currentMonthCashTransactions.length} registrados</span>
               </div>
               <CashTransactionList
-                transactions={cashTransactions}
+                transactions={currentMonthCashTransactions}
                 categories={finance.categories}
+                emptyMessage={`Todavía no hay movimientos de efectivo en ${currentMonthName}.`}
                 onEdit={(tx) => {
                   if (tx.isShared && onSelectSharedExpense) {
                     onSelectSharedExpense(tx)
@@ -868,9 +904,13 @@ export function HomePage({
         onClose={() => setSelectedCategoryForDetail(null)}
         category={selectedCategoryForDetail}
         transactions={finance.transactions}
+        allTransactions={finance.transactions}
+        cashTransactions={finance.cashTransactions}
         categories={finance.categories}
         expenseShares={finance.expenseShares}
         mode="net"
+        referenceDate={homeReferenceDate}
+        scope="month"
         periodLabel="Mes actual"
         onSelectTransaction={onSelectTransaction}
         onEditTransaction={onSelectTransaction}
