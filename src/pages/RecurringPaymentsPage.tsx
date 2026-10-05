@@ -13,8 +13,12 @@ import type { ReturnTypeFinance } from '../types'
 import { money } from '../utils/money'
 import {
   recalculateRecurringNextDate,
+  selectRecurringExpectedReimbursement,
+  selectRecurringGrossAmount,
   selectRecurringPaymentCycleStatus,
-  selectRecurringUserOutflow,
+  selectRecurringUserCashOutflow,
+  selectRecurringUserEconomicShare,
+  selectTotalPersonalRecurringExpenses,
 } from '../utils/financeSelectors'
 import { AppIcon } from '../ui/icons'
 
@@ -83,6 +87,7 @@ export function RecurringPaymentsPage({
 
   const expensesCount = finance.recurring.filter((r) => r.type !== 'income').length
   const incomesCount = finance.recurring.filter((r) => r.type === 'income').length
+  const totalPersonalRecurring = selectTotalPersonalRecurringExpenses(finance.recurring)
 
   const filteredRecurring = finance.recurring.filter((r) => {
     if (filter === 'expense') return r.type !== 'income'
@@ -102,12 +107,12 @@ export function RecurringPaymentsPage({
         </button>
       </header>
 
-      {/* Banner de Comprometido */}
+      {/* Banner Principal de Gastos Recurrentes Personales */}
       <section className="hero-card light" style={{ marginBottom: 16 }}>
-        <span>Dinero comprometido pendiente</span>
-        <strong>{money(finance.totals.committedAmount)}</strong>
-        <div className="hero-meta">
-          <span>{finance.totals.pendingRecurring?.length ?? 0} gastos pendientes este mes</span>
+        <span>Gastos recurrentes personales</span>
+        <strong style={{ fontSize: '2rem' }}>{money(totalPersonalRecurring)}/mes</strong>
+        <div className="hero-meta" style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 6, fontSize: '0.82rem', color: '#64748b' }}>
+          <span>Liquidez comprometida pendiente: <strong>{money(finance.totals.committedAmount)}</strong> ({finance.totals.pendingRecurring?.length ?? 0} pendientes)</span>
           {incomesCount > 0 && (
             <span>· {incomesCount} {incomesCount === 1 ? 'ingreso previsto' : 'ingresos previstos'}</span>
           )}
@@ -173,10 +178,15 @@ export function RecurringPaymentsPage({
           <div className="recurring-list">
             {filteredRecurring.map((r) => {
               const category = finance.categories.find((c) => c.id === r.categoryId)
-              const account = finance.accounts.find((a) => a.id === r.accountId)
               const cycleStatus = selectRecurringPaymentCycleStatus(r, finance.transactions)
               const isConfirming = confirmingId === r.id
               const isIncome = r.type === 'income'
+
+              const grossAmount = selectRecurringGrossAmount(r, 1)
+              const userEconomicShare = selectRecurringUserEconomicShare(r, 1)
+              const userCashOutflow = selectRecurringUserCashOutflow(r, 1)
+              const expectedReimbursement = selectRecurringExpectedReimbursement(r, 1)
+              const isContactPaid = Boolean(r.isShared && (r.paidBy === 'contact' || r.sharingTemplate?.payer === 'contact'))
 
               const externalCount = r.sharingTemplate?.participants?.filter(
                 (p) => !p.isUserShare && p.name.trim().toLowerCase() !== 'tú'
@@ -226,8 +236,8 @@ export function RecurringPaymentsPage({
                                 ? RECURRING_INCOME_SOURCE_LABELS[r.incomeSourceType as RecurringIncomeSourceType]
                                 : 'Ingreso programado')
                             : (category?.name ?? 'Suscripción')} · {frequencyLabel[r.frequency] ?? 'Mensual'}
-                          {!isIncome && r.isShared && r.paidBy === 'contact' && ` · Paga ${r.payerName || 'otra persona'}`}
-                          {!isIncome && r.isShared && r.paidBy !== 'contact' && ` · Lo pagas tú`}
+                          {!isIncome && r.isShared && isContactPaid && ` · Paga ${r.payerName || 'contacto'} · Servicio: ${money(grossAmount)}`}
+                          {!isIncome && r.isShared && !isContactPaid && ` · Servicio: ${money(grossAmount)} · Pagas tú`}
                         </span>
                       </div>
                     </div>
@@ -235,15 +245,17 @@ export function RecurringPaymentsPage({
                     <div className="recurring-amount-box">
                       {isIncome ? (
                         <strong className="positive">+{money(r.amount)}</strong>
-                      ) : r.isShared && r.paidBy === 'contact' ? (
+                      ) : r.isShared ? (
                         <div>
-                          <strong className="expense-amount">−{money(selectRecurringUserOutflow(r))}</strong>
+                          <strong className="expense-amount">−{money(userEconomicShare)}</strong>
                           <span style={{ display: 'block', fontSize: '0.72rem', color: 'var(--text-muted, #888)', textAlign: 'right', marginTop: 2 }}>
-                            Tu parte ({money(r.amount)})
+                            {isContactPaid
+                              ? `Tu parte (Bizum: ${money(userCashOutflow)})`
+                              : `Tu parte (Factura: ${money(grossAmount)})`}
                           </span>
                         </div>
                       ) : (
-                        <strong className="expense-amount">−{money(r.amount)}</strong>
+                        <strong className="expense-amount">−{money(grossAmount)}</strong>
                       )}
                     </div>
                   </div>
@@ -260,16 +272,19 @@ export function RecurringPaymentsPage({
                       )}
                       {!isIncome && r.isShared && (
                         <span className="badge-status shared-badge">
-                          {r.paidBy === 'contact'
+                          {isContactPaid
                             ? `Paga ${r.payerName || 'contacto'}`
-                            : sharedLabel}
+                            : `Pagas tú (${money(userCashOutflow)})`}
                         </span>
                       )}
-                      {!isIncome && r.isShared && r.settlementPaymentMethod && (
+                      {!isIncome && r.isShared && isContactPaid && (
                         <span className="badge-status" style={{ background: 'rgba(255,255,255,0.06)', color: 'var(--text-muted)' }}>
-                          {r.paidBy === 'contact'
-                            ? `Liquidación: ${r.settlementPaymentMethod === 'bizum' ? 'Bizum' : r.settlementPaymentMethod === 'cash' ? 'Efectivo' : 'Banco'}`
-                            : `Cobro: ${r.settlementPaymentMethod === 'bizum' ? 'Bizum' : r.settlementPaymentMethod === 'cash' ? 'Efectivo' : 'Banco'}`}
+                          {`Le pagas: ${money(userCashOutflow)} · ${r.settlementPaymentMethod === 'bizum' ? 'Bizum' : r.settlementPaymentMethod === 'cash' ? 'Efectivo' : 'Banco'}`}
+                        </span>
+                      )}
+                      {!isIncome && r.isShared && !isContactPaid && expectedReimbursement > 0 && (
+                        <span className="badge-status" style={{ background: 'rgba(93,156,116,0.12)', color: '#2e7d32' }}>
+                          {`Te deben: +${money(expectedReimbursement)}`}
                         </span>
                       )}
                       {!isIncome && r.active && cycleStatus.status === 'confirmed_for_cycle' && (
@@ -339,9 +354,8 @@ export function RecurringPaymentsPage({
           <p style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
             <AppIcon name="info" size={16} />
             <span>
-              <strong>Previsiones y comprometido:</strong> Los gastos recurrentes activos pendientes
-              se descuentan de tu <em>Disponible real</em>. Los ingresos recurrentes sirven como previsión
-              y no alteran tu saldo hasta que registres el ingreso real.
+              <strong>Coste personal vs Liquidez:</strong> El coste mensual muestra tu cuota real en cada servicio.
+              El dinero comprometido indica la liquidez que necesitas tener disponible para atender los cargos pendientes de este mes.
             </span>
           </p>
         </div>

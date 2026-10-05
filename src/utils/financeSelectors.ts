@@ -3,45 +3,110 @@ import { normalizeCategoryAlias } from './categoryNormalization'
 import { getCanonicalRecurringShares } from './sharedExpenseSelectors'
 
 /**
- * Salida de caja propia prevista para un gasto recurrente:
- * 1) Si es ingreso: 0 €.
- * 2) Si es gasto y lo paga otra persona (rec.paidBy === 'contact' o rec.sharingTemplate?.payer === 'contact'):
- *    - La salida de caja propia es ÚNICAMENTE la parte que la usuaria debe transferir/liquidar a dicha persona.
- *    - No el importe bruto completo del servicio (ej. 3,50 € para Spotify de 21 € si paga Andrés).
- * 3) Si es gasto y lo paga la usuaria (rec.paidBy === 'user'):
- *    - La usuaria debe abonar la factura completa al proveedor (ej. 23 € de ChatGPT),
- *      aunque posteriormente otras personas le reembolsen su parte.
- *    - Salida propia = rec.amount * monthsCount.
- * 4) Si la usuaria no participa (includePayer === false y lo paga otro): 0 €.
+ * A) GROSS AMOUNT / IMPORTE BRUTO:
+ * Precio completo del servicio emitido por el proveedor.
+ * Spotify = 21,00 €, ChatGPT = 23,00 €, iCloud = 2,99 €, FitnessPark = 30,00 €.
  */
-export function selectRecurringUserOutflow(
+export function selectRecurringGrossAmount(
   rec: RecurringPayment,
   monthsCount = 1
 ): number {
   if (!rec || rec.type === 'income' || rec.categoryId === 'income') {
     return 0
   }
-
   const effectiveMonths = Math.max(1, monthsCount)
   const baseAmount = Math.max(0, (Number(rec.amount) || 0) * effectiveMonths)
+  return Math.round(baseAmount * 100) / 100
+}
 
-  const isContactPaid = rec.paidBy === 'contact' || rec.sharingTemplate?.payer === 'contact'
-
-  if (!isContactPaid) {
-    // La usuaria paga el gasto íntegro inicialmente al proveedor
-    return Math.round(baseAmount * 100) / 100
+/**
+ * C) USER ECONOMIC SHARE / COSTE RECURRENTE PERSONAL:
+ * Cantidad del servicio que económicamente le corresponde asumir a la usuaria.
+ * - Spotify (21 € / 6 pers, paga Andrés): 3,50 €
+ * - ChatGPT (23 € / 2 pers, paga usuaria, padre reembolsa mitad): 11,50 €
+ * - iCloud (2,99 € no compartido): 2,99 €
+ * - FitnessPark (30 € no compartido): 30,00 €
+ * Si la usuaria no participa en el recurrente (includePayer === false): 0 €.
+ */
+export function selectRecurringUserEconomicShare(
+  rec: RecurringPayment,
+  monthsCount = 1
+): number {
+  if (!rec || rec.type === 'income' || rec.categoryId === 'income') {
+    return 0
   }
-
-  // Lo paga otra persona -> La salida propia de la usuaria es exclusivamente su cuota canónica
+  const effectiveMonths = Math.max(1, monthsCount)
+  if (!rec.isShared) {
+    return selectRecurringGrossAmount(rec, effectiveMonths)
+  }
   const canonical = getCanonicalRecurringShares(rec, effectiveMonths)
   return Math.round(canonical.userShareAmount * 100) / 100
 }
 
 /**
- * Salida mensualizada de caja propia para un gasto recurrente según su periodicidad.
+ * B) USER CASH OUTFLOW / SALIDA DE CAJA PROPIA INICIAL:
+ * Dinero que físicamente tiene que desembolsar la usuaria antes de recibir reembolsos.
+ * - Si lo paga un tercero (rec.paidBy === 'contact' o sharingTemplate.payer === 'contact'):
+ *   La usuaria únicamente desembolsa su parte (ej. 3,50 € Bizum a Andrés).
+ * - Si lo paga la usuaria (rec.paidBy === 'user'):
+ *   La usuaria abona el cargo completo al proveedor (ej. 23,00 € ChatGPT).
  */
-export function selectRecurringMonthlyUserOutflow(rec: RecurringPayment): number {
-  const singleCycleOutflow = selectRecurringUserOutflow(rec, 1)
+export function selectRecurringUserCashOutflow(
+  rec: RecurringPayment,
+  monthsCount = 1
+): number {
+  if (!rec || rec.type === 'income' || rec.categoryId === 'income') {
+    return 0
+  }
+  const effectiveMonths = Math.max(1, monthsCount)
+  const isContactPaid = rec.paidBy === 'contact' || rec.sharingTemplate?.payer === 'contact'
+
+  if (isContactPaid) {
+    return selectRecurringUserEconomicShare(rec, effectiveMonths)
+  }
+
+  return selectRecurringGrossAmount(rec, effectiveMonths)
+}
+
+/**
+ * REEMBOLSO ESPERADO DE TERCEROS:
+ * Dinero que la usuaria desembolsa inicialmente y que debe recuperar de otros participantes.
+ * = User Cash Outflow - User Economic Share
+ * - ChatGPT: 23,00 € - 11,50 € = 11,50 €
+ * - Spotify: 3,50 € - 3,50 € = 0,00 €
+ */
+export function selectRecurringExpectedReimbursement(
+  rec: RecurringPayment,
+  monthsCount = 1
+): number {
+  const outflow = selectRecurringUserCashOutflow(rec, monthsCount)
+  const share = selectRecurringUserEconomicShare(rec, monthsCount)
+  return Math.max(0, Math.round((outflow - share) * 100) / 100)
+}
+
+/**
+ * Cuota económica personal mensualizada según periodicidad del recurrente.
+ */
+export function selectRecurringMonthlyUserEconomicShare(rec: RecurringPayment): number {
+  const singleCycleShare = selectRecurringUserEconomicShare(rec, 1)
+  const freq = rec.frequency || 'monthly'
+  if (freq === 'monthly') {
+    return Math.round(singleCycleShare * 100) / 100
+  }
+  if (freq === 'yearly') {
+    return Math.round((singleCycleShare / 12) * 100) / 100
+  }
+  if (freq === 'weekly') {
+    return Math.round(singleCycleShare * 4.33 * 100) / 100
+  }
+  return Math.round(singleCycleShare * 100) / 100
+}
+
+/**
+ * Salida mensualizada de caja propia para un gasto recurrente según periodicidad.
+ */
+export function selectRecurringMonthlyUserCashOutflow(rec: RecurringPayment): number {
+  const singleCycleOutflow = selectRecurringUserCashOutflow(rec, 1)
   const freq = rec.frequency || 'monthly'
   if (freq === 'monthly') {
     return Math.round(singleCycleOutflow * 100) / 100
@@ -54,6 +119,35 @@ export function selectRecurringMonthlyUserOutflow(rec: RecurringPayment): number
   }
   return Math.round(singleCycleOutflow * 100) / 100
 }
+
+/**
+ * Suma canónica de todos los gastos recurrentes personales activos:
+ * Suma de USER ECONOMIC SHARE mensualizado de cada recurrente.
+ * Spotify (3,50 €) + ChatGPT (11,50 €) + iCloud (2,99 €) + FitnessPark (30,00 €) = 47,99 €/mes.
+ */
+export function selectTotalPersonalRecurringExpenses(recurring: RecurringPayment[] = []): number {
+  const activeExpenseRecs = Array.isArray(recurring)
+    ? recurring.filter((r) => r.active !== false && r.type !== 'income' && r.categoryId !== 'income')
+    : []
+
+  const sum = activeExpenseRecs.reduce((acc, r) => {
+    return acc + selectRecurringMonthlyUserEconomicShare(r)
+  }, 0)
+
+  return Math.round(sum * 100) / 100
+}
+
+/**
+ * @deprecated Utilizar `selectRecurringUserCashOutflow` o `selectRecurringUserEconomicShare`.
+ * Mantenido por retrocompatibilidad: mapea a salida de caja.
+ */
+export const selectRecurringUserOutflow = selectRecurringUserCashOutflow
+
+/**
+ * @deprecated Utilizar `selectRecurringMonthlyUserCashOutflow` o `selectRecurringMonthlyUserEconomicShare`.
+ * Mantenido por retrocompatibilidad: mapea a salida de caja mensualizada.
+ */
+export const selectRecurringMonthlyUserOutflow = selectRecurringMonthlyUserCashOutflow
 
 /**
  * Dinero para gastar = saldo actual de Cuenta diaria.

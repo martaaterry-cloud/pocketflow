@@ -80,6 +80,7 @@ import {
   selectPendingDebtors,
   selectOrphanExpenseShares,
   splitExpenseEqually,
+  getCanonicalRecurringShares,
 } from '../utils/sharedExpenseSelectors'
 import { getSupabase } from '../services/supabase/supabaseClient'
 import {
@@ -133,6 +134,9 @@ import {
   selectProjectedAvailable,
   selectRealAvailable,
   selectRecurringUserOutflow,
+  selectRecurringUserCashOutflow,
+  selectRecurringUserEconomicShare,
+  selectTotalPersonalRecurringExpenses,
   selectSavingsBalance,
   selectSpendableBalance,
   selectTotalMoney,
@@ -1345,7 +1349,7 @@ export function useFinance(storage: StorageAdapter = defaultAppStorage) {
 
       if (isContactPaid) {
         // La usuaria liquida a Andrés su cuota propia correspondiente a los ciclos cubiertos
-        const userQuotaOutflow = selectRecurringUserOutflow(rec, effectiveMonths)
+        const userQuotaOutflow = selectRecurringUserCashOutflow(rec, effectiveMonths)
         newTx = {
           id: `tx_${crypto.randomUUID()}`,
           type: 'expense',
@@ -1375,51 +1379,19 @@ export function useFinance(storage: StorageAdapter = defaultAppStorage) {
           paidBy: 'user',
         }
 
-        // Si es un recurrente compartido pagado por la usuaria, crear las cuotas por cobrar de terceros
-        if (rec.isShared && rec.sharingTemplate) {
-          if (rec.sharingTemplate.splitType === 'equal') {
-            const splitResults = splitExpenseEqually(
-              totalAmount,
-              rec.sharingTemplate.participants,
-              rec.sharingTemplate.includePayer,
-              'Tú'
-            )
-            cycleShares = splitResults.map((s) => ({
-              id: crypto.randomUUID(),
-              expenseTransactionId: newTx.id,
-              contactId: s.contactId,
-              participantName: s.participantName,
-              isPayerShare: s.isPayerShare,
-              expectedAmount: s.amount,
-              createdAt: dateStr,
-              updatedAt: dateStr,
-            }))
-          } else {
-            cycleShares = rec.sharingTemplate.participants.map((p) => ({
-              id: crypto.randomUUID(),
-              expenseTransactionId: newTx.id,
-              contactId: p.contactId,
-              participantName: p.name,
-              isPayerShare: false,
-              expectedAmount: Math.round(Number(p.amount) * effectiveMonths * 100) / 100,
-              createdAt: dateStr,
-              updatedAt: dateStr,
-            }))
-
-            if (rec.sharingTemplate.includePayer) {
-              const externalTotal = cycleShares.reduce((s, sh) => s + sh.expectedAmount, 0)
-              const payerAmount = Math.max(0, Math.round((totalAmount - externalTotal) * 100) / 100)
-              cycleShares.unshift({
-                id: crypto.randomUUID(),
-                expenseTransactionId: newTx.id,
-                participantName: 'Tú',
-                isPayerShare: true,
-                expectedAmount: payerAmount,
-                createdAt: dateStr,
-                updatedAt: dateStr,
-              })
-            }
-          }
+        // Si es un recurrente compartido pagado por la usuaria, crear las cuotas canónicas por cobrar de terceros
+        if (rec.isShared) {
+          const canonical = getCanonicalRecurringShares(rec, effectiveMonths)
+          cycleShares = canonical.shares.map((s) => ({
+            id: crypto.randomUUID(),
+            expenseTransactionId: newTx.id,
+            contactId: s.contactId,
+            participantName: s.participantName,
+            isPayerShare: s.isPayerShare,
+            expectedAmount: s.amount,
+            createdAt: dateStr,
+            updatedAt: dateStr,
+          }))
         }
       }
 
@@ -3159,6 +3131,7 @@ export function useFinance(storage: StorageAdapter = defaultAppStorage) {
       reservesAllocated,
       emergencyAllocated,
       freeSavings,
+      totalPersonalRecurring: selectTotalPersonalRecurringExpenses(state.recurring),
       committedAmount: committed,
       realAvailable,
       pendingRecurring,

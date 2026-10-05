@@ -132,6 +132,13 @@ import {
   selectRecurringPaymentCycleStatus,
   selectRecurringUserOutflow,
   selectRecurringMonthlyUserOutflow,
+  selectRecurringGrossAmount,
+  selectRecurringUserEconomicShare,
+  selectRecurringUserCashOutflow,
+  selectRecurringExpectedReimbursement,
+  selectRecurringMonthlyUserEconomicShare,
+  selectRecurringMonthlyUserCashOutflow,
+  selectTotalPersonalRecurringExpenses,
 } from '../src/utils/financeSelectors'
 import {
   calculatePeriodStatistics,
@@ -6922,12 +6929,12 @@ describe('Fase 18 — Mejoras de Finanzas (Detalle por Categoría, Retiradas de 
 describe('Fase 18 — Identificación Visual de Versión y Build', () => {
   it('314. Versioning: única fuente de verdad y formato de visualización exacto', () => {
     assert.equal(APP_NAME, 'PocketFlow')
-    assert.equal(APP_VERSION, '0.25.2')
-    assert.equal(APP_BUILD, '2026.10.02-03')
+    assert.equal(APP_VERSION, '0.25.3')
+    assert.equal(APP_BUILD, '2026.10.05-01')
 
-    assert.equal(getAppVersionString(), 'PocketFlow v0.25.2')
-    assert.equal(getAppBuildString(), 'Build 2026.10.02-03')
-    assert.equal(getAppFullVersionLabel(), 'PocketFlow v0.25.2 · Build 2026.10.02-03')
+    assert.equal(getAppVersionString(), 'PocketFlow v0.25.3')
+    assert.equal(getAppBuildString(), 'Build 2026.10.05-01')
+    assert.equal(getAppFullVersionLabel(), 'PocketFlow v0.25.3 · Build 2026.10.05-01')
   })
 })
 
@@ -14023,12 +14030,12 @@ describe('Fase 50 — Control de Acceso por Roles (User / Admin), Seguridad RLS 
     }
 
     const userFooter = renderFooterTexts(false)
-    assert.equal(userFooter.versionText, 'PocketFlow v0.25.2')
+    assert.equal(userFooter.versionText, 'PocketFlow v0.25.3')
     assert.equal(userFooter.buildText, null)
 
     const adminFooter = renderFooterTexts(true)
-    assert.equal(adminFooter.versionText, 'PocketFlow v0.25.2')
-    assert.equal(adminFooter.buildText, 'Build 2026.10.02-03')
+    assert.equal(adminFooter.versionText, 'PocketFlow v0.25.3')
+    assert.equal(adminFooter.buildText, 'Build 2026.10.05-01')
   })
 
   it('590. 10. Reconciliación y sincronización de perfil no altera datos financieros ni transacciones', () => {
@@ -14529,7 +14536,7 @@ describe('Fase 52 — Versionado Automático y Robusto del Service Worker PWA', 
   it('613. 1. CACHE_NAME del Service Worker incluye exactamente APP_VERSION y APP_BUILD actuales', () => {
     const expectedCacheName = `pocketflow-v${APP_VERSION}-${APP_BUILD}`
     assert.equal(getServiceWorkerCacheName(APP_VERSION, APP_BUILD), expectedCacheName)
-    assert.equal(expectedCacheName, 'pocketflow-v0.25.2-2026.10.02-03')
+    assert.equal(expectedCacheName, 'pocketflow-v0.25.3-2026.10.05-01')
 
     const swCode = generateServiceWorkerCode(APP_VERSION, APP_BUILD)
     assert.ok(swCode.includes(`const CACHE_NAME = '${expectedCacheName}'`))
@@ -18390,11 +18397,11 @@ describe('Fase 66 — Clasificación y Desglose de Gastos por Medio de Pago (Tar
 
   // CASO 12: Versión PWA
   it('731. 12. Build genera version.json correspondiente a la versión actual', () => {
-    assert.equal(APP_VERSION, '0.25.2')
-    assert.equal(APP_BUILD, '2026.10.02-03')
+    assert.equal(APP_VERSION, '0.25.3')
+    assert.equal(APP_BUILD, '2026.10.05-01')
     const vJson = JSON.parse(generateVersionJson(APP_VERSION, APP_BUILD))
-    assert.equal(vJson.version, '0.25.2')
-    assert.equal(vJson.build, '2026.10.02-03')
+    assert.equal(vJson.version, '0.25.3')
+    assert.equal(vJson.build, '2026.10.05-01')
   })
 })
 
@@ -20758,9 +20765,9 @@ describe('Fase 67.8 — Auditoría Integral de Integridad Económica, Caso Multa
   })
 
   // TEST 21: Versión y build actualizados
-  it('806. 21. Versión y Build actualizados a 0.25.2 / 2026.10.02-03', () => {
-    assert.equal(APP_VERSION, '0.25.2')
-    assert.equal(APP_BUILD, '2026.10.02-03')
+  it('806. 21. Versión y Build actualizados a 0.25.3 / 2026.10.05-01', () => {
+    assert.equal(APP_VERSION, '0.25.3')
+    assert.equal(APP_BUILD, '2026.10.05-01')
   })
 })
 
@@ -21327,9 +21334,9 @@ describe('Fase 68 — Rediseño de Movimientos (Resumen Mensual, Agrupación Dia
   })
 
   // TEST 25: Versión y build actualizados
-  it('823. 25. Versión y Build actualizados a 0.25.2 / 2026.10.02-03', () => {
-    assert.equal(APP_VERSION, '0.25.2')
-    assert.equal(APP_BUILD, '2026.10.02-03')
+  it('823. 25. Versión y Build actualizados a 0.25.3 / 2026.10.05-01', () => {
+    assert.equal(APP_VERSION, '0.25.3')
+    assert.equal(APP_BUILD, '2026.10.05-01')
   })
 })
 
@@ -21694,10 +21701,10 @@ describe('Fase 69 — Auditoría y Corrección Completa: Dinero Real, Ingresos V
     assert.equal(gross, 80)
   })
 
-  // Test de versión 0.25.2
-  it('833. PWA Version: 0.25.2 / 2026.10.02-03', () => {
-    assert.equal(APP_VERSION, '0.25.2')
-    assert.equal(APP_BUILD, '2026.10.02-03')
+  // Test de versión 0.25.3
+  it('833. PWA Version: 0.25.3 / 2026.10.05-01', () => {
+    assert.equal(APP_VERSION, '0.25.3')
+    assert.equal(APP_BUILD, '2026.10.05-01')
   })
 })
 
@@ -22732,10 +22739,496 @@ describe('Fase 71: Normalización canónica de gastos recurrentes compartidos y 
     assert.equal(canonical.shares[1].amount, 11.50)
   })
 
-  // Test de versión 0.25.2
-  it('867. PWA Version: 0.25.2 / 2026.10.02-03', () => {
-    assert.equal(APP_VERSION, '0.25.2')
-    assert.equal(APP_BUILD, '2026.10.02-03')
+  /* ==========================================================================
+     FASE 72: MODELO CONCEPTUAL CANÓNICO DE GASTOS RECURRENTES (v0.25.3)
+     Distinción exacta de 3 magnitudes:
+     1. Importe bruto del servicio (selectRecurringGrossAmount)
+     2. Salida de caja propia inicial (selectRecurringUserCashOutflow)
+     3. Coste recurrente personal (selectRecurringUserEconomicShare)
+     ========================================================================== */
+
+  // TEST 1: Spotify 21 €, paga Andrés, 6 personas
+  it('867. Fase 72 - TEST 1: Spotify (21 €, paga Andrés, 6 personas) resuelve magnitudes canónicas exactas', () => {
+    const spotifyRec: RecurringPayment = {
+      id: 'rec-spotify-test1',
+      name: 'Spotify',
+      amount: 21,
+      categoryId: 'subscriptions',
+      accountId: 'daily',
+      frequency: 'monthly',
+      nextDate: '2026-10-05',
+      active: true,
+      isShared: true,
+      paidBy: 'contact',
+      payerName: 'Andrés',
+      sharingTemplate: {
+        splitType: 'equal',
+        includePayer: true,
+        payer: 'contact',
+        payerName: 'Andrés',
+        participants: [
+          { name: 'Irene Abril', amount: 0 },
+          { name: 'Espe', amount: 0 },
+          { name: 'Marta Cuenca', amount: 0 },
+          { name: 'Serhiy', amount: 0 },
+        ],
+      },
+    }
+
+    const gross = selectRecurringGrossAmount(spotifyRec)
+    const cashOutflow = selectRecurringUserCashOutflow(spotifyRec)
+    const economicShare = selectRecurringUserEconomicShare(spotifyRec)
+    const expectedReimbursement = selectRecurringExpectedReimbursement(spotifyRec)
+
+    assert.equal(gross, 21.00, 'Gross amount debe ser 21 €')
+    assert.equal(cashOutflow, 3.50, 'Cash outflow de la usuaria debe ser 3,50 €')
+    assert.equal(economicShare, 3.50, 'Economic share de la usuaria debe ser 3,50 €')
+    assert.equal(expectedReimbursement, 0.00, 'No hay reembolso a cobrar porque paga Andrés')
+  })
+
+  // TEST 2: Spotify debe aparecer y sumar en la suma total de recurrentes aunque paidBy='contact'
+  it('868. Fase 72 - TEST 2: Spotify suma 3,50 € en la suma total de recurrentes personales aunque paidBy="contact"', () => {
+    const spotifyRec: RecurringPayment = {
+      id: 'rec-spotify-test2',
+      name: 'Spotify',
+      amount: 21,
+      categoryId: 'subscriptions',
+      accountId: 'daily',
+      frequency: 'monthly',
+      nextDate: '2026-10-05',
+      active: true,
+      isShared: true,
+      paidBy: 'contact',
+      payerName: 'Andrés',
+      sharingTemplate: {
+        splitType: 'equal',
+        includePayer: true,
+        payer: 'contact',
+        payerName: 'Andrés',
+        participants: [
+          { name: 'Irene Abril', amount: 0 },
+          { name: 'Espe', amount: 0 },
+          { name: 'Marta Cuenca', amount: 0 },
+          { name: 'Serhiy', amount: 0 },
+        ],
+      },
+    }
+
+    const totalPersonal = selectTotalPersonalRecurringExpenses([spotifyRec])
+    assert.equal(totalPersonal, 3.50, 'El total de gastos recurrentes personales debe incluir los 3,50 € de Spotify')
+  })
+
+  // TEST 3: ChatGPT 23 €, pago yo, padre reembolsa mitad
+  it('869. Fase 72 - TEST 3: ChatGPT (23 €, paga usuaria, padre mitad) distingue salida de caja vs coste personal', () => {
+    const chatGptRec: RecurringPayment = {
+      id: 'rec-chatgpt-test3',
+      name: 'ChatGPT Plus',
+      amount: 23,
+      categoryId: 'subscriptions',
+      accountId: 'daily',
+      frequency: 'monthly',
+      nextDate: '2026-10-10',
+      active: true,
+      isShared: true,
+      paidBy: 'user',
+      sharingTemplate: {
+        splitType: 'equal',
+        includePayer: true,
+        payer: 'user',
+        participants: [{ name: 'Padre', amount: 0 }],
+      },
+    }
+
+    const gross = selectRecurringGrossAmount(chatGptRec)
+    const cashOutflow = selectRecurringUserCashOutflow(chatGptRec)
+    const economicShare = selectRecurringUserEconomicShare(chatGptRec)
+    const expectedReimbursement = selectRecurringExpectedReimbursement(chatGptRec)
+
+    assert.equal(gross, 23.00, 'Gross amount debe ser 23 €')
+    assert.equal(cashOutflow, 23.00, 'Cash outflow inicial debe ser 23 €')
+    assert.equal(economicShare, 11.50, 'Economic share de la usuaria debe ser 11,50 €')
+    assert.equal(expectedReimbursement, 11.50, 'Reembolso esperado del padre debe ser 11,50 €')
+  })
+
+  // TEST 4: Total recurrente personal con Spotify + ChatGPT + iCloud + FitnessPark
+  it('870. Fase 72 - TEST 4: Total recurrente personal suma cuotas personales exactas (Spotify 3,50 + ChatGPT 11,50 + iCloud 2,99 + FitnessPark 30 = 47,99 €)', () => {
+    const spotifyRec: RecurringPayment = {
+      id: 'rec-spotify',
+      name: 'Spotify',
+      amount: 21,
+      categoryId: 'subscriptions',
+      accountId: 'daily',
+      frequency: 'monthly',
+      nextDate: '2026-10-05',
+      active: true,
+      isShared: true,
+      paidBy: 'contact',
+      payerName: 'Andrés',
+      sharingTemplate: {
+        splitType: 'equal',
+        includePayer: true,
+        payer: 'contact',
+        payerName: 'Andrés',
+        participants: [
+          { name: 'Irene Abril', amount: 0 },
+          { name: 'Espe', amount: 0 },
+          { name: 'Marta Cuenca', amount: 0 },
+          { name: 'Serhiy', amount: 0 },
+        ],
+      },
+    }
+
+    const chatGptRec: RecurringPayment = {
+      id: 'rec-chatgpt',
+      name: 'ChatGPT Plus',
+      amount: 23,
+      categoryId: 'subscriptions',
+      accountId: 'daily',
+      frequency: 'monthly',
+      nextDate: '2026-10-10',
+      active: true,
+      isShared: true,
+      paidBy: 'user',
+      sharingTemplate: {
+        splitType: 'equal',
+        includePayer: true,
+        payer: 'user',
+        participants: [{ name: 'Padre', amount: 0 }],
+      },
+    }
+
+    const iCloudRec: RecurringPayment = {
+      id: 'rec-icloud',
+      name: 'iCloud',
+      amount: 2.99,
+      categoryId: 'subscriptions',
+      accountId: 'daily',
+      frequency: 'monthly',
+      nextDate: '2026-10-14',
+      active: true,
+    }
+
+    const fitnessParkRec: RecurringPayment = {
+      id: 'rec-fitnesspark',
+      name: 'FitnessPark',
+      amount: 30.00,
+      categoryId: 'sport',
+      accountId: 'daily',
+      frequency: 'monthly',
+      nextDate: '2026-10-07',
+      active: true,
+    }
+
+    const recs = [spotifyRec, chatGptRec, iCloudRec, fitnessParkRec]
+    const totalPersonal = selectTotalPersonalRecurringExpenses(recs)
+    const expected = Math.round((3.50 + 11.50 + 2.99 + 30.00) * 100) / 100
+
+    assert.equal(totalPersonal, 47.99)
+    assert.equal(totalPersonal, expected)
+  })
+
+  // TEST 5: Liquidez comprometida pendiente antes de pagar
+  it('871. Fase 72 - TEST 5: Liquidez comprometida suma salidas de caja pendientes (Spotify 3,50 + ChatGPT 23,00 = 26,50 €)', () => {
+    const spotifyRec: RecurringPayment = {
+      id: 'rec-spotify-t5',
+      name: 'Spotify',
+      amount: 21,
+      categoryId: 'subscriptions',
+      accountId: 'daily',
+      frequency: 'monthly',
+      nextDate: '2026-10-05',
+      active: true,
+      isShared: true,
+      paidBy: 'contact',
+      payerName: 'Andrés',
+      sharingTemplate: {
+        splitType: 'equal',
+        includePayer: true,
+        payer: 'contact',
+        payerName: 'Andrés',
+        participants: [
+          { name: 'Irene', amount: 0 },
+          { name: 'Espe', amount: 0 },
+          { name: 'Marta', amount: 0 },
+          { name: 'Serhiy', amount: 0 },
+        ],
+      },
+    }
+
+    const chatGptRec: RecurringPayment = {
+      id: 'rec-chatgpt-t5',
+      name: 'ChatGPT Plus',
+      amount: 23,
+      categoryId: 'subscriptions',
+      accountId: 'daily',
+      frequency: 'monthly',
+      nextDate: '2026-10-10',
+      active: true,
+      isShared: true,
+      paidBy: 'user',
+      sharingTemplate: {
+        splitType: 'equal',
+        includePayer: true,
+        payer: 'user',
+        participants: [{ name: 'Padre', amount: 0 }],
+      },
+    }
+
+    const committed = selectCommittedAmount([spotifyRec, chatGptRec], [], new Date('2026-10-01'))
+    assert.equal(committed, 26.50, 'Comprometido pendiente: 3,50 € Bizum + 23,00 € Factura = 26,50 €')
+  })
+
+  // TEST 6: Tras cargo ChatGPT, deja de ser cashOutflow pendiente y queda reembolso por cobrar 11,50 €
+  it('872. Fase 72 - TEST 6: Tras confirmar cargo ChatGPT de 23 €, el coste personal neto es 11,50 € y nace el reembolso del padre', () => {
+    const chatGptRec: RecurringPayment = {
+      id: 'rec-chatgpt-t6',
+      name: 'ChatGPT Plus',
+      amount: 23,
+      categoryId: 'subscriptions',
+      accountId: 'daily',
+      frequency: 'monthly',
+      nextDate: '2026-10-10',
+      active: true,
+      isShared: true,
+      paidBy: 'user',
+      sharingTemplate: {
+        splitType: 'equal',
+        includePayer: true,
+        payer: 'user',
+        participants: [{ name: 'Padre', amount: 0 }],
+      },
+    }
+
+    const txId = 'tx-chatgpt-oct'
+    const bankTx: Transaction = {
+      id: txId,
+      type: 'expense',
+      amount: 23.00,
+      description: 'ChatGPT Plus',
+      categoryId: 'subscriptions',
+      accountId: 'daily',
+      date: '2026-10-10T10:00:00.000Z',
+      recurringPaymentId: chatGptRec.id,
+      isShared: true,
+      paidBy: 'user',
+    }
+
+    const fatherShare: ExpenseShare = {
+      id: 'share-father-1',
+      expenseTransactionId: txId,
+      participantName: 'Padre',
+      expectedAmount: 11.50,
+      isPayerShare: false,
+      createdAt: '2026-10-10T10:00:00.000Z',
+      updatedAt: '2026-10-10T10:00:00.000Z',
+    }
+
+    // 1. Ya no está pendiente de comprometido
+    const committed = selectCommittedAmount([chatGptRec], [bankTx], new Date('2026-10-10'))
+    assert.equal(committed, 0.00, 'Debe haber 0 comprometido tras el cargo')
+
+    // 2. Coste personal recurrente canónico es 11,50 €
+    const personalCost = selectRecurringUserEconomicShare(chatGptRec)
+    assert.equal(personalCost, 11.50, 'El coste personal recurrente del ciclo es 11,50 €')
+    assert.equal(fatherShare.expectedAmount, 11.50, 'Queda derecho de cobro / reembolso de 11,50 €')
+  })
+
+  // TEST 7: Tras recibir 11,50 € del padre, no duplicar ingreso/reembolso y coste personal sigue siendo 11,50 €
+  it('873. Fase 72 - TEST 7: Tras recibir Bizum de 11,50 € del padre, no duplica ingreso y el coste personal se mantiene en 11,50 €', () => {
+    const txId = 'tx-chatgpt-oct-7'
+    const bankTx: Transaction = {
+      id: txId,
+      type: 'expense',
+      amount: 23.00,
+      description: 'ChatGPT Plus',
+      categoryId: 'subscriptions',
+      accountId: 'daily',
+      date: '2026-10-10T10:00:00.000Z',
+      isShared: true,
+      paidBy: 'user',
+    }
+
+    const fatherShare: ExpenseShare = {
+      id: 'share-father-7',
+      expenseTransactionId: txId,
+      participantName: 'Padre',
+      expectedAmount: 11.50,
+      paidAmount: 11.50,
+      settlementTransactionId: 'tx-reimburse-father',
+      isPayerShare: false,
+      createdAt: '2026-10-10T10:00:00.000Z',
+      updatedAt: '2026-10-11T10:00:00.000Z',
+    }
+
+    const bizumReimbursementTx: Transaction = {
+      id: 'tx-reimburse-father',
+      type: 'income',
+      amount: 11.50,
+      description: 'Bizum de Padre (Reembolso ChatGPT)',
+      accountId: 'daily',
+      date: '2026-10-11T12:00:00.000Z',
+      incomeKind: 'reimbursement',
+      isReimbursement: true,
+      parentExpenseId: txId,
+      expenseShareId: 'share-father-7',
+    }
+
+    const allTxs = [bankTx, bizumReimbursementTx]
+    const realIncome = selectRealIncome(allTxs, new Date('2026-10-10'))
+    assert.equal(realIncome, 0.00, 'El reembolso no computa como ingreso salarial duplicado')
+
+    const netPersonal = selectNetPersonalExpensesForPeriod(allTxs, new Date('2026-10-10'), 'month', [], [fatherShare])
+    assert.equal(netPersonal, 11.50, 'El coste personal neto final se mantiene en 11,50 €')
+  })
+
+  // TEST 8: Tras pagar Spotify 3,50 € a Andrés, deja de estar pendiente de liquidez y conserva coste de 3,50 €
+  it('874. Fase 72 - TEST 8: Tras pagar Bizum de 3,50 € a Andrés por Spotify, deja de estar pendiente y el coste es 3,50 €', () => {
+    const spotifyRec: RecurringPayment = {
+      id: 'rec-spotify-t8',
+      name: 'Spotify',
+      amount: 21,
+      categoryId: 'subscriptions',
+      accountId: 'daily',
+      frequency: 'monthly',
+      nextDate: '2026-10-05',
+      active: true,
+      isShared: true,
+      paidBy: 'contact',
+      payerName: 'Andrés',
+      sharingTemplate: {
+        splitType: 'equal',
+        includePayer: true,
+        payer: 'contact',
+        payerName: 'Andrés',
+        participants: [
+          { name: 'Irene', amount: 0 },
+          { name: 'Espe', amount: 0 },
+          { name: 'Marta', amount: 0 },
+          { name: 'Serhiy', amount: 0 },
+        ],
+      },
+    }
+
+    const bizumToAndres: Transaction = {
+      id: 'tx-bizum-andres',
+      type: 'expense',
+      amount: 3.50,
+      description: 'Spotify',
+      categoryId: 'subscriptions',
+      accountId: 'daily',
+      date: '2026-10-05T10:00:00.000Z',
+      recurringPaymentId: spotifyRec.id,
+      paidBy: 'user',
+      paymentMethod: 'bizum',
+    }
+
+    const committed = selectCommittedAmount([spotifyRec], [bizumToAndres], new Date('2026-10-05'))
+    assert.equal(committed, 0.00, 'Ya no queda liquidez comprometida')
+
+    const netPersonal = selectNetPersonalExpensesForPeriod([bizumToAndres], new Date('2026-10-05'), 'month')
+    assert.equal(netPersonal, 3.50, 'Coste histórico neto es exactamente 3,50 €')
+  })
+
+  // TEST 9: iCloud y FitnessPark pasan por las mismas funciones canónicas sin reglas por nombre
+  it('875. Fase 72 - TEST 9: iCloud y FitnessPark operan a través de las mismas funciones canónicas sin reglas por nombre', () => {
+    const icloud: RecurringPayment = {
+      id: 'rec-generic-1',
+      name: 'iCloud 200GB',
+      amount: 2.99,
+      categoryId: 'subscriptions',
+      accountId: 'daily',
+      frequency: 'monthly',
+      nextDate: '2026-10-14',
+      active: true,
+    }
+
+    const fitnessPark: RecurringPayment = {
+      id: 'rec-generic-2',
+      name: 'FitnessPark Cuota',
+      amount: 30.00,
+      categoryId: 'sport',
+      accountId: 'daily',
+      frequency: 'monthly',
+      nextDate: '2026-10-07',
+      active: true,
+    }
+
+    assert.equal(selectRecurringGrossAmount(icloud), 2.99)
+    assert.equal(selectRecurringUserCashOutflow(icloud), 2.99)
+    assert.equal(selectRecurringUserEconomicShare(icloud), 2.99)
+    assert.equal(selectRecurringExpectedReimbursement(icloud), 0.00)
+
+    assert.equal(selectRecurringGrossAmount(fitnessPark), 30.00)
+    assert.equal(selectRecurringUserCashOutflow(fitnessPark), 30.00)
+    assert.equal(selectRecurringUserEconomicShare(fitnessPark), 30.00)
+    assert.equal(selectRecurringExpectedReimbursement(fitnessPark), 0.00)
+  })
+
+  // TEST 10: paidBy='contact' nunca implica automáticamente economicShare=0
+  it('876. Fase 72 - TEST 10: paidBy="contact" nunca implica economicShare=0 si la usuaria participa en el servicio', () => {
+    const contactRec: RecurringPayment = {
+      id: 'rec-contact-share',
+      name: 'Suscripción Familia',
+      amount: 50.00,
+      categoryId: 'subscriptions',
+      accountId: 'daily',
+      frequency: 'monthly',
+      nextDate: '2026-10-01',
+      active: true,
+      isShared: true,
+      paidBy: 'contact',
+      payerName: 'Carlos',
+      sharingTemplate: {
+        splitType: 'equal',
+        includePayer: true,
+        payer: 'contact',
+        participants: [{ name: 'Hermano', amount: 0 }],
+      },
+    }
+
+    const share = selectRecurringUserEconomicShare(contactRec)
+    assert.ok(share > 0, 'La cuota económica personal no debe ser 0')
+    assert.ok(Math.abs(share - 16.67) <= 0.02, '50 € entre 3 personas (Tú, Carlos, Hermano) es aproximadamente 16,67 €')
+  })
+
+  // TEST 11: paidBy='user' nunca implica automáticamente economicShare=grossAmount si hay participantes que deben reembolsar
+  it('877. Fase 72 - TEST 11: paidBy="user" nunca implica economicShare=grossAmount si hay reparto compartido', () => {
+    const userPaidShared: RecurringPayment = {
+      id: 'rec-user-share',
+      name: 'Internet Piso',
+      amount: 40.00,
+      categoryId: 'home',
+      accountId: 'daily',
+      frequency: 'monthly',
+      nextDate: '2026-10-01',
+      active: true,
+      isShared: true,
+      paidBy: 'user',
+      sharingTemplate: {
+        splitType: 'equal',
+        includePayer: true,
+        payer: 'user',
+        participants: [
+          { name: 'Compi 1', amount: 0 },
+          { name: 'Compi 2', amount: 0 },
+          { name: 'Compi 3', amount: 0 },
+        ],
+      },
+    }
+
+    const gross = selectRecurringGrossAmount(userPaidShared)
+    const outflow = selectRecurringUserCashOutflow(userPaidShared)
+    const economicShare = selectRecurringUserEconomicShare(userPaidShared)
+
+    assert.equal(gross, 40.00)
+    assert.equal(outflow, 40.00)
+    assert.equal(economicShare, 10.00, '40 € entre 4 personas = 10,00 € de coste personal, NO 40,00 €')
+  })
+
+  // TEST 12: Versión PWA 0.25.3 / Build 2026.10.05-01
+  it('878. PWA Version: 0.25.3 / 2026.10.05-01', () => {
+    assert.equal(APP_VERSION, '0.25.3')
+    assert.equal(APP_BUILD, '2026.10.05-01')
   })
 })
 

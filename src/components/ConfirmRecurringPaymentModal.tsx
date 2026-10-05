@@ -1,7 +1,13 @@
 import { useState, useEffect } from 'react'
 import type { PaymentMethod, RecurringPayment } from '../models/finance'
 import { money } from '../utils/money'
-import { getCoveredMonthsList, selectRecurringUserOutflow } from '../utils/financeSelectors'
+import {
+  getCoveredMonthsList,
+  selectRecurringExpectedReimbursement,
+  selectRecurringGrossAmount,
+  selectRecurringUserCashOutflow,
+  selectRecurringUserEconomicShare,
+} from '../utils/financeSelectors'
 import { AppIcon } from '../ui/icons'
 
 interface ConfirmRecurringPaymentModalProps {
@@ -36,10 +42,11 @@ export function ConfirmRecurringPaymentModal({
 
   if (!open || !payment) return null
 
-  const monthlyAmount = Number(payment.amount) || 0
-  const expectedTotal = Math.round(monthlyAmount * monthsCount * 100) / 100
-  const isContactPaid = Boolean(payment.isShared && payment.paidBy === 'contact')
-  const userShare = selectRecurringUserOutflow(payment, monthsCount)
+  const isContactPaid = Boolean(payment.isShared && (payment.paidBy === 'contact' || payment.sharingTemplate?.payer === 'contact'))
+  const grossAmount = selectRecurringGrossAmount(payment, monthsCount)
+  const userEconomicShare = selectRecurringUserEconomicShare(payment, monthsCount)
+  const userCashOutflow = selectRecurringUserCashOutflow(payment, monthsCount)
+  const expectedReimbursement = selectRecurringExpectedReimbursement(payment, monthsCount)
   const coveredMonths = getCoveredMonthsList(payment.nextDate || new Date(), monthsCount)
 
   const handleDecrement = () => {
@@ -62,7 +69,7 @@ export function ConfirmRecurringPaymentModal({
           <div>
             <h2 style={{ fontSize: '1.25rem', margin: 0, fontWeight: 700 }}>Confirmar pago</h2>
             <p className="muted" style={{ margin: '4px 0 0 0', fontSize: '0.875rem' }}>
-              {payment.name} · {money(isContactPaid ? selectRecurringUserOutflow(payment, 1) : payment.amount)}/mes
+              {payment.name} · {money(isContactPaid ? selectRecurringUserEconomicShare(payment, 1) : payment.amount)}/mes
               {isContactPaid && ` (Servicio: ${money(payment.amount)}/mes)`}
             </p>
           </div>
@@ -173,16 +180,20 @@ export function ConfirmRecurringPaymentModal({
           >
             <div>
               <span style={{ fontSize: '0.9rem', color: 'var(--text-color, #333)', fontWeight: 500, display: 'block' }}>
-                {isContactPaid ? 'Importe a pagar (tu parte)' : 'Importe esperado'}
+                {isContactPaid ? 'Importe a pagar (tu parte)' : 'Salida de caja'}
               </span>
-              {isContactPaid && (
+              {isContactPaid ? (
                 <small style={{ fontSize: '0.75rem', color: 'var(--text-muted, #666)' }}>
-                  Paga {payment.payerName || 'contacto'} · Total servicio: {money(expectedTotal)}
+                  Paga {payment.payerName || 'contacto'} · Total servicio: {money(grossAmount)}
                 </small>
-              )}
+              ) : payment.isShared && expectedReimbursement > 0 ? (
+                <small style={{ fontSize: '0.75rem', color: 'var(--text-muted, #666)' }}>
+                  Tu coste real: {money(userEconomicShare)} · Te reembolsan: +{money(expectedReimbursement)}
+                </small>
+              ) : null}
             </div>
             <strong style={{ fontSize: '1.2rem', color: 'var(--text-color, #111)' }}>
-              {money(isContactPaid ? userShare : expectedTotal)}
+              {money(userCashOutflow)}
             </strong>
           </div>
 
@@ -244,7 +255,7 @@ export function ConfirmRecurringPaymentModal({
               disabled={isSubmitting}
               style={{ flex: 2 }}
             >
-              {isSubmitting ? 'Confirmando...' : `Confirmar pago de ${money(isContactPaid ? userShare : expectedTotal)}`}
+              {isSubmitting ? 'Confirmando...' : `Confirmar pago de ${money(userCashOutflow)}`}
             </button>
           </div>
         </form>

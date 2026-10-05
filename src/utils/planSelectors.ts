@@ -15,7 +15,7 @@ import type {
 } from '../models/finance'
 import { selectLinkedReimbursementsForExpense, selectRealIncome } from './sharedExpenseSelectors'
 import { calculateMonthlyEstimate } from './variableEstimates'
-import { selectRecurringMonthlyUserOutflow } from './financeSelectors'
+import { selectRecurringMonthlyUserEconomicShare, selectRecurringMonthlyUserOutflow } from './financeSelectors'
 
 /**
  * Convierte cualquier frecuencia de pago recurrente a su equivalente mensual.
@@ -193,8 +193,11 @@ export function selectMonthlyIncome(settings: FinancialPlanSettings | null | und
 }
 
 /**
- * Gasto comprometido / fijo previsto = suma mensualizada de las SALIDAS PROPIAS de gastos recurrentes activos.
- * No suma el importe bruto total si el gasto lo paga un contacto y la usuaria solo debe abonar su parte.
+ * Gasto mensual personal recurrente previsto = suma mensualizada de las CUOTAS ECONÓMICAS PERSONALES
+ * (USER ECONOMIC SHARE) de los gastos recurrentes activos.
+ * Para el coste normal de vida y margen mensual se usa la cuota personal del usuario
+ * (ej. 3,50 € Spotify, 11,50 € ChatGPT, 2,99 € iCloud, 35,00 € Gimnasio),
+ * NO el importe bruto total ni la salida de caja previa a reembolsos.
  */
 export function selectExpectedCommittedExpenses(recurring: RecurringPayment[] = []): number {
   const activeExpenseRecs = Array.isArray(recurring)
@@ -202,7 +205,7 @@ export function selectExpectedCommittedExpenses(recurring: RecurringPayment[] = 
     : []
 
   const sum = activeExpenseRecs.reduce((acc, r) => {
-    return acc + selectRecurringMonthlyUserOutflow(r)
+    return acc + selectRecurringMonthlyUserEconomicShare(r)
   }, 0)
 
   return Math.round(sum * 100) / 100
