@@ -7,7 +7,7 @@ import { APP_VERSION, APP_BUILD } from '../src/version'
 import * as fs from 'node:fs'
 import * as path from 'node:path'
 
-describe('Fase 77 — Adaptive App Shell & Desktop Navigation (>= 1024px)', () => {
+describe('Fase 77 — Adaptive App Shell & Desktop Navigation (>= 900px)', () => {
   // 1. DesktopSidebar renderiza las vistas principales
   it('1. DesktopSidebar contiene enlaces para Inicio, Movimientos, Calendario y Ahorro', () => {
     const props: DesktopSidebarProps = {
@@ -125,12 +125,12 @@ describe('Fase 77 — Adaptive App Shell & Desktop Navigation (>= 1024px)', () =
     }
   })
 
-  // 8. Integración CSS desktop: el archivo desktop.css existe y contiene la regla @media (min-width: 1024px)
-  it('8. desktop.css existe y contiene la regla principal @media (min-width: 1024px)', () => {
+  // 8. Integración CSS desktop: el archivo desktop.css existe y contiene la regla @media (min-width: 900px)
+  it('8. desktop.css existe y contiene la regla principal @media (min-width: 900px)', () => {
     const desktopCssPath = path.join(process.cwd(), 'src', 'styles', 'desktop.css')
     assert.ok(fs.existsSync(desktopCssPath), 'src/styles/desktop.css debe existir')
     const content = fs.readFileSync(desktopCssPath, 'utf-8')
-    assert.ok(content.includes('@media (min-width: 1024px)'))
+    assert.ok(content.includes('@media (min-width: 900px)'))
     assert.ok(content.includes('.desktop-sidebar'))
     assert.ok(content.includes('.main-content'))
   })
