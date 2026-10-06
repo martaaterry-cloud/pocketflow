@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useRef } from 'react'
 import type { Category, CashTransaction, UpdateCashTransactionInput, ExpenseShare, SharedContact, AttachmentMetadata } from '../models/finance'
 import { money } from '../utils/money'
 import {
@@ -74,80 +74,108 @@ export function EditCashTransactionModal({
   const [newParticipantInput, setNewParticipantInput] = useState('')
   const [confirmUnshare, setConfirmUnshare] = useState(false)
 
-  useEffect(() => {
-    if (transaction && open) {
-      setType(transaction.type)
-      setAmount(String(Math.abs(transaction.amount)))
-      setDescription(transaction.description || '')
-      setDate(transaction.date ? transaction.date.slice(0, 10) : new Date().toISOString().slice(0, 10))
-      setCategoryId(transaction.categoryId || '')
-      setNote(transaction.note || '')
-      setConfirmDelete(false)
-      setConfirmUnshare(false)
-      setError(null)
-      setNewParticipantInput('')
+  const lastInitializedIdentityRef = useRef<string | null>(null)
+  const currentIdentity = open && transaction ? `edit_cash:${transaction.id}` : null
 
-      // Cargar adjuntos existentes y limpiar temporales previos
-      setExistingAttachments(transaction.attachments ?? [])
-      setRemovedAttachmentIds(new Set())
-      setAttachmentError(null)
+  // Cleanup de Object URLs al desmontar el componente
+  useEffect(() => {
+    return () => {
       setStagedAttachments((prev) => {
         prev.forEach((s) => URL.revokeObjectURL(s.localUrl))
         return []
       })
-
-      const initialPaidBy = transaction.paidBy || 'user'
-      setPaidBy(initialPaidBy)
-      setPayerName(transaction.payerName || '')
-      setPayerContactId(transaction.payerContactId)
-
-      const existingShares = expenseShares.filter((s) => s.expenseTransactionId === transaction.id)
-      if (existingShares.length > 0) {
-        setIsShared(true)
-        const amountsMap: Record<string, string> = {}
-        existingShares.forEach((s) => {
-          const key = s.isUserShare || s.participantName.toLowerCase() === 'tú' ? 'user' : s.participantName
-          amountsMap[key] = String(s.expectedAmount).replace('.', ',')
-        })
-        setCustomAmounts(amountsMap)
-
-        if (initialPaidBy === 'contact') {
-          const userShare = existingShares.find((s) => s.isUserShare || s.participantName.toLowerCase() === 'tú')
-          setSelfParticipates(Boolean(userShare))
-          const ext = existingShares
-            .filter((s) => !s.isPayerShare && !s.isUserShare && s.participantName.toLowerCase() !== 'tú')
-            .map((s) => ({
-              id: s.id,
-              name: s.participantName,
-              contactId: s.contactId,
-              customAmount: s.expectedAmount,
-            }))
-          setParticipants(ext)
-        } else {
-          const payer = existingShares.find((s) => s.isPayerShare)
-          setSelfParticipates(Boolean(payer))
-          const ext = existingShares
-            .filter((s) => !s.isPayerShare)
-            .map((s) => ({
-              id: s.id,
-              name: s.participantName,
-              contactId: s.contactId,
-              customAmount: s.expectedAmount,
-            }))
-          setParticipants(ext)
-        }
-
-        const isUnequal = existingShares.some((s, _, arr) => Math.abs(s.expectedAmount - arr[0].expectedAmount) > 0.01)
-        setSplitType(isUnequal ? 'custom' : 'equal')
-      } else {
-        setIsShared(Boolean(transaction.isShared))
-        setSelfParticipates(true)
-        setSplitType('equal')
-        setParticipants([])
-        setCustomAmounts({})
-      }
     }
-  }, [transaction, expenseShares, open])
+  }, [])
+
+  useEffect(() => {
+    if (!open || !currentIdentity || !transaction) {
+      if (lastInitializedIdentityRef.current !== null) {
+        setStagedAttachments((prev) => {
+          prev.forEach((s) => URL.revokeObjectURL(s.localUrl))
+          return []
+        })
+        lastInitializedIdentityRef.current = null
+      }
+      return
+    }
+
+    if (lastInitializedIdentityRef.current === currentIdentity) {
+      return
+    }
+
+    lastInitializedIdentityRef.current = currentIdentity
+
+    setType(transaction.type)
+    setAmount(String(Math.abs(transaction.amount)))
+    setDescription(transaction.description || '')
+    setDate(transaction.date ? transaction.date.slice(0, 10) : new Date().toISOString().slice(0, 10))
+    setCategoryId(transaction.categoryId || '')
+    setNote(transaction.note || '')
+    setConfirmDelete(false)
+    setConfirmUnshare(false)
+    setError(null)
+    setNewParticipantInput('')
+
+    // Cargar adjuntos existentes y limpiar temporales previos
+    setExistingAttachments(transaction.attachments ?? [])
+    setRemovedAttachmentIds(new Set())
+    setAttachmentError(null)
+    setStagedAttachments((prev) => {
+      prev.forEach((s) => URL.revokeObjectURL(s.localUrl))
+      return []
+    })
+
+    const initialPaidBy = transaction.paidBy || 'user'
+    setPaidBy(initialPaidBy)
+    setPayerName(transaction.payerName || '')
+    setPayerContactId(transaction.payerContactId)
+
+    const existingShares = expenseShares.filter((s) => s.expenseTransactionId === transaction.id)
+    if (existingShares.length > 0) {
+      setIsShared(true)
+      const amountsMap: Record<string, string> = {}
+      existingShares.forEach((s) => {
+        const key = s.isUserShare || s.participantName.toLowerCase() === 'tú' ? 'user' : s.participantName
+        amountsMap[key] = String(s.expectedAmount).replace('.', ',')
+      })
+      setCustomAmounts(amountsMap)
+
+      if (initialPaidBy === 'contact') {
+        const userShare = existingShares.find((s) => s.isUserShare || s.participantName.toLowerCase() === 'tú')
+        setSelfParticipates(Boolean(userShare))
+        const ext = existingShares
+          .filter((s) => !s.isPayerShare && !s.isUserShare && s.participantName.toLowerCase() !== 'tú')
+          .map((s) => ({
+            id: s.id,
+            name: s.participantName,
+            contactId: s.contactId,
+            customAmount: s.expectedAmount,
+          }))
+        setParticipants(ext)
+      } else {
+        const payer = existingShares.find((s) => s.isPayerShare)
+        setSelfParticipates(Boolean(payer))
+        const ext = existingShares
+          .filter((s) => !s.isPayerShare)
+          .map((s) => ({
+            id: s.id,
+            name: s.participantName,
+            contactId: s.contactId,
+            customAmount: s.expectedAmount,
+          }))
+        setParticipants(ext)
+      }
+
+      const isUnequal = existingShares.some((s, _, arr) => Math.abs(s.expectedAmount - arr[0].expectedAmount) > 0.01)
+      setSplitType(isUnequal ? 'custom' : 'equal')
+    } else {
+      setIsShared(Boolean(transaction.isShared))
+      setSelfParticipates(true)
+      setSplitType('equal')
+      setParticipants([])
+      setCustomAmounts({})
+    }
+  }, [open, currentIdentity, transaction])
 
   const numericAmount = Number(amount.replace(',', '.')) || 0
 
@@ -339,6 +367,7 @@ export function EditCashTransactionModal({
   const handleModalClose = () => {
     stagedAttachments.forEach((s) => URL.revokeObjectURL(s.localUrl))
     setStagedAttachments([])
+    lastInitializedIdentityRef.current = null
     onClose()
   }
 

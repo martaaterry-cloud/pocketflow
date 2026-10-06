@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo } from 'react'
+import { useEffect, useState, useMemo, useRef } from 'react'
 import type {
   Account,
   AttachmentMetadata,
@@ -306,7 +306,43 @@ export function AddTransactionModal({
     return null
   }, [isEditing, initialTransaction, type, expenseShares, transactions, cashTransactions])
 
+  const lastInitializedIdentityRef = useRef<string | null>(null)
+  const currentIdentity = open
+    ? initialTransaction?.id
+      ? `edit:${initialTransaction.id}`
+      : `new:${defaultType || 'expense'}:${initialReimbursementShareId || ''}`
+    : null
+
+  // Cleanup de Object URLs al desmontar el componente
   useEffect(() => {
+    return () => {
+      setStagedAttachments((prev) => {
+        prev.forEach((s) => URL.revokeObjectURL(s.localUrl))
+        return []
+      })
+    }
+  }, [])
+
+  useEffect(() => {
+    if (!open || !currentIdentity) {
+      if (lastInitializedIdentityRef.current !== null) {
+        setStagedAttachments((prev) => {
+          prev.forEach((s) => URL.revokeObjectURL(s.localUrl))
+          return []
+        })
+        lastInitializedIdentityRef.current = null
+      }
+      return
+    }
+
+    // Si ya inicializamos este formulario para esta identidad exacta, NO reinicializar el draft del usuario
+    if (lastInitializedIdentityRef.current === currentIdentity) {
+      return
+    }
+
+    // Es una apertura inicial o un cambio REAL de movimiento/identidad:
+    lastInitializedIdentityRef.current = currentIdentity
+
     if (initialTransaction) {
       const isCash =
         !('accountId' in initialTransaction) ||
@@ -466,7 +502,7 @@ export function AddTransactionModal({
         }
       }
     }
-  }, [initialTransaction, accounts, selectableCategories, open, defaultType, initialReimbursementShareId, pendingReceivablesList])
+  }, [open, currentIdentity, initialTransaction, defaultType, initialReimbursementShareId])
 
   const handleAddStagedAttachments = (newStaged: StagedAttachment[]) => {
     setStagedAttachments((prev) => [...prev, ...newStaged])
@@ -570,6 +606,7 @@ export function AddTransactionModal({
   const handleModalClose = () => {
     stagedAttachments.forEach((s) => URL.revokeObjectURL(s.localUrl))
     setStagedAttachments([])
+    lastInitializedIdentityRef.current = null
     onClose()
   }
 

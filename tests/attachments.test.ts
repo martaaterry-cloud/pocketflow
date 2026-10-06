@@ -1547,6 +1547,168 @@ describe('Fase 76 — Corrección de Edición de Justificantes y Render PDF.js (
     assert.equal(copiedFiles[1].name, 'recibo_b.jpg')
     assert.equal(fakeEvent.currentTarget.value, '', 'El input queda inmediatamente limpio para recibir nuevo evento change')
   })
+
+  // 13. TEST DE REGRESIÓN CRÍTICO: Reconciliación / restoreState en segundo plano con mismo transaction.id NO borra stagedAttachments ni el draft
+  it('13. TEST DE REGRESIÓN: restoreState / cambio de referencias del store preserva stagedAttachments y campos editados en modal abierto', () => {
+    let lastInitializedIdentity: string | null = null
+    let stagedAttachments: any[] = []
+    let formDraft = {
+      amount: '14,98',
+      description: 'Mercadona Muro',
+      categoryId: 'food',
+      note: '',
+    }
+
+    const initModal = (open: boolean, tx: Transaction | null, accounts: any[], categories: any[]) => {
+      const currentIdentity = open && tx ? `edit:${tx.id}` : open ? 'new:expense:' : null
+      if (!open || !currentIdentity) {
+        lastInitializedIdentity = null
+        stagedAttachments = []
+        return
+      }
+
+      // Si la identidad es idéntica, NO reinicializar el draft ni los adjuntos
+      if (lastInitializedIdentity === currentIdentity) {
+        return
+      }
+
+      lastInitializedIdentity = currentIdentity
+      formDraft = {
+        amount: String(tx?.amount ?? '').replace('.', ','),
+        description: tx?.description ?? '',
+        categoryId: tx?.categoryId ?? 'food',
+        note: tx?.note ?? '',
+      }
+      stagedAttachments = []
+    }
+
+    const txA: Transaction = {
+      id: 'tx-cehegin',
+      type: 'expense',
+      amount: 14.98,
+      description: 'Mercadona Cehegín',
+      date: '2026-10-05',
+      accountId: 'daily',
+      categoryId: 'food',
+    }
+
+    let accountsRef1 = [{ id: 'daily', name: 'Cuenta Principal' }]
+    let categoriesRef1 = [{ id: 'food', name: 'Alimentación' }]
+
+    // 1. Abrir modal con txA
+    initModal(true, txA, accountsRef1, categoriesRef1)
+    assert.equal(formDraft.description, 'Mercadona Cehegín')
+    assert.equal(stagedAttachments.length, 0)
+
+    // 2. Usuario edita la descripción y añade un justificante
+    formDraft.description = 'Mercadona Cehegín (Editado)'
+    formDraft.amount = '25,50'
+    stagedAttachments = [{ id: 'temp-1', fileName: 'ticket.pdf', localUrl: 'blob:test-1' }]
+
+    // 3. Simular vuelta de picker en iOS -> focus / visibilitychange -> fetchRemoteState -> restoreState
+    // Genera NUEVAS referencias de arrays del store y un nuevo objeto txA (mismo id)
+    const accountsRef2 = [{ id: 'daily', name: 'Cuenta Principal' }] // Nueva referencia en memoria
+    const categoriesRef2 = [{ id: 'food', name: 'Alimentación' }] // Nueva referencia en memoria
+    const txA_reconciled: Transaction = { ...txA } // Nueva referencia del objeto transacción
+
+    // Re-render disparado por el store con nuevas referencias
+    initModal(true, txA_reconciled, accountsRef2, categoriesRef2)
+
+    // 4. Verificaciones críticas:
+    // A) stagedAttachments NO se reseteó a []
+    assert.equal(stagedAttachments.length, 1, 'stagedAttachments debe permanecer con 1 elemento tras restoreState')
+    assert.equal(stagedAttachments[0].fileName, 'ticket.pdf')
+    // B) El draft del usuario (descripción, importe) NO se sobrescribió
+    assert.equal(formDraft.description, 'Mercadona Cehegín (Editado)', 'La descripción editada debe conservarse')
+    assert.equal(formDraft.amount, '25,50', 'El importe editado debe conservarse')
+  })
+
+  // 14. Cambio real de movimiento (A -> B) reinicializa limpiamente el draft de B sin arrastrar estado de A
+  it('14. Cambio real de movimiento A -> B reinicializa limpiamente el formulario con los datos de B', () => {
+    let lastInitializedIdentity: string | null = null
+    let stagedAttachments: any[] = []
+    let formDraft = { amount: '', description: '', categoryId: '' }
+
+    const initModal = (open: boolean, tx: Transaction | null) => {
+      const currentIdentity = open && tx ? `edit:${tx.id}` : null
+      if (!open || !currentIdentity) {
+        lastInitializedIdentity = null
+        stagedAttachments = []
+        return
+      }
+
+      if (lastInitializedIdentity === currentIdentity) {
+        return
+      }
+
+      lastInitializedIdentity = currentIdentity
+      formDraft = {
+        amount: String(tx?.amount ?? ''),
+        description: tx?.description ?? '',
+        categoryId: tx?.categoryId ?? 'food',
+      }
+      stagedAttachments = []
+    }
+
+    const txA: Transaction = { id: 'tx-A', type: 'expense', amount: 10, description: 'Gasto A', date: '2026-10-01', accountId: 'daily' }
+    const txB: Transaction = { id: 'tx-B', type: 'expense', amount: 20, description: 'Gasto B', date: '2026-10-02', accountId: 'daily' }
+
+    // Abrir A y modificar
+    initModal(true, txA)
+    formDraft.description = 'Gasto A Modificado'
+    stagedAttachments = [{ id: 'staged-A', fileName: 'docA.pdf' }]
+
+    // Cambiar a B
+    initModal(true, txB)
+    assert.equal(formDraft.description, 'Gasto B', 'Debe cargar la descripción de B')
+    assert.equal(formDraft.amount, '20', 'Debe cargar el importe de B')
+    assert.equal(stagedAttachments.length, 0, 'No debe arrastrar justificantes staged de A')
+  })
+
+  // 15. Cerrar y reabrir A descarta el draft cancelado y recarga el estado persistido original
+  it('15. Cerrar modal y reabrir el mismo movimiento recarga los datos persistidos originales', () => {
+    let lastInitializedIdentity: string | null = null
+    let stagedAttachments: any[] = []
+    let formDraft = { amount: '', description: '' }
+
+    const initModal = (open: boolean, tx: Transaction | null) => {
+      const currentIdentity = open && tx ? `edit:${tx.id}` : null
+      if (!open || !currentIdentity) {
+        lastInitializedIdentity = null
+        stagedAttachments = []
+        return
+      }
+
+      if (lastInitializedIdentity === currentIdentity) {
+        return
+      }
+
+      lastInitializedIdentity = currentIdentity
+      formDraft = {
+        amount: String(tx?.amount ?? ''),
+        description: tx?.description ?? '',
+      }
+      stagedAttachments = []
+    }
+
+    const txA: Transaction = { id: 'tx-A', type: 'expense', amount: 15, description: 'Gasto Original', date: '2026-10-01', accountId: 'daily' }
+
+    // 1. Abrir A y modificar draft
+    initModal(true, txA)
+    formDraft.description = 'Borrador sin guardar'
+    stagedAttachments = [{ id: 'staged-temp', fileName: 'recibo.pdf' }]
+
+    // 2. Cerrar modal (cancelar)
+    initModal(false, null)
+    assert.equal(lastInitializedIdentity, null)
+    assert.equal(stagedAttachments.length, 0)
+
+    // 3. Reabrir A
+    initModal(true, txA)
+    assert.equal(formDraft.description, 'Gasto Original', 'Al reabrir debe cargar los datos persistidos')
+    assert.equal(formDraft.amount, '15')
+    assert.equal(stagedAttachments.length, 0)
+  })
 })
 
 
