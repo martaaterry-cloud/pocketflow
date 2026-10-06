@@ -1,11 +1,90 @@
 import React, { useRef, useState, useEffect } from 'react'
-import type { Category, CashTransaction, Transaction } from '../models/finance'
+import type { Category, CashTransaction, Transaction, AttachmentMetadata } from '../models/finance'
 import type { UnifiedMovement } from '../utils/unifiedMovementSelectors'
 import { money, shortDate } from '../utils/money'
 import { AppIcon } from '../ui/icons'
+import { createSignedAttachmentUrl } from '../services/supabase/attachmentService'
+import { AttachmentViewerModal } from './AttachmentViewerModal'
 
 export const SWIPE_MAX_REVEAL = 66 // Desplazamiento máximo visual (~64-68px)
 export const SWIPE_THRESHOLD = 33  // Umbral proporcional para snap abierto (~33px)
+
+interface MovementAttachmentBadgeProps {
+  attachments?: AttachmentMetadata[]
+  onOpen: (e: React.MouseEvent | React.TouchEvent) => void
+}
+
+function MovementAttachmentBadge({ attachments = [], onOpen }: MovementAttachmentBadgeProps) {
+  if (!attachments || attachments.length === 0) return null
+
+  const first = attachments[0]
+  const isPdf =
+    first.mimeType === 'application/pdf' ||
+    first.fileName.toLowerCase().endsWith('.pdf')
+
+  const [thumbUrl, setThumbUrl] = useState<string | null>(null)
+  const [loadError, setLoadError] = useState(false)
+
+  useEffect(() => {
+    if (isPdf || !first.storagePath) return
+    let isMounted = true
+    createSignedAttachmentUrl(first.storagePath, 600)
+      .then((url) => {
+        if (isMounted && url) setThumbUrl(url)
+      })
+      .catch(() => {
+        if (isMounted) setLoadError(true)
+      })
+    return () => {
+      isMounted = false
+    }
+  }, [first.storagePath, isPdf])
+
+  const count = attachments.length
+  const label = count === 1 ? '1 justificante' : `${count} justificantes`
+
+  return (
+    <button
+      type="button"
+      className="pill-attachment-interactive"
+      onClick={(e) => {
+        e.stopPropagation()
+        onOpen(e)
+      }}
+      onPointerDown={(e) => {
+        // Evitar que el drag / swipe de la fila intercepte el toque sobre el justificante
+        e.stopPropagation()
+      }}
+      title={`${label} (pulsa para abrir visor)`}
+      aria-label={`${label}, abrir visor`}
+    >
+      <div className="pill-attachment-thumb-wrap">
+        {isPdf ? (
+          <div className="pill-attachment-pdf-icon">
+            <AppIcon name="file-text" size={12} className="attachment-pdf-icon" />
+            <span className="pill-attachment-pdf-text">PDF</span>
+          </div>
+        ) : thumbUrl && !loadError ? (
+          <img
+            src={thumbUrl}
+            alt=""
+            className="pill-attachment-img"
+            onError={() => setLoadError(true)}
+            loading="lazy"
+          />
+        ) : (
+          <div className="pill-attachment-img-placeholder">
+            <AppIcon name="image" size={12} color="var(--primary, #3b82f6)" />
+          </div>
+        )}
+      </div>
+
+      {count > 1 && (
+        <span className="pill-attachment-count">+{count - 1}</span>
+      )}
+    </button>
+  )
+}
 
 interface SwipeableTransactionRowProps {
   movement?: UnifiedMovement
@@ -17,6 +96,7 @@ interface SwipeableTransactionRowProps {
   onEdit?: (t: Transaction | CashTransaction) => void
   onDelete?: (t: Transaction) => void
   onDeleteCash?: (c: CashTransaction) => void
+  onOpenAttachments?: (attachments: AttachmentMetadata[], initialIndex: number) => void
   isOpen?: boolean
   onOpenChange?: (open: boolean) => void
 }
@@ -31,11 +111,13 @@ export function SwipeableTransactionRow({
   onEdit,
   onDelete,
   onDeleteCash,
+  onOpenAttachments,
   isOpen = false,
   onOpenChange,
 }: SwipeableTransactionRowProps) {
   const [translateX, setTranslateX] = useState(0)
   const [isDragging, setIsDragging] = useState(false)
+  const [viewerOpen, setViewerOpen] = useState(false)
 
   const isDraggingRef = useRef(false)
   const startXRef = useRef(0)
@@ -79,11 +161,12 @@ export function SwipeableTransactionRow({
   const isLinkedCashWithdrawal = item.isLinkedCashWithdrawal
   const sharedFlag = isShared ?? item.isShared
   const isContactPaid = item.type === 'expense' && Boolean(sharedFlag && item.paidBy === 'contact')
-  const attachmentsCount =
-    item.attachments?.length ??
-    t?.attachments?.length ??
-    (item.originalTransaction as any)?.attachments?.length ??
-    0
+  
+  const rawAttachments =
+    item.attachments ??
+    t?.attachments ??
+    (item.originalTransaction as any)?.attachments ??
+    []
 
   // Sincronizar SOLO cuando isOpen cambia externamente y NO estamos arrastrando
   useEffect(() => {
@@ -228,6 +311,14 @@ export function SwipeableTransactionRow({
     currentTranslateRef.current = startTranslateRef.current
   }
 
+  const handleBadgeClick = (e: React.MouseEvent | React.TouchEvent) => {
+    if (onOpenAttachments) {
+      onOpenAttachments(rawAttachments, 0)
+    } else {
+      setViewerOpen(true)
+    }
+  }
+
   return (
     <div className="swipeable-row-container">
       {/* Capa de acciones de fondo (z-index: 0, perfectamente contenida debajo) */}
@@ -369,14 +460,13 @@ export function SwipeableTransactionRow({
                   : 'Compartido'}
               </span>
             )}
-            {/* Badge de justificantes / adjuntos */}
-            {attachmentsCount > 0 && (
-              <span
-                className="pill-attachment"
-                title={attachmentsCount === 1 ? '1 justificante' : `${attachmentsCount} justificantes`}
-              >
-                📎{attachmentsCount > 1 ? ` ${attachmentsCount}` : ''}
-              </span>
+
+            {/* Acceso interactivo al justificante con miniatura o icono PDF */}
+            {rawAttachments.length > 0 && (
+              <MovementAttachmentBadge
+                attachments={rawAttachments}
+                onOpen={handleBadgeClick}
+              />
             )}
           </div>
           <span>
@@ -434,6 +524,16 @@ export function SwipeableTransactionRow({
           {!isAdjustment && money(item.amount)}
         </strong>
       </div>
+
+      {/* Visor modal directo de justificantes para esta fila */}
+      {viewerOpen && rawAttachments.length > 0 && (
+        <AttachmentViewerModal
+          open={viewerOpen}
+          onClose={() => setViewerOpen(false)}
+          attachments={rawAttachments}
+          initialIndex={0}
+        />
+      )}
     </div>
   )
 }

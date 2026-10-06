@@ -7068,19 +7068,96 @@ input:checked + .slider:before {
 }
 
 /* ==========================================================================
-   Justificantes / Adjuntos (v0.25.5)
+   Justificantes / Adjuntos (v0.25.6)
    ========================================================================== */
 
-/* Badge en la lista de transacciones */
+/* Badge interactivo en la lista de transacciones */
+.pill-attachment-interactive {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: var(--bg-card, #ffffff);
+  border: 1px solid var(--border-light, #e2e8f0);
+  border-radius: 6px;
+  padding: 2px 5px;
+  cursor: pointer;
+  vertical-align: middle;
+  user-select: none;
+  transition: all 0.15s ease;
+  margin-left: 6px;
+  flex-shrink: 0;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+}
+
+.pill-attachment-interactive:hover {
+  background: var(--bg-app, #f8fafc);
+  border-color: var(--border-strong, #cbd5e1);
+  transform: translateY(-1px);
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.08);
+}
+
+.pill-attachment-interactive:active {
+  transform: scale(0.96);
+}
+
+.pill-attachment-thumb-wrap {
+  width: 24px;
+  height: 24px;
+  border-radius: 4px;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #f1f5f9;
+  flex-shrink: 0;
+}
+
+.pill-attachment-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.pill-attachment-img-placeholder {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #f1f5f9;
+  color: #64748b;
+}
+
+.pill-attachment-pdf-icon {
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #fef2f2;
+  color: #dc2626;
+  border-radius: 4px;
+  flex-shrink: 0;
+}
+
+.pill-attachment-count {
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: var(--text-muted, #64748b);
+  padding: 0 2px;
+}
+
+/* Badge estándar estático (retrocompatibilidad) */
 .pill-attachment {
   display: inline-flex;
   align-items: center;
-  gap: 2px;
-  font-size: 10px;
+  gap: 3px;
+  font-size: 11px;
   font-weight: 600;
   color: #475569;
   background: #f1f5f9;
-  padding: 1px 5px;
+  padding: 2px 6px;
   border-radius: 6px;
   letter-spacing: -0.2px;
   line-height: 1.2;
@@ -7095,7 +7172,7 @@ input:checked + .slider:before {
 .attachment-section-container {
   margin-top: 14px;
   margin-bottom: 14px;
-  padding: 12px;
+  padding: 14px;
   background: var(--bg-card-light, #f8fafc);
   border: 1px solid var(--border-color, #e2e8f0);
   border-radius: var(--radius-md, 12px);
@@ -7250,17 +7327,36 @@ input:checked + .slider:before {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 2px;
-  color: #ef4444;
-  font-size: 0.72rem;
+  gap: 4px;
+  color: #dc2626;
+  font-size: 0.75rem;
   font-weight: 700;
+}
+
+.attachment-pdf-card-linear {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  color: #dc2626;
+  background: #fef2f2;
+  width: 100%;
+  height: 100%;
+  border-radius: 4px;
+}
+
+.attachment-pdf-badge-text {
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.5px;
 }
 
 .attachment-img-placeholder {
   display: flex;
   align-items: center;
   justify-content: center;
-  color: #3b82f6;
+  color: #64748b;
 }
 
 .attachment-thumb-info {
@@ -7288,8 +7384,8 @@ input:checked + .slider:before {
   position: absolute;
   top: 4px;
   right: 4px;
-  width: 22px;
-  height: 22px;
+  width: 24px;
+  height: 24px;
   border-radius: 50%;
   background: rgba(15, 23, 42, 0.75);
   border: none;
@@ -7298,12 +7394,13 @@ input:checked + .slider:before {
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  transition: background 0.15s ease;
+  transition: background 0.15s ease, transform 0.12s ease;
   z-index: 5;
 }
 
 .attachment-thumb-delete-btn:hover {
   background: #ef4444;
+  transform: scale(1.1);
 }
 
 /* Spinner pequeño */
@@ -7324,13 +7421,13 @@ input:checked + .slider:before {
 }
 
 /* ==========================================================================
-   Visor de Justificantes a Pantalla Completa (Modal / Lightbox)
+   Visor de Justificantes a Pantalla Completa (Modal / Lightbox Responsive)
    ========================================================================== */
 
 .attachment-viewer-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(10, 15, 29, 0.85);
+  background: rgba(10, 15, 29, 0.9);
   backdrop-filter: blur(8px);
   z-index: 1400;
   display: flex;
@@ -7341,26 +7438,29 @@ input:checked + .slider:before {
 }
 
 .attachment-viewer-content {
+  position: relative;
   background: #0f172a;
   color: #f8fafc;
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.12);
   border-radius: var(--radius-lg, 16px);
   width: 100%;
-  max-width: 800px;
-  max-height: 90vh;
+  max-width: 860px;
+  max-height: 92vh;
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.6);
 }
 
 .attachment-viewer-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 14px 18px;
+  padding: 12px 16px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.1);
   background: #1e293b;
+  flex-shrink: 0;
+  gap: 12px;
 }
 
 .attachment-viewer-info {
@@ -7368,6 +7468,20 @@ input:checked + .slider:before {
   flex-direction: column;
   gap: 2px;
   overflow: hidden;
+  min-width: 0;
+  flex: 1;
+}
+
+.attachment-viewer-icon-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.attachment-viewer-type-icon {
+  color: #94a3b8;
+  flex-shrink: 0;
 }
 
 .attachment-viewer-title {
@@ -7378,6 +7492,13 @@ input:checked + .slider:before {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  letter-spacing: -0.2px;
+}
+
+.attachment-viewer-meta-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .attachment-viewer-meta {
@@ -7385,10 +7506,20 @@ input:checked + .slider:before {
   color: #94a3b8;
 }
 
+.attachment-viewer-counter {
+  font-size: 0.72rem;
+  font-weight: 600;
+  background: rgba(255, 255, 255, 0.1);
+  padding: 1px 6px;
+  border-radius: 10px;
+  color: #cbd5e1;
+}
+
 .attachment-viewer-actions {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
+  flex-shrink: 0;
 }
 
 .btn-icon-action {
@@ -7408,6 +7539,7 @@ input:checked + .slider:before {
 
 .btn-icon-action:hover {
   background: rgba(255, 255, 255, 0.18);
+  transform: scale(1.05);
 }
 
 .btn-icon-action.danger:hover {
@@ -7420,13 +7552,15 @@ input:checked + .slider:before {
 }
 
 .attachment-viewer-body {
+  position: relative;
   flex: 1;
-  padding: 16px;
+  padding: 12px;
   display: flex;
   align-items: center;
   justify-content: center;
-  overflow: auto;
-  min-height: 260px;
+  overflow: hidden;
+  min-height: 280px;
+  background: #020617;
 }
 
 .attachment-loading-state,
@@ -7452,21 +7586,24 @@ input:checked + .slider:before {
   display: flex;
   align-items: center;
   justify-content: center;
+  overflow: auto;
 }
 
 .attachment-viewer-image {
   max-width: 100%;
-  max-height: 70vh;
+  max-height: 72vh;
   object-fit: contain;
-  border-radius: 8px;
+  border-radius: 6px;
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.5);
+  user-select: none;
 }
 
 .attachment-pdf-container {
   width: 100%;
-  height: 70vh;
+  height: 72vh;
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 8px;
 }
 
 .attachment-pdf-iframe {
@@ -7477,11 +7614,168 @@ input:checked + .slider:before {
   background: #ffffff;
 }
 
-.attachment-pdf-fallback {
+.attachment-pdf-footer-bar {
   display: flex;
   justify-content: center;
-  padding-top: 8px;
+  padding: 4px 0;
+  flex-shrink: 0;
 }
+
+.btn-pdf-external {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 14px;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 8px;
+  color: #ffffff;
+  font-size: 0.8rem;
+  font-weight: 500;
+  text-decoration: none;
+  transition: background 0.15s ease;
+}
+
+.btn-pdf-external:hover {
+  background: rgba(255, 255, 255, 0.18);
+}
+
+/* Flechas de navegación discretas */
+.attachment-nav-arrow {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 10;
+  background: rgba(15, 23, 42, 0.75);
+  backdrop-filter: blur(4px);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  color: #ffffff;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.attachment-nav-arrow.prev {
+  left: 12px;
+}
+
+.attachment-nav-arrow.next {
+  right: 12px;
+}
+
+.attachment-nav-arrow:disabled {
+  opacity: 0.2;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
+.attachment-nav-arrow:hover:not(:disabled) {
+  background: rgba(15, 23, 42, 0.95);
+  transform: translateY(-50%) scale(1.08);
+}
+
+/* Barra inferior de navegación */
+.attachment-viewer-bottom-nav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 16px;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  background: #1e293b;
+  flex-shrink: 0;
+}
+
+.btn-viewer-step {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 12px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  color: #ffffff;
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.btn-viewer-step:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.18);
+}
+
+.btn-viewer-step:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
+
+.viewer-step-label {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: #cbd5e1;
+}
+
+/* ==========================================================================
+   Responsividad Móvil del Visor (100dvh, Safe Areas)
+   ========================================================================== */
+
+@media (max-width: 640px) {
+  .attachment-viewer-overlay {
+    padding: 0;
+    align-items: stretch;
+  }
+
+  .attachment-viewer-content {
+    max-width: 100%;
+    width: 100%;
+    height: 100dvh;
+    max-height: 100dvh;
+    border-radius: 0;
+    border: none;
+    padding-top: env(safe-area-inset-top, 0);
+    padding-bottom: env(safe-area-inset-bottom, 0);
+  }
+
+  .attachment-viewer-header {
+    padding: 10px 12px;
+  }
+
+  .btn-icon-action {
+    width: 40px;
+    height: 40px;
+  }
+
+  .attachment-viewer-body {
+    padding: 6px;
+  }
+
+  .attachment-viewer-image {
+    max-height: calc(100dvh - 130px);
+  }
+
+  .attachment-pdf-container {
+    height: calc(100dvh - 130px);
+  }
+
+  .attachment-nav-arrow {
+    width: 40px;
+    height: 40px;
+  }
+
+  .attachment-nav-arrow.prev {
+    left: 8px;
+  }
+
+  .attachment-nav-arrow.next {
+    right: 8px;
+  }
+}
+
 
 
 

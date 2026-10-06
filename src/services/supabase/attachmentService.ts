@@ -70,9 +70,21 @@ export async function uploadAttachment(
   return metadata
 }
 
+interface CachedSignedUrl {
+  url: string
+  expiresAt: number
+}
+
+const signedUrlCache = new Map<string, CachedSignedUrl>()
+
+export function clearSignedUrlCache(): void {
+  signedUrlCache.clear()
+}
+
 /**
  * Genera una URL firmada de corta duración (por defecto 10 min) para visualizar o descargar
  * de forma segura un justificante privado de Supabase Storage.
+ * Utiliza una caché en memoria para evitar llamadas redundantes de red a Storage.
  */
 export async function createSignedAttachmentUrl(
   storagePath: string,
@@ -81,6 +93,12 @@ export async function createSignedAttachmentUrl(
 ): Promise<string | null> {
   if (!storagePath || storagePath.trim() === '') {
     return null
+  }
+
+  const now = Date.now()
+  const cached = signedUrlCache.get(storagePath)
+  if (cached && cached.expiresAt > now + 30_000) {
+    return cached.url
   }
 
   try {
@@ -93,6 +111,11 @@ export async function createSignedAttachmentUrl(
       console.warn('[AttachmentService] Error generando signed URL:', error)
       return null
     }
+
+    signedUrlCache.set(storagePath, {
+      url: data.signedUrl,
+      expiresAt: now + expiresInSeconds * 1000,
+    })
 
     return data.signedUrl
   } catch (err) {
@@ -111,6 +134,8 @@ export async function deleteAttachment(
   if (!storagePath || storagePath.trim() === '') {
     return false
   }
+
+  signedUrlCache.delete(storagePath)
 
   try {
     const supabase = customClient || getSupabase()
