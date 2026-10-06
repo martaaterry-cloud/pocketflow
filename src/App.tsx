@@ -742,6 +742,7 @@ export default function App() {
       )}
 
       <EditCashTransactionModal
+        key={editingCashTx?.id || 'new-cash-modal'}
         open={Boolean(editingCashTx)}
         onClose={() => setEditingCashTx(null)}
         transaction={editingCashTx}
@@ -754,6 +755,7 @@ export default function App() {
       />
 
       <AddTransactionModal
+        key={selectedTx?.id || (isModalOpen ? 'open-new-modal' : 'closed-new-modal')}
         open={isModalOpen}
         onClose={handleCloseModal}
         accounts={finance.accounts}

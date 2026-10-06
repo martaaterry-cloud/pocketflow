@@ -153,8 +153,9 @@ export function AttachmentSection({
     return [...existingEmpty, ...stagedUrls]
   }, [existingAttachments, stagedAttachments])
 
-  const handleFilesSelected = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFilesSelected = async (e: React.ChangeEvent<HTMLInputElement>, source: string) => {
     const files = e.target.files
+    console.log(`[ATTACHMENT DEBUG] Etapa 4: Archivo(s) seleccionados en input (${source}), count=${files ? files.length : 0}`)
     if (!files || files.length === 0) return
 
     setProcessing(true)
@@ -165,9 +166,11 @@ export function AttachmentSection({
 
     for (let i = 0; i < files.length; i++) {
       const file = files[i]
+      console.log(`[ATTACHMENT DEBUG] Etapa 5: File recibido, name=${file.name}, size=${file.size}, type=${file.type || 'none'}`)
       try {
         const processed = await validateAndProcessAttachment(file)
         const localUrl = URL.createObjectURL(processed.blob)
+        console.log(`[ATTACHMENT DEBUG] Etapa 6: Preview/Staged generado OK, name=${processed.fileName}, size=${processed.fileSize}, isPdf=${processed.isPdf}`)
         newlyProcessed.push({
           file,
           blob: processed.blob,
@@ -178,6 +181,7 @@ export function AttachmentSection({
           isPdf: processed.isPdf,
         })
       } catch (err: any) {
+        console.error(`[ATTACHMENT DEBUG] ERROR Etapa 5/6: Fallo al procesar archivo ${file.name}:`, err)
         errors.push(err.message || `Error procesando ${file.name}`)
       }
     }
@@ -187,12 +191,23 @@ export function AttachmentSection({
     }
 
     if (errors.length > 0) {
-      setLocalError(errors.join(' | '))
+      setLocalError(`No se pudo procesar el archivo · ETAPA: COMPRESIÓN/VALIDACIÓN · ${errors.join(' | ')}`)
     }
 
     e.target.value = ''
     setProcessing(false)
     setShowMenu(false)
+  }
+
+  const triggerInput = (ref: React.RefObject<HTMLInputElement | null>, source: string) => {
+    console.log(`[ATTACHMENT DEBUG] Etapa 1/2: Seleccionada opción de origen: ${source}`)
+    if (ref.current) {
+      ref.current.value = ''
+      ref.current.click()
+      console.log(`[ATTACHMENT DEBUG] Etapa 3: Input file activado (${source})`)
+    } else {
+      console.error(`[ATTACHMENT DEBUG] ERROR Etapa 3: Ref no disponible para ${source}`)
+    }
   }
 
   const formatSize = (bytes: number) => {
@@ -210,7 +225,10 @@ export function AttachmentSection({
         accept="image/*"
         capture="environment"
         className="hidden-file-input"
-        onChange={handleFilesSelected}
+        onClick={(e) => {
+          (e.currentTarget as HTMLInputElement).value = ''
+        }}
+        onChange={(e) => handleFilesSelected(e, 'camara')}
         tabIndex={-1}
         aria-hidden="true"
       />
@@ -220,7 +238,10 @@ export function AttachmentSection({
         accept="image/jpeg,image/png,image/webp,image/*"
         multiple
         className="hidden-file-input"
-        onChange={handleFilesSelected}
+        onClick={(e) => {
+          (e.currentTarget as HTMLInputElement).value = ''
+        }}
+        onChange={(e) => handleFilesSelected(e, 'galeria')}
         tabIndex={-1}
         aria-hidden="true"
       />
@@ -230,7 +251,10 @@ export function AttachmentSection({
         accept="application/pdf,image/jpeg,image/png,image/webp,image/*"
         multiple
         className="hidden-file-input"
-        onChange={handleFilesSelected}
+        onClick={(e) => {
+          (e.currentTarget as HTMLInputElement).value = ''
+        }}
+        onChange={(e) => handleFilesSelected(e, 'archivo_pdf')}
         tabIndex={-1}
         aria-hidden="true"
       />
@@ -245,7 +269,10 @@ export function AttachmentSection({
           <button
             type="button"
             className="btn-add-attachment"
-            onClick={() => setShowMenu((prev) => !prev)}
+            onClick={() => {
+              console.log('[ATTACHMENT DEBUG] Etapa 1: Botón + Añadir justificante pulsado')
+              setShowMenu((prev) => !prev)
+            }}
             disabled={disabled || processing}
             aria-expanded={showMenu}
             aria-label="Añadir justificante"
@@ -270,8 +297,8 @@ export function AttachmentSection({
                 type="button"
                 className="attachment-source-item"
                 onClick={() => {
-                  cameraInputRef.current?.click()
                   setShowMenu(false)
+                  triggerInput(cameraInputRef, 'camara')
                 }}
                 role="menuitem"
               >
@@ -282,8 +309,8 @@ export function AttachmentSection({
                 type="button"
                 className="attachment-source-item"
                 onClick={() => {
-                  galleryInputRef.current?.click()
                   setShowMenu(false)
+                  triggerInput(galleryInputRef, 'galeria')
                 }}
                 role="menuitem"
               >
@@ -294,8 +321,8 @@ export function AttachmentSection({
                 type="button"
                 className="attachment-source-item"
                 onClick={() => {
-                  documentInputRef.current?.click()
                   setShowMenu(false)
+                  triggerInput(documentInputRef, 'archivo_pdf')
                 }}
                 role="menuitem"
               >

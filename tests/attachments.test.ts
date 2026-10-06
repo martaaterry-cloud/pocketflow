@@ -1376,7 +1376,6 @@ describe('Fase 76 — Corrección de Edición de Justificantes y Render PDF.js (
     assert.equal(pdfBadgeConfig.hasWhiteBox, false)
     assert.equal(pdfBadgeConfig.isLinear, true)
   })
-
   // 9. Cálculos financieros invariantes (0,00 € varianza)
   it('9. Cálculos financieros: invariantes con 0,00 € de varianza en saldo tras añadir justificantes', () => {
     const acc: Account = { id: 'daily', name: 'Cuenta Principal', type: 'spending', initialBalance: 100, balance: 100 }
@@ -1389,6 +1388,107 @@ describe('Fase 76 — Corrección de Edición de Justificantes y Render PDF.js (
     assert.equal(r2[0].balance, 85.02)
     assert.equal(r1[0].balance, r2[0].balance)
   })
+
+  // 10. Cambio secuencial entre movimientos A -> B -> C: aislamiento completo de estado de adjuntos y storagePath único
+  it('10. Cambio secuencial entre movimientos: abrir A con attachment -> cerrar -> abrir B sin attachment -> añadir archivo -> guardar B -> abrir C -> añadir archivo -> guardar C', async () => {
+    // Simular almacenamiento en mock de Storage
+    const uploadedPaths: string[] = []
+    const mockClient = {
+      auth: {
+        getSession: async () => ({
+          data: { session: { user: { id: 'user-pepe-iso' } } },
+        }),
+      },
+      storage: {
+        from: () => ({
+          upload: async (path: string) => {
+            uploadedPaths.push(path)
+            return { data: { path }, error: null }
+          },
+        }),
+      },
+    }
+
+    // 1. Movimiento A (Mercadona Cehegín) ya tiene un attachment
+    const txA: Transaction = {
+      id: 'tx-cehegin',
+      type: 'expense',
+      amount: 30.06,
+      description: 'Mercadona Cehegín',
+      date: '2026-10-05',
+      accountId: 'daily',
+      attachments: [{
+        id: 'att-cehegin-1',
+        fileName: 'ticket_cehegin.pdf',
+        mimeType: 'application/pdf',
+        fileSize: 10240,
+        storagePath: 'user-pepe-iso/2026/att-cehegin-1.pdf',
+        createdAt: '2026-10-05T10:00:00Z',
+      }],
+    }
+
+    // 2. Movimiento B (Mercadona Muro) sin attachments previos
+    const txB: Transaction = {
+      id: 'tx-muro',
+      type: 'expense',
+      amount: 14.98,
+      description: 'Mercadona Muro',
+      date: '2026-10-03',
+      accountId: 'daily',
+      // Sin propiedad attachments (legacy)
+    }
+
+    // 3. Movimiento C (Druni Alcoy) sin attachments previos
+    const txC: Transaction = {
+      id: 'tx-druni',
+      type: 'expense',
+      amount: 9.93,
+      description: 'Druni Alcoy',
+      date: '2026-10-02',
+      accountId: 'daily',
+      attachments: [],
+    }
+
+    // Subir archivo para B
+    const fileB = new Blob(['ticket-muro-content'], { type: 'application/pdf' })
+    const metaB = await uploadAttachment(fileB, {
+      fileName: 'ticket_muro.pdf',
+      mimeType: 'application/pdf',
+      date: txB.date,
+      customClient: mockClient,
+    })
+
+    const updatedTxB: Transaction = {
+      ...txB,
+      attachments: [metaB],
+    }
+
+    // Subir archivo para C
+    const fileC = new Blob(['ticket-druni-content'], { type: 'image/jpeg' })
+    const metaC = await uploadAttachment(fileC, {
+      fileName: 'ticket_druni.jpg',
+      mimeType: 'image/jpeg',
+      date: txC.date,
+      customClient: mockClient,
+    })
+
+    const updatedTxC: Transaction = {
+      ...txC,
+      attachments: [metaC],
+    }
+
+    // Verificaciones:
+    // A) Ninguno reutiliza el attachment de A
+    assert.notEqual(metaB.id, txA.attachments![0].id)
+    assert.notEqual(metaC.id, txA.attachments![0].id)
+    // B) B y C tienen attachmentIds y storagePaths completamente independientes
+    assert.notEqual(metaB.id, metaC.id)
+    assert.notEqual(metaB.storagePath, metaC.storagePath)
+    assert.equal(updatedTxB.attachments?.length, 1)
+    assert.equal(updatedTxC.attachments?.length, 1)
+    assert.equal(uploadedPaths.length, 2)
+  })
 })
+
 
 
