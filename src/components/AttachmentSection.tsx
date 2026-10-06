@@ -154,9 +154,14 @@ export function AttachmentSection({
   }, [existingAttachments, stagedAttachments])
 
   const handleFilesSelected = async (e: React.ChangeEvent<HTMLInputElement>, source: string) => {
-    const files = e.target.files
-    console.log(`[ATTACHMENT DEBUG] Etapa 4: Archivo(s) seleccionados en input (${source}), count=${files ? files.length : 0}`)
-    if (!files || files.length === 0) return
+    const inputEl = e.currentTarget
+    // 1. Copiar FileList PRIMERO en un array inmutable
+    const files = Array.from(inputEl.files ?? [])
+    // 2. Limpiar el valor del input inmediatamente para permitir re-selección
+    inputEl.value = ''
+
+    console.log(`[ATTACHMENT DEBUG] Etapa 4: Archivo(s) seleccionados en input (${source}), count=${files.length}`)
+    if (files.length === 0) return
 
     setProcessing(true)
     setLocalError(null)
@@ -191,23 +196,29 @@ export function AttachmentSection({
     }
 
     if (errors.length > 0) {
-      setLocalError(`No se pudo procesar el archivo · ETAPA: COMPRESIÓN/VALIDACIÓN · ${errors.join(' | ')}`)
+      setLocalError(`ERROR · [ETAPA: VALIDACIÓN/COMPRESIÓN] · ${errors.join(' | ')}`)
     }
 
-    e.target.value = ''
     setProcessing(false)
-    setShowMenu(false)
   }
 
   const triggerInput = (ref: React.RefObject<HTMLInputElement | null>, source: string) => {
     console.log(`[ATTACHMENT DEBUG] Etapa 1/2: Seleccionada opción de origen: ${source}`)
-    if (ref.current) {
-      ref.current.value = ''
-      ref.current.click()
-      console.log(`[ATTACHMENT DEBUG] Etapa 3: Input file activado (${source})`)
-    } else {
+    const input = ref.current
+    if (!input) {
       console.error(`[ATTACHMENT DEBUG] ERROR Etapa 3: Ref no disponible para ${source}`)
+      setLocalError(`ERROR · [ETAPA: INPUT] · Ref no disponible para ${source}`)
+      setShowMenu(false)
+      return
     }
+
+    // 1. Limpiar value del input antes de abrirlo
+    input.value = ''
+    // 2. Ejecutar click directamente en el contexto del User Gesture
+    input.click()
+    console.log(`[ATTACHMENT DEBUG] Etapa 3: Input file activado (${source})`)
+    // 3. Cerrar el menú DESPUÉS de haber disparado el click
+    setShowMenu(false)
   }
 
   const formatSize = (bytes: number) => {
@@ -218,16 +229,13 @@ export function AttachmentSection({
 
   return (
     <div className="attachment-section-container">
-      {/* Inputs ocultos para captura directa de cámara, galería o archivo */}
+      {/* Inputs ocultos montados de forma permanente fuera de showMenu */}
       <input
         type="file"
         ref={cameraInputRef}
         accept="image/*"
         capture="environment"
         className="hidden-file-input"
-        onClick={(e) => {
-          (e.currentTarget as HTMLInputElement).value = ''
-        }}
         onChange={(e) => handleFilesSelected(e, 'camara')}
         tabIndex={-1}
         aria-hidden="true"
@@ -238,9 +246,6 @@ export function AttachmentSection({
         accept="image/jpeg,image/png,image/webp,image/*"
         multiple
         className="hidden-file-input"
-        onClick={(e) => {
-          (e.currentTarget as HTMLInputElement).value = ''
-        }}
         onChange={(e) => handleFilesSelected(e, 'galeria')}
         tabIndex={-1}
         aria-hidden="true"
@@ -251,9 +256,6 @@ export function AttachmentSection({
         accept="application/pdf,image/jpeg,image/png,image/webp,image/*"
         multiple
         className="hidden-file-input"
-        onClick={(e) => {
-          (e.currentTarget as HTMLInputElement).value = ''
-        }}
         onChange={(e) => handleFilesSelected(e, 'archivo_pdf')}
         tabIndex={-1}
         aria-hidden="true"
@@ -297,7 +299,6 @@ export function AttachmentSection({
                 type="button"
                 className="attachment-source-item"
                 onClick={() => {
-                  setShowMenu(false)
                   triggerInput(cameraInputRef, 'camara')
                 }}
                 role="menuitem"
@@ -309,7 +310,6 @@ export function AttachmentSection({
                 type="button"
                 className="attachment-source-item"
                 onClick={() => {
-                  setShowMenu(false)
                   triggerInput(galleryInputRef, 'galeria')
                 }}
                 role="menuitem"
@@ -321,7 +321,6 @@ export function AttachmentSection({
                 type="button"
                 className="attachment-source-item"
                 onClick={() => {
-                  setShowMenu(false)
                   triggerInput(documentInputRef, 'archivo_pdf')
                 }}
                 role="menuitem"

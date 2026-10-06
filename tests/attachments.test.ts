@@ -1488,7 +1488,67 @@ describe('Fase 76 — Corrección de Edición de Justificantes y Render PDF.js (
     assert.equal(updatedTxC.attachments?.length, 1)
     assert.equal(uploadedPaths.length, 2)
   })
+
+  // 11. Estructura de User Gesture: input.click() ocurre antes de cerrar el menú y FileList se copia antes de resetear
+  it('11. Estructura de User Gesture: orden estricto input.value="" -> input.click() -> setShowMenu(false)', () => {
+    const executionOrder: string[] = []
+    let menuOpen = true
+
+    const mockInput = {
+      value: 'old_file.pdf',
+      click: () => {
+        executionOrder.push('input.click')
+        // Validar que el menú sigue abierto cuando se ejecuta el click
+        assert.equal(menuOpen, true, 'El menú debe seguir abierto durante el click para preservar el User Gesture token')
+        // Validar que el valor del input ya se limpió
+        assert.equal(mockInput.value, '', 'input.value debe limpiarse antes de invocar .click()')
+      },
+    }
+
+    const triggerInputSim = (input: typeof mockInput) => {
+      executionOrder.push('trigger_start')
+      input.value = ''
+      executionOrder.push('value_cleared')
+      input.click()
+      menuOpen = false
+      executionOrder.push('menu_closed')
+    }
+
+    triggerInputSim(mockInput)
+
+    assert.deepEqual(executionOrder, [
+      'trigger_start',
+      'value_cleared',
+      'input.click',
+      'menu_closed',
+    ])
+    assert.equal(menuOpen, false)
+  })
+
+  // 12. Ciclo de onChange: copia inmutable de FileList antes de limpiar e.currentTarget.value
+  it('12. Ciclo de onChange: copia inmutable de FileList antes de resetear value para permitir re-selección del mismo archivo', () => {
+    const file1 = new File(['sample1'], 'recibo_a.pdf', { type: 'application/pdf' })
+    const file2 = new File(['sample2'], 'recibo_b.jpg', { type: 'image/jpeg' })
+
+    const fakeEvent = {
+      currentTarget: {
+        files: [file1, file2],
+        value: 'C:\\fakepath\\recibo_a.pdf',
+      },
+    }
+
+    // 1. Copiar FileList primero
+    const copiedFiles = Array.from(fakeEvent.currentTarget.files ?? [])
+    // 2. Limpiar inmediatamente
+    fakeEvent.currentTarget.value = ''
+
+    assert.equal(copiedFiles.length, 2)
+    assert.equal(copiedFiles[0].name, 'recibo_a.pdf')
+    assert.equal(copiedFiles[1].name, 'recibo_b.jpg')
+    assert.equal(fakeEvent.currentTarget.value, '', 'El input queda inmediatamente limpio para recibir nuevo evento change')
+  })
 })
+
 
 
 

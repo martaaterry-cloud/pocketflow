@@ -7177,7 +7177,6 @@ input:checked + .slider:before {
   white-space: nowrap !important;
   border: 0 !important;
   opacity: 0 !important;
-  pointer-events: none !important;
 }
 
 /* Contenedor de la sección en formularios / modales */
