@@ -532,16 +532,11 @@ export function AddTransactionModal({
     const isOffline = typeof navigator !== 'undefined' && !navigator.onLine
     const activeExisting = existingAttachments.filter((a) => !removedAttachmentIds.has(a.id))
 
-    console.log(
-      `[ATTACHMENT DEBUG] Etapa 7: Guardar cambios pulsado · txId=${initialTransaction?.id || 'new'}, stagedCount=${stagedAttachments.length}, activeExistingCount=${activeExisting.length}, removedCount=${removedAttachmentIds.size}`
-    )
-
     // Eliminar de Storage los archivos que se marcaron para borrar
     if (!isOffline && removedAttachmentIds.size > 0) {
       existingAttachments
         .filter((a) => removedAttachmentIds.has(a.id))
         .forEach((a) => {
-          console.log(`[ATTACHMENT DEBUG] Eliminando adjunto borrado de Storage: ${a.storagePath}`)
           deleteAttachment(a.storagePath).catch((err) => {
             console.warn('[AddTransactionModal] Error al borrar adjunto de Storage:', err)
           })
@@ -549,13 +544,11 @@ export function AddTransactionModal({
     }
 
     if (stagedAttachments.length === 0) {
-      console.log('[ATTACHMENT DEBUG] Sin archivos pendientes de subir (staged=0), conservando existentes')
       return { success: true, attachments: activeExisting }
     }
 
     if (isOffline) {
-      const err = 'No hay conexión a internet para subir el justificante. · ETAPA: RED'
-      console.error('[ATTACHMENT DEBUG] ERROR Etapa 8: Dispositivo offline')
+      const err = 'No hay conexión a internet para subir el justificante.'
       setAttachmentError(err)
       return { success: false, attachments: activeExisting, error: err }
     }
@@ -567,9 +560,6 @@ export function AddTransactionModal({
 
     for (let i = 0; i < stagedAttachments.length; i++) {
       const staged = stagedAttachments[i]
-      console.log(
-        `[ATTACHMENT DEBUG] Etapa 8: Iniciando upload a Storage [${i + 1}/${stagedAttachments.length}] · name=${staged.fileName}, size=${staged.fileSize}, mime=${staged.mimeType}, txId=${initialTransaction?.id || 'new'}`
-      )
       try {
         const meta = await uploadAttachment(staged.blob, {
           userId: userId || undefined,
@@ -577,13 +567,9 @@ export function AddTransactionModal({
           mimeType: staged.mimeType,
           date: movementDate,
         })
-        console.log(
-          `[ATTACHMENT DEBUG] Etapa 9/10: Storage respondió OK · storagePath=${meta.storagePath}, attachmentId=${meta.id}`
-        )
         uploaded.push(meta)
       } catch (err: any) {
-        console.error('[ATTACHMENT DEBUG] ERROR Etapa 8/9: Fallo al subir justificante a Storage:', err)
-        uploadErrorMsg = `No se pudo subir el justificante · ETAPA: UPLOAD STORAGE · ${err?.message || 'Error desconocido'}`
+        uploadErrorMsg = `No se pudo subir el justificante: ${err?.message || 'Error desconocido'}`
         break
       }
     }
@@ -591,7 +577,7 @@ export function AddTransactionModal({
     setIsUploadingAttachments(false)
 
     if (uploadErrorMsg || uploaded.length < stagedAttachments.length) {
-      const errMsg = uploadErrorMsg || 'No se pudo subir el justificante · ETAPA: UPLOAD · Error desconocido'
+      const errMsg = uploadErrorMsg || 'No se pudo subir el justificante. Por favor, inténtalo de nuevo.'
       setAttachmentError(errMsg)
       // Si alguno se subió antes de fallar otro, intentar limpiarlo para evitar huérfanos
       uploaded.forEach((u) => deleteAttachment(u.storagePath).catch(() => {}))
@@ -599,7 +585,6 @@ export function AddTransactionModal({
     }
 
     const finalAttachments = [...activeExisting, ...uploaded]
-    console.log(`[ATTACHMENT DEBUG] Etapa 10: Metadata final preparada con ${finalAttachments.length} adjuntos`)
     return { success: true, attachments: finalAttachments }
   }
 

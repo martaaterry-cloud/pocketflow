@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { App as CapacitorApp } from '@capacitor/app'
 import type { User } from '@supabase/supabase-js'
 import { AddTransactionModal } from './components/AddTransactionModal'
+import { DesktopSidebar } from './components/DesktopSidebar'
 import { AdjustBalanceModal } from './components/AdjustBalanceModal'
 import { CashWithdrawalLinkModal } from './components/CashWithdrawalLinkModal'
 import { EditCashTransactionModal } from './components/EditCashTransactionModal'
@@ -494,7 +495,25 @@ export default function App() {
 
   return (
     <div className="app-shell">
-      {/* Indicador discreto de sincronización */}
+      {/* 1. Sidebar de navegación para Desktop (>= 1024px) */}
+      <DesktopSidebar
+        activeTab={tab}
+        moreSubView={moreSubView}
+        onTabChange={(newTab) => {
+          setTab(newTab)
+          scrollToTop()
+        }}
+        onSubViewChange={(newSubView) => {
+          setMoreSubView(newSubView)
+          scrollToTop()
+        }}
+        onOpenAdd={handleOpenAdd}
+        syncStatus={syncStatus}
+        pendingCount={pendingCount}
+        userDisplayName={finance.profile?.displayName}
+      />
+
+      {/* Indicador discreto de sincronización móvil */}
       <div
         className={`sync-badge ${syncStatus}`}
         title={
@@ -522,71 +541,74 @@ export default function App() {
         </span>
       </div>
 
-      {tab === 'home' && (
-        <HomePage
-          finance={finance}
-          onAdd={handleOpenAdd}
-          onSelectTransaction={handleSelectTransaction}
-          onSelectSharedExpense={(tx) => setSelectedSharedTx(tx)}
-          onNavigateToVariableEstimates={() => {
-            setMoreSubView('variable_estimates')
-            setTab('more')
-            scrollToTop()
-          }}
-          onNavigateToReceivables={() => {
-            setMoreSubView('receivables')
-            setTab('more')
-            scrollToTop()
-          }}
-          onNavigateToPlan={() => {
-            setMoreSubView('plan')
-            setTab('more')
-            scrollToTop()
-          }}
-        />
-      )}
-      {tab === 'movements' && (
-        <MovementsPage
-          finance={finance}
-          onAdd={handleOpenAdd}
-          onSelectTransaction={handleSelectTransaction}
-        />
-      )}
-      {tab === 'calendar' && (
-        <CalendarPage
-          finance={finance}
-          onSelectTransaction={handleSelectTransaction}
-        />
-      )}
-      {tab === 'savings' && <SavingsPage finance={finance} />}
-      {tab === 'more' && (
-        <MorePage
-          finance={finance}
-          user={user}
-          subView={moreSubView}
-          onSubViewChange={setMoreSubView}
-          onNavigateToSavings={() => {
-            setTab('savings')
-            scrollToTop()
-          }}
-          onRecordReimbursement={(shareId) => {
-            setReimbursementShareId(shareId)
-            setModalDefaultType('income')
-            setIsModalOpen(true)
-          }}
-          onRecordPayablePayment={(shareId) => {
-            setPayDebtShareId(shareId)
-            setIsPayDebtModalOpen(true)
-          }}
-          onSelectTransaction={handleSelectTransaction}
-          onCheckForUpdate={checkForUpdate}
-          onToast={showToast}
-          onSignOut={() => {
-            setUser(null)
-            financeRef.current.resetSession()
-          }}
-        />
-      )}
+      {/* 2. Contenedor principal de vistas */}
+      <main className="main-content">
+        {tab === 'home' && (
+          <HomePage
+            finance={finance}
+            onAdd={handleOpenAdd}
+            onSelectTransaction={handleSelectTransaction}
+            onSelectSharedExpense={(tx) => setSelectedSharedTx(tx)}
+            onNavigateToVariableEstimates={() => {
+              setMoreSubView('variable_estimates')
+              setTab('more')
+              scrollToTop()
+            }}
+            onNavigateToReceivables={() => {
+              setMoreSubView('receivables')
+              setTab('more')
+              scrollToTop()
+            }}
+            onNavigateToPlan={() => {
+              setMoreSubView('plan')
+              setTab('more')
+              scrollToTop()
+            }}
+          />
+        )}
+        {tab === 'movements' && (
+          <MovementsPage
+            finance={finance}
+            onAdd={handleOpenAdd}
+            onSelectTransaction={handleSelectTransaction}
+          />
+        )}
+        {tab === 'calendar' && (
+          <CalendarPage
+            finance={finance}
+            onSelectTransaction={handleSelectTransaction}
+          />
+        )}
+        {tab === 'savings' && <SavingsPage finance={finance} />}
+        {tab === 'more' && (
+          <MorePage
+            finance={finance}
+            user={user}
+            subView={moreSubView}
+            onSubViewChange={setMoreSubView}
+            onNavigateToSavings={() => {
+              setTab('savings')
+              scrollToTop()
+            }}
+            onRecordReimbursement={(shareId) => {
+              setReimbursementShareId(shareId)
+              setModalDefaultType('income')
+              setIsModalOpen(true)
+            }}
+            onRecordPayablePayment={(shareId) => {
+              setPayDebtShareId(shareId)
+              setIsPayDebtModalOpen(true)
+            }}
+            onSelectTransaction={handleSelectTransaction}
+            onCheckForUpdate={checkForUpdate}
+            onToast={showToast}
+            onSignOut={() => {
+              setUser(null)
+              financeRef.current.resetSession()
+            }}
+          />
+        )}
+      </main>
 
       <nav className="bottom-nav">
         <button

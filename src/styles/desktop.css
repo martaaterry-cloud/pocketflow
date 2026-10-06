@@ -1,0 +1,338 @@
+/* ==========================================================================
+   POCKETFLOW — DESKTOP & ADAPTIVE LAYOUT (>= 1024px)
+   FASE 1: Shell adaptativo, sidebar fija y contenedor principal fluido
+   ========================================================================== */
+
+/* En pantallas móviles y tablets (< 1024px), la sidebar desktop está oculta por defecto */
+.desktop-sidebar {
+  display: none;
+}
+
+.main-content {
+  display: contents;
+}
+
+@media (min-width: 1024px) {
+  /* 1. Normalización de viewport y fondo desktop */
+  body {
+    padding: 0 !important;
+    background: #f8f8f5 !important;
+    overflow-x: hidden;
+  }
+
+  /* 2. Contenedor Raíz: flex row eliminando el aspecto de teléfono móvil */
+  .app-shell {
+    max-width: none !important;
+    margin: 0 !important;
+    border-radius: 0 !important;
+    box-shadow: none !important;
+    min-height: 100vh !important;
+    display: flex !important;
+    flex-direction: row !important;
+    padding-bottom: 0 !important;
+    background: #f8f8f5 !important;
+    position: static !important;
+    overflow: visible !important;
+  }
+
+  /* 3. Ocultar elementos exclusivos de móvil en >= 1024px */
+  .bottom-nav {
+    display: none !important;
+  }
+
+  /* Ocultar badge flotante móvil en favor del indicador integrado en la sidebar */
+  .app-shell > .sync-badge {
+    display: none !important;
+  }
+
+  /* 4. Sidebar Lateral Fija */
+  .desktop-sidebar {
+    display: flex;
+    flex-direction: column;
+    width: 256px;
+    min-width: 256px;
+    height: 100vh;
+    position: sticky;
+    top: 0;
+    left: 0;
+    background: #ffffff;
+    border-right: 1px solid rgba(0, 0, 0, 0.08);
+    box-sizing: border-box;
+    padding: 24px 16px 16px;
+    z-index: 50;
+    overflow-y: auto;
+    overflow-x: hidden;
+    user-select: none;
+  }
+
+  /* Encabezado de la Sidebar */
+  .desktop-sidebar-header {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    margin-bottom: 20px;
+    padding: 0 4px;
+  }
+
+  .desktop-sidebar-brand {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .desktop-sidebar-logo {
+    width: 36px;
+    height: 36px;
+    border-radius: 10px;
+    background: linear-gradient(135deg, #18181b 0%, #27272a 100%);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.12);
+    flex-shrink: 0;
+  }
+
+  .desktop-sidebar-title-group {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+  }
+
+  .desktop-sidebar-title {
+    font-size: 17px;
+    font-weight: 700;
+    letter-spacing: -0.4px;
+    color: #18181b;
+    line-height: 1.2;
+  }
+
+  .desktop-sidebar-subtitle {
+    font-size: 11px;
+    font-weight: 500;
+    color: #71717a;
+    letter-spacing: -0.1px;
+  }
+
+  /* Pill de sincronización integrado */
+  .desktop-sync-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 10px;
+    border-radius: 999px;
+    font-size: 11px;
+    font-weight: 600;
+    color: #3f3f46;
+    background: #f4f4f5;
+    border: 1px solid rgba(0, 0, 0, 0.05);
+    align-self: flex-start;
+  }
+
+  .desktop-sync-pill .sync-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+  }
+
+  .desktop-sync-pill.up_to_date .sync-dot,
+  .desktop-sync-pill.synced .sync-dot {
+    background-color: #16a34a;
+  }
+  .desktop-sync-pill.connected .sync-dot {
+    background-color: #10b981;
+  }
+  .desktop-sync-pill.syncing .sync-dot {
+    background-color: #2563eb;
+    animation: syncPulse 1s infinite alternate;
+  }
+  .desktop-sync-pill.connecting .sync-dot {
+    background-color: #9333ea;
+    animation: syncPulse 0.8s infinite alternate;
+  }
+  .desktop-sync-pill.offline .sync-dot {
+    background-color: #ca8a04;
+  }
+  .desktop-sync-pill.error .sync-dot {
+    background-color: #dc2626;
+  }
+
+  /* Botón Principal "+ Nuevo movimiento" */
+  .desktop-sidebar-action-wrap {
+    margin-bottom: 24px;
+  }
+
+  .btn-desktop-add-movement {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    background: #18181b;
+    color: #ffffff;
+    border: none;
+    border-radius: 12px;
+    padding: 11px 16px;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+    transition: all 0.16s ease;
+  }
+
+  .btn-desktop-add-movement:hover {
+    background: #27272a;
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  }
+
+  .btn-desktop-add-movement:active {
+    transform: translateY(0);
+  }
+
+  /* Grupos y Elementos de Navegación */
+  .desktop-sidebar-nav {
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+    flex: 1;
+  }
+
+  .desktop-nav-group {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .desktop-nav-group-title {
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+    color: #a1a1aa;
+    padding: 0 10px 6px;
+  }
+
+  .desktop-nav-item {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    width: 100%;
+    padding: 9px 12px;
+    border-radius: 10px;
+    background: transparent;
+    border: none;
+    color: #52525b;
+    font-size: 13.5px;
+    font-weight: 500;
+    text-align: left;
+    cursor: pointer;
+    transition: all 0.14s ease;
+  }
+
+  .desktop-nav-item:hover {
+    background: #f4f4f5;
+    color: #18181b;
+  }
+
+  .desktop-nav-item.active {
+    background: #f0f0f2;
+    color: #18181b;
+    font-weight: 600;
+  }
+
+  .desktop-nav-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #71717a;
+    transition: color 0.14s ease;
+  }
+
+  .desktop-nav-item:hover .desktop-nav-icon,
+  .desktop-nav-item.active .desktop-nav-icon {
+    color: #18181b;
+  }
+
+  .desktop-nav-label {
+    flex: 1;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  /* Pie de Sidebar */
+  .desktop-sidebar-footer {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding-top: 16px;
+    border-top: 1px solid rgba(0, 0, 0, 0.06);
+    margin-top: 16px;
+  }
+
+  .desktop-user-pill {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 8px;
+    border-radius: 8px;
+    background: #fbfbfb;
+  }
+
+  .desktop-user-avatar {
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    background: #e4e4e7;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #52525b;
+  }
+
+  .desktop-user-name {
+    font-size: 12px;
+    font-weight: 600;
+    color: #27272a;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .desktop-version-label {
+    font-size: 10.5px;
+    color: #a1a1aa;
+    padding: 0 4px;
+  }
+
+  /* 5. Contenedor Principal de Contenido */
+  .main-content {
+    display: flex !important;
+    flex: 1;
+    min-width: 0;
+    min-height: 100vh;
+    flex-direction: column;
+    align-items: center;
+    background: #f8f8f5;
+  }
+
+  .main-content > .page {
+    width: 100%;
+    max-width: 1160px;
+    box-sizing: border-box;
+    padding: 36px 40px 60px;
+    flex: 1;
+  }
+
+  /* Ajustes en encabezados de páginas para desktop */
+  .main-content .topbar,
+  .main-content .simple-header {
+    margin-bottom: 28px;
+  }
+
+  .main-content .topbar h1,
+  .main-content .simple-header h1 {
+    font-size: 34px;
+    letter-spacing: -1.3px;
+  }
+}

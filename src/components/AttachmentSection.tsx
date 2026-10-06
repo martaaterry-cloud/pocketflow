@@ -160,7 +160,6 @@ export function AttachmentSection({
     // 2. Limpiar el valor del input inmediatamente para permitir re-selección
     inputEl.value = ''
 
-    console.log(`[ATTACHMENT DEBUG] Etapa 4: Archivo(s) seleccionados en input (${source}), count=${files.length}`)
     if (files.length === 0) return
 
     setProcessing(true)
@@ -171,11 +170,9 @@ export function AttachmentSection({
 
     for (let i = 0; i < files.length; i++) {
       const file = files[i]
-      console.log(`[ATTACHMENT DEBUG] Etapa 5: File recibido, name=${file.name}, size=${file.size}, type=${file.type || 'none'}`)
       try {
         const processed = await validateAndProcessAttachment(file)
         const localUrl = URL.createObjectURL(processed.blob)
-        console.log(`[ATTACHMENT DEBUG] Etapa 6: Preview/Staged generado OK, name=${processed.fileName}, size=${processed.fileSize}, isPdf=${processed.isPdf}`)
         newlyProcessed.push({
           file,
           blob: processed.blob,
@@ -186,7 +183,6 @@ export function AttachmentSection({
           isPdf: processed.isPdf,
         })
       } catch (err: any) {
-        console.error(`[ATTACHMENT DEBUG] ERROR Etapa 5/6: Fallo al procesar archivo ${file.name}:`, err)
         errors.push(err.message || `Error procesando ${file.name}`)
       }
     }
@@ -196,18 +192,16 @@ export function AttachmentSection({
     }
 
     if (errors.length > 0) {
-      setLocalError(`ERROR · [ETAPA: VALIDACIÓN/COMPRESIÓN] · ${errors.join(' | ')}`)
+      setLocalError(errors.join(' | '))
     }
 
     setProcessing(false)
   }
 
   const triggerInput = (ref: React.RefObject<HTMLInputElement | null>, source: string) => {
-    console.log(`[ATTACHMENT DEBUG] Etapa 1/2: Seleccionada opción de origen: ${source}`)
     const input = ref.current
     if (!input) {
-      console.error(`[ATTACHMENT DEBUG] ERROR Etapa 3: Ref no disponible para ${source}`)
-      setLocalError(`ERROR · [ETAPA: INPUT] · Ref no disponible para ${source}`)
+      setLocalError(`No se pudo abrir el selector para ${source}`)
       setShowMenu(false)
       return
     }
@@ -216,7 +210,6 @@ export function AttachmentSection({
     input.value = ''
     // 2. Ejecutar click directamente en el contexto del User Gesture
     input.click()
-    console.log(`[ATTACHMENT DEBUG] Etapa 3: Input file activado (${source})`)
     // 3. Cerrar el menú DESPUÉS de haber disparado el click
     setShowMenu(false)
   }
@@ -272,7 +265,6 @@ export function AttachmentSection({
             type="button"
             className="btn-add-attachment"
             onClick={() => {
-              console.log('[ATTACHMENT DEBUG] Etapa 1: Botón + Añadir justificante pulsado')
               setShowMenu((prev) => !prev)
             }}
             disabled={disabled || processing}

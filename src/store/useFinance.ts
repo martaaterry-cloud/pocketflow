@@ -808,15 +808,8 @@ export function useFinance(storage: StorageAdapter = defaultAppStorage) {
       updates: UpdateTransactionInput,
       shares?: { participantName: string; contactId?: string; isPayerShare: boolean; isUserShare?: boolean; expectedAmount: number }[]
     ) => {
-      console.log(`[ATTACHMENT DEBUG] Etapa 11: updateTransaction invocado para id=${id}`, {
-        hasUpdatesAttachments: updates.attachments !== undefined,
-        attachmentsCount: updates.attachments?.length,
-        existingCount: state.transactions.find((t) => t.id === id)?.attachments?.length,
-      })
-
       const existingIndex = state.transactions.findIndex((t) => t.id === id)
       if (existingIndex === -1) {
-        console.error(`[ATTACHMENT DEBUG] ERROR Etapa 11: updateTransaction no encontró transacción local con id=${id}`)
         return
       }
 
@@ -841,8 +834,6 @@ export function useFinance(storage: StorageAdapter = defaultAppStorage) {
         payerName: updates.payerName !== undefined ? updates.payerName : existingTx.payerName,
         payerContactId: updates.payerContactId !== undefined ? updates.payerContactId : existingTx.payerContactId,
       }
-
-      console.log(`[ATTACHMENT DEBUG] Etapa 11: updatedTx local preparado · id=${id}, attachmentsCount=${updatedTx.attachments?.length ?? 0}`)
 
       let nextExpenseShares = state.expenseShares ?? []
       let nextSharedContacts = state.sharedContacts ?? []
