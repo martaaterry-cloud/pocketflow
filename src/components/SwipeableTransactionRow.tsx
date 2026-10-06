@@ -58,26 +58,27 @@ function MovementAttachmentBadge({ attachments = [], onOpen }: MovementAttachmen
       title={`${label} (pulsa para abrir visor)`}
       aria-label={`${label}, abrir visor`}
     >
-      <div className="pill-attachment-thumb-wrap">
-        {isPdf ? (
-          <div className="pill-attachment-pdf-icon">
-            <AppIcon name="file-text" size={12} className="attachment-pdf-icon" />
-            <span className="pill-attachment-pdf-text">PDF</span>
-          </div>
-        ) : thumbUrl && !loadError ? (
-          <img
-            src={thumbUrl}
-            alt=""
-            className="pill-attachment-img"
-            onError={() => setLoadError(true)}
-            loading="lazy"
-          />
-        ) : (
-          <div className="pill-attachment-img-placeholder">
-            <AppIcon name="image" size={12} color="var(--primary, #3b82f6)" />
-          </div>
-        )}
-      </div>
+      {isPdf ? (
+        <div className="pill-attachment-pdf-linear">
+          <AppIcon name="file-text" size={15} className="attachment-pdf-icon" />
+        </div>
+      ) : (
+        <div className="pill-attachment-thumb-wrap">
+          {thumbUrl && !loadError ? (
+            <img
+              src={thumbUrl}
+              alt=""
+              className="pill-attachment-img"
+              onError={() => setLoadError(true)}
+              loading="lazy"
+            />
+          ) : (
+            <div className="pill-attachment-img-placeholder">
+              <AppIcon name="image" size={12} color="var(--primary, #3b82f6)" />
+            </div>
+          )}
+        </div>
+      )}
 
       {count > 1 && (
         <span className="pill-attachment-count">+{count - 1}</span>

@@ -2,6 +2,7 @@ import React, { useEffect, useState, useRef, useCallback } from 'react'
 import type { AttachmentMetadata } from '../models/finance'
 import { createSignedAttachmentUrl } from '../services/supabase/attachmentService'
 import { AppIcon } from '../ui/icons'
+import { PdfCanvasViewer } from './PdfCanvasViewer'
 
 export interface AttachmentViewerModalProps {
   open: boolean
@@ -338,25 +339,7 @@ export function AttachmentViewerModal({
 
           {!loading && !error && url && (
             isPdf ? (
-              <div className="attachment-pdf-container">
-                <iframe
-                  src={`${url}#toolbar=0&navpanes=0`}
-                  title={currentAttachment.fileName}
-                  className="attachment-pdf-iframe"
-                />
-                <div className="attachment-pdf-footer-bar">
-                  <a
-                    href={url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="btn-pdf-external"
-                    title="Abrir PDF en visor del navegador"
-                  >
-                    <AppIcon name="external-link" size={15} />
-                    <span>Abrir PDF</span>
-                  </a>
-                </div>
-              </div>
+              <PdfCanvasViewer url={url} fileName={currentAttachment.fileName} />
             ) : (
               <div className="attachment-image-container">
                 <img

@@ -818,6 +818,12 @@ export function useFinance(storage: StorageAdapter = defaultAppStorage) {
         ...existingTx,
         ...updates,
         amount: updates.amount !== undefined ? Number(updates.amount) : existingTx.amount,
+        attachments:
+          updates.attachments !== undefined
+            ? updates.attachments.length > 0
+              ? updates.attachments
+              : undefined
+            : existingTx.attachments,
         parentExpenseId: updates.parentExpenseId !== undefined ? updates.parentExpenseId : (isSameType ? existingTx.parentExpenseId : undefined),
         expenseShareId: updates.expenseShareId !== undefined ? updates.expenseShareId : (isSameType ? existingTx.expenseShareId : undefined),
         recurringPaymentId: updates.recurringPaymentId !== undefined ? updates.recurringPaymentId : existingTx.recurringPaymentId,
@@ -2092,6 +2098,12 @@ export function useFinance(storage: StorageAdapter = defaultAppStorage) {
       const updatedTx: CashTransaction = {
         ...merged,
         amount,
+        attachments:
+          patch.attachments !== undefined
+            ? patch.attachments.length > 0
+              ? patch.attachments
+              : undefined
+            : existing.attachments,
         updatedAt: nowIso,
       }
 

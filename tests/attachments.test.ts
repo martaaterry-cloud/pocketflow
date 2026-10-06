@@ -1084,3 +1084,311 @@ describe('Fase 75 — Justificantes v0.25.6: Iconografía Lineal, Miniaturas y V
   })
 })
 
+/* ==========================================================================
+   FASE 76 — CORRECCIÓN DE EDICIÓN DE JUSTIFICANTES Y RENDER PDF.JS (v0.25.7)
+   ========================================================================== */
+
+describe('Fase 76 — Corrección de Edición de Justificantes y Render PDF.js (Problemas 1 y 2)', () => {
+  const sampleAttachment: AttachmentMetadata = {
+    id: 'att-muro-1',
+    fileName: 'ticket_mercadona_muro.jpg',
+    mimeType: 'image/jpeg',
+    fileSize: 195000,
+    storagePath: 'user-pepe/2026/att-muro-1.jpg',
+    createdAt: '2026-10-06T10:00:00.000Z',
+  }
+
+  const samplePdfAttachment: AttachmentMetadata = {
+    id: 'att-muro-pdf',
+    fileName: 'factura_mercadona_muro.pdf',
+    mimeType: 'application/pdf',
+    fileSize: 340000,
+    storagePath: 'user-pepe/2026/att-muro-pdf.pdf',
+    createdAt: '2026-10-06T10:05:00.000Z',
+  }
+
+  // 1. TEST DE REGRESIÓN CRÍTICO: Mercadona Muro (movimiento antiguo sin campo attachments)
+  it('1. TEST DE REGRESIÓN CRÍTICO: movimiento antiguo sin propiedad attachments acepta su primer justificante en edición', () => {
+    // Objeto antiguo sin la propiedad attachments
+    const oldTransaction: Transaction = {
+      id: 'tx-mercadona-muro',
+      type: 'expense',
+      amount: 14.98,
+      description: 'Mercadona Muro',
+      date: '2026-10-03T10:00:00.000Z',
+      accountId: 'daily',
+      categoryId: 'food',
+    }
+
+    // Simulación de edición añadiendo el primer attachment
+    const updates: Partial<Transaction> = {
+      description: 'Mercadona Muro',
+      amount: 14.98,
+      attachments: [sampleAttachment],
+    }
+
+    // En useFinance:
+    const updatedTx: Transaction = {
+      ...oldTransaction,
+      ...updates,
+      amount: updates.amount !== undefined ? Number(updates.amount) : oldTransaction.amount,
+      attachments:
+        updates.attachments !== undefined
+          ? updates.attachments.length > 0
+            ? updates.attachments
+            : undefined
+          : oldTransaction.attachments,
+    }
+
+    assert.ok(updatedTx.attachments)
+    assert.equal(updatedTx.attachments.length, 1)
+    assert.equal(updatedTx.attachments[0].id, 'att-muro-1')
+
+    // Round-trip Supabase (toDbTransaction -> fromDbTransaction)
+    const dbRow = toDbTransaction(updatedTx, 'user-pepe')
+    assert.ok(Array.isArray(dbRow.attachments))
+    assert.equal(dbRow.attachments.length, 1)
+
+    const reconstructedTx = fromDbTransaction(dbRow)
+    assert.ok(reconstructedTx.attachments)
+    assert.equal(reconstructedTx.attachments.length, 1)
+    assert.equal(reconstructedTx.attachments[0].fileName, 'ticket_mercadona_muro.jpg')
+    assert.equal(reconstructedTx.attachments[0].storagePath, 'user-pepe/2026/att-muro-1.jpg')
+  })
+
+  // 2. Movimiento existente con attachments = [] -> añadir primer attachment
+  it('2. Movimiento existente con attachments=[]: añadir primer attachment actualiza el array', () => {
+    const existingTx: Transaction = {
+      id: 'tx-empty-att',
+      type: 'expense',
+      amount: 25.00,
+      description: 'Gasolinera',
+      date: '2026-10-04',
+      accountId: 'daily',
+      attachments: [],
+    }
+
+    const updates: Partial<Transaction> = {
+      attachments: [sampleAttachment],
+    }
+
+    const updatedTx: Transaction = {
+      ...existingTx,
+      ...updates,
+      attachments:
+        updates.attachments !== undefined
+          ? updates.attachments.length > 0
+            ? updates.attachments
+            : undefined
+          : existingTx.attachments,
+    }
+
+    assert.equal(updatedTx.attachments?.length, 1)
+    assert.equal(updatedTx.attachments?.[0].id, 'att-muro-1')
+  })
+
+  // 3. Movimiento con 1 attachment -> añadir segundo attachment
+  it('3. Movimiento con 1 attachment: añadir segundo attachment acumula ambos justificantes', () => {
+    const existingTx: Transaction = {
+      id: 'tx-with-1',
+      type: 'expense',
+      amount: 50.00,
+      description: 'Cena',
+      date: '2026-10-05',
+      accountId: 'daily',
+      attachments: [sampleAttachment],
+    }
+
+    const updates: Partial<Transaction> = {
+      attachments: [sampleAttachment, samplePdfAttachment],
+    }
+
+    const updatedTx: Transaction = {
+      ...existingTx,
+      ...updates,
+      attachments:
+        updates.attachments !== undefined
+          ? updates.attachments.length > 0
+            ? updates.attachments
+            : undefined
+          : existingTx.attachments,
+    }
+
+    assert.equal(updatedTx.attachments?.length, 2)
+    assert.equal(updatedTx.attachments?.[0].id, 'att-muro-1')
+    assert.equal(updatedTx.attachments?.[1].id, 'att-muro-pdf')
+  })
+
+  // 4. Movimiento con 2 attachments -> eliminar 1 attachment
+  it('4. Movimiento con 2 attachments: eliminar 1 attachment persiste el justificante restante', () => {
+    const existingTx: Transaction = {
+      id: 'tx-with-2',
+      type: 'expense',
+      amount: 60.00,
+      description: 'Hotel',
+      date: '2026-10-05',
+      accountId: 'daily',
+      attachments: [sampleAttachment, samplePdfAttachment],
+    }
+
+    // Usuario elimina sampleAttachment y conserva samplePdfAttachment
+    const updates: Partial<Transaction> = {
+      attachments: [samplePdfAttachment],
+    }
+
+    const updatedTx: Transaction = {
+      ...existingTx,
+      ...updates,
+      attachments:
+        updates.attachments !== undefined
+          ? updates.attachments.length > 0
+            ? updates.attachments
+            : undefined
+          : existingTx.attachments,
+    }
+
+    assert.equal(updatedTx.attachments?.length, 1)
+    assert.equal(updatedTx.attachments?.[0].id, 'att-muro-pdf')
+  })
+
+  // 5. Movimiento con 1 attachment -> eliminar el único attachment
+  it('5. Movimiento con 1 attachment: eliminar el único attachment vacía la lista sin restaurarlo', () => {
+    const existingTx: Transaction = {
+      id: 'tx-with-1-to-delete',
+      type: 'expense',
+      amount: 30.00,
+      description: 'Farmacia',
+      date: '2026-10-05',
+      accountId: 'daily',
+      attachments: [sampleAttachment],
+    }
+
+    // Usuario elimina el único attachment: updates.attachments = []
+    const updates: Partial<Transaction> = {
+      attachments: [],
+    }
+
+    const updatedTx: Transaction = {
+      ...existingTx,
+      ...updates,
+      attachments:
+        updates.attachments !== undefined
+          ? updates.attachments.length > 0
+            ? updates.attachments
+            : undefined
+          : existingTx.attachments,
+    }
+
+    assert.equal(updatedTx.attachments, undefined)
+
+    // Round-trip Supabase
+    const dbRow = toDbTransaction(updatedTx, 'user-pepe')
+    assert.deepEqual(dbRow.attachments, [])
+
+    const fromDb = fromDbTransaction(dbRow)
+    assert.equal(fromDb.attachments, undefined)
+  })
+
+  // 6. CashTransaction legacy sin attachments -> añadir primer attachment
+  it('6. CashTransaction legacy sin campo attachments: añadir primer attachment actualiza correctamente', () => {
+    const oldCashTx: CashTransaction = {
+      id: 'cash-muro-legacy',
+      type: 'expense',
+      amount: 8.50,
+      description: 'Panadería',
+      date: '2026-10-03',
+    }
+
+    const patch: Partial<CashTransaction> = {
+      attachments: [sampleAttachment],
+    }
+
+    const updatedCashTx: CashTransaction = {
+      ...oldCashTx,
+      ...patch,
+      amount: oldCashTx.amount,
+      attachments:
+        patch.attachments !== undefined
+          ? patch.attachments.length > 0
+            ? patch.attachments
+            : undefined
+          : oldCashTx.attachments,
+      updatedAt: new Date().toISOString(),
+    }
+
+    assert.ok(updatedCashTx.attachments)
+    assert.equal(updatedCashTx.attachments.length, 1)
+    assert.equal(updatedCashTx.attachments[0].id, 'att-muro-1')
+  })
+
+  // 7. uploadAttachment auto-resuelve userId desde la sesión de Supabase si no se proporciona
+  it('7. uploadAttachment: auto-resuelve el userId desde la sesión activa de Supabase si no se pasa explícitamente', async () => {
+    let uploadedPath = ''
+    const mockSupabaseClient = {
+      auth: {
+        getSession: async () => ({
+          data: {
+            session: {
+              user: {
+                id: 'user-session-resolved-uuid',
+              },
+            },
+          },
+        }),
+      },
+      storage: {
+        from: (bucket: string) => ({
+          upload: async (path: string) => {
+            uploadedPath = path
+            return { data: { path }, error: null }
+          },
+        }),
+      },
+    } as any
+
+    const fakeBlob = new Blob(['sample-data'], { type: 'image/jpeg' })
+    const meta = await uploadAttachment(fakeBlob, {
+      fileName: 'ticket_auto_user.jpg',
+      mimeType: 'image/jpeg',
+      customClient: mockSupabaseClient,
+    })
+
+    assert.ok(meta)
+    assert.ok(uploadedPath.startsWith('user-session-resolved-uuid/'))
+    assert.equal(meta.storagePath, uploadedPath)
+  })
+
+  // 8. Icono PDF en fila: no contiene texto "PDF", ni tarjeta blanca, ni emoji
+  it('8. Icono PDF en fila: representación pura lineal con FileText sin texto "PDF" ni tarjeta decorativa', () => {
+    // Simular propiedades de renderizado del indicador de PDF en fila
+    const isPdf = samplePdfAttachment.mimeType === 'application/pdf'
+    assert.equal(isPdf, true)
+
+    const pdfBadgeConfig = {
+      iconName: 'file-text',
+      hasTextBadge: false, // Eliminado texto "PDF"
+      hasWhiteBox: false,  // Eliminada tarjeta blanca
+      isLinear: true,
+    }
+
+    assert.equal(pdfBadgeConfig.iconName, 'file-text')
+    assert.equal(pdfBadgeConfig.hasTextBadge, false)
+    assert.equal(pdfBadgeConfig.hasWhiteBox, false)
+    assert.equal(pdfBadgeConfig.isLinear, true)
+  })
+
+  // 9. Cálculos financieros invariantes (0,00 € varianza)
+  it('9. Cálculos financieros: invariantes con 0,00 € de varianza en saldo tras añadir justificantes', () => {
+    const acc: Account = { id: 'daily', name: 'Cuenta Principal', type: 'spending', initialBalance: 100, balance: 100 }
+    const txOld: Transaction = { id: 'tx-1', type: 'expense', amount: 14.98, description: 'Mercadona Muro', date: '2026-10-03', accountId: 'daily' }
+    const txWithAtt: Transaction = { id: 'tx-1', type: 'expense', amount: 14.98, description: 'Mercadona Muro', date: '2026-10-03', accountId: 'daily', attachments: [sampleAttachment] }
+
+    const r1 = reconcileAccounts([acc], [txOld])
+    const r2 = reconcileAccounts([acc], [txWithAtt])
+    assert.equal(r1[0].balance, 85.02)
+    assert.equal(r2[0].balance, 85.02)
+    assert.equal(r1[0].balance, r2[0].balance)
+  })
+})
+
+

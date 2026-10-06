@@ -274,7 +274,9 @@ export function EditCashTransactionModal({
     })
   }
 
-  const processAttachmentsForSave = async (movementDate: string): Promise<AttachmentMetadata[] | undefined> => {
+  const processAttachmentsForSave = async (
+    movementDate: string
+  ): Promise<{ success: boolean; attachments: AttachmentMetadata[] | undefined; error?: string }> => {
     const isOffline = typeof navigator !== 'undefined' && !navigator.onLine
     const activeExisting = existingAttachments.filter((a) => !removedAttachmentIds.has(a.id))
 
@@ -290,41 +292,48 @@ export function EditCashTransactionModal({
     }
 
     if (stagedAttachments.length === 0) {
-      return activeExisting.length > 0 ? activeExisting : undefined
+      return { success: true, attachments: activeExisting }
     }
 
     if (isOffline) {
-      setAttachmentError('El gasto puede guardarse sin conexión. Añade el justificante cuando vuelvas a tener internet.')
-      return activeExisting.length > 0 ? activeExisting : undefined
+      const err = 'No hay conexión a internet para subir el justificante.'
+      setAttachmentError(err)
+      return { success: false, attachments: activeExisting, error: err }
     }
 
     setIsUploadingAttachments(true)
+    setAttachmentError(null)
     const uploaded: AttachmentMetadata[] = []
-    let failedCount = 0
+    let uploadErrorMsg: string | null = null
 
     for (const staged of stagedAttachments) {
       try {
         const meta = await uploadAttachment(staged.blob, {
-          userId: userId || 'anonymous_user',
+          userId: userId || undefined,
           fileName: staged.fileName,
           mimeType: staged.mimeType,
           date: movementDate,
         })
         uploaded.push(meta)
-      } catch (err) {
+      } catch (err: any) {
         console.error('[EditCashTransactionModal] Fallo al subir justificante:', err)
-        failedCount++
+        uploadErrorMsg = err?.message || 'Error al subir el justificante a Storage'
+        break
       }
     }
 
     setIsUploadingAttachments(false)
 
-    if (failedCount > 0) {
-      setAttachmentError(`Gasto guardado. No se pudo subir ${failedCount} justificante(s).`)
+    if (uploadErrorMsg || uploaded.length < stagedAttachments.length) {
+      const errMsg = uploadErrorMsg || 'No se pudo subir el justificante. Comprueba tu conexión e inténtalo de nuevo.'
+      setAttachmentError(errMsg)
+      // Si alguno se subió antes de fallar otro, intentar limpiarlo para evitar huérfanos
+      uploaded.forEach((u) => deleteAttachment(u.storagePath).catch(() => {}))
+      return { success: false, attachments: undefined, error: errMsg }
     }
 
     const finalAttachments = [...activeExisting, ...uploaded]
-    return finalAttachments.length > 0 ? finalAttachments : undefined
+    return { success: true, attachments: finalAttachments }
   }
 
   const handleModalClose = () => {
@@ -353,7 +362,10 @@ export function EditCashTransactionModal({
       return
     }
 
-    const finalAttachments = await processAttachmentsForSave(date || transaction?.date || new Date().toISOString())
+    const { success, attachments: finalAttachments } = await processAttachmentsForSave(date || transaction?.date || new Date().toISOString())
+    if (!success) {
+      return
+    }
 
     // Si era adjustment y originalmente era negativo, conservar el signo o permitir ajustarlo
     const finalAmount =

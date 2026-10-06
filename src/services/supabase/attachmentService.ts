@@ -27,7 +27,7 @@ function getExtensionFromMimeOrName(fileName: string, mimeType: string): string 
 export async function uploadAttachment(
   blob: Blob,
   options: {
-    userId: string
+    userId?: string
     fileName: string
     mimeType: string
     date?: string
@@ -35,16 +35,23 @@ export async function uploadAttachment(
     customClient?: any
   }
 ): Promise<AttachmentMetadata> {
-  const { userId, fileName, mimeType, date, customClient } = options
-  if (!userId || userId.trim() === '') {
-    throw new Error('No se puede subir un justificante sin un ID de usuario válido.')
+  const { fileName, mimeType, date, customClient } = options
+  const supabase = customClient || getSupabase()
+
+  let effectiveUserId = options.userId?.trim()
+  if (!effectiveUserId || effectiveUserId === 'anonymous_user') {
+    const { data: sessionData } = await supabase.auth.getSession()
+    effectiveUserId = sessionData?.session?.user?.id
   }
 
-  const supabase = customClient || getSupabase()
+  if (!effectiveUserId) {
+    throw new Error('No se puede subir un justificante sin una sesión de usuario válida.')
+  }
+
   const attachmentId = options.attachmentId || crypto.randomUUID()
   const year = date ? date.slice(0, 4) : new Date().getFullYear().toString()
   const ext = getExtensionFromMimeOrName(fileName, mimeType)
-  const storagePath = `${userId}/${year}/${attachmentId}.${ext}`
+  const storagePath = `${effectiveUserId}/${year}/${attachmentId}.${ext}`
 
   const { error } = await supabase.storage
     .from(RECEIPTS_BUCKET_NAME)

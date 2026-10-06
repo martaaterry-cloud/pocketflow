@@ -6931,12 +6931,12 @@ describe('Fase 18 — Mejoras de Finanzas (Detalle por Categoría, Retiradas de 
 describe('Fase 18 — Identificación Visual de Versión y Build', () => {
   it('314. Versioning: única fuente de verdad y formato de visualización exacto', () => {
     assert.equal(APP_NAME, 'PocketFlow')
-    assert.equal(APP_VERSION, '0.25.6')
-    assert.equal(APP_BUILD, '2026.10.06-02')
+    assert.equal(APP_VERSION, '0.25.7')
+    assert.equal(APP_BUILD, '2026.10.06-03')
 
-    assert.equal(getAppVersionString(), 'PocketFlow v0.25.6')
-    assert.equal(getAppBuildString(), 'Build 2026.10.06-02')
-    assert.equal(getAppFullVersionLabel(), 'PocketFlow v0.25.6 · Build 2026.10.06-02')
+    assert.equal(getAppVersionString(), 'PocketFlow v0.25.7')
+    assert.equal(getAppBuildString(), 'Build 2026.10.06-03')
+    assert.equal(getAppFullVersionLabel(), 'PocketFlow v0.25.7 · Build 2026.10.06-03')
   })
 })
 
@@ -14032,12 +14032,12 @@ describe('Fase 50 — Control de Acceso por Roles (User / Admin), Seguridad RLS 
     }
 
     const userFooter = renderFooterTexts(false)
-    assert.equal(userFooter.versionText, 'PocketFlow v0.25.6')
+    assert.equal(userFooter.versionText, 'PocketFlow v0.25.7')
     assert.equal(userFooter.buildText, null)
 
     const adminFooter = renderFooterTexts(true)
-    assert.equal(adminFooter.versionText, 'PocketFlow v0.25.6')
-    assert.equal(adminFooter.buildText, 'Build 2026.10.06-02')
+    assert.equal(adminFooter.versionText, 'PocketFlow v0.25.7')
+    assert.equal(adminFooter.buildText, 'Build 2026.10.06-03')
   })
 
   it('590. 10. Reconciliación y sincronización de perfil no altera datos financieros ni transacciones', () => {
@@ -14538,7 +14538,7 @@ describe('Fase 52 — Versionado Automático y Robusto del Service Worker PWA', 
   it('613. 1. CACHE_NAME del Service Worker incluye exactamente APP_VERSION y APP_BUILD actuales', () => {
     const expectedCacheName = `pocketflow-v${APP_VERSION}-${APP_BUILD}`
     assert.equal(getServiceWorkerCacheName(APP_VERSION, APP_BUILD), expectedCacheName)
-    assert.equal(expectedCacheName, 'pocketflow-v0.25.6-2026.10.06-02')
+    assert.equal(expectedCacheName, 'pocketflow-v0.25.7-2026.10.06-03')
 
     const swCode = generateServiceWorkerCode(APP_VERSION, APP_BUILD)
     assert.ok(swCode.includes(`const CACHE_NAME = '${expectedCacheName}'`))
@@ -18399,11 +18399,11 @@ describe('Fase 66 — Clasificación y Desglose de Gastos por Medio de Pago (Tar
 
   // CASO 12: Versión PWA
   it('731. 12. Build genera version.json correspondiente a la versión actual', () => {
-    assert.equal(APP_VERSION, '0.25.6')
-    assert.equal(APP_BUILD, '2026.10.06-02')
+    assert.equal(APP_VERSION, '0.25.7')
+    assert.equal(APP_BUILD, '2026.10.06-03')
     const vJson = JSON.parse(generateVersionJson(APP_VERSION, APP_BUILD))
-    assert.equal(vJson.version, '0.25.6')
-    assert.equal(vJson.build, '2026.10.06-02')
+    assert.equal(vJson.version, '0.25.7')
+    assert.equal(vJson.build, '2026.10.06-03')
   })
 })
 
@@ -20767,9 +20767,9 @@ describe('Fase 67.8 — Auditoría Integral de Integridad Económica, Caso Multa
   })
 
   // TEST 21: Versión y build actualizados
-  it('806. 21. Versión y Build actualizados a 0.25.6 / 2026.10.06-02', () => {
-    assert.equal(APP_VERSION, '0.25.6')
-    assert.equal(APP_BUILD, '2026.10.06-02')
+  it('806. 21. Versión y Build actualizados a 0.25.7 / 2026.10.06-03', () => {
+    assert.equal(APP_VERSION, '0.25.7')
+    assert.equal(APP_BUILD, '2026.10.06-03')
   })
 })
 
@@ -21336,9 +21336,9 @@ describe('Fase 68 — Rediseño de Movimientos (Resumen Mensual, Agrupación Dia
   })
 
   // TEST 25: Versión y build actualizados
-  it('823. 25. Versión y Build actualizados a 0.25.6 / 2026.10.06-02', () => {
-    assert.equal(APP_VERSION, '0.25.6')
-    assert.equal(APP_BUILD, '2026.10.06-02')
+  it('823. 25. Versión y Build actualizados a 0.25.7 / 2026.10.06-03', () => {
+    assert.equal(APP_VERSION, '0.25.7')
+    assert.equal(APP_BUILD, '2026.10.06-03')
   })
 })
 
@@ -21703,10 +21703,10 @@ describe('Fase 69 — Auditoría y Corrección Completa: Dinero Real, Ingresos V
     assert.equal(gross, 80)
   })
 
-  // Test de versión 0.25.6
-  it('833. PWA Version: 0.25.6 / 2026.10.06-02', () => {
-    assert.equal(APP_VERSION, '0.25.6')
-    assert.equal(APP_BUILD, '2026.10.06-02')
+  // Test de versión 0.25.7
+  it('833. PWA Version: 0.25.7 / 2026.10.06-03', () => {
+    assert.equal(APP_VERSION, '0.25.7')
+    assert.equal(APP_BUILD, '2026.10.06-03')
   })
 })
 
@@ -23227,10 +23227,10 @@ describe('Fase 71: Normalización canónica de gastos recurrentes compartidos y 
     assert.equal(economicShare, 10.00, '40 € entre 4 personas = 10,00 € de coste personal, NO 40,00 €')
   })
 
-  // TEST 12: Versión PWA 0.25.6 / Build 2026.10.06-02
-  it('878. PWA Version: 0.25.6 / 2026.10.06-02', () => {
-    assert.equal(APP_VERSION, '0.25.6')
-    assert.equal(APP_BUILD, '2026.10.06-02')
+  // TEST 12: Versión PWA 0.25.7 / Build 2026.10.06-03
+  it('878. PWA Version: 0.25.7 / 2026.10.06-03', () => {
+    assert.equal(APP_VERSION, '0.25.7')
+    assert.equal(APP_BUILD, '2026.10.06-03')
   })
 })
 
@@ -23539,10 +23539,10 @@ describe('Fase 73: Pantalla Inicio acotada estrictamente al Mes Actual', () => {
     assert.equal(coffee?.source, 'cash')
   })
 
-  // TEST Versión PWA 0.25.6 / Build 2026.10.06-02
-  it('887. PWA Version: 0.25.6 / 2026.10.06-02', () => {
-    assert.equal(APP_VERSION, '0.25.6')
-    assert.equal(APP_BUILD, '2026.10.06-02')
+  // TEST Versión PWA 0.25.7 / Build 2026.10.06-03
+  it('887. PWA Version: 0.25.7 / 2026.10.06-03', () => {
+    assert.equal(APP_VERSION, '0.25.7')
+    assert.equal(APP_BUILD, '2026.10.06-03')
   })
 })
 
