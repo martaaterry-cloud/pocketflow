@@ -66,6 +66,7 @@ export function SwipeableTransactionRow({
     isLinkedCashWithdrawal: false,
     isReimbursement: t!.type === 'income' && t!.incomeKind === 'reimbursement',
     isAdjustment: false,
+    attachments: t?.attachments,
     originalTransaction: t!,
   }
 
@@ -78,6 +79,11 @@ export function SwipeableTransactionRow({
   const isLinkedCashWithdrawal = item.isLinkedCashWithdrawal
   const sharedFlag = isShared ?? item.isShared
   const isContactPaid = item.type === 'expense' && Boolean(sharedFlag && item.paidBy === 'contact')
+  const attachmentsCount =
+    item.attachments?.length ??
+    t?.attachments?.length ??
+    (item.originalTransaction as any)?.attachments?.length ??
+    0
 
   // Sincronizar SOLO cuando isOpen cambia externamente y NO estamos arrastrando
   useEffect(() => {
@@ -363,11 +369,13 @@ export function SwipeableTransactionRow({
                   : 'Compartido'}
               </span>
             )}
-            {isContactPaid && (
-              <span className={`pill-shared ${pendingToRecover && pendingToRecover > 0 ? 'pending' : 'completed'}`}>
-                {pendingToRecover && pendingToRecover > 0
-                  ? `Deuda: ${money(pendingToRecover)}`
-                  : 'Liquidado'}
+            {/* Badge de justificantes / adjuntos */}
+            {attachmentsCount > 0 && (
+              <span
+                className="pill-attachment"
+                title={attachmentsCount === 1 ? '1 justificante' : `${attachmentsCount} justificantes`}
+              >
+                📎{attachmentsCount > 1 ? ` ${attachmentsCount}` : ''}
               </span>
             )}
           </div>

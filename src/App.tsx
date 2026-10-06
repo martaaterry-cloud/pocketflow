@@ -748,6 +748,7 @@ export default function App() {
         categories={finance.categories}
         expenseShares={finance.expenseShares}
         sharedContacts={finance.sharedContacts}
+        userId={finance.userId}
         onUpdate={(id, patch, shares) => finance.updateCashTransaction(id, patch, shares)}
         onDelete={(id) => finance.deleteCashTransaction(id)}
       />
@@ -764,6 +765,7 @@ export default function App() {
         defaultType={modalDefaultType}
         initialTransaction={selectedTx}
         initialReimbursementShareId={reimbursementShareId}
+        userId={finance.userId}
         onAdd={finance.addTransaction}
         onAddShared={finance.addSharedExpense}
         onUpdate={finance.updateTransaction}

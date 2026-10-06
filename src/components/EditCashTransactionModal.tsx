@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react'
-import type { Category, CashTransaction, UpdateCashTransactionInput, ExpenseShare, SharedContact } from '../models/finance'
+import type { Category, CashTransaction, UpdateCashTransactionInput, ExpenseShare, SharedContact, AttachmentMetadata } from '../models/finance'
 import { money } from '../utils/money'
 import {
   splitExpenseEqually,
@@ -9,6 +9,8 @@ import {
 } from '../utils/sharedExpenseSelectors'
 import { AppIcon } from '../ui/icons'
 import { SharedExpenseSection } from './SharedExpenseSection'
+import { AttachmentSection, type StagedAttachment } from './AttachmentSection'
+import { uploadAttachment, deleteAttachment } from '../services/supabase/attachmentService'
 
 interface EditCashTransactionModalProps {
   open: boolean
@@ -17,6 +19,7 @@ interface EditCashTransactionModalProps {
   categories: Category[]
   expenseShares?: ExpenseShare[]
   sharedContacts?: SharedContact[]
+  userId?: string | null
   onUpdate: (
     id: string,
     patch: UpdateCashTransactionInput,
@@ -39,6 +42,7 @@ export function EditCashTransactionModal({
   categories,
   expenseShares = [],
   sharedContacts = [],
+  userId,
   onUpdate,
   onDelete,
 }: EditCashTransactionModalProps) {
@@ -50,6 +54,13 @@ export function EditCashTransactionModal({
   const [note, setNote] = useState('')
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [error, setError] = useState<string | null>(null)
+
+  // Estados para Justificantes / Adjuntos
+  const [existingAttachments, setExistingAttachments] = useState<AttachmentMetadata[]>([])
+  const [stagedAttachments, setStagedAttachments] = useState<StagedAttachment[]>([])
+  const [removedAttachmentIds, setRemovedAttachmentIds] = useState<Set<string>>(new Set())
+  const [attachmentError, setAttachmentError] = useState<string | null>(null)
+  const [isUploadingAttachments, setIsUploadingAttachments] = useState(false)
 
   // Estados para Gasto Compartido en Efectivo
   const [isShared, setIsShared] = useState(false)
@@ -75,6 +86,15 @@ export function EditCashTransactionModal({
       setConfirmUnshare(false)
       setError(null)
       setNewParticipantInput('')
+
+      // Cargar adjuntos existentes y limpiar temporales previos
+      setExistingAttachments(transaction.attachments ?? [])
+      setRemovedAttachmentIds(new Set())
+      setAttachmentError(null)
+      setStagedAttachments((prev) => {
+        prev.forEach((s) => URL.revokeObjectURL(s.localUrl))
+        return []
+      })
 
       const initialPaidBy = transaction.paidBy || 'user'
       setPaidBy(initialPaidBy)
@@ -232,7 +252,88 @@ export function EditCashTransactionModal({
     }
   }
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleAddStagedAttachments = (newStaged: StagedAttachment[]) => {
+    setStagedAttachments((prev) => [...prev, ...newStaged])
+  }
+
+  const handleRemoveStagedAttachment = (index: number) => {
+    setStagedAttachments((prev) => {
+      const target = prev[index]
+      if (target) {
+        URL.revokeObjectURL(target.localUrl)
+      }
+      return prev.filter((_, i) => i !== index)
+    })
+  }
+
+  const handleRemoveExistingAttachment = (attachmentId: string) => {
+    setRemovedAttachmentIds((prev) => {
+      const next = new Set(prev)
+      next.add(attachmentId)
+      return next
+    })
+  }
+
+  const processAttachmentsForSave = async (movementDate: string): Promise<AttachmentMetadata[] | undefined> => {
+    const isOffline = typeof navigator !== 'undefined' && !navigator.onLine
+    const activeExisting = existingAttachments.filter((a) => !removedAttachmentIds.has(a.id))
+
+    // Eliminar de Storage los archivos que se marcaron para borrar
+    if (!isOffline && removedAttachmentIds.size > 0) {
+      existingAttachments
+        .filter((a) => removedAttachmentIds.has(a.id))
+        .forEach((a) => {
+          deleteAttachment(a.storagePath).catch((err) => {
+            console.warn('[EditCashTransactionModal] Error al borrar adjunto de Storage:', err)
+          })
+        })
+    }
+
+    if (stagedAttachments.length === 0) {
+      return activeExisting.length > 0 ? activeExisting : undefined
+    }
+
+    if (isOffline) {
+      setAttachmentError('El gasto puede guardarse sin conexión. Añade el justificante cuando vuelvas a tener internet.')
+      return activeExisting.length > 0 ? activeExisting : undefined
+    }
+
+    setIsUploadingAttachments(true)
+    const uploaded: AttachmentMetadata[] = []
+    let failedCount = 0
+
+    for (const staged of stagedAttachments) {
+      try {
+        const meta = await uploadAttachment(staged.blob, {
+          userId: userId || 'anonymous_user',
+          fileName: staged.fileName,
+          mimeType: staged.mimeType,
+          date: movementDate,
+        })
+        uploaded.push(meta)
+      } catch (err) {
+        console.error('[EditCashTransactionModal] Fallo al subir justificante:', err)
+        failedCount++
+      }
+    }
+
+    setIsUploadingAttachments(false)
+
+    if (failedCount > 0) {
+      setAttachmentError(`Gasto guardado. No se pudo subir ${failedCount} justificante(s).`)
+    }
+
+    const finalAttachments = [...activeExisting, ...uploaded]
+    return finalAttachments.length > 0 ? finalAttachments : undefined
+  }
+
+  const handleModalClose = () => {
+    stagedAttachments.forEach((s) => URL.revokeObjectURL(s.localUrl))
+    setStagedAttachments([])
+    onClose()
+  }
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setError(null)
 
@@ -251,6 +352,8 @@ export function EditCashTransactionModal({
       setError('El ajuste no puede ser 0.')
       return
     }
+
+    const finalAttachments = await processAttachmentsForSave(date || transaction?.date || new Date().toISOString())
 
     // Si era adjustment y originalmente era negativo, conservar el signo o permitir ajustarlo
     const finalAmount =
@@ -291,6 +394,7 @@ export function EditCashTransactionModal({
           paidBy,
           payerName: paidBy === 'contact' && payerName.trim() ? payerName.trim() : undefined,
           payerContactId: paidBy === 'contact' ? payerContactId : undefined,
+          attachments: finalAttachments,
         },
         sharesInput
       )
@@ -306,12 +410,13 @@ export function EditCashTransactionModal({
           categoryId: categoryId || undefined,
           note: note.trim() || undefined,
           isShared: false,
+          attachments: finalAttachments,
         },
         sharesInput
       )
     }
 
-    onClose()
+    handleModalClose()
   }
 
   const handleDelete = () => {
@@ -538,6 +643,19 @@ export function EditCashTransactionModal({
                 }}
               />
             </div>
+
+            {/* Sección de Justificantes / Adjuntos */}
+            {type !== 'adjustment' && (
+              <AttachmentSection
+                existingAttachments={existingAttachments.filter((a) => !removedAttachmentIds.has(a.id))}
+                stagedAttachments={stagedAttachments}
+                onAddStaged={handleAddStagedAttachments}
+                onRemoveStaged={handleRemoveStagedAttachment}
+                onRemoveExisting={handleRemoveExistingAttachment}
+                error={attachmentError}
+                disabled={isUploadingAttachments}
+              />
+            )}
 
             {/* Modal de confirmación para desmarcar compartido */}
             {confirmUnshare && (

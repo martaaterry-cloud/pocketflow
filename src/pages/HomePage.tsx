@@ -881,6 +881,7 @@ export function HomePage({
         categories={finance.categories}
         expenseShares={finance.expenseShares}
         sharedContacts={finance.sharedContacts}
+        userId={finance.userId}
         onUpdate={(id, patch, shares) => finance.updateCashTransaction(id, patch, shares)}
         onDelete={(id) => finance.deleteCashTransaction(id)}
       />

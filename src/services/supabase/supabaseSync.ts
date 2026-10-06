@@ -1,6 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type {
   Account,
+  AttachmentMetadata,
   Budget,
   Category,
   FinancialPlanSettings,
@@ -106,6 +107,26 @@ export function fromDbCategory(row: Record<string, unknown>): Category {
   }
 }
 
+export function parseAttachments(raw: unknown): AttachmentMetadata[] | undefined {
+  if (!raw) return undefined
+  if (Array.isArray(raw)) {
+    const valid = raw.filter((a) => a && typeof a === 'object' && typeof (a as any).id === 'string') as AttachmentMetadata[]
+    return valid.length > 0 ? valid : undefined
+  }
+  if (typeof raw === 'string') {
+    try {
+      const parsed = JSON.parse(raw)
+      if (Array.isArray(parsed)) {
+        const valid = parsed.filter((a) => a && typeof a === 'object' && typeof (a as any).id === 'string') as AttachmentMetadata[]
+        return valid.length > 0 ? valid : undefined
+      }
+    } catch {
+      return undefined
+    }
+  }
+  return undefined
+}
+
 export function toDbTransaction(tx: Transaction, userId: string) {
   const row: Record<string, unknown> = {
     id: tx.id,
@@ -129,6 +150,7 @@ export function toDbTransaction(tx: Transaction, userId: string) {
     payer_contact_id: tx.payerContactId || null,
     payer_name: tx.payerName || null,
     payment_method: tx.paymentMethod || null,
+    attachments: tx.attachments && tx.attachments.length > 0 ? tx.attachments : [],
   }
   if (tx.giftRecipient) {
     row.gift_recipient = tx.giftRecipient
@@ -159,6 +181,7 @@ export function fromDbTransaction(row: Record<string, unknown>): Transaction {
     payerContactId: row.payer_contact_id ? String(row.payer_contact_id) : undefined,
     payerName: row.payer_name ? String(row.payer_name) : undefined,
     paymentMethod: (row.payment_method as any) || undefined,
+    attachments: parseAttachments(row.attachments),
   }
 }
 
@@ -499,6 +522,7 @@ export function toDbCashTransaction(tx: CashTransaction, userId: string) {
     paid_by: tx.paidBy || 'user',
     payer_contact_id: tx.payerContactId || null,
     payer_name: tx.payerName || null,
+    attachments: tx.attachments && tx.attachments.length > 0 ? tx.attachments : [],
   }
 }
 
@@ -516,6 +540,7 @@ export function fromDbCashTransaction(row: Record<string, unknown>): CashTransac
     paidBy: (row.paid_by as 'user' | 'contact') || 'user',
     payerContactId: row.payer_contact_id ? String(row.payer_contact_id) : undefined,
     payerName: row.payer_name ? String(row.payer_name) : undefined,
+    attachments: parseAttachments(row.attachments),
     createdAt: row.created_at ? String(row.created_at) : undefined,
     updatedAt: row.updated_at ? String(row.updated_at) : undefined,
   }

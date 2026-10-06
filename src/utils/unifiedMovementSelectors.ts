@@ -1,4 +1,4 @@
-import type { CashTransaction, Category, ExpenseShare, Transaction } from '../models/finance'
+import type { AttachmentMetadata, CashTransaction, Category, ExpenseShare, Transaction } from '../models/finance'
 import { normalizeCategoryAlias } from './categoryNormalization'
 
 export type MovementSource = 'bank' | 'cash'
@@ -30,6 +30,7 @@ export interface UnifiedMovement {
   isAdjustment: boolean
   bankTransactionId?: string
   parentExpenseId?: string
+  attachments?: AttachmentMetadata[]
   originalTransaction: Transaction | CashTransaction
 }
 
@@ -131,6 +132,7 @@ export function toUnifiedMovements(
       isReimbursement,
       isAdjustment: false,
       parentExpenseId: t.parentExpenseId,
+      attachments: t.attachments,
       originalTransaction: t,
     }
   })
@@ -173,6 +175,7 @@ export function toUnifiedMovements(
       isReimbursement,
       isAdjustment,
       bankTransactionId: c.bankTransactionId,
+      attachments: c.attachments,
       originalTransaction: c,
     }
   })

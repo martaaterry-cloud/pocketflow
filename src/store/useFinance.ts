@@ -57,6 +57,7 @@ import { defaultAppStorage, createIndexedDbAdapter } from '../services/storage/i
 import { defaultStorage } from '../services/storage/localStorageAdapter'
 import { isValidUserId } from '../services/storage/userStorageKeys'
 import type { PersistedState, StorageAdapter } from '../services/storage/storageAdapter'
+import { deleteAttachmentsForMovement } from '../services/supabase/attachmentService'
 import { selectBudgetsSummary } from '../utils/budgetSelectors'
 import { ensureAccountInitialBalance, reconcileAccounts } from '../utils/balance'
 import { calculateVariableEstimatesSummary } from '../utils/variableEstimates'
@@ -1022,6 +1023,11 @@ export function useFinance(storage: StorageAdapter = defaultAppStorage) {
         },
         id
       )
+      if (txToDelete?.attachments && txToDelete.attachments.length > 0) {
+        deleteAttachmentsForMovement(txToDelete.attachments).catch((err) => {
+          console.warn('[FinanceStore] No se pudieron limpiar adjuntos de Storage:', err)
+        })
+      }
       dispatchSync('transaction', 'delete', id, { id }, (sb, uid) =>
         syncDeleteTransaction(sb, uid, id)
       )
@@ -2211,6 +2217,7 @@ export function useFinance(storage: StorageAdapter = defaultAppStorage) {
 
   const deleteCashTransaction = useCallback(
     (id: string) => {
+      const txToDelete = (state.cashTransactions ?? []).find((tx) => tx.id === id)
       const sharesToDelete = (state.expenseShares ?? []).filter((s) => s.expenseTransactionId === id)
       const remainingShares = (state.expenseShares ?? []).filter((s) => s.expenseTransactionId !== id)
       const nextCashTxs = (state.cashTransactions ?? []).filter((tx) => tx.id !== id)
@@ -2220,6 +2227,12 @@ export function useFinance(storage: StorageAdapter = defaultAppStorage) {
         cashTransactions: nextCashTxs,
         expenseShares: remainingShares,
       }, id)
+
+      if (txToDelete?.attachments && txToDelete.attachments.length > 0) {
+        deleteAttachmentsForMovement(txToDelete.attachments).catch((err) => {
+          console.warn('[FinanceStore] No se pudieron limpiar adjuntos de efectivo de Storage:', err)
+        })
+      }
 
       dispatchSync('cash_transaction', 'delete', id, { id }, (sb, uid) =>
         syncDeleteCashTransaction(sb, uid, id)
@@ -3626,6 +3639,7 @@ export function useFinance(storage: StorageAdapter = defaultAppStorage) {
     expenseShares: state.expenseShares ?? [],
     cashTransactions: state.cashTransactions ?? [],
     storageHydrated,
+    userId: syncUserId,
     setSyncUser,
     resetSession,
     setOnSyncStatusChange,

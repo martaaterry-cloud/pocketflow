@@ -1,6 +1,7 @@
 import { useEffect, useState, useMemo } from 'react'
 import type {
   Account,
+  AttachmentMetadata,
   Category,
   CreateTransactionInput,
   ExpenseNature,
@@ -22,6 +23,8 @@ import {
 } from '../utils/sharedExpenseSelectors'
 import { AppIcon } from '../ui/icons'
 import { SharedExpenseSection } from './SharedExpenseSection'
+import { AttachmentSection, type StagedAttachment } from './AttachmentSection'
+import { uploadAttachment, deleteAttachment } from '../services/supabase/attachmentService'
 
 interface AddTransactionModalProps {
   open: boolean
@@ -35,6 +38,7 @@ interface AddTransactionModalProps {
   defaultType?: 'expense' | 'income' | 'transfer'
   initialTransaction?: Transaction | CashTransaction | null
   initialReimbursementShareId?: string
+  userId?: string | null
   onAdd?: (value: CreateTransactionInput) => Transaction | void
   onAddShared?: (
     value: CreateTransactionInput,
@@ -99,6 +103,7 @@ interface AddTransactionModalProps {
       fromAccountId?: string
       toType?: 'account' | 'cash'
       toAccountId?: string
+      attachments?: AttachmentMetadata[]
     }
     shares?: { participantName: string; contactId?: string; isPayerShare: boolean; isUserShare?: boolean; expectedAmount: number }[]
   }) => void
@@ -133,6 +138,7 @@ export function AddTransactionModal({
   defaultType = 'expense',
   initialTransaction,
   initialReimbursementShareId,
+  userId,
   onAdd,
   onAddShared,
   onUpdate,
@@ -176,6 +182,13 @@ export function AddTransactionModal({
   const [isBizum, setIsBizum] = useState(false)
   const [expenseNature, setExpenseNature] = useState<ExpenseNature>('variable')
   const [giftRecipient, setGiftRecipient] = useState('')
+
+  // Estados para Justificantes / Adjuntos
+  const [existingAttachments, setExistingAttachments] = useState<AttachmentMetadata[]>([])
+  const [stagedAttachments, setStagedAttachments] = useState<StagedAttachment[]>([])
+  const [removedAttachmentIds, setRemovedAttachmentIds] = useState<Set<string>>(new Set())
+  const [attachmentError, setAttachmentError] = useState<string | null>(null)
+  const [isUploadingAttachments, setIsUploadingAttachments] = useState(false)
 
   // Lista canónica de cuotas por cobrar pendientes (excluyendo deudas de terceros y pagador)
   const pendingReceivablesList = useMemo(() => {
@@ -399,6 +412,15 @@ export function AddTransactionModal({
         (initialTransaction.note && initialTransaction.note.match(/\[share:([^\]]+)\]/)?.[1]) ||
         ''
       setSelectedReceivableShareId(matchedShareId)
+
+      // Cargar adjuntos existentes y limpiar temporales previos
+      setExistingAttachments(initialTransaction.attachments ?? [])
+      setRemovedAttachmentIds(new Set())
+      setAttachmentError(null)
+      setStagedAttachments((prev) => {
+        prev.forEach((s) => URL.revokeObjectURL(s.localUrl))
+        return []
+      })
     } else {
       setType(defaultType)
       setSourceMedium('bank')
@@ -427,6 +449,15 @@ export function AddTransactionModal({
       setNewParticipantInput('')
       setConfirmDelete(false)
 
+      // Resetear adjuntos para nuevo gasto
+      setExistingAttachments([])
+      setRemovedAttachmentIds(new Set())
+      setAttachmentError(null)
+      setStagedAttachments((prev) => {
+        prev.forEach((s) => URL.revokeObjectURL(s.localUrl))
+        return []
+      })
+
       if (initialReimbursementShareId) {
         const targetShare = pendingReceivablesList.find((p) => p.shareId === initialReimbursementShareId)
         if (targetShare) {
@@ -436,6 +467,87 @@ export function AddTransactionModal({
       }
     }
   }, [initialTransaction, accounts, selectableCategories, open, defaultType, initialReimbursementShareId, pendingReceivablesList])
+
+  const handleAddStagedAttachments = (newStaged: StagedAttachment[]) => {
+    setStagedAttachments((prev) => [...prev, ...newStaged])
+  }
+
+  const handleRemoveStagedAttachment = (index: number) => {
+    setStagedAttachments((prev) => {
+      const target = prev[index]
+      if (target) {
+        URL.revokeObjectURL(target.localUrl)
+      }
+      return prev.filter((_, i) => i !== index)
+    })
+  }
+
+  const handleRemoveExistingAttachment = (attachmentId: string) => {
+    setRemovedAttachmentIds((prev) => {
+      const next = new Set(prev)
+      next.add(attachmentId)
+      return next
+    })
+  }
+
+  const processAttachmentsForSave = async (movementDate: string): Promise<AttachmentMetadata[] | undefined> => {
+    const isOffline = typeof navigator !== 'undefined' && !navigator.onLine
+    const activeExisting = existingAttachments.filter((a) => !removedAttachmentIds.has(a.id))
+
+    // Eliminar de Storage los archivos que se marcaron para borrar
+    if (!isOffline && removedAttachmentIds.size > 0) {
+      existingAttachments
+        .filter((a) => removedAttachmentIds.has(a.id))
+        .forEach((a) => {
+          deleteAttachment(a.storagePath).catch((err) => {
+            console.warn('[AddTransactionModal] Error al borrar adjunto de Storage:', err)
+          })
+        })
+    }
+
+    if (stagedAttachments.length === 0) {
+      return activeExisting.length > 0 ? activeExisting : undefined
+    }
+
+    if (isOffline) {
+      setAttachmentError('El gasto puede guardarse sin conexión. Añade el justificante cuando vuelvas a tener internet.')
+      return activeExisting.length > 0 ? activeExisting : undefined
+    }
+
+    setIsUploadingAttachments(true)
+    const uploaded: AttachmentMetadata[] = []
+    let failedCount = 0
+
+    for (const staged of stagedAttachments) {
+      try {
+        const meta = await uploadAttachment(staged.blob, {
+          userId: userId || 'anonymous_user',
+          fileName: staged.fileName,
+          mimeType: staged.mimeType,
+          date: movementDate,
+        })
+        uploaded.push(meta)
+      } catch (err) {
+        console.error('[AddTransactionModal] Fallo al subir justificante:', err)
+        failedCount++
+      }
+    }
+
+    setIsUploadingAttachments(false)
+
+    if (failedCount > 0) {
+      setAttachmentError(`Gasto guardado. No se pudo subir ${failedCount} justificante(s).`)
+    }
+
+    const finalAttachments = [...activeExisting, ...uploaded]
+    return finalAttachments.length > 0 ? finalAttachments : undefined
+  }
+
+  const handleModalClose = () => {
+    stagedAttachments.forEach((s) => URL.revokeObjectURL(s.localUrl))
+    setStagedAttachments([])
+    onClose()
+  }
 
   const numericAmount = Number(amount.replace(',', '.')) || 0
 
@@ -572,10 +684,13 @@ export function AddTransactionModal({
     setIsShared(checked)
   }
 
-  const submit = () => {
+  const submit = async () => {
     if (typeConversionBlockReason) return
     if (!numericAmount || numericAmount <= 0) return
     if (!description.trim()) return
+
+    // Procesar y subir adjuntos antes de guardar
+    const finalAttachments = await processAttachmentsForSave(new Date(date).toISOString())
 
     // Preparar cuotas de gasto compartido si aplica
     const sharesInput =
@@ -628,10 +743,11 @@ export function AddTransactionModal({
               fromAccountId: type === 'transfer' && transferFrom !== 'cash' ? transferFrom : undefined,
               toType: type === 'transfer' ? (transferTo === 'cash' ? 'cash' : 'account') : undefined,
               toAccountId: type === 'transfer' && transferTo !== 'cash' ? transferTo : undefined,
+              attachments: finalAttachments,
             },
             shares: sharesInput,
           })
-          onClose()
+          handleModalClose()
           return
         }
       }
@@ -658,7 +774,7 @@ export function AddTransactionModal({
           note: note.trim() || undefined,
         })
       }
-      onClose()
+      handleModalClose()
       return
     }
 
@@ -677,7 +793,7 @@ export function AddTransactionModal({
             note: note.trim() || undefined,
             paymentMethod: sourceMedium === 'cash' ? 'cash' : (isBizum ? 'bizum' : 'bank'),
           })
-          onClose()
+          handleModalClose()
           return
         }
       }
@@ -721,6 +837,7 @@ export function AddTransactionModal({
         payerName: type === 'expense' && isShared && paidBy === 'contact' && payerName.trim() ? payerName.trim() : undefined,
         payerContactId: type === 'expense' && isShared && paidBy === 'contact' ? payerContactId : undefined,
         paymentMethod: 'cash',
+        attachments: finalAttachments,
       }
 
       if (isEditing && initialTransaction) {
@@ -738,7 +855,7 @@ export function AddTransactionModal({
       } else if (onAddCashTransaction) {
         onAddCashTransaction(cashPayload, sharesInput)
       }
-      onClose()
+      handleModalClose()
       return
     }
 
@@ -766,6 +883,7 @@ export function AddTransactionModal({
       expenseNature: type === 'expense' ? expenseNature : undefined,
       giftRecipient: isGiftsCategory && giftRecipient.trim() ? giftRecipient.trim() : undefined,
       paymentMethod: isBizum ? 'bizum' : 'bank',
+      attachments: finalAttachments,
     }
 
     if (isEditing && initialTransaction) {
@@ -788,7 +906,7 @@ export function AddTransactionModal({
       }
     }
 
-    onClose()
+    handleModalClose()
   }
 
   const isGiftsCategory =
@@ -1291,6 +1409,19 @@ export function AddTransactionModal({
             />
           </label>
         </div>
+
+        {/* Sección de Justificantes / Adjuntos */}
+        {type !== 'transfer' && (
+          <AttachmentSection
+            existingAttachments={existingAttachments.filter((a) => !removedAttachmentIds.has(a.id))}
+            stagedAttachments={stagedAttachments}
+            onAddStaged={handleAddStagedAttachments}
+            onRemoveStaged={handleRemoveStagedAttachment}
+            onRemoveExisting={handleRemoveExistingAttachment}
+            error={attachmentError}
+            disabled={isUploadingAttachments}
+          />
+        )}
 
         {/* Sub-modal confirmación desmarcar compartido */}
         {showUnshareConfirm && (

@@ -25,6 +25,15 @@ export type ExpenseNature = 'fixed' | 'variable' | 'extraordinary'
 
 export type PaymentMethod = 'bank' | 'bizum' | 'cash'
 
+export interface AttachmentMetadata {
+  id: string
+  fileName: string
+  mimeType: string
+  fileSize: number
+  storagePath: string
+  createdAt: string
+}
+
 export interface Transaction {
   id: string
   type: TransactionType
@@ -47,6 +56,7 @@ export interface Transaction {
   payerContactId?: string
   payerName?: string
   paymentMethod?: PaymentMethod
+  attachments?: AttachmentMetadata[]
 }
 
 export type CreateTransactionInput = Omit<Transaction, 'id'>
@@ -281,6 +291,7 @@ export interface CashTransaction {
   payerContactId?: string
   payerName?: string
   paymentMethod?: PaymentMethod
+  attachments?: AttachmentMetadata[]
   createdAt?: string
   updatedAt?: string
 }
