@@ -7,7 +7,7 @@ import { APP_VERSION, APP_BUILD } from '../src/version'
 import * as fs from 'node:fs'
 import * as path from 'node:path'
 
-describe('Fase 77 — Adaptive App Shell & Desktop Navigation (>= 900px)', () => {
+describe('Fase 77 — Adaptive App Shell & Desktop Navigation (>= 840px)', () => {
   // 1. DesktopSidebar renderiza las vistas principales
   it('1. DesktopSidebar contiene enlaces para Inicio, Movimientos, Calendario y Ahorro', () => {
     const props: DesktopSidebarProps = {
@@ -125,13 +125,23 @@ describe('Fase 77 — Adaptive App Shell & Desktop Navigation (>= 900px)', () =>
     }
   })
 
-  // 8. Integración CSS desktop: el archivo desktop.css existe y contiene la regla @media (min-width: 900px)
-  it('8. desktop.css existe y contiene la regla principal @media (min-width: 900px)', () => {
+  // 8. Integración CSS desktop: el archivo desktop.css existe y contiene la regla @media (min-width: 840px) y (min-width: 1100px)
+  it('8. desktop.css existe y contiene las reglas principales @media (min-width: 840px) y (min-width: 1100px)', () => {
     const desktopCssPath = path.join(process.cwd(), 'src', 'styles', 'desktop.css')
     assert.ok(fs.existsSync(desktopCssPath), 'src/styles/desktop.css debe existir')
     const content = fs.readFileSync(desktopCssPath, 'utf-8')
-    assert.ok(content.includes('@media (min-width: 900px)'))
+    assert.ok(content.includes('@media (min-width: 840px)'), 'desktop.css debe contener @media (min-width: 840px)')
+    assert.ok(content.includes('@media (min-width: 1100px)'), 'desktop.css debe contener @media (min-width: 1100px)')
     assert.ok(content.includes('.desktop-sidebar'))
     assert.ok(content.includes('.main-content'))
+  })
+
+  // 9. Eliminación definitiva de la carcasa de 500px y regla 700px en styles.css
+  it('9. styles.css ya no contiene la regla @media (min-width: 700px) ni max-width: 500px en app-shell ni bottom-nav', () => {
+    const stylesCssPath = path.join(process.cwd(), 'src', 'styles.css')
+    assert.ok(fs.existsSync(stylesCssPath), 'src/styles.css debe existir')
+    const content = fs.readFileSync(stylesCssPath, 'utf-8')
+    assert.ok(!content.includes('@media (min-width: 700px)'), 'styles.css no debe contener la regla @media (min-width: 700px)')
+    assert.ok(!content.includes('max-width: 500px'), 'styles.css no debe contener max-width: 500px')
   })
 })

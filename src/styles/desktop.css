@@ -1,9 +1,9 @@
 /* ==========================================================================
-   POCKETFLOW — DESKTOP & ADAPTIVE WORKSPACE (>= 900px)
+   POCKETFLOW — DESKTOP & ADAPTIVE WORKSPACE (>= 840px)
    Filosofía: Sidebar vertical fija + Workspace fluido a ancho completo
    ========================================================================== */
 
-/* En pantallas móviles (< 900px), la sidebar desktop está oculta por defecto */
+/* En pantallas móviles y tablets (< 840px), la sidebar desktop está oculta por defecto */
 .desktop-sidebar {
   display: none;
 }
@@ -12,7 +12,7 @@
   display: contents;
 }
 
-@media (min-width: 900px) {
+@media (min-width: 840px) {
   /* 1. Normalización de viewport y fondo desktop */
   body {
     padding: 0 !important;
@@ -28,6 +28,7 @@
     border-radius: 0 !important;
     box-shadow: none !important;
     min-height: 100vh !important;
+    min-height: 100dvh !important;
     display: flex !important;
     flex-direction: row !important;
     padding-bottom: 0 !important;
@@ -36,7 +37,7 @@
     overflow: visible !important;
   }
 
-  /* 3. Ocultar elementos exclusivos de móvil en >= 900px */
+  /* 3. Ocultar elementos exclusivos de móvil en >= 840px */
   .bottom-nav {
     display: none !important;
   }
@@ -46,13 +47,13 @@
     display: none !important;
   }
 
-  /* 4. Sidebar Lateral Fija (230px en pantallas 900-1199px) */
+  /* 4. Sidebar Lateral Fija (Desktop Compacto: 224px en 840px-1099px) */
   .desktop-sidebar {
     display: flex;
     flex-direction: column;
-    flex: 0 0 232px;
-    width: 232px;
-    min-width: 232px;
+    flex: 0 0 224px;
+    width: 224px;
+    min-width: 224px;
     height: 100vh;
     position: sticky;
     top: 0;
@@ -60,7 +61,7 @@
     background: #ffffff;
     border-right: 1px solid rgba(0, 0, 0, 0.08);
     box-sizing: border-box;
-    padding: 20px 14px 16px;
+    padding: 20px 12px 14px;
     z-index: 50;
     overflow-y: auto;
     overflow-x: hidden;
@@ -71,8 +72,8 @@
   .desktop-sidebar-header {
     display: flex;
     flex-direction: column;
-    gap: 12px;
-    margin-bottom: 18px;
+    gap: 10px;
+    margin-bottom: 16px;
     padding: 0 4px;
   }
 
@@ -83,8 +84,8 @@
   }
 
   .desktop-sidebar-logo {
-    width: 34px;
-    height: 34px;
+    width: 32px;
+    height: 32px;
     border-radius: 9px;
     background: linear-gradient(135deg, #18181b 0%, #27272a 100%);
     display: flex;
@@ -101,7 +102,7 @@
   }
 
   .desktop-sidebar-title {
-    font-size: 16.5px;
+    font-size: 16px;
     font-weight: 700;
     letter-spacing: -0.3px;
     color: #18181b;
@@ -109,7 +110,7 @@
   }
 
   .desktop-sidebar-subtitle {
-    font-size: 11px;
+    font-size: 10.5px;
     font-weight: 500;
     color: #71717a;
     letter-spacing: -0.1px;
@@ -120,9 +121,9 @@
     display: inline-flex;
     align-items: center;
     gap: 6px;
-    padding: 3.5px 9px;
+    padding: 3px 9px;
     border-radius: 999px;
-    font-size: 11px;
+    font-size: 10.5px;
     font-weight: 600;
     color: #3f3f46;
     background: #f4f4f5;
@@ -160,7 +161,7 @@
 
   /* Botón Principal "+ Nuevo movimiento" */
   .desktop-sidebar-action-wrap {
-    margin-bottom: 20px;
+    margin-bottom: 18px;
   }
 
   .btn-desktop-add-movement {
@@ -173,7 +174,7 @@
     color: #ffffff;
     border: none;
     border-radius: 11px;
-    padding: 10px 14px;
+    padding: 9px 12px;
     font-size: 13.5px;
     font-weight: 600;
     cursor: pointer;
@@ -195,7 +196,7 @@
   .desktop-sidebar-nav {
     display: flex;
     flex-direction: column;
-    gap: 18px;
+    gap: 16px;
     flex: 1;
   }
 
@@ -217,14 +218,14 @@
   .desktop-nav-item {
     display: flex;
     align-items: center;
-    gap: 11px;
+    gap: 10px;
     width: 100%;
-    padding: 8.5px 11px;
+    padding: 8px 10px;
     border-radius: 9px;
     background: transparent;
     border: none;
     color: #52525b;
-    font-size: 13.5px;
+    font-size: 13px;
     font-weight: 500;
     text-align: left;
     cursor: pointer;
@@ -293,7 +294,7 @@
   }
 
   .desktop-user-name {
-    font-size: 12px;
+    font-size: 11.5px;
     font-weight: 600;
     color: #27272a;
     overflow: hidden;
@@ -302,7 +303,7 @@
   }
 
   .desktop-version-label {
-    font-size: 10.5px;
+    font-size: 10px;
     color: #a1a1aa;
     padding: 0 4px;
   }
@@ -315,6 +316,7 @@
     width: auto !important;
     max-width: none !important;
     min-height: 100vh;
+    min-height: 100dvh;
     flex-direction: column;
     background: #f8f8f5;
     overflow-x: hidden;
@@ -324,7 +326,7 @@
     width: 100% !important;
     max-width: none !important;
     box-sizing: border-box;
-    padding: 28px 36px 48px;
+    padding: 24px 32px 48px;
     flex: 1;
   }
 
@@ -342,9 +344,9 @@
 }
 
 /* ==========================================================================
-   DESKTOP AMPLIO (>= 1200px)
+   DESKTOP AMPLIO (>= 1100px)
    ========================================================================== */
-@media (min-width: 1200px) {
+@media (min-width: 1100px) {
   .desktop-sidebar {
     flex: 0 0 256px;
     width: 256px;
