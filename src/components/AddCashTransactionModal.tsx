@@ -120,6 +120,10 @@ export function AddCashTransactionModal({
     }
   }, [isShared, numericAmount, splitType, participants, selfParticipates, customSplitSummary])
 
+  const selectableCategories = useMemo(() => {
+    return categories.filter((c) => !c.isHistorical && c.id !== 'atm' && c.name.toLowerCase() !== 'cajero')
+  }, [categories])
+
   if (!open) return null
 
   const isIncome = type === 'income'
@@ -211,9 +215,6 @@ export function AddCashTransactionModal({
     onClose()
   }
 
-  const selectableCategories = useMemo(() => {
-    return categories.filter((c) => !c.isHistorical && c.id !== 'atm' && c.name.toLowerCase() !== 'cajero')
-  }, [categories])
 
   return (
     <div className="modal-backdrop" onClick={onClose} role="dialog" aria-modal="true">
