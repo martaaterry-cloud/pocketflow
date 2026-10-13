@@ -223,7 +223,7 @@ export function selectGrossExpensesForPeriod(
   const currentYear = referenceDate.getFullYear()
 
   const sum = transactions
-    .filter((t) => t.type === 'expense' && (!t.isShared || t.paidBy !== 'contact'))
+    .filter((t) => t.type === 'expense' && (!t.isShared || t.paidBy !== 'contact') && t.specialType !== 'cash_withdrawal' && t.specialType !== 'transfer' && t.specialType !== 'account_adjustment')
     .filter((t) => {
       if (scope === 'all') return true
       const d = new Date(t.date)
@@ -327,6 +327,7 @@ export function selectNetPersonalExpensesForPeriod(
 
   const periodExpenses = transactions.filter((t) => {
     if (t.type !== 'expense' || (t.isShared && t.paidBy === 'contact')) return false
+    if (t.specialType === 'cash_withdrawal' || t.specialType === 'transfer' || t.specialType === 'account_adjustment') return false
     if (scope === 'all') return true
     const d = new Date(t.date)
     return d.getMonth() === currentMonth && d.getFullYear() === currentYear
