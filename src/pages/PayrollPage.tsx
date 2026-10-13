@@ -63,17 +63,15 @@ export function PayrollPage({ onBack, payroll }: { onBack: () => void; payroll: 
       <button type="button" className="payroll-back" onClick={onBack} aria-label="Volver"><AppIcon name="chevron-left" size={23}/></button>
       <h1>Nóminas</h1>
     </header>
-    <section className="payroll-section" aria-live="polite">
-      <div className="payroll-card">
-        <strong>{payroll.status === 'loading' ? 'Cargando nóminas…' : payroll.status === 'syncing' ? 'Sincronizando nóminas…' :
-          payroll.status === 'synced' ? 'Nóminas sincronizadas' : payroll.status === 'offline' ? 'Sin conexión' : 'Sincronización pendiente'}</strong>
-        <p className="payroll-muted">{payroll.pending > 0 ? `${payroll.pending} cambios guardados en este dispositivo, pendientes de sincronizar.` :
-          'Los registros se mantienen separados de tus cuentas y movimientos.'}</p>
+    {(payroll.pending > 0 || payroll.error || payroll.migrationIssues > 0 || payroll.status === 'offline' || payroll.status === 'error') && <section className="payroll-section" aria-live="polite">
+      <div className="payroll-card" style={{ padding: '12px 16px' }}>
+        <strong>{payroll.status === 'offline' ? 'Sin conexión: se sincronizará automáticamente al volver' : payroll.error ? 'No se ha podido completar la sincronización' : 'Sincronización automática pendiente'}</strong>
+        {payroll.pending > 0 && <p className="payroll-muted">{payroll.pending} cambios guardados pendientes de subir a tu cuenta.</p>}
         {payroll.error && <p role="alert" className="payroll-muted">{payroll.error}</p>}
-        {payroll.migrationIssues > 0 && <p role="alert" className="payroll-muted">Hay {payroll.migrationIssues} registros locales que requieren revisión. Su copia original se conserva y no se ha sobrescrito.</p>}
-        {payroll.ready && <button type="button" className="text-button" onClick={() => { void payroll.sync() }}>Sincronizar ahora</button>}
+        {payroll.migrationIssues > 0 && <p role="alert" className="payroll-muted">{payroll.migrationIssues} registros locales requieren revisión; la copia original se conserva.</p>}
+        {payroll.ready && <button type="button" className="text-button" onClick={() => { void payroll.sync() }}>Reintentar sincronización</button>}
       </div>
-    </section>
+    </section>}
     <section className="payroll-section">
       <h2>Simulador de salario</h2>
       <div className="payroll-card payroll-sim">
