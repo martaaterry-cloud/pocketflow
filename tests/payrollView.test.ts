@@ -13,9 +13,9 @@ const salary: PayrollEvent = { id: '11111111-1111-4111-8111-111111111111', userI
 const state = (overrides: Partial<PayrollState> = {}): PayrollState => ({ userId: salary.userId, ready: true, months: projectPayrollMonths([salary]),
   pending: 0, migrationIssues: 0, status: 'synced', error: null, save() {}, remove() {}, sync: async () => {}, ...overrides })
 
-test('Nóminas muestra el estado confirmado y no afirma que genera ingresos o movimientos', () => {
+test('Nóminas sincronizadas funciona sin tarjeta manual y no genera ingresos ni movimientos', () => {
   const html = renderToStaticMarkup(React.createElement(PayrollPage, { onBack() {}, payroll: state() }))
-  assert.ok(html.includes('Nóminas sincronizadas'))
+  assert.ok(!html.includes('Sincronizar ahora'))
   assert.ok(html.includes('835,00'))
   assert.ok(html.includes('No crea movimientos bancarios ni modifica saldos o ingresos'))
   assert.ok(!html.includes('Guardado solo en este dispositivo'))
@@ -24,7 +24,7 @@ test('Nóminas muestra el estado confirmado y no afirma que genera ingresos o mo
 test('fallo remoto muestra datos locales, pendientes y aviso; nunca anuncia sincronizado', () => {
   const html = renderToStaticMarkup(React.createElement(PayrollPage, { onBack() {}, payroll: state({ pending: 1, status: 'error', error: 'No se pudo sincronizar.' }) }))
   assert.ok(html.includes('835,00'))
-  assert.ok(html.includes('pendientes de sincronizar'))
+  assert.ok(html.includes('cambios guardados pendientes de subir a tu cuenta'))
   assert.ok(html.includes('No se pudo sincronizar'))
   assert.ok(!html.includes('Nóminas sincronizadas'))
 })
@@ -42,5 +42,5 @@ test('carga o sesión sin datos mantiene deshabilitado el guardado y no muestra 
   const html = renderToStaticMarkup(React.createElement(PayrollPage, { onBack() {}, payroll: state({ ready: false, months: [], status: 'loading' }) }))
   assert.ok(html.includes('disabled=""'))
   assert.ok(!html.includes('835,00'))
-  assert.ok(html.includes('Cargando nóminas'))
+  assert.ok(!html.includes('Reintentar sincronización'))
 })
