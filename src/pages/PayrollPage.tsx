@@ -44,40 +44,96 @@ export function PayrollPage({ onBack, userId }: { onBack: () => void; userId: st
     setEntries(prev => [...prev.filter(e => e.month !== month), record].sort((a, b) => b.month.localeCompare(a.month)))
   }
 
-  return <main className="page">
-    <header className="simple-header">
-      <button type="button" className="back-button" onClick={onBack} aria-label="Volver"><AppIcon name="chevron-left" size={22} /></button>
+  const monthLabel = (value: string) => {
+    const [year, monthNumber] = value.split('-').map(Number)
+    if (!year || !monthNumber || monthNumber < 1 || monthNumber > 12) return value
+    return new Intl.DateTimeFormat('es-ES', { month: 'long', year: 'numeric' }).format(new Date(year, monthNumber - 1, 1))
+  }
+
+  return <main className="page payroll-page">
+    <style>{`
+      .payroll-page { width: 100%; max-width: 760px; margin-inline: auto; padding-bottom: calc(110px + env(safe-area-inset-bottom, 0px)); box-sizing: border-box; }
+      .payroll-page .payroll-heading { display: flex; align-items: center; gap: 14px; padding: 12px 0 18px; }
+      .payroll-page .payroll-heading h1 { margin: 0; font-size: clamp(25px, 6vw, 32px); line-height: 1.2; }
+      .payroll-page .payroll-back { width: 42px; height: 42px; flex: 0 0 42px; display: grid; place-items: center; border: 0; border-radius: 14px; background: var(--surface-secondary, #ededed); color: var(--text-primary, #222); }
+      .payroll-page .payroll-section { margin: 0 0 24px; }
+      .payroll-page .payroll-section h2 { font-size: 19px; margin: 0 0 12px; line-height: 1.35; }
+      .payroll-page .payroll-card { background: var(--surface, #fff); border: 1px solid var(--border, #ededed); border-radius: 22px; padding: 18px; min-width: 0; box-shadow: 0 3px 18px rgba(0,0,0,.025); }
+      .payroll-page .payroll-field { display: flex; flex-direction: column; gap: 7px; min-width: 0; font-size: 13px; font-weight: 600; }
+      .payroll-page .payroll-field input { width: 100%; min-width: 0; box-sizing: border-box; border: 1px solid var(--border, #ddd); background: var(--surface, #fff); color: var(--text-primary, #222); border-radius: 12px; min-height: 46px; padding: 9px 12px; font-size: 16px; font-weight: 500; }
+      .payroll-page .payroll-grid { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 13px; }
+      .payroll-page .payroll-sim { display: grid; gap: 16px; }
+      .payroll-page .payroll-result { background: var(--surface-secondary, #f5f5f5); border-radius: 17px; padding: 17px 12px; text-align: center; }
+      .payroll-page .payroll-result .payroll-amount { display: block; font-size: clamp(27px, 7vw, 36px); font-weight: 750; line-height: 1.25; margin: 4px 0; font-variant-numeric: tabular-nums; }
+      .payroll-page .payroll-muted { color: var(--text-muted, #777); font-size: 12px; line-height: 1.5; }
+      .payroll-page .payroll-range { width: 100%; margin: 12px 0 2px; accent-color: #2563eb; }
+      .payroll-page .payroll-breakdown { display: flex; justify-content: space-between; gap: 10px; font-size: 13px; padding: 4px 0; }
+      .payroll-page .payroll-breakdown strong { white-space: nowrap; font-variant-numeric: tabular-nums; }
+      .payroll-page .payroll-save { width: 100%; min-height: 50px; display: flex; justify-content: center; align-items: center; gap: 9px; border: 0; border-radius: 13px; background: #1768d2; color: #fff; font-weight: 750; font-size: 16px; cursor: pointer; margin-top: 17px; box-shadow: 0 5px 14px rgba(23,104,210,.2); }
+      .payroll-page .payroll-save:active { transform: scale(.99); }
+      .payroll-page .payroll-entry { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 14px 0; border-bottom: 1px solid var(--border, #eee); }
+      .payroll-page .payroll-entry:last-child { border-bottom: 0; }
+      .payroll-page .payroll-entry-title { font-size: 15px; font-weight: 700; text-transform: capitalize; }
+      .payroll-page .payroll-entry-amount { font-size: 18px; font-weight: 750; white-space: nowrap; font-variant-numeric: tabular-nums; }
+      .payroll-page .payroll-entry-actions { display: flex; align-items: center; gap: 8px; }
+      .payroll-page .payroll-delete { width: 38px; height: 38px; display: grid; place-items: center; flex: 0 0 38px; border: 0; border-radius: 12px; background: var(--surface-secondary, #f0f0f0); color: var(--text-primary, #333); }
+      @media(max-width: 350px) { .payroll-page .payroll-card { padding: 14px; } .payroll-page .payroll-grid { gap: 9px; } }
+    `}</style>
+    <header className="payroll-heading">
+      <button type="button" className="payroll-back" onClick={onBack} aria-label="Volver"><AppIcon name="chevron-left" size={23}/></button>
       <h1>Nóminas</h1>
     </header>
-    <section className="section">
-      <div className="section-title"><h2>Simulador de salario</h2></div>
-      <div className="menu-card" style={{ padding: 18, display: 'grid', gap: 14 }}>
-        <label>Bruto mensual estimado (€)<input type="number" min="0" step="0.01" value={monthlyGross} onChange={e => setMonthlyGross(safe(Number(e.target.value)))} style={{ display: 'block', width: '100%', padding: 10 }} /></label>
-        <div style={{ textAlign: 'center' }}>
-          <div className="muted">IRPF seleccionado</div>
-          <strong style={{ fontSize: 32 }}>{rate.toLocaleString('es-ES')} %</strong>
-          <input aria-label="Porcentaje de IRPF" type="range" min="0" max="30" step="0.5" value={rate} onChange={e => setRate(Number(e.target.value))} style={{ display: 'block', width: '100%' }} />
-          <strong style={{ fontSize: 26 }}>{format(monthlyNet)}</strong>
-          <div className="muted">Neto orientativo · cotización estimada del 6,5 %</div>
+    <section className="payroll-section">
+      <h2>Simulador de salario</h2>
+      <div className="payroll-card payroll-sim">
+        <label className="payroll-field">Bruto mensual estimado (€)
+          <input type="number" min="0" step="0.01" inputMode="decimal" value={monthlyGross} onChange={e => setMonthlyGross(safe(Number(e.target.value)))}/>
+        </label>
+        <div className="payroll-result">
+          <div className="payroll-muted">Neto mensual orientativo</div>
+          <strong className="payroll-amount">{format(monthlyNet)}</strong>
+          <div className="payroll-muted">IRPF seleccionado: <strong>{rate.toLocaleString('es-ES')} %</strong></div>
+          <input className="payroll-range" aria-label="Porcentaje de IRPF" type="range" min="0" max="30" step="0.5" value={rate} onChange={e => setRate(Number(e.target.value))}/>
         </div>
-        <div>Seguridad Social estimada: {format(monthlySS)}</div>
-        <div>Retención IRPF: {format(monthlyGross * rate / 100)}</div>
-        <small className="muted">Es una simulación, no una predicción fiscal ni un ingreso real.</small>
+        <div>
+          <div className="payroll-breakdown"><span>Seguridad Social estimada (6,5 %)</span><strong>−{format(monthlySS)}</strong></div>
+          <div className="payroll-breakdown"><span>Retención IRPF</span><strong>−{format(monthlyGross * rate / 100)}</strong></div>
+        </div>
+        <p className="payroll-muted" style={{ margin: 0 }}>Estimación informativa, no una predicción fiscal ni un ingreso real.</p>
       </div>
     </section>
-    <section className="section">
-      <div className="section-title"><h2>Registrar nómina informativa</h2></div>
-      <div className="menu-card" style={{ padding: 18, display: 'grid', gap: 12 }}>
-        <p className="muted">Los datos se guardan solo en este dispositivo. No se sincronizan con la nube ni generan ingresos o alteran balances.</p>
-        <label>Mes de la nómina<input type="month" value={month} onChange={e => setMonth(e.target.value)} style={{ display: 'block', width: '100%', padding: 10 }} /></label>
-        {([{ label: 'Bruto (€)', value: gross, set: setGross }, { label: 'Seguridad Social (€)', value: socialSecurity, set: setSocialSecurity }, { label: 'IRPF (%)', value: irpf, set: setIrpf }, { label: 'Neto (€)', value: net, set: setNet }] as const).map(field => <label key={field.label}>{field.label}<input type="number" min="0" step="0.01" value={field.value} onChange={e => field.set(e.target.value)} style={{ display: 'block', width: '100%', padding: 10 }} /></label>)}
-        <button type="button" className="primary-button" onClick={addEntry}>Guardar nómina</button>
+    <section className="payroll-section">
+      <h2>Registrar nómina</h2>
+      <div className="payroll-card">
+        <label className="payroll-field" style={{ marginBottom: 14 }}>Mes de la nómina
+          <input type="month" value={month} onChange={e => setMonth(e.target.value)}/>
+        </label>
+        <div className="payroll-grid">
+          {([{ label: 'Bruto (€)', value: gross, set: setGross }, { label: 'Seguridad Social (€)', value: socialSecurity, set: setSocialSecurity }, { label: 'IRPF (%)', value: irpf, set: setIrpf }, { label: 'Neto (€)', value: net, set: setNet }] as const).map(field =>
+            <label className="payroll-field" key={field.label}>{field.label}
+              <input type="number" min="0" step="0.01" inputMode="decimal" value={field.value} onChange={e => field.set(e.target.value)}/>
+            </label>
+          )}
+        </div>
+        <button type="button" className="payroll-save" onClick={addEntry}><AppIcon name="check" size={20}/>Guardar nómina</button>
+        <p className="payroll-muted" style={{ margin: '12px 0 0', textAlign: 'center' }}>Guardado solo en este dispositivo. No modifica tus saldos ni se sincroniza con la nube.</p>
       </div>
     </section>
-    <section className="section">
-      <div className="section-title"><h2>Historial</h2></div>
-      <div className="transaction-list">
-        {entries.length === 0 ? <p className="muted" style={{ padding: 16 }}>Aún no has guardado nóminas.</p> : entries.map(e => <div className="mini-row" key={e.month}><div><strong>{e.month}</strong><span>Bruto {format(e.gross)} · IRPF {e.irpf.toLocaleString('es-ES')} %</span></div><div style={{ textAlign: 'right' }}><strong>{format(e.net)}</strong><button type="button" onClick={() => { if (window.confirm('¿Eliminar esta nómina informativa?')) setEntries(prev => prev.filter(p => p.month !== e.month)) }} aria-label={'Eliminar nómina ' + e.month}><AppIcon name="trash-2" size={16}/></button></div></div>)}
+    <section className="payroll-section">
+      <h2>Historial <span className="payroll-muted">({entries.length})</span></h2>
+      <div className="payroll-card">
+        {entries.length === 0 ? <p className="payroll-muted" style={{ margin: 0 }}>Aún no has guardado nóminas.</p> : entries.map(e =>
+          <div className="payroll-entry" key={e.month}>
+            <div style={{ minWidth: 0 }}>
+              <div className="payroll-entry-title">{monthLabel(e.month)}</div>
+              <div className="payroll-muted">Bruto {format(e.gross)} · IRPF {e.irpf.toLocaleString('es-ES')} %</div>
+            </div>
+            <div className="payroll-entry-actions">
+              <span className="payroll-entry-amount">{format(e.net)}</span>
+              <button type="button" className="payroll-delete" onClick={() => { if (window.confirm('¿Eliminar esta nómina informativa?')) setEntries(prev => prev.filter(p => p.month !== e.month)) }} aria-label={'Eliminar nómina ' + e.month}><AppIcon name="trash-2" size={17}/></button>
+            </div>
+          </div>
+        )}
       </div>
     </section>
   </main>
