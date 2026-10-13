@@ -61,6 +61,7 @@ export function PayrollPage({ onBack, userId }: { onBack: () => void; userId: st
       .payroll-page .payroll-card { background: var(--surface, #fff); border: 1px solid var(--border, #ededed); border-radius: 22px; padding: 18px; min-width: 0; box-shadow: 0 3px 18px rgba(0,0,0,.025); }
       .payroll-page .payroll-field { display: flex; flex-direction: column; gap: 7px; min-width: 0; font-size: 13px; font-weight: 600; }
       .payroll-page .payroll-field input { width: 100%; min-width: 0; box-sizing: border-box; border: 1px solid var(--border, #ddd); background: var(--surface, #fff); color: var(--text-primary, #222); border-radius: 12px; min-height: 46px; padding: 9px 12px; font-size: 16px; font-weight: 500; }
+      .payroll-page .payroll-field select { display: block; width: 100%; min-width: 0; max-width: 100%; box-sizing: border-box; border: 1px solid var(--border, #ddd); background: var(--surface, #fff); color: var(--text-primary, #222); border-radius: 12px; min-height: 46px; padding: 9px 8px; font-size: 16px; }
       .payroll-page .payroll-grid { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 13px; }
       .payroll-page .payroll-sim { display: grid; gap: 16px; }
       .payroll-page .payroll-result { background: var(--surface-secondary, #f5f5f5); border-radius: 17px; padding: 17px 12px; text-align: center; }
@@ -105,9 +106,22 @@ export function PayrollPage({ onBack, userId }: { onBack: () => void; userId: st
     <section className="payroll-section">
       <h2>Registrar nómina</h2>
       <div className="payroll-card">
-        <label className="payroll-field" style={{ marginBottom: 14 }}>Mes de la nómina
-          <input type="month" value={month} onChange={e => setMonth(e.target.value)}/>
-        </label>
+        <div className="payroll-grid" style={{ marginBottom: 14 }}>
+          <label className="payroll-field">Mes
+            <select aria-label="Mes de la nómina" value={month.split('-')[1] ?? '09'} onChange={e => setMonth((month.split('-')[0] || '2026') + '-' + e.target.value)}>
+              {Array.from({ length: 12 }, (_, i) => {
+                const value = String(i + 1).padStart(2, '0')
+                const label = new Intl.DateTimeFormat('es-ES', { month: 'long' }).format(new Date(2026, i, 1))
+                return <option key={value} value={value}>{label.charAt(0).toUpperCase() + label.slice(1)}</option>
+              })}
+            </select>
+          </label>
+          <label className="payroll-field">Año
+            <select aria-label="Año de la nómina" value={month.split('-')[0] ?? '2026'} onChange={e => setMonth(e.target.value + '-' + (month.split('-')[1] || '09'))}>
+              {Array.from({ length: 11 }, (_, i) => 2024 + i).map(year => <option key={year} value={year}>{year}</option>)}
+            </select>
+          </label>
+        </div>
         <div className="payroll-grid">
           {([{ label: 'Bruto (€)', value: gross, set: setGross }, { label: 'Seguridad Social (€)', value: socialSecurity, set: setSocialSecurity }, { label: 'IRPF (%)', value: irpf, set: setIrpf }, { label: 'Neto (€)', value: net, set: setNet }] as const).map(field =>
             <label className="payroll-field" key={field.label}>{field.label}
