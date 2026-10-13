@@ -67,6 +67,13 @@ export function HomePage({
   const [isAdjustCashModalOpen, setIsAdjustCashModalOpen] = useState(false)
   const [editingCashTx, setEditingCashTx] = useState<CashTransaction | null>(null)
 
+  // Los gráficos ya excluyen transferencias internas. Reutilizamos sus totales
+  // en el desglose para evitar mezclar salidas bancarias con consumo real.
+  const displayGrossExpenses = finance.totals.grossExpensesBreakdown?.total ?? finance.totals.grossMonthExpenses
+  const displayNetExpenses = Math.round(
+    (finance.totals.netCategoryExpenses ?? []).reduce((sum, item) => sum + item.amount, 0) * 100
+  ) / 100
+
   const displayName = finance.profile?.displayName?.trim()
   const greeting = displayName ? `Hola, ${displayName}` : 'Hola'
 
@@ -436,7 +443,7 @@ export function HomePage({
                           </span>
                           <small>Total de compras y pagos (toca para ver desglose)</small>
                         </div>
-                        <strong className="breakdown-value">{money(finance.totals.grossMonthExpenses)}</strong>
+                        <strong className="breakdown-value">{money(displayGrossExpenses)}</strong>
                       </div>
 
                       {finance.totals.linkedReimbursementsMonth > 0 && (
@@ -457,7 +464,7 @@ export function HomePage({
                           <small>Lo que realmente te ha costado el mes</small>
                         </div>
                         <strong className="breakdown-value">
-                          {money(finance.totals.netMonthExpenses)}
+                          {money(displayNetExpenses)}
                         </strong>
                       </div>
                     </>
