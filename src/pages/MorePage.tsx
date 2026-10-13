@@ -18,7 +18,7 @@ import { useEdgeSwipeBack } from '../hooks/useEdgeSwipeBack'
 import { getAppVersionString, getAppBuildString } from '../version'
 import { scrollToTop } from '../utils/scroll'
 
-import type { Transaction } from '../models/finance'
+import type { Transaction, CashTransaction } from '../models/finance'
 
 import type { PwaUpdateCheckResult } from '../utils/pwaUpdate'
 
@@ -57,7 +57,7 @@ export function MorePage({
   onNavigateToSavings?: () => void
   onRecordReimbursement?: (shareId: string) => void
   onRecordPayablePayment?: (shareId: string) => void
-  onSelectTransaction?: (tx: Transaction) => void
+  onSelectTransaction?: (tx: Transaction | CashTransaction) => void
   onCheckForUpdate?: () => Promise<PwaUpdateCheckResult>
   onToast?: (message: string, type?: 'success' | 'error') => void
   onSignOut?: () => void

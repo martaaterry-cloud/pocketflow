@@ -1,6 +1,7 @@
+import { inEconomicMonth } from './economicClassification'
 import type { Budget, CashTransaction, Category, ExpenseShare, Transaction } from '../models/finance'
 import { normalizeCategoryAlias } from './categoryNormalization'
-import { selectLinkedReimbursementsForExpense } from './sharedExpenseSelectors'
+import { selectEconomicExpenses } from './sharedExpenseSelectors'
 
 export interface BudgetStatusItem {
   id: string
@@ -36,29 +37,11 @@ export function spentByCategoryThisMonth(
   cashTransactions: CashTransaction[] = [],
   expenseShares: ExpenseShare[] = []
 ): number {
-  const currentMonth = referenceDate.getMonth()
-  const currentYear = referenceDate.getFullYear()
-  const canonicalTargetId = normalizeCategoryAlias(categoryId)
-
-  const expenses = transactions
-    .filter(
-      (t) =>
-        t.type === 'expense' &&
-        (!t.isShared || t.paidBy !== 'contact') &&
-        normalizeCategoryAlias(t.categoryId || 'other') === canonicalTargetId
-    )
-    .filter((t) => {
-      const d = new Date(t.date)
-      return d.getMonth() === currentMonth && d.getFullYear() === currentYear
-    })
-
-  let netSum = 0
-  expenses.forEach((exp) => {
-    const linked = selectLinkedReimbursementsForExpense(exp.id, transactions, cashTransactions, expenseShares)
-    netSum += Math.max(0, Math.round((exp.amount - linked) * 100) / 100)
-  })
-
-  return Math.round(netSum * 100) / 100
+  const id = normalizeCategoryAlias(categoryId)
+  const expenses = selectEconomicExpenses(transactions, cashTransactions, expenseShares, 'bank')
+    .filter((e) => inEconomicMonth(e.movement.transaction.date, referenceDate) &&
+      normalizeCategoryAlias(e.movement.transaction.categoryId || 'other') === id)
+  return Math.round(expenses.reduce((sum, e) => sum + e.net, 0) * 100) / 100
 }
 
 /**

@@ -1,3 +1,4 @@
+import { inEconomicMonth } from './economicClassification'
 import type {
   Account,
   Budget,
@@ -13,7 +14,7 @@ import type {
   Transaction,
   VariableExpenseEstimate,
 } from '../models/finance'
-import { selectLinkedReimbursementsForExpense, selectRealIncome } from './sharedExpenseSelectors'
+import { selectLinkedReimbursementsForExpense, selectRealIncome, selectEconomicExpenses } from './sharedExpenseSelectors'
 import { calculateMonthlyEstimate } from './variableEstimates'
 import { selectRecurringMonthlyUserEconomicShare, selectRecurringMonthlyUserOutflow } from './financeSelectors'
 
@@ -216,28 +217,13 @@ export function selectExpectedCommittedExpenses(recurring: RecurringPayment[] = 
  * menos los reembolsos vinculados aplicables.
  */
 export function selectActualFixedMonthlyExpenses(
-  transactions: Transaction[],
-  referenceDate: Date = new Date(),
-  cashTransactions: CashTransaction[] = [],
-  expenseShares: ExpenseShare[] = []
+  transactions: Transaction[], referenceDate: Date = new Date(), cashTransactions: CashTransaction[] = [], expenseShares: ExpenseShare[] = []
 ): number {
   if (!Array.isArray(transactions)) return 0
-  const year = referenceDate.getFullYear()
-  const month = referenceDate.getMonth()
-
-  const fixedTxs = transactions.filter((t) => {
-    if (t.type !== 'expense' || (t.isShared && t.paidBy === 'contact') || t.expenseNature !== 'fixed') return false
-    const d = new Date(t.date)
-    return d.getFullYear() === year && d.getMonth() === month
-  })
-
-  let sum = 0
-  fixedTxs.forEach((t) => {
-    const linked = selectLinkedReimbursementsForExpense(t.id, transactions, cashTransactions, expenseShares)
-    sum += Math.max(0, t.amount - linked)
-  })
-
-  return Math.round(sum * 100) / 100
+  const expenses = selectEconomicExpenses(transactions, cashTransactions, expenseShares, 'bank')
+    .filter((e) => inEconomicMonth(e.movement.transaction.date, referenceDate) &&
+      ((e.movement.transaction as Transaction).expenseNature || 'variable') === 'fixed')
+  return Math.round(expenses.reduce((sum, e) => sum + e.net, 0) * 100) / 100
 }
 
 /**
@@ -269,29 +255,13 @@ export function selectExpectedVariableMonthlyExpenses(
  * o sin clasificar (`!t.expenseNature`), restando reembolsos vinculados.
  */
 export function selectActualVariableMonthlyExpenses(
-  transactions: Transaction[],
-  referenceDate: Date = new Date(),
-  cashTransactions: CashTransaction[] = [],
-  expenseShares: ExpenseShare[] = []
+  transactions: Transaction[], referenceDate: Date = new Date(), cashTransactions: CashTransaction[] = [], expenseShares: ExpenseShare[] = []
 ): number {
   if (!Array.isArray(transactions)) return 0
-  const year = referenceDate.getFullYear()
-  const month = referenceDate.getMonth()
-
-  const varTxs = transactions.filter((t) => {
-    if (t.type !== 'expense' || (t.isShared && t.paidBy === 'contact')) return false
-    if (t.expenseNature === 'fixed' || t.expenseNature === 'extraordinary') return false
-    const d = new Date(t.date)
-    return d.getFullYear() === year && d.getMonth() === month
-  })
-
-  let sum = 0
-  varTxs.forEach((t) => {
-    const linked = selectLinkedReimbursementsForExpense(t.id, transactions, cashTransactions, expenseShares)
-    sum += Math.max(0, t.amount - linked)
-  })
-
-  return Math.round(sum * 100) / 100
+  const expenses = selectEconomicExpenses(transactions, cashTransactions, expenseShares, 'bank')
+    .filter((e) => inEconomicMonth(e.movement.transaction.date, referenceDate) &&
+      ((e.movement.transaction as Transaction).expenseNature || 'variable') === 'variable')
+  return Math.round(expenses.reduce((sum, e) => sum + e.net, 0) * 100) / 100
 }
 
 /**
@@ -299,28 +269,13 @@ export function selectActualVariableMonthlyExpenses(
  * restando reembolsos vinculados.
  */
 export function selectActualExtraordinaryMonthlyExpenses(
-  transactions: Transaction[],
-  referenceDate: Date = new Date(),
-  cashTransactions: CashTransaction[] = [],
-  expenseShares: ExpenseShare[] = []
+  transactions: Transaction[], referenceDate: Date = new Date(), cashTransactions: CashTransaction[] = [], expenseShares: ExpenseShare[] = []
 ): number {
   if (!Array.isArray(transactions)) return 0
-  const year = referenceDate.getFullYear()
-  const month = referenceDate.getMonth()
-
-  const extraTxs = transactions.filter((t) => {
-    if (t.type !== 'expense' || (t.isShared && t.paidBy === 'contact') || t.expenseNature !== 'extraordinary') return false
-    const d = new Date(t.date)
-    return d.getFullYear() === year && d.getMonth() === month
-  })
-
-  let sum = 0
-  extraTxs.forEach((t) => {
-    const linked = selectLinkedReimbursementsForExpense(t.id, transactions, cashTransactions, expenseShares)
-    sum += Math.max(0, t.amount - linked)
-  })
-
-  return Math.round(sum * 100) / 100
+  const expenses = selectEconomicExpenses(transactions, cashTransactions, expenseShares, 'bank')
+    .filter((e) => inEconomicMonth(e.movement.transaction.date, referenceDate) &&
+      ((e.movement.transaction as Transaction).expenseNature || 'variable') === 'extraordinary')
+  return Math.round(expenses.reduce((sum, e) => sum + e.net, 0) * 100) / 100
 }
 
 /**
@@ -1097,22 +1052,14 @@ export function selectMonthlySpendingControl(
   let recurringPaidNet = 0
   let essentialVariablePaid = 0
 
-  const isSameMonth = (dStr: string): boolean => {
-    if (!dStr) return false
-    const d = new Date(dStr)
-    return !isNaN(d.getTime()) && d.getFullYear() === year && d.getMonth() === month
-  }
+  const monthExpenses = selectEconomicExpenses(transactions, cashTransactions, expenseShares)
+    .filter((e) => inEconomicMonth(e.movement.transaction.date, refDate))
 
   // Banco
   if (Array.isArray(transactions)) {
-    for (const t of transactions) {
-      if (t.type !== 'expense') continue
-      if (!isSameMonth(t.date)) continue
-      // Si fue pagado por un contacto, no es gasto directo del usuario
-      if (t.paidBy === 'contact') continue
-
-      const linked = selectLinkedReimbursementsForExpense(t.id, transactions, cashTransactions, expenseShares)
-      const net = Math.max(0, t.amount - linked)
+    for (const e of monthExpenses.filter((e) => e.movement.source === 'bank')) {
+      const t = e.movement.transaction as Transaction
+      const net = e.net
 
       const isFixed = t.expenseNature === 'fixed'
       const isEssentialCat = Boolean(t.categoryId && essentialSet.has(t.categoryId))
@@ -1135,13 +1082,9 @@ export function selectMonthlySpendingControl(
 
   // Efectivo
   if (Array.isArray(cashTransactions)) {
-    for (const c of cashTransactions) {
-      if (c.type !== 'expense') continue
-      if (!isSameMonth(c.date)) continue
-      if (c.paidBy === 'contact') continue
-
-      const linked = selectLinkedReimbursementsForExpense(c.id, transactions, cashTransactions, expenseShares)
-      const net = Math.max(0, c.amount - linked)
+    for (const e of monthExpenses.filter((e) => e.movement.source === 'cash')) {
+      const c = e.movement.transaction as CashTransaction
+      const net = e.net
 
       const isEssentialCat = Boolean(c.categoryId && essentialSet.has(c.categoryId))
       if (isEssentialCat) {

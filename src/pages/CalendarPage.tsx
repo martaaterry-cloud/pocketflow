@@ -1,3 +1,4 @@
+import { economicDate } from '../utils/economicClassification'
 import { useMemo, useState } from 'react'
 import type { CashTransaction, Transaction } from '../models/finance'
 import type { ReturnTypeFinance } from '../types'
@@ -8,7 +9,7 @@ import {
   selectDayNetFinanceStats,
 } from '../utils/sharedExpenseSelectors'
 import { selectTotalEconomicConsumptionForPeriod } from '../utils/cashSelectors'
-import { toUnifiedMovements, type UnifiedMovement } from '../utils/unifiedMovementSelectors'
+import { toUnifiedMovements, collapseInternalTransfers, type UnifiedMovement } from '../utils/unifiedMovementSelectors'
 
 const weekdays = ['L', 'M', 'X', 'J', 'V', 'S', 'D']
 
@@ -65,14 +66,14 @@ export function CalendarPage({
   }, [finance.transactions, finance.cashTransactions, finance.expenseShares])
 
   const selectedDayMovements = useMemo(() => {
-    return allUnifiedMovements.filter((m) => {
-      const d = new Date(m.date)
+    return collapseInternalTransfers(allUnifiedMovements.filter((m) => {
+      const d = economicDate(m.date)
       return (
         d.getFullYear() === year &&
         d.getMonth() === month &&
         d.getDate() === selectedDay
       )
-    })
+    }))
   }, [allUnifiedMovements, year, month, selectedDay])
 
   // 3. Consumo económico total del mes (Banco + Efectivo sin doble conteo de cajero)
@@ -199,9 +200,9 @@ export function CalendarPage({
         {selectedDayMovements.length ? (
           <div className="transaction-list">
             {selectedDayMovements.map((m) => {
-              const isIncome = m.type === 'income'
+              const isIncome = m.economicKind === 'income' || m.economicKind === 'reimbursement'
               const isReimbursement = m.isReimbursement
-              const isTransfer = m.type === 'transfer' || m.isCashWithdrawal || m.isLinkedCashWithdrawal
+              const isTransfer = m.economicKind === 'transfer'
               const isAdjustment = m.isAdjustment
 
               return (

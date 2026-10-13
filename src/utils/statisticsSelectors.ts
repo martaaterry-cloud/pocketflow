@@ -1,6 +1,6 @@
+import { classifyEconomicMovements, economicDate, inEconomicRange, roundMoney } from './economicClassification'
 import type { CashTransaction, Category, ExpenseShare, Transaction } from '../models/finance'
-import { normalizeCategoryAlias } from './categoryNormalization'
-import { selectLinkedReimbursementsForExpense } from './sharedExpenseSelectors'
+import { selectEconomicExpenses, selectEconomicSummaryForRange, selectEconomicCategoryExpenses } from './sharedExpenseSelectors'
 
 export type StatsPeriod = 'day' | 'week' | 'month' | 'year'
 
@@ -132,13 +132,7 @@ export function getPreviousLocalDateRange(period: StatsPeriod, referenceDate: Da
  * Filtra transacciones comprendidas dentro de un DateRange exacto en tiempo local.
  */
 export function filterTransactionsByRange(transactions: Transaction[], range: DateRange): Transaction[] {
-  const startMs = range.start.getTime()
-  const endMs = range.end.getTime()
-
-  return transactions.filter((t) => {
-    const txTime = new Date(t.date).getTime()
-    return txTime >= startMs && txTime <= endMs
-  })
+  return transactions.filter((t) => inEconomicRange(t.date, range))
 }
 
 /**
@@ -147,161 +141,41 @@ export function filterTransactionsByRange(transactions: Transaction[], range: Da
  * netExpense(t) = max(0, t.amount - linkedReimbursements(t))
  */
 export function calculatePeriodStatistics(
-  transactions: Transaction[],
-  categories: Category[],
-  period: StatsPeriod,
-  referenceDate: Date = new Date(),
-  cashTransactions: CashTransaction[] = [],
-  expenseShares: ExpenseShare[] = []
+  transactions: Transaction[], categories: Category[], period: StatsPeriod,
+  referenceDate: Date = new Date(), cashTransactions: CashTransaction[] = [], expenseShares: ExpenseShare[] = []
 ): PeriodStatistics {
   const dateRange = getLocalDateRange(period, referenceDate)
-  const periodTxs = filterTransactionsByRange(transactions, dateRange)
+  const summary = selectEconomicSummaryForRange(transactions, cashTransactions, dateRange, expenseShares)
+  const expenses = selectEconomicExpenses(transactions, cashTransactions, expenseShares, 'total', (date) => inEconomicRange(date, dateRange))
+  const categoryBreakdown = selectEconomicCategoryExpenses(transactions, cashTransactions, categories,
+    referenceDate, 'all', expenseShares, 'total', 'net', dateRange).map((c) => ({ ...c, categoryId: c.id }))
+  const natureBreakdown = expenseNatureSummary(expenses)
+  const movements = classifyEconomicMovements(transactions, cashTransactions)
+    .filter((m) => inEconomicRange(m.transaction.date, dateRange))
+  const cashWithdrawals = roundMoney(movements.filter((m) => m.source === 'bank' &&
+    (m.transaction as Transaction).specialType === 'cash_withdrawal').reduce((sum, m) => sum + m.transaction.amount, 0))
+  const savingsTransferred = roundMoney(movements.filter((m) => m.kind === 'transfer' && m.source === 'bank' &&
+    (m.transaction as Transaction).toAccountId === 'savings').reduce((sum, m) => sum + m.transaction.amount, 0))
+  const top = categoryBreakdown[0]
+  // Un único universo de importes netos para todas las series.
+  const timeSeries = generateTimeSeries(expenses.map((e) => ({ ...e.movement.transaction, amount: e.net })), period, dateRange)
+  const transferIds = new Set(movements.filter((m) => m.transferId).map((m) => m.transferId))
+  return { period, dateRange, income: roundMoney(summary.realIncome + summary.reimbursements),
+    realIncome: summary.realIncome, reimbursements: summary.reimbursements,
+    expenses: summary.grossExpenses, netExpenses: summary.netExpenses, netFlow: summary.netBalance,
+    cashWithdrawals, savingsTransferred, categoryBreakdown, natureBreakdown, timeSeries,
+    transactionCount: movements.filter((m) => !m.transferId).length + transferIds.size,
+    averageDailySpend: dateRange.daysCount > 0 ? roundMoney(summary.netExpenses / dateRange.daysCount) : 0,
+    topCategory: top ? { categoryId: top.categoryId, name: top.name, icon: top.icon, amount: top.amount } : null }
+}
 
-  let income = 0
-  let realIncome = 0
-  let reimbursements = 0
-  let expenses = 0
-  let netExpensesSum = 0
-  let savingsTransferred = 0
-  let cashWithdrawals = 0
-
-  let fixedNetExpenses = 0
-  let variableNetExpenses = 0
-  let extraordinaryNetExpenses = 0
-
-  const categoryNetExpensesMap = new Map<string, number>()
-
-  periodTxs.forEach((t) => {
-    if (t.type === 'income') {
-      income += t.amount
-      if (t.incomeKind === 'reimbursement') {
-        reimbursements += t.amount
-      } else {
-        realIncome += t.amount
-      }
-    } else if (t.type === 'expense') {
-      if (t.isShared && t.paidBy === 'contact') {
-        return
-      }
-      expenses += t.amount
-
-      // Cálculo canónico del gasto neto individual
-      const linked = selectLinkedReimbursementsForExpense(t.id, transactions, cashTransactions, expenseShares)
-      const net = Math.max(0, Math.round((t.amount - linked) * 100) / 100)
-      netExpensesSum += net
-
-      const catId = normalizeCategoryAlias(t.categoryId || 'other')
-      categoryNetExpensesMap.set(catId, (categoryNetExpensesMap.get(catId) ?? 0) + net)
-
-      if (t.specialType === 'cash_withdrawal') {
-        cashWithdrawals += t.amount
-      }
-
-      const nature = t.expenseNature || 'variable'
-      if (nature === 'fixed') {
-        fixedNetExpenses += net
-      } else if (nature === 'extraordinary') {
-        extraordinaryNetExpenses += net
-      } else {
-        variableNetExpenses += net
-      }
-    } else if (t.type === 'transfer') {
-      // Transferencias hacia ahorro
-      if (t.toAccountId === 'savings' || t.description.toLowerCase().includes('ahorro')) {
-        savingsTransferred += t.amount
-      }
-    }
-  })
-
-  income = Math.round(income * 100) / 100
-  realIncome = Math.round(realIncome * 100) / 100
-  reimbursements = Math.round(reimbursements * 100) / 100
-  expenses = Math.round(expenses * 100) / 100
-  const netExpenses = Math.round(netExpensesSum * 100) / 100
-  cashWithdrawals = Math.round(cashWithdrawals * 100) / 100
-
-  fixedNetExpenses = Math.round(fixedNetExpenses * 100) / 100
-  variableNetExpenses = Math.round(variableNetExpenses * 100) / 100
-  extraordinaryNetExpenses = Math.round(extraordinaryNetExpenses * 100) / 100
-
-  savingsTransferred = Math.round(savingsTransferred * 100) / 100
-  // Balance neto real = Ingresos reales - Gasto neto
-  const netFlow = Math.round((realIncome - netExpenses) * 100) / 100
-
-  const natureBreakdown: ExpenseNatureBreakdown = {
-    fixed: fixedNetExpenses,
-    variable: variableNetExpenses,
-    extraordinary: extraordinaryNetExpenses,
-    total: netExpenses,
-    fixedPct: netExpenses > 0 ? Math.round((fixedNetExpenses / netExpenses) * 100) : 0,
-    variablePct: netExpenses > 0 ? Math.round((variableNetExpenses / netExpenses) * 100) : 0,
-    extraordinaryPct: netExpenses > 0 ? Math.round((extraordinaryNetExpenses / netExpenses) * 100) : 0,
-  }
-
-  // Desglose por categoría basado en gasto neto
-  const categoryBreakdown: CategoryExpenseBreakdown[] = []
-  categoryNetExpensesMap.forEach((amount, categoryId) => {
-    const canonicalId = normalizeCategoryAlias(categoryId)
-    const category = categories.find((c) => normalizeCategoryAlias(c.id) === canonicalId)
-    const roundedAmount = Math.round(amount * 100) / 100
-    if (roundedAmount > 0) {
-      const percentage = netExpenses > 0 ? Math.round((roundedAmount / netExpenses) * 100) : 0
-      categoryBreakdown.push({
-        categoryId: canonicalId,
-        name: canonicalId === 'other' ? 'Otros' : category?.name ?? 'Otros',
-        color: category?.color ?? '#B9B9B9',
-        icon: category?.iconKey || category?.icon || 'ellipsis',
-        amount: roundedAmount,
-        percentage,
-      })
-    }
-  })
-  categoryBreakdown.sort((a, b) => b.amount - a.amount)
-
-  // Top categoría (por gasto neto)
-  let topCategory: PeriodStatistics['topCategory'] = null
-  if (categoryBreakdown.length > 0) {
-    const top = categoryBreakdown[0]
-    topCategory = {
-      categoryId: top.categoryId,
-      name: top.name,
-      icon: top.icon,
-      amount: top.amount,
-    }
-  }
-
-  // Gasto medio diario (basado en gasto neto)
-  const averageDailySpend =
-    dateRange.daysCount > 0 ? Math.round((netExpenses / dateRange.daysCount) * 100) / 100 : 0
-
-  // Serie temporal agregada con importes netos
-  const timeSeries = generateTimeSeries(
-    periodTxs,
-    transactions,
-    period,
-    dateRange,
-    cashTransactions,
-    expenseShares
-  )
-
-  return {
-    period,
-    dateRange,
-    income,
-    realIncome,
-    reimbursements,
-    expenses,
-    netExpenses,
-    savingsTransferred,
-    cashWithdrawals,
-    netFlow,
-    transactionCount: periodTxs.length,
-    averageDailySpend,
-    topCategory,
-    categoryBreakdown,
-    timeSeries,
-    natureBreakdown,
-  }
+function expenseNatureSummary(expenses: ReturnType<typeof selectEconomicExpenses>): ExpenseNatureBreakdown {
+  const sum = (nature: string) => roundMoney(expenses.filter((e) =>
+    ((e.movement.transaction as Transaction).expenseNature || 'variable') === nature).reduce((acc, e) => acc + e.net, 0))
+  const fixed = sum('fixed'), variable = sum('variable'), extraordinary = sum('extraordinary')
+  const total = roundMoney(fixed + variable + extraordinary)
+  const pct = (value: number) => total > 0 ? Math.round(value / total * 100) : 0
+  return { fixed, variable, extraordinary, total, fixedPct: pct(fixed), variablePct: pct(variable), extraordinaryPct: pct(extraordinary) }
 }
 
 /**
@@ -309,52 +183,11 @@ export function calculatePeriodStatistics(
  * para un periodo dado, calculando el gasto neto personal de cada partida.
  */
 export function selectExpensesByNature(
-  transactions: Transaction[],
-  period: StatsPeriod = 'month',
-  referenceDate: Date = new Date(),
-  cashTransactions: CashTransaction[] = [],
-  expenseShares: ExpenseShare[] = []
+  transactions: Transaction[], period: StatsPeriod = 'month', referenceDate: Date = new Date(),
+  cashTransactions: CashTransaction[] = [], expenseShares: ExpenseShare[] = []
 ): ExpenseNatureBreakdown {
-  const dateRange = getLocalDateRange(period, referenceDate)
-  const periodTxs = filterTransactionsByRange(transactions, dateRange)
-
-  let fixed = 0
-  let variable = 0
-  let extraordinary = 0
-  let totalNet = 0
-
-  periodTxs.forEach((t) => {
-    if (t.type === 'expense') {
-      if (t.isShared && t.paidBy === 'contact') return
-      const linked = selectLinkedReimbursementsForExpense(t.id, transactions, cashTransactions, expenseShares)
-      const net = Math.max(0, Math.round((t.amount - linked) * 100) / 100)
-      totalNet += net
-
-      const nature = t.expenseNature || 'variable'
-      if (nature === 'fixed') {
-        fixed += net
-      } else if (nature === 'extraordinary') {
-        extraordinary += net
-      } else {
-        variable += net
-      }
-    }
-  })
-
-  totalNet = Math.round(totalNet * 100) / 100
-  fixed = Math.round(fixed * 100) / 100
-  variable = Math.round(variable * 100) / 100
-  extraordinary = Math.round(extraordinary * 100) / 100
-
-  return {
-    fixed,
-    variable,
-    extraordinary,
-    total: totalNet,
-    fixedPct: totalNet > 0 ? Math.round((fixed / totalNet) * 100) : 0,
-    variablePct: totalNet > 0 ? Math.round((variable / totalNet) * 100) : 0,
-    extraordinaryPct: totalNet > 0 ? Math.round((extraordinary / totalNet) * 100) : 0,
-  }
+  const range = getLocalDateRange(period, referenceDate)
+  return expenseNatureSummary(selectEconomicExpenses(transactions, cashTransactions, expenseShares, 'total', (date) => inEconomicRange(date, range)))
 }
 
 /**
@@ -362,24 +195,10 @@ export function selectExpensesByNature(
  * calculando el gasto neto personal tras reembolsos vinculados.
  */
 function generateTimeSeries(
-  periodTxs: Transaction[],
-  allTransactions: Transaction[],
-  period: StatsPeriod,
-  range: DateRange,
-  cashTransactions: CashTransaction[] = [],
-  expenseShares: ExpenseShare[] = []
+  periodTxs: (Transaction | CashTransaction)[], period: StatsPeriod, range: DateRange
 ): TimeSeriesPoint[] {
   const points: TimeSeriesPoint[] = []
-
-  const calcNetForTxs = (txs: Transaction[]) => {
-    return txs
-      .filter((t) => t.type === 'expense' && (!t.isShared || t.paidBy !== 'contact'))
-      .reduce((sum, t) => {
-        const linked = selectLinkedReimbursementsForExpense(t.id, allTransactions, cashTransactions, expenseShares)
-        const net = Math.max(0, Math.round((t.amount - linked) * 100) / 100)
-        return sum + net
-      }, 0)
-  }
+  const calcNetForTxs = (txs: (Transaction | CashTransaction)[]) => txs.reduce((sum, t) => sum + t.amount, 0)
 
   if (period === 'day') {
     // 4 intervalos horarios del día: Mañana, Mediodía, Tarde, Noche
@@ -391,7 +210,7 @@ function generateTimeSeries(
     ]
     intervals.forEach((slot) => {
       const slotTxs = periodTxs.filter((t) => {
-        const h = new Date(t.date).getHours()
+        const h = economicDate(t.date).getHours()
         return h >= slot.startH && h < slot.endH
       })
       const sum = calcNetForTxs(slotTxs)
@@ -415,7 +234,7 @@ function generateTimeSeries(
       const dayDay = dayDate.getDate()
 
       const dayTxs = periodTxs.filter((t) => {
-        const d = new Date(t.date)
+        const d = economicDate(t.date)
         return d.getFullYear() === dayYear && d.getMonth() === dayMonth && d.getDate() === dayDay
       })
       const sum = calcNetForTxs(dayTxs)
@@ -439,7 +258,7 @@ function generateTimeSeries(
       const label = `${startDay}-${endDay}`
 
       const chunkTxs = periodTxs.filter((t) => {
-        const d = new Date(t.date)
+        const d = economicDate(t.date)
         return (
           d.getFullYear() === range.start.getFullYear() &&
           d.getMonth() === range.start.getMonth() &&
@@ -463,7 +282,7 @@ function generateTimeSeries(
   const yearNum = range.start.getFullYear()
   for (let m = 0; m < 12; m++) {
     const monthTxs = periodTxs.filter((t) => {
-      const d = new Date(t.date)
+      const d = economicDate(t.date)
       return d.getFullYear() === yearNum && d.getMonth() === m
     })
     const sum = calcNetForTxs(monthTxs)

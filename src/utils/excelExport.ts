@@ -1,3 +1,5 @@
+import { inEconomicMonth } from './economicClassification'
+import { selectExpensesByNature } from './statisticsSelectors'
 import * as XLSX from 'xlsx'
 import type { PersistedState } from '../services/storage/storageAdapter'
 import { APP_NAME, APP_VERSION, APP_BUILD } from '../version'
@@ -18,9 +20,10 @@ import {
 } from './financeSelectors'
 import {
   selectGrossExpensesForPeriod,
+  selectEconomicExpenses,
+  selectEconomicSummary,
   selectLinkedReimbursementsForExpense,
   selectLinkedReimbursementsForPeriod,
-  selectNetPersonalExpensesForPeriod,
   selectRealIncome,
   selectExpenseShareStatus,
   selectExpensePayableStatus,
@@ -31,9 +34,6 @@ import {
   selectExpectedMonthlyIncome,
   selectExpectedCommittedExpenses,
   selectExpectedVariableMonthlyExpenses,
-  selectActualFixedMonthlyExpenses,
-  selectActualVariableMonthlyExpenses,
-  selectActualExtraordinaryMonthlyExpenses,
   selectMonthlyReserveNeeded,
   selectTotalAllocatedToReserves,
   selectFreeSavingsWithReserves,
@@ -75,36 +75,15 @@ export function auditDataConsistency(
   const currentMonth = referenceDate.getMonth()
   const currentYear = referenceDate.getFullYear()
 
-  // Movimientos del mes
-  const monthExpenses = transactions.filter((t) => {
-    if (t.type !== 'expense' || (t.isShared && t.paidBy === 'contact')) return false
-    const d = new Date(t.date)
-    return d.getMonth() === currentMonth && d.getFullYear() === currentYear
-  })
-
-  // A) Suma individual de gastos netos de movimientos
-  let movementsNetSum = 0
-  monthExpenses.forEach((t) => {
-    const linked = selectLinkedReimbursementsForExpense(t.id, transactions, cashTransactions, expenseShares)
-    movementsNetSum += Math.max(0, Math.round((t.amount - linked) * 100) / 100)
-  })
-  movementsNetSum = Math.round(movementsNetSum * 100) / 100
-
-  // Selector canónico del mes
-  const monthlyNetExpense = selectNetPersonalExpensesForPeriod(
-    transactions,
-    referenceDate,
-    'month',
-    cashTransactions,
-    expenseShares
-  )
+  // La exportación audita el mismo universo global de compras que Inicio y Estadísticas.
+  const monthExpenses = selectEconomicExpenses(transactions, cashTransactions, expenseShares)
+    .filter((e) => inEconomicMonth(e.movement.transaction.date, referenceDate))
+  const movementsNetSum = Math.round(monthExpenses.reduce((sum, e) => sum + e.net, 0) * 100) / 100
+  const monthlyNetExpense = selectEconomicSummary(transactions, cashTransactions, referenceDate, 'month', expenseShares).netExpenses
   const diffNet = Math.round(Math.abs(movementsNetSum - monthlyNetExpense) * 100) / 100
 
   // B) Suma por naturaleza
-  const fixedNet = selectActualFixedMonthlyExpenses(transactions, referenceDate, cashTransactions, expenseShares)
-  const variableNet = selectActualVariableMonthlyExpenses(transactions, referenceDate, cashTransactions, expenseShares)
-  const extraNet = selectActualExtraordinaryMonthlyExpenses(transactions, referenceDate, cashTransactions, expenseShares)
-  const naturesNetSum = Math.round((fixedNet + variableNet + extraNet) * 100) / 100
+  const naturesNetSum = selectExpensesByNature(transactions, 'month', referenceDate, cashTransactions, expenseShares).total
   const diffNatures = Math.round(Math.abs(naturesNetSum - monthlyNetExpense) * 100) / 100
 
   // C) Reembolsos
@@ -235,7 +214,7 @@ export function generateExcelWorkbook(
   const pendingVariable = selectPendingVariableExpenseEstimate(estimates, transactions, monthKey)
   const projectedAvailable = selectProjectedAvailable(realAvailable, pendingVariable)
 
-  const grossExpenses = selectGrossExpensesForPeriod(transactions, referenceDate, 'month')
+  const grossExpenses = selectGrossExpensesForPeriod(transactions, referenceDate, 'month', cashTransactions)
   const linkedReimbursements = selectLinkedReimbursementsForPeriod(
     transactions,
     referenceDate,
@@ -243,33 +222,12 @@ export function generateExcelWorkbook(
     cashTransactions,
     expenseShares
   )
-  const netExpenses = selectNetPersonalExpensesForPeriod(
-    transactions,
-    referenceDate,
-    'month',
-    cashTransactions,
-    expenseShares
-  )
-  const fixedNetExpenses = selectActualFixedMonthlyExpenses(
-    transactions,
-    referenceDate,
-    cashTransactions,
-    expenseShares
-  )
-  const variableNetExpenses = selectActualVariableMonthlyExpenses(
-    transactions,
-    referenceDate,
-    cashTransactions,
-    expenseShares
-  )
-  const extraNetExpenses = selectActualExtraordinaryMonthlyExpenses(
-    transactions,
-    referenceDate,
-    cashTransactions,
-    expenseShares
-  )
+  const netExpenses = selectEconomicSummary(transactions, cashTransactions, referenceDate, 'month', expenseShares).netExpenses
+  const fixedNetExpenses = selectExpensesByNature(transactions, 'month', referenceDate, cashTransactions, expenseShares).fixed
+  const variableNetExpenses = selectExpensesByNature(transactions, 'month', referenceDate, cashTransactions, expenseShares).variable
+  const extraNetExpenses = selectExpensesByNature(transactions, 'month', referenceDate, cashTransactions, expenseShares).extraordinary
   const cashWithdrawals = selectMonthCashWithdrawals(transactions, referenceDate)
-  const realIncome = selectRealIncome(transactions, referenceDate, 'month')
+  const realIncome = selectRealIncome(transactions, referenceDate, 'month', cashTransactions)
   const expectedIncome = selectExpectedMonthlyIncome(planSettings, recurring)
 
   const expectedCommitted = selectExpectedCommittedExpenses(recurring)

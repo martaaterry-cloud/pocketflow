@@ -6,7 +6,6 @@ import { AddCashTransactionModal } from '../components/AddCashTransactionModal'
 import { AdjustCashModal } from '../components/AdjustCashModal'
 import { EditCashTransactionModal } from '../components/EditCashTransactionModal'
 import { CashActionSelectorModal } from '../components/CashActionSelectorModal'
-import { CashTransactionList } from '../components/CashTransactionList'
 import { TotalDonutChart } from '../components/TotalDonutChart'
 import { DeleteTransactionModal } from '../components/DeleteTransactionModal'
 import { GrossExpensesModal } from '../components/GrossExpensesModal'
@@ -22,10 +21,11 @@ import {
   selectTotalAvailableMoney,
   selectTotalEconomicConsumptionForPeriod,
 } from '../utils/cashSelectors'
-import { selectLinkedReimbursementsForExpense } from '../utils/sharedExpenseSelectors'
+import { selectEconomicSummary, selectNetExpensesByCategory, selectGrossExpensesByPaymentMethod } from '../utils/sharedExpenseSelectors'
 import {
   isSameMonthYear,
   selectUnifiedMovementsForPeriod,
+  collapseInternalTransfers,
 } from '../utils/unifiedMovementSelectors'
 import { calculateSwipeNextIndex, type HomeModeIndex } from '../utils/swipeGestures'
 import { AppIcon } from '../ui/icons'
@@ -67,13 +67,6 @@ export function HomePage({
   const [isAdjustCashModalOpen, setIsAdjustCashModalOpen] = useState(false)
   const [editingCashTx, setEditingCashTx] = useState<CashTransaction | null>(null)
 
-  // Los gráficos ya excluyen transferencias internas. Reutilizamos sus totales
-  // en el desglose para evitar mezclar salidas bancarias con consumo real.
-  const displayGrossExpenses = finance.totals.grossExpensesBreakdown?.total ?? finance.totals.grossMonthExpenses
-  const displayNetExpenses = Math.round(
-    (finance.totals.netCategoryExpenses ?? []).reduce((sum, item) => sum + item.amount, 0) * 100
-  ) / 100
-
   const displayName = finance.profile?.displayName?.trim()
   const greeting = displayName ? `Hola, ${displayName}` : 'Hola'
 
@@ -111,12 +104,12 @@ export function HomePage({
   const cashTransactions = finance.cashTransactions ?? []
   const cashBalance = useMemo(() => selectCashBalance(cashTransactions), [cashTransactions])
   const cashMonthExpenses = useMemo(
-    () => selectCashExpensesForPeriod(cashTransactions, homeReferenceDate, 'month', finance.transactions ?? []),
-    [cashTransactions, homeReferenceDate, finance.transactions]
+    () => selectCashExpensesForPeriod(cashTransactions, homeReferenceDate, 'month', finance.transactions ?? [], finance.expenseShares ?? []),
+    [cashTransactions, homeReferenceDate, finance.transactions, finance.expenseShares]
   )
   const cashMonthIncome = useMemo(
-    () => selectCashIncomeForPeriod(cashTransactions, homeReferenceDate, 'month'),
-    [cashTransactions, homeReferenceDate]
+    () => selectCashIncomeForPeriod(cashTransactions, homeReferenceDate, 'month', finance.transactions ?? []),
+    [cashTransactions, homeReferenceDate, finance.transactions]
   )
 
   // Movimientos de efectivo filtrados para el mes actual
@@ -124,32 +117,24 @@ export function HomePage({
     return cashTransactions.filter((c) => isSameMonthYear(c.date, homeReferenceDate))
   }, [cashTransactions, homeReferenceDate])
 
-  // Gastos de efectivo convertidos a formato Transaction compatible para DonutChart
-  const cashExpensesAsTransactions = useMemo<Transaction[]>(() => {
-    return cashTransactions
-      .filter((tx) => tx.type === 'expense' && (!tx.isShared || tx.paidBy !== 'contact'))
-      .map((tx) => {
-        const linked = selectLinkedReimbursementsForExpense(
-          tx.id,
-          finance.transactions ?? [],
-          cashTransactions,
-          finance.expenseShares ?? []
-        )
-        const netAmount = Math.max(0, Math.round((tx.amount - linked) * 100) / 100)
-        return {
-          id: tx.id,
-          type: 'expense',
-          amount: netAmount,
-          description: tx.description,
-          date: tx.date,
-          categoryId: tx.categoryId,
-          accountId: 'daily',
-          incomeKind: 'income',
-          note: tx.note,
-          isShared: tx.isShared,
-        }
-      })
-  }, [cashTransactions, finance.transactions, finance.expenseShares])
+  const bankSummary = useMemo(() => selectEconomicSummary(finance.transactions, cashTransactions,
+    homeReferenceDate, 'month', finance.expenseShares, 'bank'),
+    [finance.transactions, cashTransactions, homeReferenceDate, finance.expenseShares])
+  const bankCategoryExpenses = useMemo(() => selectNetExpensesByCategory(finance.transactions, finance.categories,
+    homeReferenceDate, 'month', cashTransactions, finance.expenseShares, 'bank'),
+    [finance.transactions, finance.categories, homeReferenceDate, cashTransactions, finance.expenseShares])
+  const bankGrossBreakdown = useMemo(() => selectGrossExpensesByPaymentMethod(finance.transactions, cashTransactions,
+    homeReferenceDate, 'month', 'bank'), [finance.transactions, cashTransactions, homeReferenceDate])
+  const displayGrossExpenses = bankSummary.grossExpenses
+  const displayNetExpenses = bankSummary.netExpenses
+  const bankMovements = homeMonthUnifiedMovements.filter((m) => m.source === 'bank')
+  const cashMovements = homeMonthUnifiedMovements.filter((m) => m.source === 'cash')
+
+  const openCategoryDetail = (categoryId: string) => {
+    const id = normalizeCategoryAlias(categoryId)
+    setSelectedCategoryForDetail(finance.categories.find((c) => normalizeCategoryAlias(c.id) === id) ||
+      { id, name: id === 'other' ? 'Otros' : categoryId, color: '#B9B9B9', icon: 'ellipsis' })
+  }
 
   // Cálculos de Total
   const totalAvailable = useMemo(
@@ -351,7 +336,7 @@ export function HomePage({
                 </div>
                 <div className="hero-kpi-item">
                   <span>Gastado este mes</span>
-                  <strong>{money(finance.totals.monthExpenses)}</strong>
+                  <strong>{money(bankSummary.netExpenses)}</strong>
                 </div>
               </div>
 
@@ -422,7 +407,7 @@ export function HomePage({
                     </strong>
                   </div>
 
-                  {finance.totals.grossMonthExpenses > 0 && (
+                  {bankSummary.grossExpenses > 0 && (
                     <>
                       <div className="hero-breakdown-divider" />
                       <div className="hero-breakdown-header">
@@ -446,14 +431,14 @@ export function HomePage({
                         <strong className="breakdown-value">{money(displayGrossExpenses)}</strong>
                       </div>
 
-                      {finance.totals.linkedReimbursementsMonth > 0 && (
+                      {bankSummary.linkedReimbursements > 0 && (
                         <div className="hero-breakdown-row sub">
                           <div className="breakdown-label">
                             <span>· Reembolsado de gastos del mes</span>
                             <small>Devoluciones recibidas de compras de este mes</small>
                           </div>
                           <span className="breakdown-value" style={{ color: '#8b5cf6', fontWeight: 600 }}>
-                            -{money(finance.totals.linkedReimbursementsMonth)}
+                            -{money(bankSummary.linkedReimbursements)}
                           </span>
                         </div>
                       )}
@@ -611,18 +596,12 @@ export function HomePage({
               <DonutChart
                 transactions={finance.transactions}
                 categories={finance.categories}
-                netCategoryItems={finance.totals.netCategoryExpenses}
+                netCategoryItems={bankCategoryExpenses}
+                cashTransactions={cashTransactions}
+                expenseShares={finance.expenseShares}
+                source="bank"
                 referenceDate={homeReferenceDate}
-                onSelectCategoryFilter={(catId) => {
-                  const canonical = normalizeCategoryAlias(catId)
-                  const cat = finance.categories.find((c) => normalizeCategoryAlias(c.id) === canonical) || {
-                    id: canonical,
-                    name: canonical === 'other' ? 'Otros' : catId,
-                    color: '#B9B9B9',
-                    icon: 'ellipsis',
-                  }
-                  setSelectedCategoryForDetail(cat)
-                }}
+                onSelectCategoryFilter={openCategoryDetail}
               />
             </section>
 
@@ -632,7 +611,7 @@ export function HomePage({
                 <h2>Últimos movimientos</h2>
               </div>
               <TransactionList
-                movements={homeMonthUnifiedMovements}
+                movements={bankMovements}
                 categories={finance.categories}
                 expenseShares={finance.expenseShares}
                 cashTransactions={finance.cashTransactions}
@@ -689,7 +668,7 @@ export function HomePage({
                   <strong>{money(cashMonthExpenses)}</strong>
                 </div>
                 <div className="hero-kpi-item">
-                  <span>Entradas este mes</span>
+                  <span>Ingresos reales este mes</span>
                   <strong>+{money(cashMonthIncome)}</strong>
                 </div>
               </div>
@@ -702,7 +681,11 @@ export function HomePage({
                 <span>Desglose mensual</span>
               </div>
               <DonutChart
-                transactions={cashExpensesAsTransactions}
+                transactions={finance.transactions}
+                cashTransactions={cashTransactions}
+                expenseShares={finance.expenseShares}
+                source="cash"
+                onSelectCategoryFilter={openCategoryDetail}
                 categories={finance.categories}
                 referenceDate={homeReferenceDate}
               />
@@ -714,8 +697,11 @@ export function HomePage({
                 <h2>Movimientos de efectivo</h2>
                 <span>{currentMonthCashTransactions.length} registrados</span>
               </div>
-              <CashTransactionList
-                transactions={currentMonthCashTransactions}
+              <TransactionList
+                movements={cashMovements}
+                allTransactions={finance.transactions}
+                cashTransactions={cashTransactions}
+                expenseShares={finance.expenseShares}
                 categories={finance.categories}
                 emptyMessage={`Todavía no hay movimientos de efectivo en ${currentMonthName}.`}
                 onEdit={(tx) => {
@@ -724,7 +710,7 @@ export function HomePage({
                   } else if (onSelectTransaction) {
                     onSelectTransaction(tx)
                   } else {
-                    setEditingCashTx(tx)
+                    setEditingCashTx(tx as CashTransaction)
                   }
                 }}
               />
@@ -786,6 +772,20 @@ export function HomePage({
               />
             </section>
 
+            <section className="section">
+              <div className="section-title"><h2>Gastos por categoría</h2><span>Total del mes</span></div>
+              <DonutChart transactions={finance.transactions} cashTransactions={cashTransactions}
+                expenseShares={finance.expenseShares} categories={finance.categories} referenceDate={homeReferenceDate}
+                onSelectCategoryFilter={openCategoryDetail} />
+            </section>
+            <section className="section">
+              <div className="section-title"><h2>Últimos movimientos</h2></div>
+              <TransactionList movements={collapseInternalTransfers(homeMonthUnifiedMovements)} categories={finance.categories}
+                allTransactions={finance.transactions} cashTransactions={cashTransactions} expenseShares={finance.expenseShares}
+                limit={5} onSelect={onSelectTransaction} onEdit={onSelectTransaction}
+                emptyMessage={`Todavía no hay movimientos en ${currentMonthName}.`} />
+            </section>
+
             {/* Consumo Total Observado del Mes */}
             <section className="section">
               <div className="section-title">
@@ -813,15 +813,6 @@ export function HomePage({
                     </span>
                     <strong>+{money(economicConsumption.cashExpenses)}</strong>
                   </div>
-
-                  {economicConsumption.linkedWithdrawalsDeducted > 0 && (
-                    <div className="consumption-row deduction">
-                      <span>
-                        <AppIcon name="arrow-left-right" size={15} color="#2563eb" /> Cajero vinculado deducido (evita doble conteo):
-                      </span>
-                      <strong>-{money(economicConsumption.linkedWithdrawalsDeducted)}</strong>
-                    </div>
-                  )}
 
                   <div
                     className="consumption-row"
@@ -919,10 +910,12 @@ export function HomePage({
         mode="net"
         referenceDate={homeReferenceDate}
         scope="month"
+        source={activeHomeMode === 0 ? 'bank' : activeHomeMode === 1 ? 'cash' : 'total'}
         periodLabel="Mes actual"
         onSelectTransaction={onSelectTransaction}
         onEditTransaction={onSelectTransaction}
         onDeleteTransaction={(t) => setTxToDelete(t)}
+        onDeleteCash={(c) => finance.deleteCashTransaction(c.id)}
       />
 
       {/* Modal de Desglose de Gasto Bruto por Método de Pago */}
@@ -930,7 +923,7 @@ export function HomePage({
         <GrossExpensesModal
           open={isGrossBreakdownOpen}
           onClose={() => setIsGrossBreakdownOpen(false)}
-          breakdown={finance.totals.grossExpensesBreakdown}
+          breakdown={bankGrossBreakdown}
           categories={finance.categories}
           onSelectTransaction={onSelectTransaction}
         />
@@ -938,3 +931,4 @@ export function HomePage({
     </main>
   )
 }
+

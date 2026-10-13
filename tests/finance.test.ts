@@ -6772,7 +6772,7 @@ describe('Fase 18 — Mejoras de Finanzas (Detalle por Categoría, Retiradas de 
     ]
 
     const stats = calculatePeriodStatistics(txs, mockCategories, 'month', refDate)
-    assert.equal(stats.expenses, 80.0)
+    assert.equal(stats.expenses, 30.0) // La retirada es traslado, no compra.
     assert.equal(stats.cashWithdrawals, 50.0)
   })
 
@@ -6932,11 +6932,11 @@ describe('Fase 18 — Identificación Visual de Versión y Build', () => {
   it('314. Versioning: única fuente de verdad y formato de visualización exacto', () => {
     assert.equal(APP_NAME, 'PocketFlow')
     assert.equal(APP_VERSION, '0.25.15')
-    assert.equal(APP_BUILD, '2026.10.13-02')
+    assert.equal(APP_BUILD, '2026.10.13-03')
 
     assert.equal(getAppVersionString(), 'PocketFlow v0.25.15')
-    assert.equal(getAppBuildString(), 'Build 2026.10.13-02')
-    assert.equal(getAppFullVersionLabel(), 'PocketFlow v0.25.15 · Build 2026.10.13-02')
+    assert.equal(getAppBuildString(), 'Build 2026.10.13-03')
+    assert.equal(getAppFullVersionLabel(), 'PocketFlow v0.25.15 · Build 2026.10.13-03')
   })
 })
 
@@ -10606,16 +10606,17 @@ describe('Fase 37 — Arquitectura Base del Módulo de Efectivo (Fase A)', () =>
 
     const consumption = selectTotalEconomicConsumptionForPeriod(bankTxs, cashTxs, refDate, 'month')
 
-    assert.equal(consumption.bankNetExpenses, 110, 'El banco registra salida de 110 €')
-    assert.equal(consumption.linkedWithdrawalsDeducted, 110, 'Se descuentan los 110 € por estar vinculados a efectivo')
+    assert.equal(consumption.bankNetExpenses, 0, 'La retirada cambia el saldo, pero no es gasto económico')
+    assert.equal(consumption.linkedWithdrawalsDeducted, 0, 'No se resta otra vez una retirada ya excluida')
+    assert.equal(consumption.transferredToCash, 110)
     assert.equal(consumption.cashExpenses, 20, 'Gasto real en efectivo es de 20 €')
     assert.equal(consumption.totalEconomicConsumption, 20, 'El consumo económico total real es 20 € (NO 130 €)')
   })
 
-  it('446. Retirada de cajero NO vinculada: mantiene el tratamiento de gasto bancario convencional si no ingresa a efectivo', () => {
+  it('446. Retirada de cajero sin vínculo: conserva su clasificación de transferencia interna', () => {
     const refDate = new Date(2026, 8, 15)
 
-    // Retirada de cajero de 50 € que NO fue ingresada en el módulo de efectivo (ej. dada a otra persona)
+    // Retirada marcada de 50 € sin entrada en el módulo de efectivo: el vínculo incompleto no cambia su naturaleza.
     const bankTxs: Transaction[] = [
       {
         id: 'tx_cajero_unlinked',
@@ -10631,10 +10632,10 @@ describe('Fase 37 — Arquitectura Base del Módulo de Efectivo (Fase A)', () =>
 
     const consumption = selectTotalEconomicConsumptionForPeriod(bankTxs, cashTxs, refDate, 'month')
 
-    assert.equal(consumption.bankNetExpenses, 50)
+    assert.equal(consumption.bankNetExpenses, 0)
     assert.equal(consumption.linkedWithdrawalsDeducted, 0)
     assert.equal(consumption.cashExpenses, 0)
-    assert.equal(consumption.totalEconomicConsumption, 50, 'La retirada no vinculada se considera gasto bancario normal')
+    assert.equal(consumption.totalEconomicConsumption, 0, 'Una retirada marcada no es compra aunque falte la entrada vinculada')
   })
 })
 
@@ -11362,8 +11363,9 @@ describe('Fase 40 — Retiradas de Cajero y Efectivo Vinculado (Fase E)', () => 
     ]
 
     const consumption = selectTotalEconomicConsumptionForPeriod(bankTxs, cashTxs, new Date(2026, 8, 15), 'month')
-    assert.equal(consumption.bankNetExpenses, 110)
-    assert.equal(consumption.linkedWithdrawalsDeducted, 110)
+    assert.equal(consumption.bankNetExpenses, 0)
+    assert.equal(consumption.linkedWithdrawalsDeducted, 0)
+    assert.equal(consumption.transferredToCash, 110)
     assert.equal(consumption.cashExpenses, 0)
     assert.equal(consumption.totalEconomicConsumption, 0, 'La retirada vinculada sin gasto no suma al consumo total')
   })
@@ -11379,8 +11381,9 @@ describe('Fase 40 — Retiradas de Cajero y Efectivo Vinculado (Fase E)', () => 
     ]
 
     const consumption = selectTotalEconomicConsumptionForPeriod(bankTxs, cashTxs, new Date(2026, 8, 15), 'month')
-    assert.equal(consumption.bankNetExpenses, 110)
-    assert.equal(consumption.linkedWithdrawalsDeducted, 110)
+    assert.equal(consumption.bankNetExpenses, 0)
+    assert.equal(consumption.linkedWithdrawalsDeducted, 0)
+    assert.equal(consumption.transferredToCash, 110)
     assert.equal(consumption.cashExpenses, 25)
     assert.equal(consumption.totalEconomicConsumption, 25, 'El consumo total debe ser exactamente 25 €')
   })
@@ -11537,16 +11540,16 @@ describe('Fase 40 — Retiradas de Cajero y Efectivo Vinculado (Fase E)', () => 
     assert.equal(bankList[0].id, 'tx_keep_bank')
   })
 
-  it('489. 14. Retirada queda no vinculada después de borrar cashTransaction: vuelve a tratarse como retirada no vinculada en consumo Total', () => {
+  it('489. 14. Borrar la entrada de efectivo no convierte la retirada en gasto', () => {
     const bankTxs: Transaction[] = [
       { id: 'tx_unlinked', type: 'expense', amount: 50, accountId: 'daily', specialType: 'cash_withdrawal', description: 'Cajero', date: '2026-09-10' },
     ]
     const cashTxs: CashTransaction[] = [] // Se borró la entrada vinculada de efectivo
 
     const consumption = selectTotalEconomicConsumptionForPeriod(bankTxs, cashTxs, new Date(2026, 8, 15), 'month')
-    assert.equal(consumption.bankNetExpenses, 50)
+    assert.equal(consumption.bankNetExpenses, 0)
     assert.equal(consumption.linkedWithdrawalsDeducted, 0)
-    assert.equal(consumption.totalEconomicConsumption, 50, 'Al no estar vinculada, la retirada computa como gasto convencional')
+    assert.equal(consumption.totalEconomicConsumption, 0, 'Borrar el vínculo no convierte un traslado en compra')
   })
 
   it('490. 15. Ahorro / Plan financiero siguen sin usar efectivo', () => {
@@ -14037,7 +14040,7 @@ describe('Fase 50 — Control de Acceso por Roles (User / Admin), Seguridad RLS 
 
     const adminFooter = renderFooterTexts(true)
     assert.equal(adminFooter.versionText, 'PocketFlow v0.25.15')
-    assert.equal(adminFooter.buildText, 'Build 2026.10.13-02')
+    assert.equal(adminFooter.buildText, 'Build 2026.10.13-03')
   })
 
   it('590. 10. Reconciliación y sincronización de perfil no altera datos financieros ni transacciones', () => {
@@ -14538,7 +14541,7 @@ describe('Fase 52 — Versionado Automático y Robusto del Service Worker PWA', 
   it('613. 1. CACHE_NAME del Service Worker incluye exactamente APP_VERSION y APP_BUILD actuales', () => {
     const expectedCacheName = `pocketflow-v${APP_VERSION}-${APP_BUILD}`
     assert.equal(getServiceWorkerCacheName(APP_VERSION, APP_BUILD), expectedCacheName)
-    assert.equal(expectedCacheName, 'pocketflow-v0.25.15-2026.10.13-02')
+    assert.equal(expectedCacheName, 'pocketflow-v0.25.15-2026.10.13-03')
 
     const swCode = generateServiceWorkerCode(APP_VERSION, APP_BUILD)
     assert.ok(swCode.includes(`const CACHE_NAME = '${expectedCacheName}'`))
@@ -18400,10 +18403,10 @@ describe('Fase 66 — Clasificación y Desglose de Gastos por Medio de Pago (Tar
   // CASO 12: Versión PWA
   it('731. 12. Build genera version.json correspondiente a la versión actual', () => {
     assert.equal(APP_VERSION, '0.25.15')
-    assert.equal(APP_BUILD, '2026.10.13-02')
+    assert.equal(APP_BUILD, '2026.10.13-03')
     const vJson = JSON.parse(generateVersionJson(APP_VERSION, APP_BUILD))
     assert.equal(vJson.version, '0.25.15')
-    assert.equal(vJson.build, '2026.10.13-02')
+    assert.equal(vJson.build, '2026.10.13-03')
   })
 })
 
@@ -20767,9 +20770,9 @@ describe('Fase 67.8 — Auditoría Integral de Integridad Económica, Caso Multa
   })
 
   // TEST 21: Versión y build actualizados
-  it('806. 21. Versión y Build actualizados a 0.25.15 / 2026.10.13-02', () => {
+  it('806. 21. Versión y Build actualizados a 0.25.15 / 2026.10.13-03', () => {
     assert.equal(APP_VERSION, '0.25.15')
-    assert.equal(APP_BUILD, '2026.10.13-02')
+    assert.equal(APP_BUILD, '2026.10.13-03')
   })
 })
 
@@ -20982,7 +20985,7 @@ describe('Fase 68 — Rediseño de Movimientos (Resumen Mensual, Agrupación Dia
   })
 
   // TEST 12: Medio (Banco, Bizum, Efectivo) se filtra independientemente de Tipo
-  it('813. 12. Banco, Bizum y Efectivo se distinguen y filtran correctamente como medio de pago', () => {
+  it('813. 12. Banco incluye Bizum bancario; Bizum permite su desglose y Efectivo mantiene su origen', () => {
     const txBank: Transaction = {
       id: 'tx-b1',
       type: 'expense',
@@ -21014,8 +21017,9 @@ describe('Fase 68 — Rediseño de Movimientos (Resumen Mensual, Agrupación Dia
     assert.equal(movements.length, 3)
 
     const bankOnly = filterUnifiedMovements(movements, categoriesList, { source: 'bank' })
-    assert.equal(bankOnly.length, 1)
-    assert.equal(bankOnly[0].id, 'tx-b1')
+    assert.equal(bankOnly.length, 2)
+    assert.ok(bankOnly.some((m) => m.id === 'tx-b1'))
+    assert.ok(bankOnly.some((m) => m.id === 'tx-z1'))
 
     const bizumOnly = filterUnifiedMovements(movements, categoriesList, { source: 'bizum' })
     assert.equal(bizumOnly.length, 1)
@@ -21336,9 +21340,9 @@ describe('Fase 68 — Rediseño de Movimientos (Resumen Mensual, Agrupación Dia
   })
 
   // TEST 25: Versión y build actualizados
-  it('823. 25. Versión y Build actualizados a 0.25.15 / 2026.10.13-02', () => {
+  it('823. 25. Versión y Build actualizados a 0.25.15 / 2026.10.13-03', () => {
     assert.equal(APP_VERSION, '0.25.15')
-    assert.equal(APP_BUILD, '2026.10.13-02')
+    assert.equal(APP_BUILD, '2026.10.13-03')
   })
 })
 
@@ -21704,9 +21708,9 @@ describe('Fase 69 — Auditoría y Corrección Completa: Dinero Real, Ingresos V
   })
 
   // Test de versión 0.25.15
-  it('833. PWA Version: 0.25.15 / 2026.10.13-02', () => {
+  it('833. PWA Version: 0.25.15 / 2026.10.13-03', () => {
     assert.equal(APP_VERSION, '0.25.15')
-    assert.equal(APP_BUILD, '2026.10.13-02')
+    assert.equal(APP_BUILD, '2026.10.13-03')
   })
 })
 
@@ -23227,10 +23231,10 @@ describe('Fase 71: Normalización canónica de gastos recurrentes compartidos y 
     assert.equal(economicShare, 10.00, '40 € entre 4 personas = 10,00 € de coste personal, NO 40,00 €')
   })
 
-  // TEST 12: Versión PWA 0.25.15 / Build 2026.10.13-02
-  it('878. PWA Version: 0.25.15 / 2026.10.13-02', () => {
+  // TEST 12: Versión PWA 0.25.15 / Build 2026.10.13-03
+  it('878. PWA Version: 0.25.15 / 2026.10.13-03', () => {
     assert.equal(APP_VERSION, '0.25.15')
-    assert.equal(APP_BUILD, '2026.10.13-02')
+    assert.equal(APP_BUILD, '2026.10.13-03')
   })
 })
 
@@ -23539,12 +23543,13 @@ describe('Fase 73: Pantalla Inicio acotada estrictamente al Mes Actual', () => {
     assert.equal(coffee?.source, 'cash')
   })
 
-  // TEST Versión PWA 0.25.15 / Build 2026.10.13-02
-  it('887. PWA Version: 0.25.15 / 2026.10.13-02', () => {
+  // TEST Versión PWA 0.25.15 / Build 2026.10.13-03
+  it('887. PWA Version: 0.25.15 / 2026.10.13-03', () => {
     assert.equal(APP_VERSION, '0.25.15')
-    assert.equal(APP_BUILD, '2026.10.13-02')
+    assert.equal(APP_BUILD, '2026.10.13-03')
   })
 })
+
 
 
 

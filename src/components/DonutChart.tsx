@@ -1,11 +1,11 @@
 import { useState, useMemo } from 'react'
-import type { Category, Transaction } from '../models/finance'
+import type { CashTransaction, Category, ExpenseShare, Transaction } from '../models/finance'
 import { money } from '../utils/money'
 import {
-  selectNetExpensesByCategory,
+  selectEconomicCategoryExpenses,
   type NetCategoryExpense,
 } from '../utils/sharedExpenseSelectors'
-import { selectCategoryExpenses } from '../utils/financeSelectors'
+import type { EconomicSource } from '../utils/economicClassification'
 import { AppIcon } from '../ui/icons'
 
 export interface DonutCategoryItem {
@@ -19,6 +19,10 @@ export interface DonutCategoryItem {
 
 interface DonutChartProps {
   transactions?: Transaction[]
+  cashTransactions?: CashTransaction[]
+  expenseShares?: ExpenseShare[]
+  source?: EconomicSource
+  dateRange?: { start: Date; end: Date }
   categories?: Category[]
   netCategoryItems?: NetCategoryExpense[]
   grossCategoryItems?: Array<{
@@ -37,6 +41,10 @@ interface DonutChartProps {
 export function DonutChart({
   transactions = [],
   categories = [],
+  cashTransactions = [],
+  expenseShares = [],
+  source = 'total',
+  dateRange,
   netCategoryItems,
   grossCategoryItems,
   referenceDate = new Date(),
@@ -52,7 +60,7 @@ export function DonutChart({
     if (mode === 'net') {
       const items =
         netCategoryItems ??
-        selectNetExpensesByCategory(transactions, categories, referenceDate, 'month')
+        selectEconomicCategoryExpenses(transactions, cashTransactions, categories, referenceDate, 'month', expenseShares, source, 'net', dateRange)
       return items.map((i) => ({
         id: i.id,
         name: i.name,
@@ -64,7 +72,7 @@ export function DonutChart({
     } else {
       const items =
         grossCategoryItems ??
-        selectCategoryExpenses(transactions, categories, referenceDate)
+        selectEconomicCategoryExpenses(transactions, cashTransactions, categories, referenceDate, 'month', expenseShares, source, 'gross', dateRange)
       return items.map((i) => ({
         id: i.id,
         name: i.name,
@@ -74,7 +82,7 @@ export function DonutChart({
         iconKey: (i as any).iconKey || (i as any).icon,
       }))
     }
-  }, [mode, netCategoryItems, grossCategoryItems, transactions, categories, referenceDate])
+  }, [mode, netCategoryItems, grossCategoryItems, transactions, cashTransactions, expenseShares, source, dateRange, categories, referenceDate])
 
   // Filtrar solo categorías con gasto > 0 y ordenar de mayor a menor
   const activeItems = useMemo(() => {

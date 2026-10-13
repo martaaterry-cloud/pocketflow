@@ -8,11 +8,13 @@ import { AppIcon } from '../ui/icons'
 import {
   toUnifiedMovements,
   filterUnifiedMovements,
+  collapseInternalTransfers,
   type MovementSource,
   type UnifiedMovement,
 } from '../utils/unifiedMovementSelectors'
 import {
-  selectNetPersonalExpensesForPeriod,
+  selectEconomicSummary,
+  selectEconomicExpenses,
   selectRealIncome,
   selectNetExpensesByCategory,
   selectCategoryMonthlyStats,
@@ -106,13 +108,8 @@ export function MovementsPage({
 
   // 4. Totales canónicos del mes
   const netMonthExpenses = useMemo(() => {
-    return selectNetPersonalExpensesForPeriod(
-      finance.transactions ?? [],
-      selectedMonthDate,
-      'month',
-      finance.cashTransactions ?? [],
-      finance.expenseShares ?? []
-    )
+    return selectEconomicSummary(finance.transactions ?? [], finance.cashTransactions ?? [],
+      selectedMonthDate, 'month', finance.expenseShares ?? []).netExpenses
   }, [finance.transactions, finance.cashTransactions, finance.expenseShares, selectedMonthDate])
 
   const realMonthIncome = useMemo(() => {
@@ -137,14 +134,14 @@ export function MovementsPage({
 
   // 6. Movimientos del mes filtrados
   const filteredMonthMovements = useMemo(() => {
-    return filterUnifiedMovements(allUnifiedMovements, finance.categories ?? [], {
+    return collapseInternalTransfers(filterUnifiedMovements(allUnifiedMovements, finance.categories ?? [], {
       source: sourceFilter,
       type: filter,
       incomeSubFilter,
       search,
       referenceDate: selectedMonthDate,
       scope: 'month',
-    })
+    }))
   }, [allUnifiedMovements, finance.categories, sourceFilter, filter, incomeSubFilter, search, selectedMonthDate])
 
   // 7. Agrupación diaria de movimientos para el mes seleccionado
@@ -158,18 +155,15 @@ export function MovementsPage({
       groupsMap.set(dateStr, list)
     })
 
+    const netById = new Map(selectEconomicExpenses(finance.transactions ?? [], finance.cashTransactions ?? [], finance.expenseShares ?? [])
+      .map((e) => [e.movement.transaction.id, e.net]))
     const groups: { dateStr: string; formattedDate: string; dayNet: number; movements: UnifiedMovement[] }[] = []
     groupsMap.forEach((movements, dateStr) => {
-      let dayNet = 0
-      movements.forEach((m) => {
-        if (m.type === 'expense' && !m.isCashWithdrawal) {
-          dayNet -= m.amount
-        } else if (m.type === 'income' && !m.isLinkedCashWithdrawal) {
-          dayNet += m.amount
-        } else if (m.type === 'adjustment') {
-          dayNet += m.amount
-        }
-      })
+      const dayNet = movements.reduce((sum, m) => {
+        if (m.economicKind === 'income') return sum + m.amount
+        if (m.economicKind === 'expense') return sum - (netById.get(m.id) || 0)
+        return sum
+      }, 0)
 
       groups.push({
         dateStr,
@@ -180,7 +174,7 @@ export function MovementsPage({
     })
 
     return groups
-  }, [filteredMonthMovements])
+  }, [filteredMonthMovements, finance.transactions, finance.cashTransactions, finance.expenseShares])
 
   // 8. Mapa de deudas pendientes por transacción compartida
   const txSource = finance.transactions ?? []

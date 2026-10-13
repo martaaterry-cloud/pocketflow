@@ -1,3 +1,4 @@
+import { classifyEconomicMovements, economicDate, inEconomicMonth, inEconomicRange, isPersonalExpense, roundMoney, type EconomicMovement, type EconomicSource } from './economicClassification'
 import type {
   Category,
   ExpenseShare,
@@ -43,7 +44,7 @@ export function selectLinkedReimbursementsForExpense(
   expenseShares: ExpenseShare[] = []
 ): number {
   const bankExpense = transactions.find((t) => t.id === expenseId)
-  if (bankExpense && bankExpense.specialType === 'cash_withdrawal') {
+  if (bankExpense && (bankExpense.type === 'transfer' || bankExpense.specialType === 'cash_withdrawal' || bankExpense.specialType === 'transfer' || bankExpense.specialType === 'account_adjustment')) {
     return 0
   }
 
@@ -64,7 +65,8 @@ export function selectLinkedReimbursementsForExpense(
 
   // 2. Fallback para gastos antiguos sin registro explícito en expenseShares
   const bankReimbursements = transactions.filter(
-    (t) => t.type === 'income' && t.incomeKind === 'reimbursement' && t.parentExpenseId === expenseId
+    (t) => t.type === 'income' && t.specialType !== 'account_adjustment' &&
+      (t.incomeKind === 'reimbursement' || t.specialType === 'reimbursement') && t.parentExpenseId === expenseId
   )
   const cashReimbursements = cashTransactions.filter(
     (c) => c.type === 'income' && c.bankTransactionId === expenseId
@@ -73,7 +75,7 @@ export function selectLinkedReimbursementsForExpense(
     bankReimbursements.reduce((acc, t) => acc + t.amount, 0) +
     cashReimbursements.reduce((acc, c) => acc + c.amount, 0)
 
-  const expenseAmount = bankExpense?.amount ?? rawSum
+  const expenseAmount = bankExpense?.amount ?? cashTransactions.find((c) => c.id === expenseId)?.amount ?? rawSum
   return Math.round(Math.min(expenseAmount, rawSum) * 100) / 100
 }
 
@@ -102,107 +104,22 @@ export interface GrossExpensesBreakdown {
  * Reutiliza exactamente el mismo universo de movimientos que el gasto bruto del periodo.
  */
 export function selectGrossExpensesByPaymentMethod(
-  transactions: Transaction[] = [],
-  cashTransactions: CashTransaction[] = [],
-  referenceDate: Date = new Date(),
-  scope: 'month' | 'all' = 'month'
+  transactions: Transaction[] = [], cashTransactions: CashTransaction[] = [],
+  referenceDate: Date = new Date(), scope: 'month' | 'all' = 'month',
+  source: EconomicSource = 'total'
 ): GrossExpensesBreakdown {
-  const currentMonth = referenceDate.getMonth()
-  const currentYear = referenceDate.getFullYear()
-
-  const items: GrossExpenseItem[] = []
-  let bankTotal = 0
-  let bizumTotal = 0
-  let cashTotal = 0
-
-  // 1. Gastos bancarios (Transaction)
-  transactions
-    .filter(
-      (t) =>
-        t.type === 'expense' &&
-        (!t.isShared || t.paidBy !== 'contact') &&
-        t.specialType !== 'cash_withdrawal' &&
-        t.specialType !== 'transfer' &&
-        t.specialType !== 'account_adjustment'
-    )
-    .filter((t) => {
-      if (scope === 'all') return true
-      const d = new Date(t.date)
-      return d.getMonth() === currentMonth && d.getFullYear() === currentYear
-    })
-    .forEach((t) => {
-      const amt = Math.round(Number(t.amount || 0) * 100) / 100
-      const method: 'bank' | 'bizum' | 'cash' =
-        t.paymentMethod === 'bizum' ? 'bizum' : t.paymentMethod === 'cash' ? 'cash' : 'bank'
-
-      if (method === 'bizum') {
-        bizumTotal += amt
-      } else if (method === 'cash') {
-        cashTotal += amt
-      } else {
-        bankTotal += amt
-      }
-
-      items.push({
-        id: t.id,
-        description: t.description,
-        amount: amt,
-        date: t.date,
-        categoryId: t.categoryId,
-        paymentMethod: method,
-        isCash: false,
-        payerName: t.payerName,
-        rawTx: t,
-      })
-    })
-
-  // 2. Gastos en efectivo (CashTransaction)
-  ;(cashTransactions || [])
-    .filter((c) => c.type === 'expense' && (!c.isShared || c.paidBy !== 'contact'))
-    .filter((c) => {
-      if (scope === 'all') return true
-      const d = new Date(c.date)
-      return d.getMonth() === currentMonth && d.getFullYear() === currentYear
-    })
-    .forEach((c) => {
-      const amt = Math.round(Math.abs(Number(c.amount || 0)) * 100) / 100
-      const method: 'bank' | 'bizum' | 'cash' = c.paymentMethod || 'cash'
-
-      if (method === 'bizum') {
-        bizumTotal += amt
-      } else if (method === 'bank') {
-        bankTotal += amt
-      } else {
-        cashTotal += amt
-      }
-
-      items.push({
-        id: c.id,
-        description: c.description,
-        amount: amt,
-        date: c.date,
-        categoryId: c.categoryId,
-        paymentMethod: method,
-        isCash: true,
-        payerName: c.payerName,
-        rawTx: c,
-      })
-    })
-
-  items.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
-
-  const bTotal = Math.round(bankTotal * 100) / 100
-  const zTotal = Math.round(bizumTotal * 100) / 100
-  const cTotal = Math.round(cashTotal * 100) / 100
-  const total = Math.round((bTotal + zTotal + cTotal) * 100) / 100
-
-  return {
-    total,
-    bank: bTotal,
-    bizum: zTotal,
-    cash: cTotal,
-    items,
-  }
+  const items: GrossExpenseItem[] = classifyEconomicMovements(transactions, cashTransactions)
+    .filter((m) => isPersonalExpense(m) && (source === 'total' || m.source === source) && inEconomicMonth(m.transaction.date, referenceDate, scope))
+    .map((movement) => {
+      const t = movement.transaction
+      const gross = roundMoney(Math.abs(Number(t.amount) || 0))
+      return { id: t.id, description: t.description, amount: gross, date: t.date,
+        categoryId: t.categoryId, paymentMethod: t.paymentMethod || (movement.source === 'cash' ? 'cash' : 'bank'),
+        isCash: movement.source === 'cash', payerName: t.payerName, rawTx: t }
+    }).sort((a, b) => economicDate(b.date).getTime() - economicDate(a.date).getTime())
+  const sum = (method: 'bank' | 'bizum' | 'cash') => roundMoney(items.filter((i) => i.paymentMethod === method).reduce((acc, i) => acc + i.amount, 0))
+  const bank = sum('bank'), bizum = sum('bizum'), cash = sum('cash')
+  return { items, bank, bizum, cash, total: roundMoney(bank + bizum + cash) }
 }
 
 /**
@@ -210,28 +127,10 @@ export function selectGrossExpensesByPaymentMethod(
  * Si un gasto compartido fue pagado por otra persona (paidBy === 'contact'), no cuenta como desembolso bancario inicial del usuario.
  */
 export function selectGrossExpensesForPeriod(
-  transactions: Transaction[],
-  referenceDate: Date = new Date(),
-  scope: 'month' | 'all' = 'month',
+  transactions: Transaction[], referenceDate: Date = new Date(), scope: 'month' | 'all' = 'month',
   cashTransactions: CashTransaction[] = []
 ): number {
-  if (cashTransactions && cashTransactions.length > 0) {
-    return selectGrossExpensesByPaymentMethod(transactions, cashTransactions, referenceDate, scope).total
-  }
-
-  const currentMonth = referenceDate.getMonth()
-  const currentYear = referenceDate.getFullYear()
-
-  const sum = transactions
-    .filter((t) => t.type === 'expense' && (!t.isShared || t.paidBy !== 'contact'))
-    .filter((t) => {
-      if (scope === 'all') return true
-      const d = new Date(t.date)
-      return d.getMonth() === currentMonth && d.getFullYear() === currentYear
-    })
-    .reduce((acc, t) => acc + t.amount, 0)
-
-  return Math.round(sum * 100) / 100
+  return selectGrossExpensesByPaymentMethod(transactions, cashTransactions, referenceDate, scope).total
 }
 
 export const selectGrossExpenses = selectGrossExpensesForPeriod
@@ -242,29 +141,10 @@ export const selectGrossExpenses = selectGrossExpensesForPeriod
  * independientemente de la fecha en que se recibió el Bizum o efectivo.
  */
 export function selectLinkedReimbursementsForPeriod(
-  transactions: Transaction[],
-  referenceDate: Date = new Date(),
-  scope: 'month' | 'all' = 'month',
-  cashTransactions: CashTransaction[] = [],
-  expenseShares: ExpenseShare[] = []
+  transactions: Transaction[], referenceDate: Date = new Date(), scope: 'month' | 'all' = 'month',
+  cashTransactions: CashTransaction[] = [], expenseShares: ExpenseShare[] = [], source: EconomicSource = 'total'
 ): number {
-  const currentMonth = referenceDate.getMonth()
-  const currentYear = referenceDate.getFullYear()
-
-  const periodExpenses = transactions.filter((t) => {
-    if (t.type !== 'expense') return false
-    if (scope === 'all') return true
-    const d = new Date(t.date)
-    return d.getMonth() === currentMonth && d.getFullYear() === currentYear
-  })
-
-  let sum = 0
-  periodExpenses.forEach((exp) => {
-    const linked = selectLinkedReimbursementsForExpense(exp.id, transactions, cashTransactions, expenseShares)
-    sum += Math.min(exp.amount, linked)
-  })
-
-  return Math.round(sum * 100) / 100
+  return selectEconomicSummary(transactions, cashTransactions, referenceDate, scope, expenseShares, source).linkedReimbursements
 }
 
 /**
@@ -272,42 +152,10 @@ export function selectLinkedReimbursementsForPeriod(
  * Incluye cualquier ingreso de reembolso que entró en este mes.
  */
 export function selectReimbursementsReceived(
-  transactions: Transaction[],
-  referenceDate: Date = new Date(),
-  scope: 'month' | 'all' = 'month',
-  cashTransactions: CashTransaction[] = []
+  transactions: Transaction[], referenceDate: Date = new Date(), scope: 'month' | 'all' = 'month',
+  cashTransactions: CashTransaction[] = [], source: EconomicSource = 'total'
 ): number {
-  const currentMonth = referenceDate.getMonth()
-  const currentYear = referenceDate.getFullYear()
-
-  const bankSum = transactions
-    .filter((t) => t.type === 'income' && t.incomeKind === 'reimbursement')
-    .filter((t) => {
-      if (scope === 'all') return true
-      const d = new Date(t.date)
-      return d.getMonth() === currentMonth && d.getFullYear() === currentYear
-    })
-    .reduce((acc, t) => acc + t.amount, 0)
-
-  const withdrawalTxIds = new Set(
-    transactions.filter((t) => t.specialType === 'cash_withdrawal').map((t) => t.id)
-  )
-
-  const cashSum = cashTransactions
-    .filter(
-      (c) =>
-        c.type === 'income' &&
-        Boolean(c.bankTransactionId) &&
-        !withdrawalTxIds.has(c.bankTransactionId as string)
-    )
-    .filter((c) => {
-      if (scope === 'all') return true
-      const d = new Date(c.date)
-      return d.getMonth() === currentMonth && d.getFullYear() === currentYear
-    })
-    .reduce((acc, c) => acc + c.amount, 0)
-
-  return Math.round((bankSum + cashSum) * 100) / 100
+  return selectEconomicSummary(transactions, cashTransactions, referenceDate, scope, [], source).reimbursements
 }
 
 /**
@@ -316,30 +164,11 @@ export function selectReimbursementsReceived(
  * Suma matemática de todos los netos.
  */
 export function selectNetPersonalExpensesForPeriod(
-  transactions: Transaction[],
-  referenceDate: Date = new Date(),
-  scope: 'month' | 'all' = 'month',
-  cashTransactions: CashTransaction[] = [],
-  expenseShares: ExpenseShare[] = []
+  transactions: Transaction[], referenceDate: Date = new Date(), scope: 'month' | 'all' = 'month',
+  cashTransactions: CashTransaction[] = [], expenseShares: ExpenseShare[] = []
 ): number {
-  const currentMonth = referenceDate.getMonth()
-  const currentYear = referenceDate.getFullYear()
-
-  const periodExpenses = transactions.filter((t) => {
-    if (t.type !== 'expense' || (t.isShared && t.paidBy === 'contact')) return false
-    if (scope === 'all') return true
-    const d = new Date(t.date)
-    return d.getMonth() === currentMonth && d.getFullYear() === currentYear
-  })
-
-  let totalNet = 0
-  periodExpenses.forEach((exp) => {
-    const linked = selectLinkedReimbursementsForExpense(exp.id, transactions, cashTransactions, expenseShares)
-    const net = Math.max(0, Math.round((exp.amount - linked) * 100) / 100)
-    totalNet += net
-  })
-
-  return Math.round(totalNet * 100) / 100
+  // Esta API conserva su ámbito bancario. Total utiliza selectEconomicSummary.
+  return selectEconomicSummary(transactions, cashTransactions, referenceDate, scope, expenseShares, 'bank').netExpenses
 }
 
 export const selectNetPersonalExpenses = selectNetPersonalExpensesForPeriod
@@ -349,87 +178,10 @@ export const selectNetPersonalExpenses = selectNetPersonalExpensesForPeriod
  * Hereda la categoría del gasto original y nunca produce importes negativos.
  */
 export function selectNetExpensesByCategory(
-  transactions: Transaction[],
-  categories: Category[],
-  referenceDate: Date = new Date(),
-  scope: 'month' | 'all' = 'month',
-  cashTransactions: CashTransaction[] = [],
-  expenseShares: ExpenseShare[] = []
+  transactions: Transaction[], categories: Category[], referenceDate: Date = new Date(), scope: 'month' | 'all' = 'month',
+  cashTransactions: CashTransaction[] = [], expenseShares: ExpenseShare[] = [], source: EconomicSource = 'total'
 ): NetCategoryExpense[] {
-  const currentMonth = referenceDate.getMonth()
-  const currentYear = referenceDate.getFullYear()
-
-  const periodExpenses = transactions.filter((t) => {
-    if (t.type !== 'expense' || (t.isShared && t.paidBy === 'contact')) return false
-    if (t.specialType === 'cash_withdrawal' || t.specialType === 'transfer' || t.specialType === 'account_adjustment') return false
-    if (scope === 'all') return true
-    const d = new Date(t.date)
-    return d.getMonth() === currentMonth && d.getFullYear() === currentYear
-  })
-
-  const periodCashExpenses = (cashTransactions || []).filter((c) => {
-    if (c.type !== 'expense' || (c.isShared && c.paidBy === 'contact')) return false
-    if (scope === 'all') return true
-    const d = new Date(c.date)
-    return d.getMonth() === currentMonth && d.getFullYear() === currentYear
-  })
-
-  const netByCategory = new Map<string, number>()
-
-  periodExpenses.forEach((exp) => {
-    const catId = normalizeCategoryAlias(exp.categoryId || 'other')
-    const linked = selectLinkedReimbursementsForExpense(exp.id, transactions, cashTransactions, expenseShares)
-    const net = Math.max(0, Math.round((exp.amount - linked) * 100) / 100)
-    netByCategory.set(catId, Math.round(((netByCategory.get(catId) ?? 0) + net) * 100) / 100)
-  })
-
-  periodCashExpenses.forEach((exp) => {
-    const catId = normalizeCategoryAlias(exp.categoryId || 'other')
-    const linked = selectLinkedReimbursementsForExpense(exp.id, transactions, cashTransactions, expenseShares)
-    const net = Math.max(0, Math.round((exp.amount - linked) * 100) / 100)
-    netByCategory.set(catId, Math.round(((netByCategory.get(catId) ?? 0) + net) * 100) / 100)
-  })
-
-  const totalNet = Array.from(netByCategory.values()).reduce((sum, v) => sum + v, 0)
-
-  const results: NetCategoryExpense[] = []
-  const processedCatIds = new Set<string>()
-
-  categories.forEach((cat) => {
-    const canonicalId = normalizeCategoryAlias(cat.id)
-    const amount = netByCategory.get(canonicalId) ?? 0
-    if (amount > 0 && !processedCatIds.has(canonicalId)) {
-      const percentage = totalNet > 0 ? Math.round((amount / totalNet) * 100) : 0
-      results.push({
-        id: canonicalId,
-        name: canonicalId === 'other' ? 'Otros' : cat.name,
-        color: cat.color ?? '#B9B9B9',
-        icon: cat.iconKey || cat.icon || 'ellipsis',
-        amount,
-        percentage,
-      })
-      processedCatIds.add(canonicalId)
-    }
-  })
-
-  // Para categorías con gastos que no estuvieran explícitamente en el array categories
-  netByCategory.forEach((amount, catId) => {
-    if (!processedCatIds.has(catId) && amount > 0) {
-      const percentage = totalNet > 0 ? Math.round((amount / totalNet) * 100) : 0
-      results.push({
-        id: catId,
-        name: catId === 'other' ? 'Otros' : catId,
-        color: '#B9B9B9',
-        icon: 'ellipsis',
-        amount,
-        percentage,
-      })
-      processedCatIds.add(catId)
-    }
-  })
-
-  results.sort((a, b) => b.amount - a.amount)
-  return results
+  return selectEconomicCategoryExpenses(transactions, cashTransactions, categories, referenceDate, scope, expenseShares, source)
 }
 
 /**
@@ -949,33 +701,10 @@ export function getCanonicalRecurringShares(
  * Ingresos reales = suma de transacciones income que NO son reembolsos.
  */
 export function selectRealIncome(
-  transactions: Transaction[],
-  referenceDate: Date = new Date(),
-  scope: 'month' | 'all' = 'month',
-  cashTransactions: CashTransaction[] = []
+  transactions: Transaction[], referenceDate: Date = new Date(), scope: 'month' | 'all' = 'month',
+  cashTransactions: CashTransaction[] = [], source: EconomicSource = 'total'
 ): number {
-  const currentMonth = referenceDate.getMonth()
-  const currentYear = referenceDate.getFullYear()
-
-  const bankSum = transactions
-    .filter((t) => t.type === 'income' && t.incomeKind !== 'reimbursement')
-    .filter((t) => {
-      if (scope === 'all') return true
-      const d = new Date(t.date)
-      return d.getMonth() === currentMonth && d.getFullYear() === currentYear
-    })
-    .reduce((acc, t) => acc + t.amount, 0)
-
-  const cashSum = (cashTransactions || [])
-    .filter((c) => c.type === 'income' && !c.bankTransactionId)
-    .filter((c) => {
-      if (scope === 'all') return true
-      const d = new Date(c.date)
-      return d.getMonth() === currentMonth && d.getFullYear() === currentYear
-    })
-    .reduce((acc, c) => acc + Math.abs(Number(c.amount) || 0), 0)
-
-  return Math.round((bankSum + cashSum) * 100) / 100
+  return selectEconomicSummary(transactions, cashTransactions, referenceDate, scope, [], source).realIncome
 }
 
 /**
@@ -1471,30 +1200,10 @@ export function selectSettledPayables(
  * net = max(0, expense.amount - linkedReimbursements).
  */
 export function selectNetCashExpensesForPeriod(
-  cashTransactions: CashTransaction[] = [],
-  transactions: Transaction[] = [],
-  referenceDate: Date = new Date(),
-  scope: 'month' | 'all' = 'month',
-  expenseShares: ExpenseShare[] = []
+  cashTransactions: CashTransaction[] = [], transactions: Transaction[] = [], referenceDate: Date = new Date(),
+  scope: 'month' | 'all' = 'month', expenseShares: ExpenseShare[] = []
 ): number {
-  const currentMonth = referenceDate.getMonth()
-  const currentYear = referenceDate.getFullYear()
-
-  const periodExpenses = cashTransactions.filter((c) => {
-    if (c.type !== 'expense' || (c.isShared && c.paidBy === 'contact')) return false
-    if (scope === 'all') return true
-    const d = new Date(c.date)
-    return d.getMonth() === currentMonth && d.getFullYear() === currentYear
-  })
-
-  let totalNet = 0
-  periodExpenses.forEach((exp) => {
-    const linked = selectLinkedReimbursementsForExpense(exp.id, transactions, cashTransactions, expenseShares)
-    const net = Math.max(0, Math.round((exp.amount - linked) * 100) / 100)
-    totalNet += net
-  })
-
-  return Math.round(totalNet * 100) / 100
+  return selectEconomicSummary(transactions, cashTransactions, referenceDate, scope, expenseShares, 'cash').netExpenses
 }
 
 export const selectNetCashExpenses = selectNetCashExpensesForPeriod
@@ -1503,70 +1212,10 @@ export const selectNetCashExpenses = selectNetCashExpensesForPeriod
  * Gasto neto de efectivo agrupado por categoría para el periodo.
  */
 export function selectNetCashExpensesByCategory(
-  cashTransactions: CashTransaction[] = [],
-  transactions: Transaction[] = [],
-  categories: Category[] = [],
-  referenceDate: Date = new Date(),
-  scope: 'month' | 'all' = 'month',
-  expenseShares: ExpenseShare[] = []
+  cashTransactions: CashTransaction[] = [], transactions: Transaction[] = [], categories: Category[] = [],
+  referenceDate: Date = new Date(), scope: 'month' | 'all' = 'month', expenseShares: ExpenseShare[] = []
 ): NetCategoryExpense[] {
-  const currentMonth = referenceDate.getMonth()
-  const currentYear = referenceDate.getFullYear()
-
-  const periodExpenses = cashTransactions.filter((c) => {
-    if (c.type !== 'expense' || (c.isShared && c.paidBy === 'contact')) return false
-    if (scope === 'all') return true
-    const d = new Date(c.date)
-    return d.getMonth() === currentMonth && d.getFullYear() === currentYear
-  })
-
-  const netByCategory = new Map<string, number>()
-
-  periodExpenses.forEach((exp) => {
-    const catId = normalizeCategoryAlias(exp.categoryId || 'other')
-    const linked = selectLinkedReimbursementsForExpense(exp.id, transactions, cashTransactions, expenseShares)
-    const net = Math.max(0, Math.round((exp.amount - linked) * 100) / 100)
-    netByCategory.set(catId, Math.round(((netByCategory.get(catId) ?? 0) + net) * 100) / 100)
-  })
-
-  const totalNet = Array.from(netByCategory.values()).reduce((sum, v) => sum + v, 0)
-  const results: NetCategoryExpense[] = []
-  const processedCatIds = new Set<string>()
-
-  categories.forEach((cat) => {
-    const canonicalId = normalizeCategoryAlias(cat.id)
-    const amount = netByCategory.get(canonicalId) ?? 0
-    if (amount > 0 && !processedCatIds.has(canonicalId)) {
-      const percentage = totalNet > 0 ? Math.round((amount / totalNet) * 100) : 0
-      results.push({
-        id: canonicalId,
-        name: canonicalId === 'other' ? 'Otros' : cat.name,
-        color: cat.color ?? '#B9B9B9',
-        icon: cat.iconKey || cat.icon || 'ellipsis',
-        amount,
-        percentage,
-      })
-      processedCatIds.add(canonicalId)
-    }
-  })
-
-  netByCategory.forEach((amount, catId) => {
-    if (!processedCatIds.has(catId) && amount > 0) {
-      const percentage = totalNet > 0 ? Math.round((amount / totalNet) * 100) : 0
-      results.push({
-        id: catId,
-        name: catId === 'other' ? 'Otros' : catId,
-        color: '#B9B9B9',
-        icon: 'ellipsis',
-        amount,
-        percentage,
-      })
-      processedCatIds.add(catId)
-    }
-  })
-
-  results.sort((a, b) => b.amount - a.amount)
-  return results
+  return selectEconomicCategoryExpenses(transactions, cashTransactions, categories, referenceDate, scope, expenseShares, 'cash')
 }
 
 export interface DayNetStats {
@@ -1582,198 +1231,25 @@ export interface DayNetStats {
  * descontando reembolsos vinculados de cada gasto del día y excluyendo transferencias.
  */
 export function selectDayNetFinanceStats(
-  transactions: Transaction[],
-  year: number,
-  month: number,
-  day: number,
-  cashTransactions: CashTransaction[] = [],
-  expenseShares: ExpenseShare[] = []
+  transactions: Transaction[], year: number, month: number, day: number,
+  cashTransactions: CashTransaction[] = [], expenseShares: ExpenseShare[] = []
 ): DayNetStats {
-  const withdrawalTxIds = new Set(
-    transactions.filter((t) => t.specialType === 'cash_withdrawal').map((t) => t.id)
-  )
-  const linkedBankWithdrawalIds = new Set(
-    cashTransactions
-      .filter((c) => c.type === 'income' && Boolean(c.bankTransactionId) && withdrawalTxIds.has(c.bankTransactionId as string))
-      .map((c) => c.bankTransactionId as string)
-  )
-
-  let grossExpenses = 0
-  let netExpenses = 0
-  let realIncome = 0
-  let reimbursements = 0
-
-  transactions.forEach((t) => {
-    const d = new Date(t.date)
-    if (d.getFullYear() === year && d.getMonth() === month && d.getDate() === day) {
-      if (t.type === 'expense') {
-        // Si es una retirada de cajero vinculada o un gasto pagado por un contacto, no computa como desembolso
-        if (linkedBankWithdrawalIds.has(t.id) || (t.isShared && t.paidBy === 'contact')) {
-          return
-        }
-        grossExpenses += t.amount
-        const linked = selectLinkedReimbursementsForExpense(t.id, transactions, cashTransactions, expenseShares)
-        const net = Math.max(0, Math.round((t.amount - linked) * 100) / 100)
-        netExpenses += net
-      } else if (t.type === 'income') {
-        if (t.incomeKind === 'reimbursement') {
-          reimbursements += t.amount
-        } else {
-          realIncome += t.amount
-        }
-      }
-    }
-  })
-
-  // Movimientos de efectivo en este día
-  cashTransactions.forEach((c) => {
-    const d = new Date(c.date)
-    if (d.getFullYear() === year && d.getMonth() === month && d.getDate() === day) {
-      if (c.type === 'expense') {
-        if (c.isShared && c.paidBy === 'contact') {
-          return
-        }
-        grossExpenses += c.amount
-        const linked = selectLinkedReimbursementsForExpense(c.id, transactions, cashTransactions, expenseShares)
-        const net = Math.max(0, Math.round((c.amount - linked) * 100) / 100)
-        netExpenses += net
-      } else if (c.type === 'income') {
-        if (Boolean(c.bankTransactionId)) {
-          if (!withdrawalTxIds.has(c.bankTransactionId as string)) {
-            // Reembolso recibido en efectivo
-            reimbursements += c.amount
-          }
-        } else {
-          // Ingreso directo en efectivo
-          realIncome += c.amount
-        }
-      }
-      // 'adjustment' no se suma a gastos ni ingresos
-    }
-  })
-
-  grossExpenses = Math.round(grossExpenses * 100) / 100
-  netExpenses = Math.round(netExpenses * 100) / 100
-  realIncome = Math.round(realIncome * 100) / 100
-  reimbursements = Math.round(reimbursements * 100) / 100
-  const netBalance = Math.round((realIncome - netExpenses) * 100) / 100
-
-  return {
-    netExpenses,
-    grossExpenses,
-    realIncome,
-    reimbursements,
-    netBalance,
-  }
+  return selectEconomicSummaryForRange(transactions, cashTransactions,
+    { start: new Date(year, month, day), end: new Date(year, month, day, 23, 59, 59, 999) }, expenseShares)
 }
 
 /**
  * Genera el mapa diario de estadísticas netas para cada día del mes.
  */
 export function selectMonthDailyNetStats(
-  transactions: Transaction[],
-  year: number,
-  month: number,
-  cashTransactions: CashTransaction[] = [],
-  expenseShares: ExpenseShare[] = []
+  transactions: Transaction[], year: number, month: number,
+  cashTransactions: CashTransaction[] = [], expenseShares: ExpenseShare[] = []
 ): Map<number, DayNetStats> {
   const map = new Map<number, DayNetStats>()
-  const daysInMonth = new Date(year, month + 1, 0).getDate()
-
-  const withdrawalTxIds = new Set(
-    transactions.filter((t) => t.specialType === 'cash_withdrawal').map((t) => t.id)
-  )
-  const linkedBankWithdrawalIds = new Set(
-    cashTransactions
-      .filter((c) => c.type === 'income' && Boolean(c.bankTransactionId) && withdrawalTxIds.has(c.bankTransactionId as string))
-      .map((c) => c.bankTransactionId as string)
-  )
-
-  const txsByDay = new Map<number, Transaction[]>()
-  transactions.forEach((t) => {
-    const d = new Date(t.date)
-    if (d.getFullYear() === year && d.getMonth() === month) {
-      const day = d.getDate()
-      const list = txsByDay.get(day) ?? []
-      list.push(t)
-      txsByDay.set(day, list)
-    }
-  })
-
-  const cashByDay = new Map<number, CashTransaction[]>()
-  cashTransactions.forEach((c) => {
-    const d = new Date(c.date)
-    if (d.getFullYear() === year && d.getMonth() === month) {
-      const day = d.getDate()
-      const list = cashByDay.get(day) ?? []
-      list.push(c)
-      cashByDay.set(day, list)
-    }
-  })
-
-  for (let day = 1; day <= daysInMonth; day++) {
-    const dayTxs = txsByDay.get(day) ?? []
-    const dayCash = cashByDay.get(day) ?? []
-    let grossExpenses = 0
-    let netExpenses = 0
-    let realIncome = 0
-    let reimbursements = 0
-
-    dayTxs.forEach((t) => {
-      if (t.type === 'expense') {
-        if (linkedBankWithdrawalIds.has(t.id) || (t.isShared && t.paidBy === 'contact')) {
-          return
-        }
-        grossExpenses += t.amount
-        const linked = selectLinkedReimbursementsForExpense(t.id, transactions, cashTransactions, expenseShares)
-        const net = Math.max(0, Math.round((t.amount - linked) * 100) / 100)
-        netExpenses += net
-      } else if (t.type === 'income') {
-        if (t.incomeKind === 'reimbursement') {
-          reimbursements += t.amount
-        } else {
-          realIncome += t.amount
-        }
-      }
-    })
-
-    dayCash.forEach((c) => {
-      if (c.type === 'expense') {
-        if (c.isShared && c.paidBy === 'contact') {
-          return
-        }
-        grossExpenses += c.amount
-        const linked = selectLinkedReimbursementsForExpense(c.id, transactions, cashTransactions, expenseShares)
-        const net = Math.max(0, Math.round((c.amount - linked) * 100) / 100)
-        netExpenses += net
-      } else if (c.type === 'income') {
-        if (Boolean(c.bankTransactionId)) {
-          if (!withdrawalTxIds.has(c.bankTransactionId as string)) {
-            reimbursements += c.amount
-          }
-        } else {
-          realIncome += c.amount
-        }
-      }
-    })
-
-    if (grossExpenses > 0 || realIncome > 0 || reimbursements > 0) {
-      grossExpenses = Math.round(grossExpenses * 100) / 100
-      netExpenses = Math.round(netExpenses * 100) / 100
-      realIncome = Math.round(realIncome * 100) / 100
-      reimbursements = Math.round(reimbursements * 100) / 100
-      const netBalance = Math.round((realIncome - netExpenses) * 100) / 100
-
-      map.set(day, {
-        netExpenses,
-        grossExpenses,
-        realIncome,
-        reimbursements,
-        netBalance,
-      })
-    }
+  for (let day = 1; day <= new Date(year, month + 1, 0).getDate(); day++) {
+    const stats = selectDayNetFinanceStats(transactions, year, month, day, cashTransactions, expenseShares)
+    if (stats.grossExpenses > 0 || stats.realIncome > 0 || stats.reimbursements > 0) map.set(day, stats)
   }
-
   return map
 }
 
@@ -2147,8 +1623,8 @@ export function selectCategoryMonthlyStats(
 
   const allUnified = toUnifiedMovements(transactions, cashTransactions, expenseShares)
   const movements = allUnified.filter((m) => {
-    if (m.type !== 'expense' || m.isCashWithdrawal) return false
-    const d = new Date(m.date)
+    if (m.economicKind !== 'expense' || (m.isShared && m.paidBy === 'contact')) return false
+    const d = economicDate(m.date)
     if (d.getFullYear() !== refYear || d.getMonth() !== refMonth) return false
     return normalizeCategoryAlias(m.categoryId || 'other') === normCatId
   })
@@ -2200,9 +1676,9 @@ export function selectIncomeCategoryBreakdown(
 
   const allUnified = toUnifiedMovements(transactions, cashTransactions, expenseShares)
   const periodIncomes = allUnified.filter((m) => {
-    if (m.type !== 'income' || m.isReimbursement || m.isLinkedCashWithdrawal) return false
+    if (m.economicKind !== 'income') return false
     if (scope === 'all') return true
-    const d = new Date(m.date)
+    const d = economicDate(m.date)
     return d.getFullYear() === refYear && d.getMonth() === refMonth
   })
 
@@ -2250,3 +1726,78 @@ export function selectIncomeCategoryBreakdown(
 }
 
 
+
+
+export interface EconomicExpense {
+  movement: EconomicMovement
+  gross: number
+  linked: number
+  net: number
+}
+
+/** Universo común de compras; mantiene los registros originales y el contexto completo de reembolsos. */
+export function selectEconomicExpenses(
+  transactions: Transaction[] = [], cashTransactions: CashTransaction[] = [], expenseShares: ExpenseShare[] = [],
+  source: EconomicSource = 'total', includes: (date: string) => boolean = () => true
+): EconomicExpense[] {
+  return classifyEconomicMovements(transactions, cashTransactions)
+    .filter((m) => (source === 'total' || m.source === source) && isPersonalExpense(m) && includes(m.transaction.date))
+    .map((movement) => {
+      const t = movement.transaction
+      const gross = roundMoney(Math.abs(Number(t.amount) || 0))
+      const linked = Math.min(gross, selectLinkedReimbursementsForExpense(t.id, transactions, cashTransactions, expenseShares))
+      return { movement, gross, linked, net: roundMoney(Math.max(0, gross - linked)) }
+    })
+}
+
+function summarizeEconomicMovements(
+  transactions: Transaction[], cashTransactions: CashTransaction[], expenseShares: ExpenseShare[],
+  source: EconomicSource, includes: (date: string) => boolean
+) {
+  const expenses = selectEconomicExpenses(transactions, cashTransactions, expenseShares, source, includes)
+  const movements = classifyEconomicMovements(transactions, cashTransactions)
+    .filter((m) => (source === 'total' || m.source === source) && includes(m.transaction.date))
+  const sumKind = (kind: 'income' | 'reimbursement') => roundMoney(movements.filter((m) => m.kind === kind)
+    .reduce((sum, m) => sum + Math.abs(Number(m.transaction.amount) || 0), 0))
+  const grossExpenses = roundMoney(expenses.reduce((sum, e) => sum + e.gross, 0))
+  const netExpenses = roundMoney(expenses.reduce((sum, e) => sum + e.net, 0))
+  const linkedReimbursements = roundMoney(expenses.reduce((sum, e) => sum + e.linked, 0))
+  const realIncome = sumKind('income'), reimbursements = sumKind('reimbursement')
+  return { grossExpenses, netExpenses, linkedReimbursements, realIncome, reimbursements, netBalance: roundMoney(realIncome - netExpenses) }
+}
+
+export function selectEconomicSummary(
+  transactions: Transaction[] = [], cashTransactions: CashTransaction[] = [], referenceDate: Date = new Date(),
+  scope: 'month' | 'all' = 'month', expenseShares: ExpenseShare[] = [], source: EconomicSource = 'total'
+) {
+  return summarizeEconomicMovements(transactions, cashTransactions, expenseShares, source,
+    (date) => inEconomicMonth(date, referenceDate, scope))
+}
+
+export function selectEconomicSummaryForRange(
+  transactions: Transaction[], cashTransactions: CashTransaction[], range: { start: Date; end: Date },
+  expenseShares: ExpenseShare[] = [], source: EconomicSource = 'total'
+) {
+  return summarizeEconomicMovements(transactions, cashTransactions, expenseShares, source,
+    (date) => inEconomicRange(date, range))
+}
+
+export function selectEconomicCategoryExpenses(
+  transactions: Transaction[], cashTransactions: CashTransaction[], categories: Category[], referenceDate: Date = new Date(),
+  scope: 'month' | 'all' = 'month', expenseShares: ExpenseShare[] = [], source: EconomicSource = 'total',
+  mode: 'net' | 'gross' = 'net', range?: { start: Date; end: Date }
+): NetCategoryExpense[] {
+  const amounts = new Map<string, number>()
+  selectEconomicExpenses(transactions, cashTransactions, expenseShares, source,
+    (date) => range ? inEconomicRange(date, range) : inEconomicMonth(date, referenceDate, scope))
+    .forEach((e) => {
+      const id = normalizeCategoryAlias(e.movement.transaction.categoryId || 'other')
+      amounts.set(id, roundMoney((amounts.get(id) || 0) + (mode === 'gross' ? e.gross : e.net)))
+    })
+  const total = roundMoney([...amounts.values()].reduce((sum, amount) => sum + amount, 0))
+  return [...amounts].filter(([, amount]) => amount > 0).map(([id, amount]) => {
+    const category = categories.find((c) => normalizeCategoryAlias(c.id) === id)
+    return { id, amount, percentage: total > 0 ? Math.round(amount / total * 100) : 0,
+      name: id === 'other' ? 'Otros' : category?.name || id, color: category?.color || '#B9B9B9', icon: category?.iconKey || category?.icon || 'ellipsis' }
+  }).sort((a, b) => b.amount - a.amount)
+}

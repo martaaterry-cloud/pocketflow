@@ -1,3 +1,4 @@
+import { classifyEconomicMovements, inEconomicMonth, isPersonalExpense } from './economicClassification'
 import type { Account, Category, RecurringFrequency, RecurringPayment, SavingsGoal, Transaction } from '../models/finance'
 import { normalizeCategoryAlias } from './categoryNormalization'
 import { getCanonicalRecurringShares } from './sharedExpenseSelectors'
@@ -508,22 +509,9 @@ export function selectMonthCashWithdrawals(
  * @deprecated Para KPIs de coste real y consumo financiero usar la fuente canónica:
  * {@link selectNetPersonalExpensesForPeriod} de `sharedExpenseSelectors.ts`.
  */
-export function selectMonthExpenses(
-  transactions: Transaction[],
-  referenceDate: Date = new Date()
-): number {
-  const currentMonth = referenceDate.getMonth()
-  const currentYear = referenceDate.getFullYear()
-
-  const sum = transactions
-    .filter((t) => t.type === 'expense' && (!t.isShared || t.paidBy !== 'contact'))
-    .filter((t) => {
-      const d = new Date(t.date)
-      return d.getMonth() === currentMonth && d.getFullYear() === currentYear
-    })
-    .reduce((acc, t) => acc + t.amount, 0)
-
-  return Math.round(sum * 100) / 100
+export function selectMonthExpenses(transactions: Transaction[], referenceDate: Date = new Date()): number {
+  return Math.round(classifyEconomicMovements(transactions).filter((m) => isPersonalExpense(m) && inEconomicMonth(m.transaction.date, referenceDate))
+    .reduce((sum, m) => sum + m.transaction.amount, 0) * 100) / 100
 }
 
 /**
@@ -681,14 +669,8 @@ export function selectCategoryExpenses(
   categories: Category[],
   referenceDate: Date = new Date()
 ): { id: string; name: string; amount: number; percentage: number; color: string; iconKey?: string }[] {
-  const currentMonth = referenceDate.getMonth()
-  const currentYear = referenceDate.getFullYear()
-
-  const monthExpenses = transactions.filter((t) => {
-    if (t.type !== 'expense' || (t.isShared && t.paidBy === 'contact')) return false
-    const d = new Date(t.date)
-    return d.getMonth() === currentMonth && d.getFullYear() === currentYear
-  })
+  const monthExpenses = classifyEconomicMovements(transactions).filter((m) => isPersonalExpense(m) && inEconomicMonth(m.transaction.date, referenceDate))
+    .map((m) => m.transaction)
 
   const total = monthExpenses.reduce((sum, t) => sum + t.amount, 0)
   const categoryMap = new Map<string, number>()

@@ -2,7 +2,7 @@ import { useState, useMemo, useEffect } from 'react'
 import type { CashTransaction, Category, ExpenseShare, Transaction } from '../models/finance'
 import { SwipeableTransactionRow } from './SwipeableTransactionRow'
 import { selectExpenseShareStatus, selectExpensePayableStatus } from '../utils/sharedExpenseSelectors'
-import { toUnifiedMovements, type UnifiedMovement } from '../utils/unifiedMovementSelectors'
+import { toUnifiedMovements, collapseInternalTransfers, type UnifiedMovement } from '../utils/unifiedMovementSelectors'
 
 export interface TransactionListProps {
   movements?: UnifiedMovement[]
@@ -40,7 +40,8 @@ export function TransactionList({
     return toUnifiedMovements(transactions, cashTransactions, expenseShares)
   }, [movements, transactions, cashTransactions, expenseShares])
 
-  const rows = limit ? items.slice(0, limit) : items
+  const displayItems = collapseInternalTransfers(items)
+  const rows = limit ? displayItems.slice(0, limit) : displayItems
 
   // Cerrar fila abierta al hacer tap fuera de cualquier fila deslizable
   useEffect(() => {

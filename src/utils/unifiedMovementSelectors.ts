@@ -1,3 +1,4 @@
+import { classifyEconomicMovements, economicDate, inEconomicMonth, type EconomicKind } from './economicClassification'
 import type { AttachmentMetadata, CashTransaction, Category, ExpenseShare, Transaction } from '../models/finance'
 import { normalizeCategoryAlias } from './categoryNormalization'
 
@@ -28,6 +29,8 @@ export interface UnifiedMovement {
   isLinkedCashWithdrawal: boolean
   isReimbursement: boolean
   isAdjustment: boolean
+  economicKind?: EconomicKind
+  transferGroupId?: string
   bankTransactionId?: string
   parentExpenseId?: string
   attachments?: AttachmentMetadata[]
@@ -50,17 +53,8 @@ export interface UnifiedMovementFilters {
  */
 export function isSameMonthYear(dateInput: string | Date | undefined, referenceDate: Date = new Date()): boolean {
   if (!dateInput) return false
-  if (typeof dateInput === 'string') {
-    const clean = dateInput.slice(0, 10)
-    const parts = clean.split('-')
-    if (parts.length === 3) {
-      const y = parseInt(parts[0], 10)
-      const m = parseInt(parts[1], 10) - 1
-      return y === referenceDate.getFullYear() && m === referenceDate.getMonth()
-    }
-  }
-  const d = typeof dateInput === 'string' ? new Date(dateInput) : dateInput
-  return !isNaN(d.getTime()) && d.getFullYear() === referenceDate.getFullYear() && d.getMonth() === referenceDate.getMonth()
+  if (typeof dateInput === 'string') return inEconomicMonth(dateInput, referenceDate)
+  return !isNaN(dateInput.getTime()) && dateInput.getFullYear() === referenceDate.getFullYear() && dateInput.getMonth() === referenceDate.getMonth()
 }
 
 /**
@@ -88,16 +82,17 @@ export function toUnifiedMovements(
   cashTransactions: CashTransaction[] = [],
   expenseShares: ExpenseShare[] = []
 ): UnifiedMovement[] {
-  const withdrawalTxIds = new Set(
-    transactions.filter((t) => t.specialType === 'cash_withdrawal').map((t) => t.id)
-  )
+  const classified = classifyEconomicMovements(transactions, cashTransactions)
+  const bankKinds = new Map(classified.filter((m) => m.source === 'bank').map((m) => [m.transaction.id, m]))
+  const cashKinds = new Map(classified.filter((m) => m.source === 'cash').map((m) => [m.transaction.id, m]))
 
   const bankMovements: UnifiedMovement[] = transactions.map((t) => {
     const isShared = Boolean(
       t.isShared || (expenseShares && expenseShares.some((s) => s.expenseTransactionId === t.id))
     )
     const isCashWithdrawal = t.specialType === 'cash_withdrawal'
-    const isReimbursement = t.type === 'income' && t.incomeKind === 'reimbursement'
+    const classification = bankKinds.get(t.id)!
+    const isReimbursement = classification.kind === 'reimbursement'
 
     const userShare = isShared
       ? expenseShares.find(
@@ -130,7 +125,9 @@ export function toUnifiedMovements(
       isCashWithdrawal,
       isLinkedCashWithdrawal: false,
       isReimbursement,
-      isAdjustment: false,
+      isAdjustment: classification.kind === 'adjustment',
+      economicKind: classification.kind,
+      transferGroupId: classification.transferId,
       parentExpenseId: t.parentExpenseId,
       attachments: t.attachments,
       originalTransaction: t,
@@ -141,11 +138,11 @@ export function toUnifiedMovements(
     const isShared = Boolean(
       c.isShared || (expenseShares && expenseShares.some((s) => s.expenseTransactionId === c.id))
     )
-    const isLinkedCashWithdrawal =
-      c.type === 'income' && Boolean(c.bankTransactionId) && withdrawalTxIds.has(c.bankTransactionId as string)
-    const isReimbursement =
-      c.type === 'income' && Boolean(c.bankTransactionId) && !withdrawalTxIds.has(c.bankTransactionId as string)
-    const isAdjustment = c.type === 'adjustment'
+    const classification = cashKinds.get(c.id)!
+    const isLinkedCashWithdrawal = c.type === 'income' && classification.kind === 'transfer'
+    const isReimbursement = classification.kind === 'reimbursement'
+    const isAdjustment = classification.kind === 'adjustment'
+
 
     const userShare = isShared
       ? expenseShares.find(
@@ -174,6 +171,8 @@ export function toUnifiedMovements(
       isLinkedCashWithdrawal,
       isReimbursement,
       isAdjustment,
+      economicKind: classification.kind,
+      transferGroupId: classification.transferId,
       bankTransactionId: c.bankTransactionId,
       attachments: c.attachments,
       originalTransaction: c,
@@ -184,8 +183,8 @@ export function toUnifiedMovements(
 
   // Ordenar cronológicamente descendente (más recientes primero)
   return combined.sort((a, b) => {
-    const timeA = new Date(a.date).getTime()
-    const timeB = new Date(b.date).getTime()
+    const timeA = economicDate(a.date).getTime()
+    const timeB = economicDate(b.date).getTime()
     if (timeB !== timeA) {
       return timeB - timeA
     }
@@ -223,24 +222,25 @@ export function filterUnifiedMovements(
 
     // 1. Filtro por medio / origen (Banco, Bizum, Efectivo)
     if (source === 'bank') {
-      if (m.source !== 'bank' || m.paymentMethod === 'bizum') return false
+      if (m.source !== 'bank') return false
     }
     if (source === 'bizum') {
       if (m.paymentMethod !== 'bizum') return false
     }
     if (source === 'cash') {
-      if (m.source !== 'cash' && m.paymentMethod !== 'cash') return false
+      if (m.source !== 'cash') return false
     }
 
     // 2. Filtro por tipo
-    if (type === 'expense' && (m.type !== 'expense' || m.isCashWithdrawal)) return false
-    if (type === 'income' && (m.type !== 'income' || m.isLinkedCashWithdrawal)) return false
+    const kind = m.economicKind || (m.isCashWithdrawal || m.isLinkedCashWithdrawal ? 'transfer' : m.isAdjustment ? 'adjustment' : m.isReimbursement ? 'reimbursement' : m.type)
+    if (type === 'expense' && (kind !== 'expense' || (m.isShared && m.paidBy === 'contact'))) return false
+    if (type === 'income' && kind !== 'income' && kind !== 'reimbursement') return false
     if (type === 'transfer') {
-      const isTransferLike = m.type === 'transfer' || m.isCashWithdrawal || m.isLinkedCashWithdrawal
+      const isTransferLike = kind === 'transfer'
       if (!isTransferLike) return false
     }
     if (type === 'adjustment') {
-      if (m.type !== 'adjustment' && !m.isAdjustment) return false
+      if (kind !== 'adjustment') return false
     }
 
     // 3. Subfiltro de ingresos
@@ -307,4 +307,11 @@ export function calculateUnifiedMovementStats(movements: UnifiedMovement[]) {
     reimbursements: Math.round(reimbursements * 100) / 100,
     adjustments: Math.round(adjustments * 100) / 100,
   }
+}
+
+
+/** Una fila global por traslado, sin eliminar ninguna pata del historial persistido. */
+export function collapseInternalTransfers(movements: UnifiedMovement[]): UnifiedMovement[] {
+  const bankGroups = new Set(movements.filter((m) => m.source === 'bank' && m.transferGroupId).map((m) => m.transferGroupId))
+  return movements.filter((m) => !(m.source === 'cash' && m.transferGroupId && bankGroups.has(m.transferGroupId)))
 }

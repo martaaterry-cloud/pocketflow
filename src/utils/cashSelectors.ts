@@ -1,6 +1,7 @@
+import { inEconomicMonth } from './economicClassification'
 import type { Account, CashTransaction, ExpenseShare, Transaction } from '../models/finance'
 import { selectTotalMoney } from './financeSelectors'
-import { selectNetPersonalExpensesForPeriod, selectNetCashExpensesForPeriod } from './sharedExpenseSelectors'
+import { selectNetPersonalExpensesForPeriod, selectNetCashExpensesForPeriod, selectEconomicSummary } from './sharedExpenseSelectors'
 
 export { selectNetCashExpensesForPeriod } from './sharedExpenseSelectors'
 
@@ -8,24 +9,11 @@ export { selectNetCashExpensesForPeriod } from './sharedExpenseSelectors'
  * Salidas de efectivo brutas (expense) en un periodo dado.
  */
 export function selectGrossCashExpensesForPeriod(
-  cashTransactions: CashTransaction[] = [],
-  referenceDate: Date = new Date(),
-  scope: 'month' | 'all' = 'month'
+  cashTransactions: CashTransaction[] = [], referenceDate: Date = new Date(), scope: 'month' | 'all' = 'month',
+  transactions: Transaction[] = []
 ): number {
   if (!Array.isArray(cashTransactions)) return 0
-  const refMonth = referenceDate.getMonth()
-  const refYear = referenceDate.getFullYear()
-
-  const sum = cashTransactions
-    .filter((tx) => tx.type === 'expense' && (!tx.isShared || tx.paidBy !== 'contact'))
-    .filter((tx) => {
-      if (scope === 'all') return true
-      const d = new Date(tx.date)
-      return d.getMonth() === refMonth && d.getFullYear() === refYear
-    })
-    .reduce((acc, tx) => acc + Math.abs(Number(tx.amount) || 0), 0)
-
-  return Math.round(sum * 100) / 100
+  return selectEconomicSummary(transactions, cashTransactions, referenceDate, scope, [], 'cash').grossExpenses
 }
 
 /**
@@ -65,24 +53,11 @@ export function selectCashBalance(cashTransactions: CashTransaction[] = []): num
  * Entradas de efectivo (income) en un periodo dado.
  */
 export function selectCashIncomeForPeriod(
-  cashTransactions: CashTransaction[] = [],
-  referenceDate: Date = new Date(),
-  scope: 'month' | 'all' = 'month'
+  cashTransactions: CashTransaction[] = [], referenceDate: Date = new Date(), scope: 'month' | 'all' = 'month',
+  transactions: Transaction[] = []
 ): number {
   if (!Array.isArray(cashTransactions)) return 0
-  const refMonth = referenceDate.getMonth()
-  const refYear = referenceDate.getFullYear()
-
-  const sum = cashTransactions
-    .filter((tx) => tx.type === 'income')
-    .filter((tx) => {
-      if (scope === 'all') return true
-      const d = new Date(tx.date)
-      return d.getMonth() === refMonth && d.getFullYear() === refYear
-    })
-    .reduce((acc, tx) => acc + Math.abs(Number(tx.amount) || 0), 0)
-
-  return Math.round(sum * 100) / 100
+  return selectEconomicSummary(transactions, cashTransactions, referenceDate, scope, [], 'cash').realIncome
 }
 
 /**
@@ -92,9 +67,10 @@ export function selectCashExpensesForPeriod(
   cashTransactions: CashTransaction[] = [],
   referenceDate: Date = new Date(),
   scope: 'month' | 'all' = 'month',
-  transactions: Transaction[] = []
+  transactions: Transaction[] = [],
+  expenseShares: ExpenseShare[] = []
 ): number {
-  return selectNetCashExpensesForPeriod(cashTransactions, transactions, referenceDate, scope)
+  return selectNetCashExpensesForPeriod(cashTransactions, transactions, referenceDate, scope, expenseShares)
 }
 
 /**
@@ -170,8 +146,6 @@ export function selectLinkedCashWithdrawalsForPeriod(
 ): number {
   if (!Array.isArray(transactions) || !Array.isArray(cashTransactions)) return 0
 
-  const refMonth = referenceDate.getMonth()
-  const refYear = referenceDate.getFullYear()
 
   // IDs de transacciones bancarias que tienen entrada de efectivo vinculada
   const linkedBankTxIds = new Set(
@@ -182,11 +156,7 @@ export function selectLinkedCashWithdrawalsForPeriod(
 
   const sum = transactions
     .filter((t) => t.type === 'expense' && t.specialType === 'cash_withdrawal' && linkedBankTxIds.has(t.id))
-    .filter((t) => {
-      if (scope === 'all') return true
-      const d = new Date(t.date)
-      return d.getMonth() === refMonth && d.getFullYear() === refYear
-    })
+    .filter((t) => inEconomicMonth(t.date, referenceDate, scope))
     .reduce((acc, t) => acc + t.amount, 0)
 
   return Math.round(sum * 100) / 100
@@ -195,14 +165,17 @@ export function selectLinkedCashWithdrawalsForPeriod(
 export interface TotalEconomicConsumptionSummary {
   bankNetExpenses: number
   cashExpenses: number
+  /** @deprecated Las retiradas ya están excluidas del gasto bancario; siempre 0. */
   linkedWithdrawalsDeducted: number
+  transferredToCash: number
   totalEconomicConsumption: number
 }
 
 /**
  * Selector canónico de consumo económico global sin doble conteo de cajero:
  *
- * Gasto Total Real = (Gasto Neto Bancario - Retiradas de Cajero Vinculadas a Efectivo) + Gasto Real Neto en Efectivo
+ * Gasto Total Real = Gasto Neto Bancario + Gasto Real Neto en Efectivo.
+ * Los traslados internos ya están excluidos en ambos orígenes.
  */
 export function selectTotalEconomicConsumptionForPeriod(
   transactions: Transaction[] = [],
@@ -225,7 +198,7 @@ export function selectTotalEconomicConsumptionForPeriod(
     scope,
     expenseShares
   )
-  const linkedWithdrawalsDeducted = selectLinkedCashWithdrawalsForPeriod(
+  const transferredToCash = selectLinkedCashWithdrawalsForPeriod(
     transactions,
     cashTransactions,
     referenceDate,
@@ -234,13 +207,14 @@ export function selectTotalEconomicConsumptionForPeriod(
 
   const totalEconomicConsumption = Math.max(
     0,
-    Math.round((bankNetExpenses - linkedWithdrawalsDeducted + cashExpenses) * 100) / 100
+    Math.round((bankNetExpenses + cashExpenses) * 100) / 100
   )
 
   return {
     bankNetExpenses,
     cashExpenses,
-    linkedWithdrawalsDeducted,
+    linkedWithdrawalsDeducted: 0,
+    transferredToCash,
     totalEconomicConsumption,
   }
 }

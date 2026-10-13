@@ -154,8 +154,8 @@ export function SwipeableTransactionRow({
   }
 
   const category = categories.find((c) => c.id === item.categoryId)
-  const isTransfer = item.type === 'transfer'
-  const isIncome = item.type === 'income'
+  const isTransfer = item.economicKind === 'transfer' || item.type === 'transfer'
+  const isIncome = !isTransfer && (item.economicKind === 'income' || item.economicKind === 'reimbursement' || item.type === 'income')
   const isReimbursement = item.isReimbursement
   const isAdjustment = item.isAdjustment
   const isCashWithdrawal = item.isCashWithdrawal
@@ -480,7 +480,7 @@ export function SwipeableTransactionRow({
               : isLinkedCashWithdrawal
               ? 'Entrada vinculada desde Banco'
               : isAdjustment
-              ? 'Ajuste de efectivo'
+              ? 'Ajuste de saldo'
               : isTransfer
               ? 'Transferencia interna'
               : isReimbursement

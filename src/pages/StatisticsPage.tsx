@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import { DonutChart } from '../components/DonutChart'
 import { CategoryDetailModal } from '../components/CategoryDetailModal'
-import type { Category, Transaction } from '../models/finance'
+import type { CashTransaction, Category, Transaction } from '../models/finance'
 import type { ReturnTypeFinance } from '../types'
 import {
   calculatePeriodStatistics,
@@ -20,7 +20,7 @@ export function StatisticsPage({
 }: {
   finance: ReturnTypeFinance
   onBack: () => void
-  onSelectTransaction?: (tx: Transaction) => void
+  onSelectTransaction?: (tx: Transaction | CashTransaction) => void
 }) {
   const [period, setPeriod] = useState<StatsPeriod>('month')
   const [selectedCategoryForDetail, setSelectedCategoryForDetail] = useState<Category | null>(null)
@@ -28,16 +28,8 @@ export function StatisticsPage({
 
   // Estadísticas del periodo actual
   const stats = useMemo(() => {
-    return calculatePeriodStatistics(finance.transactions, finance.categories, period, now)
-  }, [finance.transactions, finance.categories, period, now])
-
-  // Transacciones del periodo actual
-  const periodTransactions = useMemo(() => {
-    return finance.transactions.filter((t) => {
-      const txTime = new Date(t.date).getTime()
-      return txTime >= stats.dateRange.start.getTime() && txTime <= stats.dateRange.end.getTime()
-    })
-  }, [finance.transactions, stats.dateRange])
+    return calculatePeriodStatistics(finance.transactions, finance.categories, period, now, finance.cashTransactions, finance.expenseShares)
+  }, [finance.transactions, finance.cashTransactions, finance.expenseShares, finance.categories, period, now])
 
   // Estadísticas del periodo anterior para comparativa (especialmente mes y semana)
   const comparison = useMemo(() => {
@@ -48,11 +40,13 @@ export function StatisticsPage({
       finance.transactions,
       finance.categories,
       period,
-      prevRange.start
+      prevRange.start,
+      finance.cashTransactions,
+      finance.expenseShares
     )
 
     return compareWithPreviousPeriod(stats.netExpenses, prevStats.netExpenses)
-  }, [finance.transactions, finance.categories, period, now, stats.netExpenses])
+  }, [finance.transactions, finance.cashTransactions, finance.expenseShares, finance.categories, period, now, stats.netExpenses])
 
   const periodLabels: Record<StatsPeriod, string> = {
     day: 'Día',
@@ -226,7 +220,11 @@ export function StatisticsPage({
                 color: cat.color,
                 icon: cat.icon,
               }))}
-              transactions={periodTransactions}
+              transactions={finance.transactions}
+              cashTransactions={finance.cashTransactions}
+              expenseShares={finance.expenseShares}
+              referenceDate={now}
+              dateRange={stats.dateRange}
               categories={finance.categories}
               onSelectCategoryFilter={handleOpenCategoryDetail}
             />
@@ -333,7 +331,10 @@ export function StatisticsPage({
         open={Boolean(selectedCategoryForDetail)}
         onClose={() => setSelectedCategoryForDetail(null)}
         category={selectedCategoryForDetail}
-        transactions={periodTransactions}
+        transactions={finance.transactions}
+        cashTransactions={finance.cashTransactions}
+        referenceDate={now}
+        dateRange={stats.dateRange}
         categories={finance.categories}
         expenseShares={finance.expenseShares}
         mode="net"

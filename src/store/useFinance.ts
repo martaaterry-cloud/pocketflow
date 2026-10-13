@@ -69,7 +69,7 @@ import {
   selectLinkedReimbursementsForPeriod,
   selectReimbursementsReceived,
   selectNetPersonalExpenses,
-  selectNetPersonalExpensesForPeriod,
+  selectEconomicSummary,
   selectNetExpensesByCategory,
   selectRealIncome,
   selectPendingReimbursements,
@@ -3069,13 +3069,9 @@ export function useFinance(storage: StorageAdapter = defaultAppStorage) {
       'month',
       state.cashTransactions ?? []
     )
-    const netMonthExpenses = selectNetPersonalExpensesForPeriod(
-      state.transactions,
-      now,
-      'month',
-      state.cashTransactions ?? [],
-      state.expenseShares ?? []
-    )
+    const netMonthExpenses = selectEconomicSummary(
+      state.transactions, state.cashTransactions ?? [], now, 'month', state.expenseShares ?? []
+    ).netExpenses
     const netCategoryExpenses = selectNetExpensesByCategory(
       state.transactions,
       state.categories,
@@ -3084,7 +3080,7 @@ export function useFinance(storage: StorageAdapter = defaultAppStorage) {
       state.cashTransactions ?? [],
       state.expenseShares ?? []
     )
-    const realMonthIncome = selectRealIncome(state.transactions, now)
+    const realMonthIncome = selectRealIncome(state.transactions, now, 'month', state.cashTransactions ?? [])
     const pendingReimbursements = selectPendingReimbursements(
       state.expenseShares ?? [],
       state.transactions,
