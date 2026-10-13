@@ -1,3 +1,4 @@
+import { usePayroll } from './hooks/usePayroll'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { App as CapacitorApp } from '@capacitor/app'
 import type { User } from '@supabase/supabase-js'
@@ -46,6 +47,7 @@ export default function App() {
   // Autenticación Supabase
   const [user, setUser] = useState<User | null>(null)
   const [authChecked, setAuthChecked] = useState(false)
+  const payroll = usePayroll(user?.id ?? null)
   const [syncStatus, setSyncStatus] = useState<SyncStatus>('connecting')
   const [pendingCount, setPendingCount] = useState<number>(0)
   const [isRealtimeConnected, setIsRealtimeConnected] = useState(false)
@@ -583,6 +585,7 @@ export default function App() {
         {tab === 'more' && (
           <MorePage
             finance={finance}
+            payroll={payroll}
             user={user}
             subView={moreSubView}
             onSubViewChange={setMoreSubView}

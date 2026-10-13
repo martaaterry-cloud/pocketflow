@@ -21,6 +21,18 @@ jobs:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     runs-on: ubuntu-latest
+    services:
+      payroll-postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_DB: postgres
+          POSTGRES_PASSWORD: payroll-test-only
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -36,6 +48,11 @@ jobs:
 
       - name: Run tests
         run: npm test
+
+      - name: Test payroll database security
+        env:
+          PAYROLL_TEST_CONTAINER: ${{ job.services['payroll-postgres'].id }}
+        run: node scripts/testPayrollRls.mjs
 
       - name: Build project
         env:

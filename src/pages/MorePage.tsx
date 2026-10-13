@@ -1,3 +1,4 @@
+import type { PayrollState } from '../hooks/usePayroll'
 import { useEffect, useState, useCallback } from 'react'
 import type { ReturnTypeFinance } from '../types'
 import { money } from '../utils/money'
@@ -37,6 +38,7 @@ export type MoreSubView =
 
 export function MorePage({
   finance,
+  payroll,
   user,
   subView: controlledSubView,
   initialSubView = 'menu',
@@ -50,6 +52,7 @@ export function MorePage({
   onSignOut,
 }: {
   finance: ReturnTypeFinance
+  payroll: PayrollState
   user?: User | null
   subView?: MoreSubView
   initialSubView?: MoreSubView
@@ -125,7 +128,7 @@ export function MorePage({
   }, [subView])
 
   if (subView === 'payroll') {
-    return <PayrollPage onBack={handleBackToMenu} userId={user?.id ?? 'guest'} />
+    return <PayrollPage onBack={handleBackToMenu} payroll={payroll} />
   }
 
   if (subView === 'profile') {

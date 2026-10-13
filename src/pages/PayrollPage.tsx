@@ -1,14 +1,13 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { AppIcon } from '../ui/icons'
 
-type Payroll = { month: string; gross: number; socialSecurity: number; irpf: number; net: number }
+import type { PayrollState } from '../hooks/usePayroll'
 const format = (n: number) => n.toLocaleString('es-ES', { style: 'currency', currency: 'EUR' })
 const safe = (n: number) => Number.isFinite(n) && n >= 0 ? n : 0
 
-/** Datos informativos locales: nunca generan movimientos ni modifican saldos. */
-export function PayrollPage({ onBack, userId }: { onBack: () => void; userId: string }) {
-  const key = 'pocketflow:payroll:local:' + userId
-  const [entries, setEntries] = useState<Payroll[]>([])
+/** Historial informativo sincronizado: nunca genera movimientos ni modifica saldos. */
+export function PayrollPage({ onBack, payroll }: { onBack: () => void; payroll: PayrollState }) {
+  const entries = payroll.months.filter((m) => m.current.kind !== 'delete').map((m) => m.current.values!)
   const [month, setMonth] = useState('2026-09')
   const [gross, setGross] = useState('830.15')
   const [socialSecurity, setSocialSecurity] = useState('53.97')
@@ -16,32 +15,12 @@ export function PayrollPage({ onBack, userId }: { onBack: () => void; userId: st
   const [net, setNet] = useState('699.81')
   const [rate, setRate] = useState(12)
   const [monthlyGross, setMonthlyGross] = useState(1660.30)
-  const [loaded, setLoaded] = useState(false)
-
-  useEffect(() => {
-    setLoaded(false)
-    try {
-      const raw = localStorage.getItem(key)
-      const parsed: unknown = raw ? JSON.parse(raw) : []
-      setEntries(Array.isArray(parsed) ? parsed.filter((e): e is Payroll => Boolean(e && typeof e.month === 'string' && typeof e.gross === 'number' && typeof e.net === 'number' && typeof e.socialSecurity === 'number' && typeof e.irpf === 'number')) : [])
-    } catch { setEntries([]) }
-    setLoaded(true)
-  }, [key])
-
-  useEffect(() => {
-    if (!loaded) return
-    try { localStorage.setItem(key, JSON.stringify(entries)) } catch { /* Almacenamiento no disponible */ }
-  }, [key, entries, loaded])
-
   const monthlySS = monthlyGross * 0.065
   const monthlyNet = monthlyGross - monthlySS - monthlyGross * rate / 100
   const addEntry = () => {
     const record = { month, gross: Number(gross), socialSecurity: Number(socialSecurity), irpf: Number(irpf), net: Number(net) }
-    if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(month) || Object.values(record).some(v => typeof v === 'number' && (!Number.isFinite(v) || v < 0)) || record.irpf > 100 || Math.abs(record.gross - record.socialSecurity - record.gross * record.irpf / 100 - record.net) > 0.1) {
-      window.alert('Revisa los importes: bruto menos Seguridad Social e IRPF debe coincidir con el neto.')
-      return
-    }
-    setEntries(prev => [...prev.filter(e => e.month !== month), record].sort((a, b) => b.month.localeCompare(a.month)))
+    try { payroll.save(record) }
+    catch (error) { window.alert(error instanceof Error ? error.message : 'No se pudo guardar la nómina.') }
   }
 
   const monthLabel = (value: string) => {
@@ -84,6 +63,17 @@ export function PayrollPage({ onBack, userId }: { onBack: () => void; userId: st
       <button type="button" className="payroll-back" onClick={onBack} aria-label="Volver"><AppIcon name="chevron-left" size={23}/></button>
       <h1>Nóminas</h1>
     </header>
+    <section className="payroll-section" aria-live="polite">
+      <div className="payroll-card">
+        <strong>{payroll.status === 'loading' ? 'Cargando nóminas…' : payroll.status === 'syncing' ? 'Sincronizando nóminas…' :
+          payroll.status === 'synced' ? 'Nóminas sincronizadas' : payroll.status === 'offline' ? 'Sin conexión' : 'Sincronización pendiente'}</strong>
+        <p className="payroll-muted">{payroll.pending > 0 ? `${payroll.pending} cambios guardados en este dispositivo, pendientes de sincronizar.` :
+          'Los registros se mantienen separados de tus cuentas y movimientos.'}</p>
+        {payroll.error && <p role="alert" className="payroll-muted">{payroll.error}</p>}
+        {payroll.migrationIssues > 0 && <p role="alert" className="payroll-muted">Hay {payroll.migrationIssues} registros locales que requieren revisión. Su copia original se conserva y no se ha sobrescrito.</p>}
+        {payroll.ready && <button type="button" className="text-button" onClick={() => { void payroll.sync() }}>Sincronizar ahora</button>}
+      </div>
+    </section>
     <section className="payroll-section">
       <h2>Simulador de salario</h2>
       <div className="payroll-card payroll-sim">
@@ -129,8 +119,8 @@ export function PayrollPage({ onBack, userId }: { onBack: () => void; userId: st
             </label>
           )}
         </div>
-        <button type="button" className="payroll-save" onClick={addEntry}><AppIcon name="check" size={20}/>Guardar nómina</button>
-        <p className="payroll-muted" style={{ margin: '12px 0 0', textAlign: 'center' }}>Guardado solo en este dispositivo. No modifica tus saldos ni se sincroniza con la nube.</p>
+        <button type="button" className="payroll-save" disabled={!payroll.ready} onClick={addEntry}><AppIcon name="check" size={20}/>Guardar nómina</button>
+        <p className="payroll-muted" style={{ margin: '12px 0 0', textAlign: 'center' }}>Historial informativo por usuario. No crea movimientos bancarios ni modifica saldos o ingresos.</p>
       </div>
     </section>
     <section className="payroll-section">
@@ -144,11 +134,27 @@ export function PayrollPage({ onBack, userId }: { onBack: () => void; userId: st
             </div>
             <div className="payroll-entry-actions">
               <span className="payroll-entry-amount">{format(e.net)}</span>
-              <button type="button" className="payroll-delete" onClick={() => { if (window.confirm('¿Eliminar esta nómina informativa?')) setEntries(prev => prev.filter(p => p.month !== e.month)) }} aria-label={'Eliminar nómina ' + e.month}><AppIcon name="trash-2" size={17}/></button>
+              <button type="button" className="payroll-delete" onClick={() => { if (window.confirm('¿Eliminar esta nómina informativa en todos tus dispositivos?')) { try { payroll.remove(e.month) } catch (error) { window.alert(error instanceof Error ? error.message : 'No se pudo eliminar la nómina.') } } }} aria-label={'Eliminar nómina ' + e.month}><AppIcon name="trash-2" size={17}/></button>
             </div>
           </div>
         )}
       </div>
     </section>
+    {payroll.months.some((m) => m.versions.length > 1 || m.current.kind === 'delete') && <section className="payroll-section">
+      <h2>Versiones conservadas</h2>
+      <p className="payroll-muted">Las versiones de otros dispositivos y las nóminas eliminadas se conservan. Recuperar una versión crea un nuevo guardado sin borrar las anteriores.</p>
+      <div className="payroll-card">
+        {payroll.months.filter((m) => m.versions.length > 1 || m.current.kind === 'delete').map(m => <details key={m.month}>
+          <summary className="payroll-entry-title">{monthLabel(m.month)} · {m.current.kind === 'delete' ? 'Eliminada' : `${m.versions.length} versiones`}</summary>
+          {m.versions.filter(v => v.values && v.id !== m.current.id).map(v => <div className="payroll-entry" key={v.id}>
+            <div><strong>{format(v.values!.net)}</strong><p className="payroll-muted">Bruto {format(v.values!.gross)} · IRPF {v.values!.irpf} % · {v.kind === 'legacy' ? 'Migrada de este dispositivo' : 'Versión anterior'}</p></div>
+            <button type="button" className="text-button" disabled={!payroll.ready} onClick={() => {
+              if (window.confirm('¿Recuperar esta versión en todos tus dispositivos?')) { try { payroll.save(v.values!) } catch (error) { window.alert(error instanceof Error ? error.message : 'No se pudo recuperar.') } }
+            }}>Recuperar</button>
+          </div>)}
+        </details>)}
+      </div>
+    </section>}
   </main>
 }
+
