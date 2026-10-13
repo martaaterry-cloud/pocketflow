@@ -234,7 +234,7 @@ export function selectTotalEconomicConsumptionForPeriod(
 
   const totalEconomicConsumption = Math.max(
     0,
-    Math.round((bankNetExpenses - linkedWithdrawalsDeducted + cashExpenses) * 100) / 100
+    Math.round((bankNetExpenses + cashExpenses) * 100) / 100
   )
 
   return {
