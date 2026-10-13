@@ -4,6 +4,7 @@ import { money } from '../utils/money'
 import { AppIcon } from '../ui/icons'
 import type { User } from '@supabase/supabase-js'
 import { BackupPage } from './BackupPage'
+import { PayrollPage } from './PayrollPage'
 import { AccountsPage } from './AccountsPage'
 import { BudgetsPage } from './BudgetsPage'
 import { PlanFinancialPage } from './PlanFinancialPage'
@@ -24,6 +25,7 @@ import type { PwaUpdateCheckResult } from '../utils/pwaUpdate'
 export type MoreSubView =
   | 'menu'
   | 'profile'
+  | 'payroll'
   | 'accounts'
   | 'recurring'
   | 'variable_estimates'
@@ -121,6 +123,10 @@ export function MorePage({
   useEffect(() => {
     scrollToTop()
   }, [subView])
+
+  if (subView === 'payroll') {
+    return <PayrollPage onBack={handleBackToMenu} userId={user?.id ?? 'guest'} />
+  }
 
   if (subView === 'profile') {
     return (
@@ -233,6 +239,12 @@ export function MorePage({
       <section className="menu-group">
         <div className="menu-group-title">Finanzas</div>
         <div className="menu-card">
+          <button type="button" onClick={() => setSubView('payroll')}>
+            <span className="menu-icon"><AppIcon name="file-text" size={18} /></span>
+            <div><strong>Nóminas</strong><small>Historial salarial y simulador de IRPF</small></div>
+            <b className="chevron"><AppIcon name="chevron-right" size={16} /></b>
+          </button>
+
           {/* Plan Financiero */}
           <button type="button" onClick={() => setSubView('plan')}>
             <span className="menu-icon">
