@@ -9697,7 +9697,9 @@ describe('Fase 32 — Cobertura Multimensualidad en Pagos Recurrentes', () => {
     }
     const spotifyAdvanced: RecurringPayment = {
       ...baseSpotify,
-      nextDate: '2026-11-04',
+      // Al eliminar el adelanto, se restaura también el vencimiento de septiembre.
+      // Una fecha futura explícita ya no se interpreta como pendiente del mes actual.
+      nextDate: '2026-09-04',
     }
 
     // Al borrar la transacción (array de transacciones vacío):
