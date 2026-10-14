@@ -425,6 +425,11 @@ export function selectPendingRecurringPayments(
     // 3. Debe pertenecer a la cuenta diaria si no es pagado por contacto
     if (r.accountId && r.accountId !== spendingAccountId && r.paidBy !== 'contact') return false
 
+    // 4. No comprometer liquidez de meses futuros aunque la cuota siga impagada.
+    // Comparar YYYY-MM evita diferencias horarias en fechas almacenadas sin hora.
+    const periodKey = `${currentYear}-${String(currentMonth + 1).padStart(2, '0')}`
+    if (r.nextDate && r.nextDate.slice(0, 7) > periodKey) return false
+
     // 4. Comprobar si está cubierto en el mes de referencia
     if (isRecurringCoveredInMonth(r, transactions, currentYear, currentMonth)) {
       return false

@@ -15,6 +15,7 @@ import { ProfilePage } from './ProfilePage'
 import { VariableEstimatesPage } from './VariableEstimatesPage'
 import { ReceivablesPage } from './ReceivablesPage'
 import { selectPendingDebtors } from '../utils/sharedExpenseSelectors'
+import { recalculateRecurringNextDate, selectRecurringExpectedReimbursement, selectRecurringUserCashOutflow } from '../utils/financeSelectors'
 import { useEdgeSwipeBack } from '../hooks/useEdgeSwipeBack'
 import { getAppVersionString, getAppBuildString } from '../version'
 import { scrollToTop } from '../utils/scroll'
@@ -225,9 +226,12 @@ export function MorePage({
               <div className="mini-row clickable" key={r.id} onClick={() => setSubView('recurring')}>
                 <div>
                   <strong>{r.name}</strong>
-                  <span>Próximo cobro: {r.nextDate}</span>
+                  <span>Próximo pago: {r.frequency === 'monthly' ? recalculateRecurringNextDate(r, finance.transactions) : r.nextDate}</span>
+                  {selectRecurringExpectedReimbursement(r) > 0 && (
+                    <span>Reembolso previsto: {money(selectRecurringExpectedReimbursement(r))}</span>
+                  )}
                 </div>
-                <strong className="expense-amount">−{money(r.amount)}</strong>
+                <strong className="expense-amount">−{money(selectRecurringUserCashOutflow(r))}</strong>
               </div>
             ))}
           </div>
