@@ -22,6 +22,30 @@ export function SavingsPage({ finance }: { finance: ReturnTypeFinance }) {
   const now = useMemo(() => new Date(), [])
   const plan = finance.totals.planMetrics
 
+  const [putAsideOpen, setPutAsideOpen] = useState(false)
+  const [putAsideAmount, setPutAsideAmount] = useState('')
+  const [putAsideDestination, setPutAsideDestination] = useState('free')
+  const [putAsideError, setPutAsideError] = useState<string | null>(null)
+
+  const submitPutAside = (event: React.FormEvent) => {
+    event.preventDefault()
+    const amount = Number(putAsideAmount.replace(',', '.'))
+    if (!Number.isFinite(amount) || amount <= 0 || Math.round(amount * 100) !== amount * 100) {
+      setPutAsideError('Introduce un importe válido en euros y céntimos.')
+      return
+    }
+    const [kind, ...parts] = putAsideDestination.split(':')
+    const id = parts.join(':') || undefined
+    const ok = finance.putAsideSavings(amount, { kind: kind as 'free' | 'goal' | 'reserve' | 'emergency', id })
+    if (!ok) {
+      setPutAsideError('No se pudo apartar el dinero. Comprueba el saldo disponible y el destino.')
+      return
+    }
+    setPutAsideOpen(false)
+    setPutAsideAmount('')
+    setPutAsideError(null)
+  }
+
   // Estados modales de Objetivos
   const [goalModalOpen, setGoalModalOpen] = useState(false)
   const [editingGoal, setEditingGoal] = useState<SavingsGoal | null>(null)
@@ -105,6 +129,10 @@ export function SavingsPage({ finance }: { finance: ReturnTypeFinance }) {
         <h1>Ahorro</h1>
       </header>
 
+      <button type="button" className="primary-button" style={{ marginBottom: 16, width: '100%' }}
+        onClick={() => { setPutAsideError(null); setPutAsideOpen(true) }}>
+        <AppIcon name="plus" size={18} /> Apartar dinero
+      </button>
       {/* 1. Resumen Central de Ahorro y Distribución */}
       <section className="hero-card light" style={{ marginBottom: 24 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0 2px' }}>
@@ -442,6 +470,34 @@ export function SavingsPage({ finance }: { finance: ReturnTypeFinance }) {
         )}
       </section>
 
+      {putAsideOpen && (
+        <div className="modal-backdrop" role="presentation" onClick={() => setPutAsideOpen(false)}>
+          <div className="modal" role="dialog" aria-modal="true" aria-label="Apartar dinero" onClick={event => event.stopPropagation()}>
+            <div className="modal-header">
+              <h3>Apartar dinero</h3>
+              <button type="button" className="close-btn" onClick={() => setPutAsideOpen(false)} aria-label="Cerrar"><AppIcon name="x" size={18} /></button>
+            </div>
+            <form onSubmit={submitPutAside}>
+              <div className="form-group">
+                <label htmlFor="put-aside-amount">Importe (€)</label>
+                <input id="put-aside-amount" inputMode="decimal" value={putAsideAmount} onChange={e => setPutAsideAmount(e.target.value)} placeholder="20,00" required />
+              </div>
+              <div className="form-group">
+                <label htmlFor="put-aside-destination">Destino del ahorro</label>
+                <select id="put-aside-destination" value={putAsideDestination} onChange={e => setPutAsideDestination(e.target.value)}>
+                  <option value="free">Ahorro libre</option>
+                  <option value="emergency">Colchón de seguridad</option>
+                  {finance.goals.map(g => <option key={g.id} value={`goal:${g.id}`}>Objetivo: {g.name}</option>)}
+                  {finance.reserves.map(q => <option key={q.id} value={`reserve:${q.id}`}>Reserva: {q.name}</option>)}
+                </select>
+              </div>
+              <p className="muted">Se trasladará de la cuenta diaria al ahorro y se asignará al destino elegido. No cuenta como gasto ni como ingreso.</p>
+              {putAsideError && <p role="alert" style={{ color: '#b91c1c' }}>{putAsideError}</p>}
+              <button type="submit" className="primary-button">Confirmar ahorro</button>
+            </form>
+          </div>
+        </div>
+      )}
       {/* Modales de Objetivos */}
       <GoalModal
         open={goalModalOpen}

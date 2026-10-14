@@ -1776,6 +1776,70 @@ export function useFinance(storage: StorageAdapter = defaultAppStorage) {
     [state, commit, dispatchSync]
   )
 
+  /**
+   * Apartar dinero con un solo commit local: transferir de diario a ahorro si
+   * hace falta y asignar a un único destino. Nunca crea ingresos ni gastos.
+   * La sincronización remota utiliza la cola existente (consistencia eventual).
+   */
+  const putAsideSavings = useCallback((
+    amount: number,
+    destination: { kind: 'free' | 'goal' | 'reserve' | 'emergency'; id?: string },
+  ): boolean => {
+    const cents = Math.round(Number(amount) * 100)
+    if (!Number.isSafeInteger(cents) || cents <= 0) return false
+    const value = cents / 100
+    const daily = reconciledAccounts.find(a => a.type === 'spending')
+    const savings = reconciledAccounts.find(a => a.type === 'savings')
+    if (!daily || !savings || daily.id === savings.id) return false
+
+    const assigned = selectAssignedSavings(state.goals)
+      + selectTotalAllocatedToReserves(state.reserves)
+      + (state.planSettings.emergencyFundCurrent || 0)
+    const unallocated = Math.max(0, Math.round(((savings.balance || 0) - assigned) * 100) / 100)
+    // Para el botón Apartar siempre se traslada dinero nuevo de la cuenta diaria.
+    // No usar fondos ya asignados ni redistribuir el ahorro libre.
+    if (Math.round((daily.balance || 0) * 100) < cents) return false
+
+    const goal = destination.kind === 'goal' ? state.goals.find(g => g.id === destination.id) : undefined
+    const reserve = destination.kind === 'reserve' ? state.reserves.find(q => q.id === destination.id) : undefined
+    if (destination.kind === 'goal' && !goal) return false
+    if (destination.kind === 'reserve' && !reserve) return false
+    if (!['free', 'goal', 'reserve', 'emergency'].includes(destination.kind)) return false
+
+    const transfer: Transaction = {
+      id: crypto.randomUUID(), type: 'transfer', amount: value,
+      accountId: daily.id, toAccountId: savings.id,
+      description: destination.kind === 'free' ? 'Apartar ahorro libre' : 'Apartar dinero para ahorro',
+      date: new Date().toISOString(),
+    }
+    const nextGoals = goal ? state.goals.map(g => g.id === goal.id
+      ? { ...g, current: Math.round((g.current + value) * 100) / 100,
+          completed: g.current + value >= g.target } : g) : state.goals
+    const nextReserves = reserve ? state.reserves.map(q => q.id === reserve.id
+      ? { ...q, currentAllocated: Math.round((q.currentAllocated + value) * 100) / 100 } : q) : state.reserves
+    const nextSettings = destination.kind === 'emergency'
+      ? { ...state.planSettings, emergencyFundCurrent: Math.round(((state.planSettings.emergencyFundCurrent || 0) + value) * 100) / 100 }
+      : state.planSettings
+
+    commit({ ...state, transactions: [transfer, ...state.transactions],
+      goals: nextGoals, reserves: nextReserves, planSettings: nextSettings }, transfer.id)
+    dispatchSync('transaction', 'insert', transfer.id, transfer, (sb, uid) =>
+      syncInsertTransaction(sb, uid, transfer))
+    if (goal) {
+      const updated = nextGoals.find(g => g.id === goal.id)!
+      dispatchSync('goal', 'update', goal.id, updated, (sb, uid) => syncUpsertGoal(sb, uid, updated))
+    }
+    if (reserve) {
+      const updated = nextReserves.find(q => q.id === reserve.id)!
+      dispatchSync('reserve', 'update', reserve.id, updated, (sb, uid) => syncUpsertReserve(sb, uid, updated))
+    }
+    if (destination.kind === 'emergency') {
+      dispatchSync('planSettings', 'update', 'settings', nextSettings, (sb, uid) =>
+        syncUpsertPlanSettings(sb, uid, nextSettings))
+    }
+    return true
+  }, [state, reconciledAccounts, commit, dispatchSync])
+
   /* ==========================================================================
      Periodos Especiales / Estacionalidad
      ========================================================================== */
@@ -3691,6 +3755,7 @@ export function useFinance(storage: StorageAdapter = defaultAppStorage) {
     deleteSavingsGoal,
     allocateSavingsToGoal,
     deallocateSavingsFromGoal,
+    putAsideSavings,
 
     // Gastos recurrentes
     addRecurringPayment,
