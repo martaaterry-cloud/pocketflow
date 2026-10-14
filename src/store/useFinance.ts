@@ -1792,10 +1792,6 @@ export function useFinance(storage: StorageAdapter = defaultAppStorage) {
     const savings = reconciledAccounts.find(a => a.type === 'savings')
     if (!daily || !savings || daily.id === savings.id) return false
 
-    const assigned = selectAssignedSavings(state.goals)
-      + selectTotalAllocatedToReserves(state.reserves)
-      + (state.planSettings.emergencyFundCurrent || 0)
-    const unallocated = Math.max(0, Math.round(((savings.balance || 0) - assigned) * 100) / 100)
     // Para el botón Apartar siempre se traslada dinero nuevo de la cuenta diaria.
     // No usar fondos ya asignados ni redistribuir el ahorro libre.
     if (Math.round((daily.balance || 0) * 100) < cents) return false
