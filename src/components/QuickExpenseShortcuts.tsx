@@ -17,7 +17,14 @@ type Shortcut = {
   pinned: boolean
   position: number
 }
-const ICONS = ['dumbbell', 'coffee', 'car', 'shopping-basket', 'ticket', 'heart-pulse', 'receipt', 'shirt'] as const
+const ICONS = [
+  { key: 'dumbbell', label: 'Gimnasio' }, { key: 'coffee', label: 'Café' },
+  { key: 'car', label: 'Coche' }, { key: 'shopping-basket', label: 'Compra' },
+  { key: 'ticket', label: 'Ocio' }, { key: 'heart-pulse', label: 'Salud' },
+  { key: 'shirt', label: 'Ropa' }, { key: 'gift', label: 'Regalos' },
+  { key: 'plane', label: 'Viajes' }, { key: 'house', label: 'Hogar' },
+  { key: 'laptop', label: 'Tecnología' }, { key: 'receipt', label: 'Otros' },
+] as const
 const LIMIT = 3
 const amountValue = (value: string) => Number(value.replace(',', '.'))
 
@@ -40,6 +47,9 @@ export function QuickExpenseShortcuts({ finance }: { finance: ReturnTypeFinance 
   const lock = useRef(false)
   const accounts = finance.accounts.filter(a => a.type === 'spending')
   const defaultAccount = accounts.find(a => a.id === 'daily')?.id ?? accounts[0]?.id ?? ''
+  const categoryName = (id: string) => finance.categories.find(c => c.id === id)?.name ?? 'Sin categoría'
+  const paymentName = (method: PaymentMethod) => method === 'bank' ? 'Tarjeta' : method === 'bizum' ? 'Bizum' : 'Efectivo'
+  const draftPreview = { name: name.trim() || 'Nuevo acceso', amount: amountValue(amount), icon, payment, categoryId }
   const ordered = useMemo(() => [...items].sort((a,b) => a.position - b.position), [items])
   const featured = ordered.filter(s => s.pinned).slice(0, LIMIT)
 
@@ -137,37 +147,56 @@ export function QuickExpenseShortcuts({ finance }: { finance: ReturnTypeFinance 
         {featured.map(item => <button type="button" key={item.id} className="gym-quick-button" aria-label={'Registrar ' + item.name} title={item.name} onClick={() => openRecord(item)}><AppIcon name={item.icon_key} size={15}/></button>)}
         <button type="button" className="gym-quick-button" title="Mis accesos rápidos" aria-label="Abrir accesos rápidos" onClick={() => setMenu(true)}><AppIcon name="more-horizontal" size={17}/></button>
       </div>
-      {menu && <div className="modal-backdrop" onClick={() => setMenu(false)}><div className="modal gym-register-modal" role="dialog" aria-modal="true" aria-label="Mis accesos rápidos" onClick={e => e.stopPropagation()}>
-        <header className="modal-header"><h2>Mis accesos rápidos</h2><button type="button" className="close-button" onClick={() => setMenu(false)}>✕</button></header>
-        <div className="gym-dialog-body">
-          <button type="button" className="gym-cancel-button" onClick={() => setManaging(!managing)}>{managing ? 'Terminar de organizar' : 'Organizar accesos'}</button>
-          {ordered.map(item => <div key={item.id} className="quick-expense-item"><AppIcon name={item.icon_key} size={18}/><span>{item.name} · {money(item.amount)}</span>{managing ? <><button type="button" disabled={busy} onClick={() => void togglePin(item)}>{item.pinned ? 'Desfijar' : 'Fijar'}</button><button type="button" onClick={() => openEdit(item)}>Editar</button></> : <button type="button" onClick={() => {setMenu(false);openRecord(item)}}>Registrar</button>}</div>)}
-          {message && <p role="status">{message}</p>}
-          <button type="button" className="primary-button" onClick={() => openEdit('new')}>+ Crear acceso rápido</button>
+      {menu && <div className="modal-backdrop" onClick={() => setMenu(false)}><div className="modal gym-register-modal shortcuts-modal" role="dialog" aria-modal="true" aria-labelledby="shortcuts-list-title" onClick={e => e.stopPropagation()}>
+        <header className="modal-header shortcuts-modal-header">
+          <div><h2 id="shortcuts-list-title">Mis accesos rápidos</h2><p>Hasta 3 visibles en Inicio. Los demás viven aquí.</p></div>
+          <button type="button" className="close-button" aria-label="Cerrar" onClick={() => setMenu(false)}>✕</button>
+        </header>
+        <div className="gym-dialog-body shortcuts-modal-body">
+          <div className="shortcuts-toolbar">
+            <button type="button" className="shortcuts-ghost" onClick={() => setManaging(!managing)}><AppIcon name="sliders" size={15}/>{managing ? 'Terminar' : 'Organizar'}</button>
+            <button type="button" className="shortcuts-new" onClick={() => openEdit('new')}><AppIcon name="plus" size={15}/> Nuevo</button>
+          </div>
+          {ordered.length === 0 && <div className="shortcuts-empty"><AppIcon name="receipt" size={27}/><strong>Aún no tienes accesos rápidos</strong><span>Crea uno para registrar tus gastos habituales en segundos.</span></div>}
+          <div className="shortcuts-list">
+            {ordered.map(item => <div key={item.id} className="shortcuts-row">
+              <span className="shortcuts-row-icon"><AppIcon name={item.icon_key} size={19}/></span>
+              <div className="shortcuts-row-info"><strong>{item.name}</strong><small>{money(item.amount)} · {paymentName(item.payment_method)} · {categoryName(item.category_id)}</small>{item.pinned && <span className="shortcuts-pinned"><AppIcon name="check" size={12}/> En Inicio</span>}</div>
+              <div className="shortcuts-row-actions">{managing ? <>
+                <button type="button" className="shortcuts-icon-action" disabled={busy} title={item.pinned ? 'Desfijar' : 'Mostrar en Inicio'} onClick={() => void togglePin(item)}><AppIcon name={item.pinned ? 'check' : 'plus'} size={16}/></button>
+                <button type="button" className="shortcuts-ghost" onClick={() => openEdit(item)}>Editar</button>
+              </> : <button type="button" className="shortcuts-register" onClick={() => openRecord(item)}>Registrar</button>}</div>
+            </div>)}
+          </div>
+          {message && <p className="shortcuts-feedback" role="status">{message}</p>}
+          <button type="button" className="primary-button shortcuts-bottom-add" onClick={() => openEdit('new')}><AppIcon name="plus" size={16}/> Crear acceso rápido</button>
         </div>
       </div></div>}
-      {editing && <div className="modal-backdrop" onClick={() => setEditing(null)}><div className="modal gym-register-modal" role="dialog" aria-modal="true" aria-label="Editar acceso rápido" onClick={e => e.stopPropagation()}>
-        <header className="modal-header"><h2>{editing === 'new' ? 'Nuevo acceso rápido' : 'Editar acceso rápido'}</h2><button type="button" className="close-button" onClick={() => setEditing(null)}>✕</button></header>
-        <div className="gym-dialog-body">
-          <label className="gym-account-field"><span>Nombre</span><input value={name} maxLength={80} onChange={e => setName(e.target.value)}/></label>
-          <label className="gym-account-field"><span>Icono</span><select value={icon} onChange={e => setIcon(e.target.value)}>{ICONS.map(key => <option key={key} value={key}>{key}</option>)}</select></label>
-          <label className="gym-account-field"><span>Importe habitual (€)</span><input inputMode="decimal" value={amount} onChange={e => setAmount(e.target.value)}/></label>
-          <label className="gym-account-field"><span>Categoría</span><select value={categoryId} onChange={e => setCategoryId(e.target.value)}>{finance.categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}</select></label>
-          <label className="gym-account-field"><span>Pago habitual</span><select value={payment} onChange={e => setPayment(e.target.value as PaymentMethod)}><option value="bank">Tarjeta</option><option value="bizum">Bizum</option><option value="cash">Efectivo</option></select></label>
+      {editing && <div className="modal-backdrop" onClick={() => setEditing(null)}><div className="modal gym-register-modal shortcuts-modal shortcuts-editor" role="dialog" aria-modal="true" aria-labelledby="shortcuts-editor-title" onClick={e => e.stopPropagation()}>
+        <header className="modal-header shortcuts-modal-header"><div><h2 id="shortcuts-editor-title">{editing === 'new' ? 'Nuevo acceso rápido' : 'Editar acceso rápido'}</h2><p>Personaliza cómo registras tus gastos habituales.</p></div><button type="button" className="close-button" aria-label="Cerrar" onClick={() => setEditing(null)}>✕</button></header>
+        <div className="shortcuts-editor-scroll">
+          <div className="shortcuts-preview"><span className="shortcuts-preview-icon"><AppIcon name={draftPreview.icon} size={23}/></span><div><small>VISTA PREVIA</small><strong>{draftPreview.name}</strong><span>{Number.isFinite(draftPreview.amount) && draftPreview.amount > 0 ? money(draftPreview.amount) : '— €'} · {paymentName(draftPreview.payment)} · {categoryName(draftPreview.categoryId)}</span></div></div>
+          <div className="shortcuts-fields">
+            <label className="gym-account-field"><span>Nombre</span><input placeholder="Ej. Gimnasio Rafa" value={name} maxLength={80} onChange={e => setName(e.target.value)}/></label>
+            <label className="gym-account-field"><span>Importe habitual (€)</span><input inputMode="decimal" placeholder="1,50" value={amount} onChange={e => setAmount(e.target.value)}/></label>
+            <label className="gym-account-field"><span>Categoría</span><select value={categoryId} onChange={e => setCategoryId(e.target.value)}>{finance.categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}</select></label>
+          </div>
+          <fieldset className="shortcuts-icon-field"><legend>Elige un icono</legend><div className="shortcuts-icon-grid">{ICONS.map(choice => <button type="button" key={choice.key} className={icon === choice.key ? 'shortcuts-icon-choice selected' : 'shortcuts-icon-choice'} aria-label={choice.label} aria-pressed={icon === choice.key} onClick={() => setIcon(choice.key)}><AppIcon name={choice.key} size={21}/><span>{choice.label}</span></button>)}</div></fieldset>
+          <fieldset className="gym-payment-methods"><legend>Pago habitual</legend><div className="gym-payment-options">{([['bank','Tarjeta'],['bizum','Bizum'],['cash','Efectivo']] as const).map(([method,label]) => <button type="button" key={method} className={payment===method?'gym-payment-option selected':'gym-payment-option'} aria-pressed={payment===method} onClick={() => setPayment(method)}>{label}</button>)}</div></fieldset>
           {payment !== 'cash' && <label className="gym-account-field"><span>Cuenta</span><select value={account} onChange={e => setAccount(e.target.value)}>{accounts.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}</select></label>}
-          <label><input type="checkbox" checked={pinned} onChange={e => setPinned(e.target.checked)}/> Mostrar en Inicio (máximo 3)</label>
-          {message && <p role="alert">{message}</p>}
-          <div className="gym-dialog-actions"><button type="button" className="gym-cancel-button" onClick={() => setEditing(null)}>Cancelar</button><button type="button" className="primary-button" disabled={busy} onClick={() => void save()}>Guardar</button></div>
-          {editing !== 'new' && <button type="button" className="gym-cancel-button" onClick={() => void remove(editing)}>Eliminar acceso</button>}
+          <label className="shortcuts-pin-toggle"><span><strong>Mostrar en Inicio</strong><small>Hasta 3 accesos visibles</small></span><input type="checkbox" checked={pinned} disabled={!pinned && featured.length >= LIMIT && (editing === 'new' || (editing !== null && typeof editing === 'object' && !editing.pinned))} onChange={e => setPinned(e.target.checked)}/></label>
+          {message && <p role="alert" className="shortcuts-feedback">{message}</p>}
+          {editing !== 'new' && <button type="button" className="shortcuts-delete" onClick={() => void remove(editing)}><AppIcon name="trash-2" size={15}/> Eliminar acceso</button>}
         </div>
+        <div className="shortcuts-footer"><button type="button" className="gym-cancel-button" onClick={() => setEditing(null)}>Cancelar</button><button type="button" className="primary-button" disabled={busy} onClick={() => void save()}>Guardar acceso</button></div>
       </div></div>}
-      {active && <div className="modal-backdrop" onClick={() => setActive(null)}><div className="modal gym-register-modal" role="dialog" aria-modal="true" aria-label={'Registrar ' + active.name} onClick={e => e.stopPropagation()}>
-        <header className="modal-header"><div className="gym-dialog-heading"><span className="gym-dialog-icon"><AppIcon name={active.icon_key} size={18}/></span><h2>{active.name}</h2></div><button className="close-button" type="button" onClick={() => setActive(null)}>✕</button></header>
+      {active && <div className="modal-backdrop" onClick={() => setActive(null)}><div className="modal gym-register-modal shortcuts-modal" role="dialog" aria-modal="true" aria-label={'Registrar ' + active.name} onClick={e => e.stopPropagation()}>
+        <header className="modal-header shortcuts-modal-header"><div className="gym-dialog-heading"><span className="gym-dialog-icon"><AppIcon name={active.icon_key} size={19}/></span><div><h2>{active.name}</h2><p>Registrar gasto habitual</p></div></div><button type="button" className="close-button" aria-label="Cerrar" onClick={() => setActive(null)}>✕</button></header>
         <div className="gym-dialog-body">
           <label className="gym-account-field"><span>Importe del gasto (€)</span><input inputMode="decimal" value={amount} onChange={e => setAmount(e.target.value)}/></label>
           <fieldset className="gym-payment-methods"><legend>Método de pago</legend><div className="gym-payment-options">{([['bank','Tarjeta'],['bizum','Bizum'],['cash','Efectivo']] as const).map(([method,label]) => <button type="button" key={method} className={payment===method?'gym-payment-option selected':'gym-payment-option'} aria-pressed={payment===method} onClick={() => setPayment(method)}>{label}</button>)}</div></fieldset>
           {payment !== 'cash' && <label className="gym-account-field"><span>Cuenta</span><select value={account} onChange={e=>setAccount(e.target.value)}>{accounts.map(a=><option key={a.id} value={a.id}>{a.name}</option>)}</select></label>}
-          {message && <p role="alert">{message}</p>}
+          {message && <p role="alert" className="shortcuts-feedback">{message}</p>}
           <div className="gym-dialog-actions"><button type="button" className="gym-cancel-button" onClick={() => setActive(null)}>Cancelar</button><button type="button" className="primary-button" disabled={busy} onClick={record}>Registrar gasto</button></div>
         </div>
       </div></div>}
