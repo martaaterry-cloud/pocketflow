@@ -141,7 +141,7 @@ export function VariableEstimatesPage({
             {estimates.map((est) => {
               const category = categories.find((c) => c.id === est.categoryId)
               const monthly = calculateMonthlyEstimate(est.unitCost, est.frequencyType, est.frequencyValue)
-              const realSpent = calculateRealSpentForEstimate(est, transactions, currentMonthKey)
+              const realSpent = calculateRealSpentForEstimate(est, transactions, currentMonthKey, finance.cashTransactions ?? [])
               const pending = calculatePendingEstimate(monthly, realSpent)
               const freqText =
                 est.frequencyType === 'per_week'
