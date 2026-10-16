@@ -7913,3 +7913,18 @@ input:checked + .slider:before {
 .shortcuts-delete { display: inline-flex; align-items: center; justify-content: center; gap: 8px; color: var(--accent-red); background: transparent; border: 0; cursor: pointer; padding: 8px; }
 .shortcuts-feedback { font-size: .8rem; color: var(--accent-red); margin: 0; }
 @media(max-width:480px) { .shortcuts-modal-header { padding: 19px 18px 12px; } .shortcuts-editor-scroll { padding: 10px 18px 15px; } .shortcuts-footer { padding: 12px 18px 16px; } }
+
+
+/* Fix the dialog's internal sizing and prevent global form styles from stretching the switch. */
+.shortcuts-modal.shortcuts-editor { box-sizing: border-box; max-width: 475px; width: min(475px, calc(100vw - 32px)); min-width: 0; }
+.shortcuts-editor .shortcuts-editor-scroll { box-sizing: border-box; width: 100%; min-width: 0; overflow-x: hidden; overflow-y: auto; scrollbar-gutter: stable; }
+.shortcuts-editor .shortcuts-editor-scroll > * { box-sizing: border-box; min-width: 0; max-width: 100%; }
+.shortcuts-editor .shortcuts-fields, .shortcuts-editor .gym-account-field, .shortcuts-editor .gym-payment-methods { width: 100%; min-width: 0; }
+.shortcuts-editor .gym-account-field input, .shortcuts-editor .gym-account-field select { box-sizing: border-box; width: 100%; min-width: 0; }
+.shortcuts-editor .shortcuts-icon-grid { width: 100%; min-width: 0; }
+.shortcuts-editor .shortcuts-icon-choice { box-sizing: border-box; min-width: 0; width: 100%; }
+.shortcuts-editor .shortcuts-pin-toggle { box-sizing: border-box; width: 100%; min-width: 0; flex-direction: row; }
+.shortcuts-editor .shortcuts-pin-toggle > span { flex: 1 1 auto; min-width: 0; }
+.shortcuts-editor .shortcuts-pin-toggle input[type="checkbox"] { box-sizing: border-box; appearance: none; -webkit-appearance: none; display: block; flex: 0 0 42px; width: 42px !important; min-width: 42px; max-width: 42px; height: 24px !important; min-height: 24px; max-height: 24px; margin: 0; padding: 0; border: 0; border-radius: 100px; align-self: center; }
+.shortcuts-editor .shortcuts-footer { width: 100%; box-sizing: border-box; }
+@media (max-width: 480px) { .shortcuts-editor .shortcuts-icon-grid { grid-template-columns: repeat(3,minmax(0,1fr)); } }
