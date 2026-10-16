@@ -21,3 +21,10 @@ select e.user_id, 'Gimnasio Rafa', 'dumbbell', 1.50, e.category_id, 'bank', 'dai
 from public.variable_expense_estimates e
 where lower(e.name) like '%rafa%' and (lower(e.name) like '%gimnasio%' or lower(e.name) like '%gym%' or lower(e.name) like '%entren%')
 and not exists (select 1 from public.quick_expense_shortcuts s where s.user_id=e.user_id and lower(s.name)='gimnasio rafa');
+
+-- Deliver cross-device changes to authenticated clients via Realtime.
+do $$ begin
+  if not exists (select 1 from pg_publication_tables where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'quick_expense_shortcuts') then
+    alter publication supabase_realtime add table public.quick_expense_shortcuts;
+  end if;
+end $$;
