@@ -71,21 +71,21 @@ export function HomePage({
   const [gymPayment, setGymPayment] = useState<PaymentMethod>('cash')
   const [gymAccount, setGymAccount] = useState('')
   const gymBusy = useRef(false)
-  const gymEstimate = (finance.variableExpenseEstimates ?? []).find(e =>
-    /rafa/i.test(e.name) && /gimnasio|gym|entreno|entrenamiento/i.test(e.name)
-  )
+  const gymName = 'Gimnasio Rafa'
+  const gymCost = 1.50
+  const gymCategoryId = finance.categories.find(c => c.id === 'sport')?.id ?? finance.categories.find(c => /deporte/i.test(c.name))?.id ?? 'other'
   const todayGymDate = new Date().toLocaleDateString('en-CA')
-  const gymAlreadyRecorded = gymEstimate ? [...(finance.transactions ?? []), ...(finance.cashTransactions ?? [])].some(t =>
-    t.type === 'expense' && t.description.trim().toLowerCase() === gymEstimate.name.trim().toLowerCase() &&
-    t.categoryId === gymEstimate.categoryId && t.date.slice(0, 10) === todayGymDate
-  ) : false
+  const gymAlreadyRecorded = [...(finance.transactions ?? []), ...(finance.cashTransactions ?? [])].some(t =>
+    t.type === 'expense' && t.description.trim().toLowerCase() === gymName.toLowerCase() &&
+    t.categoryId === gymCategoryId && t.date.slice(0, 10) === todayGymDate
+  )
   const recordGym = () => {
-    if (!gymEstimate || gymBusy.current || gymAlreadyRecorded) return
+    if (gymBusy.current || gymAlreadyRecorded) return
     const accountId = gymAccount || finance.accounts.find(a => a.type === 'spending')?.id
     if (gymPayment !== 'cash' && !accountId) return
     gymBusy.current = true
     try {
-      const common = { type: 'expense' as const, description: gymEstimate.name, amount: gymEstimate.unitCost, categoryId: gymEstimate.categoryId, date: new Date().toISOString(), paymentMethod: gymPayment }
+      const common = { type: 'expense' as const, description: gymName, amount: gymCost, categoryId: gymCategoryId, date: new Date().toISOString(), paymentMethod: gymPayment }
       if (gymPayment === 'cash') finance.addCashTransaction(common)
       else finance.addTransaction({ ...common, accountId: accountId!, expenseNature: 'variable' })
       setGymOpen(false)
@@ -220,6 +220,8 @@ export function HomePage({
           <h1>{greeting}</h1>
         </div>
 
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        <button type="button" className="round-button" aria-label="Registrar gimnasio Rafa" title="Registrar gimnasio Rafa" onClick={() => { setGymAccount(finance.accounts.find(a => a.type === 'spending')?.id ?? ''); setGymOpen(true) }}><AppIcon name="dumbbell" size={18}/></button>
         {activeHomeMode === 0 && (
           <button className="round-button" onClick={onAdd} aria-label="Añadir movimiento bancario">
             <AppIcon name="plus" size={18} />
@@ -235,15 +237,8 @@ export function HomePage({
             <AppIcon name="plus" size={18} />
           </button>
         )}
+        </div>
       </header>
-
-      {gymEstimate?.active && (
-        <section style={{ margin: '12px 0' }}>
-          <button type="button" className="primary-button" onClick={() => { setGymAccount(finance.accounts.find(a => a.type === 'spending')?.id ?? ''); setGymOpen(true) }}>
-            <AppIcon name="activity" size={16} /> Registrar gimnasio Rafa · {money(gymEstimate.unitCost)}
-          </button>
-        </section>
-      )}
 
       {/* 2. Selector Segmentado (Actualiza directamente activeHomeMode) */}
       <nav className="home-segmented-nav" aria-label="Seleccionar vista financiera" role="tablist">
@@ -871,16 +866,16 @@ export function HomePage({
         )}
       </div>
 
-      {gymOpen && gymEstimate && (
+      {gymOpen && (
         <div className="modal-backdrop" onClick={() => setGymOpen(false)}>
           <div className="modal" role="dialog" aria-modal="true" aria-label="Registrar entrenamiento de Rafa" onClick={e => e.stopPropagation()}>
             <header className="modal-header"><h2>Gimnasio Rafa</h2><button type="button" className="close-button" onClick={() => setGymOpen(false)} aria-label="Cerrar">✕</button></header>
             <div className="modal-form">
-              <p>Registrar entrenamiento de hoy: <strong>{money(gymEstimate.unitCost)}</strong></p>
+              <p>Registrar entrenamiento de hoy: <strong>{money(gymCost)}</strong></p>
               <label><span>Método de pago</span><select value={gymPayment} onChange={e => setGymPayment(e.target.value as PaymentMethod)}><option value="cash">Efectivo</option><option value="bank">Tarjeta</option><option value="bizum">Bizum</option></select></label>
               {gymPayment !== 'cash' && <label><span>Cuenta</span><select value={gymAccount} onChange={e => setGymAccount(e.target.value)}>{finance.accounts.filter(a => a.type === 'spending').map(a => <option key={a.id} value={a.id}>{a.name}</option>)}</select></label>}
               {gymAlreadyRecorded && <p role="status">Ya tienes registrado este entrenamiento hoy. Para corregirlo, edita el movimiento existente.</p>}
-              <button type="button" className="primary-button" disabled={gymAlreadyRecorded || (gymPayment !== 'cash' && !gymAccount)} onClick={recordGym}>Confirmar gasto de {money(gymEstimate.unitCost)}</button>
+              <button type="button" className="primary-button" disabled={gymAlreadyRecorded || (gymPayment !== 'cash' && !gymAccount)} onClick={recordGym}>Confirmar gasto de {money(gymCost)}</button>
             </div>
           </div>
         </div>
