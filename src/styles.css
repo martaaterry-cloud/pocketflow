@@ -7854,3 +7854,9 @@ input:checked + .slider:before {
 .gym-dialog-actions { display: flex; gap: 10px; margin-top: 4px; }
 .gym-dialog-actions > button { flex: 1; min-height: 44px; border-radius: 11px; }
 .gym-cancel-button { border: 1px solid var(--border-color, #d9dee5); background: transparent; color: var(--text-main, #202423); cursor: pointer; }
+
+.quick-expense-bar { display: inline-flex; align-items: center; gap: 5px; min-width: 0; }
+.quick-expense-item { display: flex; align-items: center; gap: 9px; min-width: 0; font-size: .85rem; }
+.quick-expense-item span { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.quick-expense-item button { border: 1px solid var(--border-color,#ddd); border-radius: 8px; background: transparent; padding: 7px; cursor: pointer; }
+@media (max-width: 410px) { .quick-expense-bar .gym-quick-button:nth-child(n+3):not(:last-child) { display: none; } }
