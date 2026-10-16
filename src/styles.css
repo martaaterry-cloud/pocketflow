@@ -7814,3 +7814,43 @@ input:checked + .slider:before {
 
 
 
+
+/* Acceso rápido al gimnasio: secundario frente al botón de añadir */
+.gym-quick-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  flex-shrink: 0;
+  border-radius: 50%;
+  border: 1px solid var(--border-color, #d9dee5);
+  background: transparent;
+  color: var(--text-muted, #667085);
+  cursor: pointer;
+}
+.gym-quick-button:hover, .gym-quick-button:focus-visible {
+  background: var(--bg-card-light, #f3f5f7);
+  color: var(--text-main, #202423);
+}
+.gym-register-modal { max-width: 410px; width: calc(100% - 28px); overflow: hidden; }
+.gym-dialog-heading { display: flex; align-items: center; gap: 11px; }
+.gym-dialog-heading h2 { margin: 0; font-size: 1.08rem; }
+.gym-dialog-heading p { margin: 3px 0 0; font-size: .8rem; color: var(--text-muted, #667085); }
+.gym-dialog-icon { display: grid; place-items: center; width: 37px; height: 37px; border-radius: 11px; background: var(--bg-card-light, #f3f5f7); }
+.gym-dialog-body { padding: 18px 22px 22px; display: flex; flex-direction: column; gap: 18px; }
+.gym-dialog-amount { display: flex; align-items: center; justify-content: space-between; border-radius: 13px; background: var(--bg-card-light, #f4f6f8); padding: 16px; }
+.gym-dialog-amount span { color: var(--text-muted, #667085); font-size: .84rem; }
+.gym-dialog-amount strong { font-size: 1.6rem; font-variant-numeric: tabular-nums; }
+.gym-payment-methods { border: 0; padding: 0; margin: 0; min-width: 0; }
+.gym-payment-methods legend, .gym-account-field > span { display: block; font-weight: 650; font-size: .88rem; margin-bottom: 9px; }
+.gym-payment-options { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.gym-payment-option { min-height: 42px; border-radius: 10px; padding: 8px 4px; background: transparent; border: 1px solid var(--border-color, #d9dee5); color: var(--text-main, #202423); cursor: pointer; }
+.gym-payment-option.selected { border-color: var(--text-main, #202423); background: var(--bg-card-light, #f4f6f8); font-weight: 700; }
+.gym-account-field { display: flex; flex-direction: column; }
+.gym-account-field select { width: 100%; min-height: 42px; border-radius: 10px; padding: 0 10px; border: 1px solid var(--border-color, #d9dee5); color: var(--text-main, #202423); background: var(--bg-card, #fff); }
+.gym-already-recorded { display: flex; align-items: center; gap: 8px; margin: 0; font-size: .85rem; }
+.gym-dialog-actions { display: flex; gap: 10px; margin-top: 4px; }
+.gym-dialog-actions > button { flex: 1; min-height: 44px; border-radius: 11px; }
+.gym-cancel-button { border: 1px solid var(--border-color, #d9dee5); background: transparent; color: var(--text-main, #202423); cursor: pointer; }
