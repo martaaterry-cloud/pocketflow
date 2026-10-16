@@ -68,7 +68,7 @@ export function HomePage({
   const [editingCashTx, setEditingCashTx] = useState<CashTransaction | null>(null)
 
   const [gymOpen, setGymOpen] = useState(false)
-  const [gymPayment, setGymPayment] = useState<PaymentMethod>('cash')
+  const [gymPayment, setGymPayment] = useState<PaymentMethod>('bank')
   const [gymAccount, setGymAccount] = useState('')
   const gymBusy = useRef(false)
   const gymName = 'Gimnasio Rafa'
@@ -221,7 +221,7 @@ export function HomePage({
         </div>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-        <button type="button" className="round-button" aria-label="Registrar gimnasio Rafa" title="Registrar gimnasio Rafa" onClick={() => { setGymAccount(finance.accounts.find(a => a.type === 'spending')?.id ?? ''); setGymOpen(true) }}><AppIcon name="dumbbell" size={18}/></button>
+        <button type="button" className="gym-quick-button" aria-label="Registrar gimnasio Rafa" title="Registrar gimnasio Rafa" onClick={() => { setGymPayment('bank'); setGymAccount(finance.accounts.find(a => a.id === 'daily' && a.type === 'spending')?.id ?? finance.accounts.find(a => a.type === 'spending')?.id ?? ''); setGymOpen(true) }}><AppIcon name="dumbbell" size={18}/></button>
         {activeHomeMode === 0 && (
           <button className="round-button" onClick={onAdd} aria-label="Añadir movimiento bancario">
             <AppIcon name="plus" size={18} />
@@ -868,14 +868,33 @@ export function HomePage({
 
       {gymOpen && (
         <div className="modal-backdrop" onClick={() => setGymOpen(false)}>
-          <div className="modal" role="dialog" aria-modal="true" aria-label="Registrar entrenamiento de Rafa" onClick={e => e.stopPropagation()}>
-            <header className="modal-header"><h2>Gimnasio Rafa</h2><button type="button" className="close-button" onClick={() => setGymOpen(false)} aria-label="Cerrar">✕</button></header>
-            <div className="modal-form">
-              <p>Registrar entrenamiento de hoy: <strong>{money(gymCost)}</strong></p>
-              <label><span>Método de pago</span><select value={gymPayment} onChange={e => setGymPayment(e.target.value as PaymentMethod)}><option value="cash">Efectivo</option><option value="bank">Tarjeta</option><option value="bizum">Bizum</option></select></label>
-              {gymPayment !== 'cash' && <label><span>Cuenta</span><select value={gymAccount} onChange={e => setGymAccount(e.target.value)}>{finance.accounts.filter(a => a.type === 'spending').map(a => <option key={a.id} value={a.id}>{a.name}</option>)}</select></label>}
-              {gymAlreadyRecorded && <p role="status">Ya tienes registrado este entrenamiento hoy. Para corregirlo, edita el movimiento existente.</p>}
-              <button type="button" className="primary-button" disabled={gymAlreadyRecorded || (gymPayment !== 'cash' && !gymAccount)} onClick={recordGym}>Confirmar gasto de {money(gymCost)}</button>
+          <div className="modal gym-register-modal" role="dialog" aria-modal="true" aria-labelledby="gym-register-title" onClick={e => e.stopPropagation()}>
+            <header className="modal-header">
+              <div className="gym-dialog-heading"><span className="gym-dialog-icon"><AppIcon name="dumbbell" size={18} /></span><div><h2 id="gym-register-title">Entrenamiento con Rafa</h2><p>Registro rápido · Hoy</p></div></div>
+              <button type="button" className="close-button" onClick={() => setGymOpen(false)} aria-label="Cerrar">✕</button>
+            </header>
+            <div className="gym-dialog-body">
+              <div className="gym-dialog-amount"><span>Importe de la sesión</span><strong>{money(gymCost)}</strong></div>
+              <fieldset className="gym-payment-methods">
+                <legend>¿Cómo has pagado?</legend>
+                <div className="gym-payment-options">
+                  {([['bank', 'Tarjeta'], ['bizum', 'Bizum'], ['cash', 'Efectivo']] as const).map(([method, label]) => (
+                    <button key={method} type="button" className={gymPayment === method ? 'gym-payment-option selected' : 'gym-payment-option'} aria-pressed={gymPayment === method} onClick={() => setGymPayment(method)}>{label}</button>
+                  ))}
+                </div>
+              </fieldset>
+              {gymPayment !== 'cash' && (
+                <label className="gym-account-field"><span>Cuenta</span>
+                  <select value={gymAccount} onChange={e => setGymAccount(e.target.value)}>
+                    {finance.accounts.filter(a => a.type === 'spending').map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
+                  </select>
+                </label>
+              )}
+              {gymAlreadyRecorded && <p className="gym-already-recorded" role="status"><AppIcon name="check" size={16} /> Ya has registrado el entrenamiento de hoy.</p>}
+              <div className="gym-dialog-actions">
+                <button type="button" className="gym-cancel-button" onClick={() => setGymOpen(false)}>Cancelar</button>
+                <button type="button" className="primary-button" disabled={gymAlreadyRecorded || (gymPayment !== 'cash' && !gymAccount)} onClick={recordGym}>Registrar {money(gymCost)}</button>
+              </div>
             </div>
           </div>
         </div>
