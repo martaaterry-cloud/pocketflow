@@ -86,7 +86,7 @@ export function QuickExpenseShortcuts({ finance }: { finance: ReturnTypeFinance 
   const save = async () => {
     const value = amountValue(amount)
     if (!userId || lock.current || !name.trim() || !Number.isFinite(value) || value <= 0 || !categoryId) { setMessage('Revisa nombre, importe y categoría.'); return }
-    if (pinned && featured.length >= LIMIT && (editing === 'new' || (editing && !editing.pinned))) { setMessage('Solo puedes fijar tres accesos.'); return }
+    if (pinned && featured.length >= LIMIT && (editing === 'new' || (editing !== 'new' && editing !== null && !editing.pinned))) { setMessage('Solo puedes fijar tres accesos.'); return }
     lock.current = true; setBusy(true); setMessage('')
     try {
       const input = { name: name.trim(), icon_key: icon, amount: value, category_id: categoryId, payment_method: payment, account_id: payment === 'cash' ? null : account || defaultAccount, pinned, position: editing === 'new' ? ordered.length : (editing as Shortcut).position }
