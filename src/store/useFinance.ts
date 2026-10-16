@@ -3103,7 +3103,8 @@ export function useFinance(storage: StorageAdapter = defaultAppStorage) {
     const variableEstimatesSummary = calculateVariableEstimatesSummary(
       state.variableExpenseEstimates ?? [],
       state.transactions,
-      currentMonthKey
+      currentMonthKey,
+      state.cashTransactions ?? []
     )
     const pendingVariableExpenses = variableEstimatesSummary.totalPendingEstimated
     const projectedAvailable = Math.round((realAvailable - pendingVariableExpenses) * 100) / 100
