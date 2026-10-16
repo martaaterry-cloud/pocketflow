@@ -1,4 +1,4 @@
-import type { FrequencyType, Transaction, VariableExpenseEstimate } from '../models/finance'
+import type { CashTransaction, FrequencyType, Transaction, VariableExpenseEstimate } from '../models/finance'
 
 /**
  * Calcula el importe mensual estimado para un gasto variable según su frecuencia:
@@ -41,7 +41,8 @@ export function normalizeEstimateName(name: string): string {
 export function calculateRealSpentForEstimate(
   estimate: VariableExpenseEstimate,
   transactions: Transaction[],
-  monthKey?: string
+  monthKey?: string,
+  cashTransactions: CashTransaction[] = []
 ): number {
   const currentMonth = monthKey || new Date().toISOString().slice(0, 7)
   const targetName = normalizeEstimateName(estimate.name)
@@ -55,7 +56,11 @@ export function calculateRealSpentForEstimate(
     })
     .reduce((sum, t) => sum + (t.amount || 0), 0)
 
-  return Math.round(matchedTotal * 100) / 100
+  const cashTotal = cashTransactions.filter(t =>
+    t.type === 'expense' && t.categoryId === estimate.categoryId &&
+    t.date.startsWith(currentMonth) && normalizeEstimateName(t.description) === targetName
+  ).reduce((sum, t) => sum + (t.amount || 0), 0)
+  return Math.round((matchedTotal + cashTotal) * 100) / 100
 }
 
 /**
@@ -83,7 +88,8 @@ export interface VariableEstimatesSummary {
 export function calculateVariableEstimatesSummary(
   estimates: VariableExpenseEstimate[],
   transactions: Transaction[],
-  monthKey?: string
+  monthKey?: string,
+  cashTransactions: CashTransaction[] = []
 ): VariableEstimatesSummary {
   const activeEstimates = estimates.filter((e) => e.active)
 
@@ -93,7 +99,7 @@ export function calculateVariableEstimatesSummary(
 
   for (const est of activeEstimates) {
     const monthly = calculateMonthlyEstimate(est.unitCost, est.frequencyType, est.frequencyValue)
-    const real = calculateRealSpentForEstimate(est, transactions, monthKey)
+    const real = calculateRealSpentForEstimate(est, transactions, monthKey, cashTransactions)
     const pending = calculatePendingEstimate(monthly, real)
 
     totalEstimatedMonthly += monthly
@@ -117,7 +123,8 @@ export function calculateVariableEstimatesSummary(
 export function selectPendingVariableExpenseEstimate(
   estimates: VariableExpenseEstimate[],
   transactions: Transaction[],
-  monthKey?: string
+  monthKey?: string,
+  cashTransactions: CashTransaction[] = []
 ): number {
   if (!estimates || !Array.isArray(estimates) || estimates.length === 0) {
     return 0
@@ -133,7 +140,7 @@ export function selectPendingVariableExpenseEstimate(
   let totalPending = 0
   for (const est of activeEstimates) {
     const monthly = calculateMonthlyEstimate(est.unitCost, est.frequencyType, est.frequencyValue)
-    const real = calculateRealSpentForEstimate(est, transactions, currentMonth)
+    const real = calculateRealSpentForEstimate(est, transactions, currentMonth, cashTransactions)
     const pending = calculatePendingEstimate(monthly, real)
     totalPending += pending
   }
