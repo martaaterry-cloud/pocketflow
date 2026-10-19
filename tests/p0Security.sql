@@ -66,4 +66,36 @@ DO $security$ BEGIN
  IF (SELECT count(*) FROM public.accounts)<>2 THEN RAISE EXCEPTION 'ROWS_CHANGED_BY_ATTACK_TEST'; END IF;
 END $security$;
 
+-- Test a realistic profile-role guard using only synthetic data and roles.
+CREATE TABLE public.profiles(id uuid PRIMARY KEY,user_id uuid NOT NULL,role text NOT NULL DEFAULT 'user');
+ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
+CREATE POLICY profile_own ON public.profiles FOR ALL USING(auth.uid()=user_id) WITH CHECK(auth.uid()=user_id);
+GRANT SELECT,INSERT,UPDATE ON public.profiles TO authenticated;
+CREATE OR REPLACE FUNCTION public.protect_profile_role() RETURNS trigger LANGUAGE plpgsql SET search_path = '' AS $profile$
+BEGIN
+ IF auth.role() = 'authenticated' THEN
+  IF TG_OP = 'INSERT' THEN NEW.role := 'user';
+  ELSIF TG_OP = 'UPDATE' THEN NEW.role := OLD.role;
+  END IF;
+ END IF;
+ RETURN NEW;
+END;
+$profile$;
+-- The synthetic auth.role() mirrors the JWT role provided by PostgREST.
+CREATE FUNCTION auth.role() RETURNS text LANGUAGE sql STABLE AS $role$
+ SELECT nullif(current_setting('request.jwt.claim.role',true),'')
+$role$;
+CREATE TRIGGER protect_role BEFORE INSERT OR UPDATE ON public.profiles FOR EACH ROW EXECUTE FUNCTION public.protect_profile_role();
+SET ROLE authenticated;
+SELECT set_config('request.jwt.claim.sub','11111111-1111-4111-8111-111111111111',false);
+SELECT set_config('request.jwt.claim.role','authenticated',false);
+INSERT INTO public.profiles(id,user_id,role)
+VALUES ('cccccccc-cccc-4ccc-8ccc-cccccccccccc','11111111-1111-4111-8111-111111111111','admin');
+UPDATE public.profiles SET role='admin' WHERE id='cccccccc-cccc-4ccc-8ccc-cccccccccccc';
+DO $role_test$
+BEGIN
+ IF (SELECT role FROM public.profiles WHERE id='cccccccc-cccc-4ccc-8ccc-cccccccccccc') <> 'user'
+ THEN RAISE EXCEPTION 'PROFILE_ROLE_ESCALATION'; END IF;
+END $role_test$;
+RESET ROLE;
 SELECT 'P0_SECURITY_OK' AS result;
