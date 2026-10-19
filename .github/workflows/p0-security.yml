@@ -1,0 +1,28 @@
+name: P0 Security (isolated PostgreSQL)
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  p0-security:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: p0-test-only
+          POSTGRES_DB: postgres
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run isolated P0 RLS and permissions fixture
+        env:
+          P0_TEST_CONTAINER: ${{ job.services.postgres.id }}
+        run: bash scripts/runP0Security.sh
