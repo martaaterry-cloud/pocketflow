@@ -17,7 +17,7 @@ CREATE POLICY own_enka ON public.enka_activities FOR ALL USING(auth.uid()=user_i
 GRANT SELECT,INSERT,UPDATE,DELETE,TRUNCATE,TRIGGER ON public.accounts,public.enka_activities TO anon,authenticated;
 CREATE FUNCTION public.set_updated_at() RETURNS trigger LANGUAGE plpgsql AS $f$ BEGIN RETURN NEW; END $f$;
 CREATE FUNCTION public.protect_profile_role() RETURNS trigger LANGUAGE plpgsql AS $f$ BEGIN RETURN NEW; END $f$;
-\ir ../../docs/sql/p0-hardening-proposal.sql
+\i docs/sql/p0-hardening-proposal.sql
 DO $t$
 DECLARE a uuid := '11111111-1111-4111-8111-111111111111'; b uuid := '22222222-2222-4222-8222-222222222222';
 BEGIN
