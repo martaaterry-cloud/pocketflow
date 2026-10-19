@@ -43,4 +43,27 @@ END $t$;
 UPDATE public.accounts SET label='A updated' WHERE label='A';
 RESET ROLE;
 DO $t$ BEGIN IF (SELECT label FROM accounts WHERE id='aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa')<>'A updated' OR (SELECT label FROM accounts WHERE id='bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb')<>'B' THEN RAISE EXCEPTION 'USER_CROSS_UPDATE'; END IF; END $t$;
+
+-- P0.2: attempt destructive SQL as client role, not only metadata checks.
+SET ROLE authenticated;
+SELECT set_config('request.jwt.claim.sub','11111111-1111-4111-8111-111111111111',false);
+DO $security$
+BEGIN
+ BEGIN
+   EXECUTE 'TRUNCATE public.accounts';
+   RAISE EXCEPTION 'TRUNCATE_ALLOWED';
+ EXCEPTION WHEN insufficient_privilege THEN NULL;
+ END;
+ BEGIN
+   UPDATE public.accounts SET user_id='22222222-2222-4222-8222-222222222222' WHERE label='A updated';
+   RAISE EXCEPTION 'OWNERSHIP_TRANSFER_ALLOWED';
+ EXCEPTION WHEN check_violation OR insufficient_privilege THEN NULL;
+ END;
+ IF (SELECT count(*) FROM public.accounts WHERE label='B')<>0 THEN RAISE EXCEPTION 'CROSS_USER_ACCESS'; END IF;
+END $security$;
+RESET ROLE;
+DO $security$ BEGIN
+ IF (SELECT count(*) FROM public.accounts)<>2 THEN RAISE EXCEPTION 'ROWS_CHANGED_BY_ATTACK_TEST'; END IF;
+END $security$;
+
 SELECT 'P0_SECURITY_OK' AS result;
