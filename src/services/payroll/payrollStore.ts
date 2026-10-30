@@ -100,7 +100,7 @@ export class PayrollStore {
     }
   }
   save(values: PayrollValues): void {
-    if (!isPayrollValues(values)) throw new Error('Revisa los importes: bruto menos Seguridad Social e IRPF debe coincidir con el neto.')
+    if (!isPayrollValues(values)) throw new Error('Revisa el neto, o completa todos los campos del PDF con importes coherentes.')
     this.assertActive()
     if (!this.snapshot.ready) throw new Error('Espera a que se carguen tus nóminas.')
     const latest = this.readCache()
