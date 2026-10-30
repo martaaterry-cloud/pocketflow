@@ -2,17 +2,20 @@ import { useState } from 'react'
 import { AppIcon } from '../ui/icons'
 
 import type { PayrollState } from '../hooks/usePayroll'
+import type { ReturnTypeFinance } from '../types'
 const format = (n: number) => n.toLocaleString('es-ES', { style: 'currency', currency: 'EUR' })
 const safe = (n: number) => Number.isFinite(n) && n >= 0 ? n : 0
 
 /** Historial informativo sincronizado: nunca genera movimientos ni modifica saldos. */
-export function PayrollPage({ onBack, payroll }: { onBack: () => void; payroll: PayrollState }) {
+export function PayrollPage({ onBack, payroll, finance }: { onBack: () => void; payroll: PayrollState; finance: ReturnTypeFinance }) {
   const entries = payroll.months.filter((m) => m.current.kind !== 'delete').map((m) => m.current.values!)
   const [month, setMonth] = useState(() => new Date().toISOString().slice(0, 7))
   const [gross, setGross] = useState('')
   const [socialSecurity, setSocialSecurity] = useState('')
   const [irpf, setIrpf] = useState('')
   const [net, setNet] = useState('')
+  const [accountId, setAccountId] = useState('daily')
+  const [paymentDate, setPaymentDate] = useState(() => new Date().toISOString().slice(0, 10))
   const [rate, setRate] = useState(12)
   const [monthlyGross, setMonthlyGross] = useState(1660.30)
   const monthlySS = monthlyGross * 0.065
@@ -36,8 +39,25 @@ export function PayrollPage({ onBack, payroll }: { onBack: () => void; payroll: 
     const record = completeDetails
       ? { month, gross: Number(gross), socialSecurity: Number(socialSecurity), irpf: Number(irpf), net: Number(net) }
       : { month, net: Number(net) }
-    try { payroll.save(record) }
-    catch (error) { window.alert(error instanceof Error ? error.message : 'No se pudo guardar la nómina.') }
+    try {
+      const amount = Number(net)
+      const matches = finance.transactions.filter(t => t.type === 'income' &&
+        t.date.slice(0, 7) === month && Math.abs(t.amount - amount) < 0.005 && t.incomeKind !== 'reimbursement')
+      if (!existing && matches.length) {
+        payroll.save(record)
+        window.alert('La nómina se ha guardado. Ya hay un ingreso del mismo importe y mes, así que no se ha duplicado. Revisa el movimiento existente en imagin.')
+        return
+      }
+      if (!existing && !finance.accounts.some(a => a.id === accountId)) {
+        window.alert('Selecciona la cuenta donde cobraste la nómina.')
+        return
+      }
+      payroll.save(record)
+      if (!existing) finance.addTransaction({
+        type: 'income', amount, description: 'Nómina ' + month,
+        date: paymentDate, accountId, categoryId: 'income', incomeKind: 'income'
+      })
+    } catch (error) { window.alert(error instanceof Error ? error.message : 'No se pudo registrar la nómina.') }
   }
 
   const monthLabel = (value: string) => {
@@ -127,7 +147,17 @@ export function PayrollPage({ onBack, payroll }: { onBack: () => void; payroll: 
             </select>
           </label>
         </div>
-        <p className="payroll-muted">Guarda solo el neto y completa el resto cuando llegue tu PDF.</p>
+        <p className="payroll-muted">El primer neto crea un ingreso real; completar el PDF después no altera el saldo.</p>
+        {!existing && <div className="payroll-grid" style={{ marginBottom: 14 }}>
+          <label className="payroll-field">Cuenta del cobro
+            <select value={accountId} onChange={e => setAccountId(e.target.value)}>
+              {finance.accounts.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
+            </select>
+          </label>
+          <label className="payroll-field">Fecha del ingreso
+            <input type="date" value={paymentDate} onChange={e => setPaymentDate(e.target.value)}/>
+          </label>
+        </div>}
         <div className="payroll-grid">
           {([{ label: 'Neto recibido (€)', value: net, set: setNet }, { label: 'Bruto (€)', value: gross, set: setGross }, { label: 'Seguridad Social (€)', value: socialSecurity, set: setSocialSecurity }, { label: 'IRPF (%)', value: irpf, set: setIrpf }] as const).map(field =>
             <label className="payroll-field" key={field.label}>{field.label}
@@ -136,7 +166,7 @@ export function PayrollPage({ onBack, payroll }: { onBack: () => void; payroll: 
           )}
         </div>
         <button type="button" className="payroll-save" disabled={!payroll.ready} onClick={addEntry}><AppIcon name="check" size={20}/>{existing ? 'Actualizar nómina' : 'Guardar nómina'}</button>
-        <p className="payroll-muted" style={{ margin: '12px 0 0', textAlign: 'center' }}>Historial informativo por usuario. No crea movimientos bancarios ni modifica saldos o ingresos.</p>
+        <p className="payroll-muted" style={{ margin: '12px 0 0', textAlign: 'center' }}>El neto inicial se registra como ingreso, salvo que se detecte un cobro existente. Los detalles fiscales no crean nuevos movimientos.</p>
       </div>
     </section>
     <section className="payroll-section">
