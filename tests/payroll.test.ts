@@ -342,3 +342,19 @@ test('Realtime ignora eventos ajenos y cierra únicamente el canal de nóminas',
   active = false; fake.emit(A); assert.equal(updates, 2)
   stop(); assert.equal(fake.removed(), true)
 })
+
+test('nómina con solo neto se guarda y luego se completa sin duplicar meses', async () => {
+  const partial: PayrollValues = { month: '2026-10', net: 1234.56 }
+  assert.equal(isPayrollValues(partial), true)
+  assert.equal(isPayrollValues({ ...partial, gross: 1500 }), false)
+  const cloud = fakeCloud(), store = new PayrollStore(A, memory(), cloud.gateway())
+  await store.initialize()
+  store.save(partial)
+  await store.sync()
+  assert.equal(store.getSnapshot().months.length, 1)
+  assert.equal(store.getSnapshot().months[0].current.values?.net, 1234.56)
+  store.save({ month: '2026-10', gross: 1500, socialSecurity: 97.5, irpf: 11.196, net: 1234.56 })
+  await store.sync()
+  assert.equal(store.getSnapshot().months.length, 1)
+  assert.equal(store.getSnapshot().months[0].versions.length, 2)
+})
