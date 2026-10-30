@@ -8,7 +8,7 @@ const safe = (n: number) => Number.isFinite(n) && n >= 0 ? n : 0
 /** Historial informativo sincronizado: nunca genera movimientos ni modifica saldos. */
 export function PayrollPage({ onBack, payroll }: { onBack: () => void; payroll: PayrollState }) {
   const entries = payroll.months.filter((m) => m.current.kind !== 'delete').map((m) => m.current.values!)
-  const [month, setMonth] = useState('2026-09')
+  const [month, setMonth] = useState(() => new Date().toISOString().slice(0, 7))
   const [gross, setGross] = useState('')
   const [socialSecurity, setSocialSecurity] = useState('')
   const [irpf, setIrpf] = useState('')
