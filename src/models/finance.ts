@@ -285,6 +285,7 @@ export interface CashTransaction {
   date: string // ISO string o YYYY-MM-DD
   categoryId?: string
   note?: string
+  expenseNature?: ExpenseNature
   bankTransactionId?: string // Enlace opcional a la retirada bancaria de cajero
   isShared?: boolean
   paidBy?: 'user' | 'contact'

@@ -1,8 +1,8 @@
 export interface PayrollValues {
   month: string
-  gross: number
-  socialSecurity: number
-  irpf: number
+  gross?: number
+  socialSecurity?: number
+  irpf?: number
   net: number
 }
 
@@ -25,8 +25,10 @@ export function isPayrollValues(value: unknown): value is PayrollValues {
   if (!value || typeof value !== 'object') return false
   const v = value as PayrollValues
   return typeof v.month === 'string' && /^\d{4}-(0[1-9]|1[0-2])$/.test(v.month) &&
-    [v.gross, v.socialSecurity, v.irpf, v.net].every((n) => typeof n === 'number' && Number.isFinite(n) && n >= 0 && n <= 1e12) &&
-    v.irpf <= 100 && Math.abs(v.gross - v.socialSecurity - v.gross * v.irpf / 100 - v.net) <= 0.1 + 1e-9
+    typeof v.net === 'number' && Number.isFinite(v.net) && v.net >= 0 && v.net <= 1e12 &&
+    ([v.gross, v.socialSecurity, v.irpf].every(n => n === undefined) ||
+      ([v.gross, v.socialSecurity, v.irpf].every(n => typeof n === 'number' && Number.isFinite(n) && n >= 0 && n <= 1e12) &&
+        v.irpf! <= 100 && Math.abs(v.gross! - v.socialSecurity! - v.gross! * v.irpf! / 100 - v.net) <= 0.1 + 1e-9))
 }
 
 export function canonicalPayroll(v: PayrollValues): string {

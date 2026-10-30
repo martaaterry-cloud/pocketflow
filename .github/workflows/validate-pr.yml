@@ -1,0 +1,45 @@
+name: Validate PocketFlow PR
+
+on:
+  push:
+    branches: [feat/payroll-net-first-20261030]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    services:
+      payroll-postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_DB: postgres
+          POSTGRES_PASSWORD: payroll-test-only
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm test
+      - name: Validate payroll RLS against isolated PostgreSQL
+        env:
+          PAYROLL_TEST_CONTAINER: ${{ job.services['payroll-postgres'].id }}
+        run: node scripts/testPayrollRls.mjs
+      - name: Validate cash expense classification on isolated PostgreSQL
+        env:
+          PAYROLL_TEST_CONTAINER: ${{ job.services['payroll-postgres'].id }}
+        run: node scripts/testCashNature.mjs
+      - name: Type-check and production build (no deployment)
+        run: npm run build

@@ -44,3 +44,10 @@ test('carga o sesión sin datos mantiene deshabilitado el guardado y no muestra 
   assert.ok(!html.includes('835,00'))
   assert.ok(!html.includes('Reintentar sincronización'))
 })
+
+test('la nómina neta se muestra como pendiente de PDF y editable', () => {
+ const draft: PayrollEvent = { ...salary, values: { month: salary.month, net: 835 } }
+ const html = renderToStaticMarkup(React.createElement(PayrollPage, { onBack() {}, payroll: state({ months: projectPayrollMonths([draft]) }) }))
+ assert.ok(html.includes('Pendiente de PDF'))
+ assert.ok(html.includes('Editar'))
+})

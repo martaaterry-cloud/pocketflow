@@ -13,6 +13,8 @@ insert into public.transactions values(1, 99);
 -- APPLY_PAYROLL_MIGRATION
 -- APPLY_PAYROLL_MIGRATION
 
+-- APPLY_PAYROLL_NET_FIRST
+
 begin;
 set local role authenticated;
 select set_config('request.jwt.claim.sub', '11111111-1111-4111-8111-111111111111', true);
@@ -113,3 +115,22 @@ begin
 end;
 $$;
 select 'PAYROLL_RLS_OK' as result;
+
+-- Partial salary: same user's net-only record is allowed; no unauthorized reads or financial writes.
+begin;
+set local role authenticated;
+select set_config('request.jwt.claim.sub', '11111111-1111-4111-8111-111111111111', true);
+insert into public.payroll_events(id,user_id,month,kind,gross,social_security,irpf,net,client_created_at)
+values ('dddddddd-dddd-4ddd-8ddd-dddddddddddd',auth.uid(),'2026-10','save',null,null,null,1234.56,now());
+do $$ begin
+  if (select count(*) from public.payroll_events where net=1234.56 and gross is null) <> 1 then
+    raise exception 'No se guardó el neto sin PDF';
+  end if;
+  begin
+    insert into public.payroll_events(id,user_id,month,kind,gross,social_security,irpf,net,client_created_at)
+    values ('eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee',auth.uid(),'2026-10','save',1500,null,null,1200,now());
+    raise exception 'Se aceptó una nómina parcialmente rellenada';
+  exception when check_violation then null; end;
+end $$;
+commit;
+select 'PAYROLL_NET_FIRST_OK' as result;
