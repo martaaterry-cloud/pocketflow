@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react'
-import type { Category, CreateCashTransactionInput, SharedContact } from '../models/finance'
+import type { Category, CreateCashTransactionInput, SharedContact, ExpenseNature } from '../models/finance'
 import { money } from '../utils/money'
 import {
   splitExpenseEqually,
@@ -41,6 +41,7 @@ export function AddCashTransactionModal({
   const [description, setDescription] = useState('')
   const [date, setDate] = useState(() => new Date().toISOString().slice(0, 10))
   const [categoryId, setCategoryId] = useState('')
+  const [expenseNature, setExpenseNature] = useState<ExpenseNature>('variable')
   const [note, setNote] = useState('')
   const [error, setError] = useState<string | null>(null)
 
@@ -59,6 +60,7 @@ export function AddCashTransactionModal({
       setDescription('')
       setDate(new Date().toISOString().slice(0, 10))
       setCategoryId('')
+      setExpenseNature('variable')
       setNote('')
       setError(null)
       setIsShared(false)
@@ -196,6 +198,7 @@ export function AddCashTransactionModal({
           description: trimmedDesc,
           date: date || new Date().toISOString().slice(0, 10),
           categoryId: categoryId || undefined,
+          expenseNature: type === 'expense' ? expenseNature : undefined,
           note: note.trim() || undefined,
           isShared: true,
         },
@@ -208,6 +211,7 @@ export function AddCashTransactionModal({
         description: trimmedDesc,
         date: date || new Date().toISOString().slice(0, 10),
         categoryId: categoryId || undefined,
+          expenseNature: type === 'expense' ? expenseNature : undefined,
         note: note.trim() || undefined,
         isShared: false,
       })
@@ -385,6 +389,9 @@ export function AddCashTransactionModal({
             />
           </div>
 
+          {type === 'expense' && <label className="form-group" style={{ display: 'block' }}>Tipo de gasto
+            <select className="input-field" value={expenseNature} onChange={e => setExpenseNature(e.target.value as ExpenseNature)}><option value="variable">Variable</option><option value="fixed">Fijo</option><option value="extraordinary">Extraordinario</option></select>
+          </label>}
           <div className="form-group" style={{ width: '100%', boxSizing: 'border-box' }}>
             <label htmlFor="cash-cat" style={{ fontSize: '0.86rem', fontWeight: 600, color: 'var(--text-muted)', display: 'block', marginBottom: 6 }}>
               Categoría (opcional)
