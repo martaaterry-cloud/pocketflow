@@ -37,5 +37,9 @@ jobs:
         env:
           PAYROLL_TEST_CONTAINER: ${{ job.services['payroll-postgres'].id }}
         run: node scripts/testPayrollRls.mjs
+      - name: Validate cash expense classification on isolated PostgreSQL
+        env:
+          PAYROLL_TEST_CONTAINER: ${{ job.services['payroll-postgres'].id }}
+        run: node scripts/testCashNature.mjs
       - name: Type-check and production build (no deployment)
         run: npm run build
