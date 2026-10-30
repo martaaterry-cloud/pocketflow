@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useRef } from 'react'
-import type { Category, CashTransaction, UpdateCashTransactionInput, ExpenseShare, SharedContact, AttachmentMetadata } from '../models/finance'
+import type { Category, CashTransaction, UpdateCashTransactionInput, ExpenseShare, SharedContact, AttachmentMetadata, ExpenseNature } from '../models/finance'
 import { money } from '../utils/money'
 import {
   splitExpenseEqually,
@@ -51,6 +51,7 @@ export function EditCashTransactionModal({
   const [description, setDescription] = useState('')
   const [date, setDate] = useState('')
   const [categoryId, setCategoryId] = useState('')
+  const [expenseNature, setExpenseNature] = useState<ExpenseNature>('variable')
   const [note, setNote] = useState('')
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -110,6 +111,7 @@ export function EditCashTransactionModal({
     setDescription(transaction.description || '')
     setDate(transaction.date ? transaction.date.slice(0, 10) : new Date().toISOString().slice(0, 10))
     setCategoryId(transaction.categoryId || '')
+    setExpenseNature(transaction.expenseNature || 'variable')
     setNote(transaction.note || '')
     setConfirmDelete(false)
     setConfirmUnshare(false)
@@ -430,6 +432,7 @@ export function EditCashTransactionModal({
           description: description.trim() || transaction.description,
           date: date || transaction.date,
           categoryId: categoryId || undefined,
+          expenseNature: type === 'expense' ? expenseNature : undefined,
           note: note.trim() || undefined,
           isShared: true,
           paidBy,
@@ -449,6 +452,7 @@ export function EditCashTransactionModal({
           description: description.trim() || transaction.description,
           date: date || transaction.date,
           categoryId: categoryId || undefined,
+          expenseNature: type === 'expense' ? expenseNature : undefined,
           note: note.trim() || undefined,
           isShared: false,
           attachments: finalAttachments,
@@ -600,6 +604,9 @@ export function EditCashTransactionModal({
               />
             </div>
 
+            {type === 'expense' && <label className="form-group" style={{ display: 'block' }}>Tipo de gasto
+              <select className="input-field" value={expenseNature} onChange={e => setExpenseNature(e.target.value as ExpenseNature)}><option value="variable">Variable</option><option value="fixed">Fijo</option><option value="extraordinary">Extraordinario</option></select>
+            </label>}
             {type !== 'adjustment' && (
               <div className="form-group" style={{ width: '100%', boxSizing: 'border-box' }}>
                 <label htmlFor="edit-cash-cat" style={{ fontSize: '0.86rem', fontWeight: 600, color: 'var(--text-muted)', display: 'block', marginBottom: 6 }}>
