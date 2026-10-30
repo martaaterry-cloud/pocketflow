@@ -129,7 +129,7 @@ export function MorePage({
   }, [subView])
 
   if (subView === 'payroll') {
-    return <PayrollPage onBack={handleBackToMenu} payroll={payroll} />
+    return <PayrollPage onBack={handleBackToMenu} payroll={payroll} finance={finance} />
   }
 
   if (subView === 'profile') {
