@@ -19,7 +19,7 @@ test('Nóminas sincronizadas funciona sin tarjeta manual y no genera ingresos ni
   const html = renderToStaticMarkup(React.createElement(PayrollPage, { onBack() {}, payroll: state(), finance }))
   assert.ok(!html.includes('Sincronizar ahora'))
   assert.ok(html.includes('835,00'))
-  assert.ok(html.includes('No crea movimientos bancarios ni modifica saldos o ingresos'))
+  assert.ok(html.includes('Los detalles fiscales no crean nuevos movimientos'))
   assert.ok(!html.includes('Guardado solo en este dispositivo'))
 })
 
