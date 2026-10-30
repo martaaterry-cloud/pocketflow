@@ -9,16 +9,33 @@ const safe = (n: number) => Number.isFinite(n) && n >= 0 ? n : 0
 export function PayrollPage({ onBack, payroll }: { onBack: () => void; payroll: PayrollState }) {
   const entries = payroll.months.filter((m) => m.current.kind !== 'delete').map((m) => m.current.values!)
   const [month, setMonth] = useState('2026-09')
-  const [gross, setGross] = useState('830.15')
-  const [socialSecurity, setSocialSecurity] = useState('53.97')
-  const [irpf, setIrpf] = useState('9.2')
-  const [net, setNet] = useState('699.81')
+  const [gross, setGross] = useState('')
+  const [socialSecurity, setSocialSecurity] = useState('')
+  const [irpf, setIrpf] = useState('')
+  const [net, setNet] = useState('')
   const [rate, setRate] = useState(12)
   const [monthlyGross, setMonthlyGross] = useState(1660.30)
   const monthlySS = monthlyGross * 0.065
   const monthlyNet = monthlyGross - monthlySS - monthlyGross * rate / 100
+  const existing = entries.find(e => e.month === month)
+  const hasDetails = [gross, socialSecurity, irpf].some(v => v.trim() !== '')
+  const completeDetails = [gross, socialSecurity, irpf].every(v => v.trim() !== '')
+  const selectMonth = (value: string) => {
+    setMonth(value)
+    const saved = entries.find(e => e.month === value)
+    setNet(saved ? String(saved.net) : '')
+    setGross(saved?.gross === undefined ? '' : String(saved.gross))
+    setSocialSecurity(saved?.socialSecurity === undefined ? '' : String(saved.socialSecurity))
+    setIrpf(saved?.irpf === undefined ? '' : String(saved.irpf))
+  }
   const addEntry = () => {
-    const record = { month, gross: Number(gross), socialSecurity: Number(socialSecurity), irpf: Number(irpf), net: Number(net) }
+    if (!net.trim() || !Number.isFinite(Number(net)) || Number(net) < 0 || (hasDetails && !completeDetails)) {
+      window.alert('Indica el neto recibido. Los demás campos se rellenan juntos cuando tengas el PDF.')
+      return
+    }
+    const record = completeDetails
+      ? { month, gross: Number(gross), socialSecurity: Number(socialSecurity), irpf: Number(irpf), net: Number(net) }
+      : { month, net: Number(net) }
     try { payroll.save(record) }
     catch (error) { window.alert(error instanceof Error ? error.message : 'No se pudo guardar la nómina.') }
   }
@@ -92,7 +109,7 @@ export function PayrollPage({ onBack, payroll }: { onBack: () => void; payroll: 
       </div>
     </section>
     <section className="payroll-section">
-      <h2>Registrar nómina</h2>
+      <h2>{existing ? 'Completar nómina' : 'Registrar nómina'}</h2>
       <div className="payroll-card">
         <div className="payroll-grid" style={{ marginBottom: 14 }}>
           <label className="payroll-field">Mes
@@ -105,11 +122,12 @@ export function PayrollPage({ onBack, payroll }: { onBack: () => void; payroll: 
             </select>
           </label>
           <label className="payroll-field">Año
-            <select aria-label="Año de la nómina" value={month.split('-')[0] ?? '2026'} onChange={e => setMonth(e.target.value + '-' + (month.split('-')[1] || '09'))}>
+            <select aria-label="Año de la nómina" value={month.split('-')[0] ?? '2026'} onChange={e => selectMonth(e.target.value + '-' + (month.split('-')[1] || '09'))}>
               {Array.from({ length: 11 }, (_, i) => 2024 + i).map(year => <option key={year} value={year}>{year}</option>)}
             </select>
           </label>
         </div>
+        <p className="payroll-muted">Guarda solo el neto y completa el resto cuando llegue tu PDF.</p>
         <div className="payroll-grid">
           {([{ label: 'Bruto (€)', value: gross, set: setGross }, { label: 'Seguridad Social (€)', value: socialSecurity, set: setSocialSecurity }, { label: 'IRPF (%)', value: irpf, set: setIrpf }, { label: 'Neto (€)', value: net, set: setNet }] as const).map(field =>
             <label className="payroll-field" key={field.label}>{field.label}
@@ -117,7 +135,7 @@ export function PayrollPage({ onBack, payroll }: { onBack: () => void; payroll: 
             </label>
           )}
         </div>
-        <button type="button" className="payroll-save" disabled={!payroll.ready} onClick={addEntry}><AppIcon name="check" size={20}/>Guardar nómina</button>
+        <button type="button" className="payroll-save" disabled={!payroll.ready} onClick={addEntry}><AppIcon name="check" size={20}/>{existing ? 'Actualizar nómina' : 'Guardar nómina'}</button>
         <p className="payroll-muted" style={{ margin: '12px 0 0', textAlign: 'center' }}>Historial informativo por usuario. No crea movimientos bancarios ni modifica saldos o ingresos.</p>
       </div>
     </section>
@@ -128,10 +146,10 @@ export function PayrollPage({ onBack, payroll }: { onBack: () => void; payroll: 
           <div className="payroll-entry" key={e.month}>
             <div style={{ minWidth: 0 }}>
               <div className="payroll-entry-title">{monthLabel(e.month)}</div>
-              <div className="payroll-muted">Bruto {format(e.gross)} · IRPF {e.irpf.toLocaleString('es-ES')} %</div>
+              <div className="payroll-muted">{e.gross === undefined ? 'Pendiente de PDF' : `Bruto ${format(e.gross)} · IRPF ${e.irpf!.toLocaleString('es-ES')} %`}</div>
             </div>
             <div className="payroll-entry-actions">
-              <span className="payroll-entry-amount">{format(e.net)}</span>
+              <span className="payroll-entry-amount">{format(e.net)}</span><button type="button" className="text-button" onClick={() => selectMonth(e.month)}>Editar</button>
               <button type="button" className="payroll-delete" onClick={() => { if (window.confirm('¿Eliminar esta nómina informativa en todos tus dispositivos?')) { try { payroll.remove(e.month) } catch (error) { window.alert(error instanceof Error ? error.message : 'No se pudo eliminar la nómina.') } } }} aria-label={'Eliminar nómina ' + e.month}><AppIcon name="trash-2" size={17}/></button>
             </div>
           </div>
@@ -145,7 +163,7 @@ export function PayrollPage({ onBack, payroll }: { onBack: () => void; payroll: 
         {payroll.months.filter((m) => m.versions.length > 1 || m.current.kind === 'delete').map(m => <details key={m.month}>
           <summary className="payroll-entry-title">{monthLabel(m.month)} · {m.current.kind === 'delete' ? 'Eliminada' : `${m.versions.length} versiones`}</summary>
           {m.versions.filter(v => v.values && v.id !== m.current.id).map(v => <div className="payroll-entry" key={v.id}>
-            <div><strong>{format(v.values!.net)}</strong><p className="payroll-muted">Bruto {format(v.values!.gross)} · IRPF {v.values!.irpf} % · {v.kind === 'legacy' ? 'Migrada de este dispositivo' : 'Versión anterior'}</p></div>
+            <div><strong>{format(v.values!.net)}</strong><p className="payroll-muted">{v.values!.gross === undefined ? 'Pendiente de PDF' : `Bruto ${format(v.values!.gross)} · IRPF ${v.values!.irpf} %`} · {v.kind === 'legacy' ? 'Migrada de este dispositivo' : 'Versión anterior'}</p></div>
             <button type="button" className="text-button" disabled={!payroll.ready} onClick={() => {
               if (window.confirm('¿Recuperar esta versión en todos tus dispositivos?')) { try { payroll.save(v.values!) } catch (error) { window.alert(error instanceof Error ? error.message : 'No se pudo recuperar.') } }
             }}>Recuperar</button>
