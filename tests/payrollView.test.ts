@@ -4,6 +4,8 @@ import * as React from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { PayrollPage } from '../src/pages/PayrollPage'
 import type { PayrollState } from '../src/hooks/usePayroll'
+import type { ReturnTypeFinance } from '../src/types'
+const finance = { accounts: [{id:'daily',name:'Tarjeta',type:'spending',initialBalance:0}], transactions:[], addTransaction(){} } as unknown as ReturnTypeFinance
 import { projectPayrollMonths, type PayrollEvent } from '../src/models/payroll'
 
 Object.defineProperty(globalThis, 'React', { value: React, configurable: true })
@@ -14,7 +16,7 @@ const state = (overrides: Partial<PayrollState> = {}): PayrollState => ({ userId
   pending: 0, migrationIssues: 0, status: 'synced', error: null, save() {}, remove() {}, sync: async () => {}, ...overrides })
 
 test('Nóminas sincronizadas funciona sin tarjeta manual y no genera ingresos ni movimientos', () => {
-  const html = renderToStaticMarkup(React.createElement(PayrollPage, { onBack() {}, payroll: state() }))
+  const html = renderToStaticMarkup(React.createElement(PayrollPage, { onBack() {}, payroll: state(), finance }))
   assert.ok(!html.includes('Sincronizar ahora'))
   assert.ok(html.includes('835,00'))
   assert.ok(html.includes('No crea movimientos bancarios ni modifica saldos o ingresos'))
@@ -22,7 +24,7 @@ test('Nóminas sincronizadas funciona sin tarjeta manual y no genera ingresos ni
 })
 
 test('fallo remoto muestra datos locales, pendientes y aviso; nunca anuncia sincronizado', () => {
-  const html = renderToStaticMarkup(React.createElement(PayrollPage, { onBack() {}, payroll: state({ pending: 1, status: 'error', error: 'No se pudo sincronizar.' }) }))
+  const html = renderToStaticMarkup(React.createElement(PayrollPage, { onBack() {}, finance, payroll: state({ pending: 1, status: 'error', error: 'No se pudo sincronizar.' }) }))
   assert.ok(html.includes('835,00'))
   assert.ok(html.includes('cambios guardados pendientes de subir a tu cuenta'))
   assert.ok(html.includes('No se pudo sincronizar'))
@@ -31,7 +33,7 @@ test('fallo remoto muestra datos locales, pendientes y aviso; nunca anuncia sinc
 
 test('las versiones antiguas y la eliminación se presentan sin duplicar el historial mensual', () => {
   const deleted: PayrollEvent = { ...salary, id: '33333333-3333-4333-8333-333333333333', kind: 'delete', values: null, sequence: 2 }
-  const html = renderToStaticMarkup(React.createElement(PayrollPage, { onBack() {}, payroll: state({ months: projectPayrollMonths([salary, deleted]) }) }))
+  const html = renderToStaticMarkup(React.createElement(PayrollPage, { onBack() {}, finance, payroll: state({ months: projectPayrollMonths([salary, deleted]) }) }))
   assert.ok(html.includes('Aún no has guardado nóminas'))
   assert.ok(html.includes('Versiones conservadas'))
   assert.ok(html.includes('Eliminada'))
@@ -39,7 +41,7 @@ test('las versiones antiguas y la eliminación se presentan sin duplicar el hist
 })
 
 test('carga o sesión sin datos mantiene deshabilitado el guardado y no muestra nóminas anteriores', () => {
-  const html = renderToStaticMarkup(React.createElement(PayrollPage, { onBack() {}, payroll: state({ ready: false, months: [], status: 'loading' }) }))
+  const html = renderToStaticMarkup(React.createElement(PayrollPage, { onBack() {}, finance, payroll: state({ ready: false, months: [], status: 'loading' }) }))
   assert.ok(html.includes('disabled=""'))
   assert.ok(!html.includes('835,00'))
   assert.ok(!html.includes('Reintentar sincronización'))
@@ -47,7 +49,7 @@ test('carga o sesión sin datos mantiene deshabilitado el guardado y no muestra 
 
 test('la nómina neta se muestra como pendiente de PDF y editable', () => {
  const draft: PayrollEvent = { ...salary, values: { month: salary.month, net: 835 } }
- const html = renderToStaticMarkup(React.createElement(PayrollPage, { onBack() {}, payroll: state({ months: projectPayrollMonths([draft]) }) }))
+ const html = renderToStaticMarkup(React.createElement(PayrollPage, { onBack() {}, finance, payroll: state({ months: projectPayrollMonths([draft]) }) }))
  assert.ok(html.includes('Pendiente de PDF'))
  assert.ok(html.includes('Editar'))
 })
