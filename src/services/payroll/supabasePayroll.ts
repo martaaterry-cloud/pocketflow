@@ -13,8 +13,8 @@ export function fromPayrollRow(row: Record<string, unknown>, userId: string): Pa
     if (typeof value !== 'string' || !Number.isFinite(Date.parse(value))) throw new Error('Fecha de nómina inválida.')
     return new Date(value).toISOString()
   }
-  const values = row.kind === 'delete' ? null : { month: row.month as string, gross: numeric(row.gross),
-    socialSecurity: numeric(row.social_security), irpf: numeric(row.irpf), net: numeric(row.net) }
+  const values = row.kind === 'delete' ? null : { month: row.month as string, gross: row.gross === null ? undefined : numeric(row.gross),
+    socialSecurity: row.social_security === null ? undefined : numeric(row.social_security), irpf: row.irpf === null ? undefined : numeric(row.irpf), net: numeric(row.net) }
   const event: PayrollEvent = { id: row.id as string, userId: row.user_id as string, month: row.month as string,
     kind: row.kind as PayrollEvent['kind'], values, clientCreatedAt: timestamp(row.client_created_at),
     sequence: numeric(row.sequence), createdAt: timestamp(row.created_at) }
