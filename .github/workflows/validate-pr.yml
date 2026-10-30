@@ -1,6 +1,8 @@
 name: Validate PocketFlow PR
 
 on:
+  push:
+    branches: [feat/payroll-net-first-20261030]
   pull_request:
     branches: [main]
   workflow_dispatch:
