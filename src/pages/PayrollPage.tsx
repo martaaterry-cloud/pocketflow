@@ -113,7 +113,7 @@ export function PayrollPage({ onBack, payroll }: { onBack: () => void; payroll: 
       <div className="payroll-card">
         <div className="payroll-grid" style={{ marginBottom: 14 }}>
           <label className="payroll-field">Mes
-            <select aria-label="Mes de la nómina" value={month.split('-')[1] ?? '09'} onChange={e => setMonth((month.split('-')[0] || '2026') + '-' + e.target.value)}>
+            <select aria-label="Mes de la nómina" value={month.split('-')[1] ?? '09'} onChange={e => selectMonth((month.split('-')[0] || '2026') + '-' + e.target.value)}>
               {Array.from({ length: 12 }, (_, i) => {
                 const value = String(i + 1).padStart(2, '0')
                 const label = new Intl.DateTimeFormat('es-ES', { month: 'long' }).format(new Date(2026, i, 1))
@@ -129,7 +129,7 @@ export function PayrollPage({ onBack, payroll }: { onBack: () => void; payroll: 
         </div>
         <p className="payroll-muted">Guarda solo el neto y completa el resto cuando llegue tu PDF.</p>
         <div className="payroll-grid">
-          {([{ label: 'Bruto (€)', value: gross, set: setGross }, { label: 'Seguridad Social (€)', value: socialSecurity, set: setSocialSecurity }, { label: 'IRPF (%)', value: irpf, set: setIrpf }, { label: 'Neto (€)', value: net, set: setNet }] as const).map(field =>
+          {([{ label: 'Neto recibido (€)', value: net, set: setNet }, { label: 'Bruto (€)', value: gross, set: setGross }, { label: 'Seguridad Social (€)', value: socialSecurity, set: setSocialSecurity }, { label: 'IRPF (%)', value: irpf, set: setIrpf }] as const).map(field =>
             <label className="payroll-field" key={field.label}>{field.label}
               <input type="number" min="0" step="0.01" inputMode="decimal" value={field.value} onChange={e => field.set(e.target.value)}/>
             </label>
