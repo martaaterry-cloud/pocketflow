@@ -68,23 +68,6 @@ export function PayrollPage({ onBack, payroll, finance }: { onBack: () => void; 
   const matchingIncome = existing ? finance.transactions.filter(t =>
     t.type === 'income' && t.date.slice(0, 7) === month &&
     Math.abs(t.amount - existing.net) < 0.005 && t.incomeKind !== 'reimbursement') : []
-  const [selectedIncomeId, setSelectedIncomeId] = useState('')
-  const linkExistingIncome = () => {
-    const tx = matchingIncome.find(t => t.id === selectedIncomeId)
-    if (!tx || !existing) return
-    if (!window.confirm('¿Marcar este ingreso existente como la nómina de ' + month + '? No se sumará dinero.')) return
-    try {
-      finance.updateTransaction(tx.id, {
-        categoryId: 'income',
-        description: tx.description.toLowerCase().includes('nómina') ? tx.description : 'Nómina ' + month + ' · ' + tx.description,
-      })
-      window.alert('Ingreso de la nómina identificado. No se ha añadido dinero ni modificado el importe.')
-      setSelectedIncomeId('')
-    } catch (error) {
-      window.alert(error instanceof Error ? error.message : 'No se pudo vincular el ingreso.')
-    }
-  }
-
   const createIncomeForSavedPayroll = () => {
     if (!existing || !payroll.ready) return
     const amount = existing.net
@@ -210,7 +193,7 @@ export function PayrollPage({ onBack, payroll, finance }: { onBack: () => void; 
         <button type="button" className="payroll-save" disabled={!payroll.ready} onClick={addEntry}><AppIcon name="check" size={20}/>{existing ? 'Actualizar nómina' : 'Guardar nómina'}</button>
         {existing && <div style={{ marginTop: 14, padding: 14, border: '1px solid var(--border, #ddd)', borderRadius: 12 }}>
           <strong>Ingreso de esta nómina</strong>
-          <p className="payroll-muted">Si ya cobraste en imagin, selecciona el ingreso que registraste para identificarlo como nómina. No se sumará dinero.</p>
+          <p className="payroll-muted">El neto se registra desde Nóminas. Si ya aparece en Movimientos no se añadirá otra vez.</p>
           {matchingIncome.length === 0 && <>
             <p className="payroll-muted">Si borraste el ingreso anterior, puedes crearlo ahora desde esta nómina guardada.</p>
             <div className="payroll-grid">
@@ -225,15 +208,7 @@ export function PayrollPage({ onBack, payroll, finance }: { onBack: () => void; 
             </div>
             <button type="button" className="payroll-save" disabled={!payroll.ready} onClick={createIncomeForSavedPayroll}>Añadir neto como ingreso</button>
           </>}
-          {matchingIncome.length > 0 ? <>
-            <label className="payroll-field">Ingreso existente
-              <select value={selectedIncomeId} onChange={e => setSelectedIncomeId(e.target.value)}>
-                <option value="">Selecciona el ingreso correcto</option>
-                {matchingIncome.map(tx => <option key={tx.id} value={tx.id}>{tx.date.slice(0,10)} · {tx.description} · {format(tx.amount)}</option>)}
-              </select>
-            </label>
-            <button type="button" className="payroll-save" disabled={!selectedIncomeId} onClick={linkExistingIncome}>Identificar ingreso existente como nómina</button>
-          </> : <p className="payroll-muted">No hay ingresos de igual importe y mes. Comprueba el movimiento en Movimientos antes de registrar otro cobro.</p>}
+          {matchingIncome.length > 0 && <p className="payroll-muted">Este mes ya tiene un ingreso de {format(existing.net)}. No se creará otro.</p>}
         </div>}
         <p className="payroll-muted" style={{ margin: '12px 0 0', textAlign: 'center' }}>El neto inicial se registra como ingreso, salvo que se detecte un cobro existente. Los detalles fiscales no crean nuevos movimientos.</p>
       </div>

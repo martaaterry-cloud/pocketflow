@@ -159,6 +159,12 @@ export function HomePage({
 
   // Handlers para Swipe táctil (Mobile First)
   const handleTouchStart = (e: React.TouchEvent) => {
+    // El gesto de una fila pertenece a editar/eliminar el movimiento, no al carrusel.
+    if ((e.target as HTMLElement).closest('.swipeable-row-container, .swipeable-content, .swipe-actions-layer')) {
+      touchStartXRef.current = null
+      touchStartYRef.current = null
+      return
+    }
     if (e.touches.length === 1) {
       touchStartXRef.current = e.touches[0].clientX
       touchStartYRef.current = e.touches[0].clientY
