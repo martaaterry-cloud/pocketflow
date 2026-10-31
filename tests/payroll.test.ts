@@ -385,3 +385,22 @@ test('nómina cobrada en octubre puede financiar noviembre sin perder el cobro b
   assert.equal(october.realAmount, 0)
   assert.equal(november.realAmount, 1446.28)
 })
+
+test('plan mensual: solo nóminas del día 20 pasan al siguiente mes y los extras no', async () => {
+  const { selectExpectedMonthlyIncomeDetail } = await import('../src/utils/planSelectors')
+  const base = { id: '00000000-0000-4000-8000-000000000001', type: 'income' as const, accountId: 'daily', categoryId: 'income', incomeKind: 'income' as const }
+  const txs = [
+    { ...base, description: 'Nómina 2026-09', date: '2026-10-01', amount: 830.64 },
+    { ...base, id: '00000000-0000-4000-8000-000000000002', description: 'Nómina 2026-10', date: '2026-10-30', amount: 1446.28 },
+    { ...base, id: '00000000-0000-4000-8000-000000000003', description: 'Ingreso extra', date: '2026-10-22', amount: 100 },
+  ]
+  const oct = selectExpectedMonthlyIncomeDetail(null, [], txs, [], new Date(2026, 9, 31))
+  const nov = selectExpectedMonthlyIncomeDetail(null, [], txs, [], new Date(2026, 10, 1))
+  assert.equal(oct.realAmount, 930.64)
+  assert.equal(nov.realAmount, 1446.28)
+  const early = [{ ...base, description: 'Nómina 2026-11', date: '2026-11-19', amount: 777 }]
+  assert.equal(selectExpectedMonthlyIncomeDetail(null, [], early, [], new Date(2026, 10, 19)).realAmount, 777)
+  const boundary = [{ ...base, description: 'Nómina 2026-11', date: '2026-11-20', amount: 777 }]
+  assert.equal(selectExpectedMonthlyIncomeDetail(null, [], boundary, [], new Date(2026, 10, 20)).realAmount, 0)
+  assert.equal(selectExpectedMonthlyIncomeDetail(null, [], boundary, [], new Date(2026, 11, 1)).realAmount, 777)
+})
