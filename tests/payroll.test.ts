@@ -358,3 +358,12 @@ test('nómina con solo neto se guarda y luego se completa sin duplicar meses', a
   assert.equal(store.getSnapshot().months.length, 1)
   assert.equal(store.getSnapshot().months[0].versions.length, 2)
 })
+
+test('ingreso de nómina: categoría virtual no se envía como FK a Supabase', async () => {
+  const { toDbTransaction } = await import('../src/services/supabase/supabaseSync')
+  const row = toDbTransaction({ id: crypto.randomUUID(), type: 'income', amount: 1446.28,
+    date: '2026-10-31', accountId: 'daily', categoryId: 'income', description: 'Nómina 2026-10' }, A)
+  assert.equal(row.category_id, null)
+  assert.equal(row.amount, 1446.28)
+  assert.equal(row.account_id, 'daily')
+})

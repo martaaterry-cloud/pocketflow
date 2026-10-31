@@ -255,21 +255,7 @@ export function PayrollPage({ onBack, payroll, finance }: { onBack: () => void; 
         )}
       </div>
     </section>
-    {payroll.months.some((m) => m.versions.length > 1 || m.current.kind === 'delete') && <section className="payroll-section">
-      <h2>Versiones conservadas</h2>
-      <p className="payroll-muted">Las versiones de otros dispositivos y las nóminas eliminadas se conservan. Recuperar una versión crea un nuevo guardado sin borrar las anteriores.</p>
-      <div className="payroll-card">
-        {payroll.months.filter((m) => m.versions.length > 1 || m.current.kind === 'delete').map(m => <details key={m.month}>
-          <summary className="payroll-entry-title">{monthLabel(m.month)} · {m.current.kind === 'delete' ? 'Eliminada' : `${m.versions.length} versiones`}</summary>
-          {m.versions.filter(v => v.values && v.id !== m.current.id).map(v => <div className="payroll-entry" key={v.id}>
-            <div><strong>{format(v.values!.net)}</strong><p className="payroll-muted">{v.values!.gross === undefined ? 'Pendiente de PDF' : `Bruto ${format(v.values!.gross)} · IRPF ${v.values!.irpf} %`} · {v.kind === 'legacy' ? 'Migrada de este dispositivo' : 'Versión anterior'}</p></div>
-            <button type="button" className="text-button" disabled={!payroll.ready} onClick={() => {
-              if (window.confirm('¿Recuperar esta versión en todos tus dispositivos?')) { try { payroll.save(v.values!) } catch (error) { window.alert(error instanceof Error ? error.message : 'No se pudo recuperar.') } }
-            }}>Recuperar</button>
-          </div>)}
-        </details>)}
-      </div>
-    </section>}
+
   </main>
 }
 

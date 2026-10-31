@@ -31,13 +31,13 @@ test('fallo remoto muestra datos locales, pendientes y aviso; nunca anuncia sinc
   assert.ok(!html.includes('Nóminas sincronizadas'))
 })
 
-test('las versiones antiguas y la eliminación se presentan sin duplicar el historial mensual', () => {
+test('las versiones antiguas y nóminas eliminadas no aparecen en la interfaz', () => {
   const deleted: PayrollEvent = { ...salary, id: '33333333-3333-4333-8333-333333333333', kind: 'delete', values: null, sequence: 2 }
   const html = renderToStaticMarkup(React.createElement(PayrollPage, { onBack() {}, finance, payroll: state({ months: projectPayrollMonths([salary, deleted]) }) }))
   assert.ok(html.includes('Aún no has guardado nóminas'))
-  assert.ok(html.includes('Versiones conservadas'))
-  assert.ok(html.includes('Eliminada'))
-  assert.ok(html.includes('Recuperar'))
+  assert.ok(!html.includes('Versiones conservadas'))
+  assert.ok(!html.includes('Eliminada'))
+  assert.ok(!html.includes('Recuperar'))
 })
 
 test('carga o sesión sin datos mantiene deshabilitado el guardado y no muestra nóminas anteriores', () => {
