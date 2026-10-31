@@ -94,10 +94,15 @@ export function selectExpectedMonthlyIncomeDetail(
   const refDate = referenceDate instanceof Date ? referenceDate : new Date()
 
   // 1. Ingresos reales cobrados este mes (Banco + Efectivo excluyendo reembolsos)
+  // Para el plan se usa el mes que financia cada nómina; las estadísticas
+  // y el saldo bancario conservan siempre la fecha real del cobro.
+  const selectedMonth = refDate.getFullYear() + '-' + String(refDate.getMonth() + 1).padStart(2, '0')
+  const planTransactions = (transactions || []).filter(t => !t.budgetMonth || t.budgetMonth === selectedMonth)
+    .map(t => t.budgetMonth && t.type === 'income' ? { ...t, date: selectedMonth + '-01' } : t)
   const realAmount =
     (Array.isArray(transactions) && transactions.length > 0) ||
     (Array.isArray(cashTransactions) && cashTransactions.length > 0)
-      ? selectRealIncome(transactions || [], refDate, 'month', cashTransactions || [])
+      ? selectRealIncome(planTransactions, refDate, 'month', cashTransactions || [])
       : 0
 
   // 2. Ingresos recurrentes activos

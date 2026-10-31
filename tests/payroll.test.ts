@@ -367,3 +367,21 @@ test('ingreso de nómina: categoría virtual no se envía como FK a Supabase', a
   assert.equal(row.amount, 1446.28)
   assert.equal(row.account_id, 'daily')
 })
+
+test('nómina cobrada en octubre puede financiar noviembre sin perder el cobro bancario en octubre', async () => {
+  const { selectExpectedMonthlyIncomeDetail } = await import('../src/utils/planSelectors')
+  const { toDbTransaction, fromDbTransaction } = await import('../src/services/supabase/supabaseSync')
+  const salary = { id: crypto.randomUUID(), type: 'income' as const, amount: 1446.28,
+    description: 'Nómina 2026-10', date: '2026-10-30', accountId: 'daily', categoryId: 'income',
+    budgetMonth: '2026-11' }
+  const db = toDbTransaction(salary, A)
+  assert.equal(db.date, '2026-10-30')
+  assert.equal(db.budget_month, '2026-11')
+  assert.equal(db.category_id, null)
+  const roundtrip = fromDbTransaction(db)
+  assert.equal(roundtrip.budgetMonth, '2026-11')
+  const october = selectExpectedMonthlyIncomeDetail(null, [], [salary], [], new Date(2026, 9, 15))
+  const november = selectExpectedMonthlyIncomeDetail(null, [], [salary], [], new Date(2026, 10, 15))
+  assert.equal(october.realAmount, 0)
+  assert.equal(november.realAmount, 1446.28)
+})
