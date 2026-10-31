@@ -46,6 +46,7 @@ export interface Transaction {
   note?: string
   recurringPaymentId?: string
   incomeKind?: IncomeKind
+  budgetMonth?: string // YYYY-MM: mes cuyo presupuesto financia este ingreso
   parentExpenseId?: string
   expenseShareId?: string
   isShared?: boolean
