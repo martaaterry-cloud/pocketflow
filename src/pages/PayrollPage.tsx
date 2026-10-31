@@ -21,6 +21,14 @@ export function PayrollPage({ onBack, payroll, finance }: { onBack: () => void; 
   const [net, setNet] = useState('')
   const [accountId, setAccountId] = useState('daily')
   const [paymentDate, setPaymentDate] = useState(() => new Date().toISOString().slice(0, 10))
+  const nextBudgetMonth = (date: string) => {
+    const [y, m, d] = date.split('-').map(Number)
+    if (!y || !m || !d) return ''
+    const target = new Date(y, m - 1 + (d >= 25 ? 1 : 0), 1)
+    return target.getFullYear() + '-' + String(target.getMonth() + 1).padStart(2, '0')
+  }
+  const [budgetMonth, setBudgetMonth] = useState(() => nextBudgetMonth(new Date().toISOString().slice(0, 10)))
+  const setPaymentDateAndBudget = (date: string) => { setPaymentDate(date); setBudgetMonth(nextBudgetMonth(date)) }
   const [rate, setRate] = useState(12)
   const [monthlyGross, setMonthlyGross] = useState(1660.30)
   const monthlySS = monthlyGross * 0.065
@@ -47,7 +55,7 @@ export function PayrollPage({ onBack, payroll, finance }: { onBack: () => void; 
     try {
       const amount = parseAmount(net)
       const matches = finance.transactions.filter(t => t.type === 'income' &&
-        t.date.slice(0, 7) === month && Math.abs(t.amount - amount) < 0.005 && t.incomeKind !== 'reimbursement')
+        t.description === 'Nómina ' + month && Math.abs(t.amount - amount) < 0.005 && t.incomeKind !== 'reimbursement')
       if (!existing && matches.length) {
         payroll.save(record)
         window.alert('La nómina se ha guardado. Ya hay un ingreso del mismo importe y mes, así que no se ha duplicado. Revisa el movimiento existente en imagin.')
@@ -60,13 +68,13 @@ export function PayrollPage({ onBack, payroll, finance }: { onBack: () => void; 
       payroll.save(record)
       if (!existing) finance.addTransaction({
         type: 'income', amount, description: 'Nómina ' + month,
-        date: paymentDate, accountId, categoryId: 'income', incomeKind: 'income'
+        date: paymentDate, accountId, categoryId: 'income', incomeKind: 'income', budgetMonth
       })
     } catch (error) { window.alert(error instanceof Error ? error.message : 'No se pudo registrar la nómina.') }
   }
 
   const matchingIncome = existing ? finance.transactions.filter(t =>
-    t.type === 'income' && t.date.slice(0, 7) === month &&
+    t.type === 'income' && t.description === 'Nómina ' + month &&
     Math.abs(t.amount - existing.net) < 0.005 && t.incomeKind !== 'reimbursement') : []
   const createIncomeForSavedPayroll = () => {
     if (!existing || !payroll.ready) return
@@ -77,14 +85,18 @@ export function PayrollPage({ onBack, payroll, finance }: { onBack: () => void; 
     const matches = finance.transactions.filter(t => t.type === 'income' && t.date.slice(0, 7) === month &&
       Math.abs(t.amount - amount) < 0.005 && t.incomeKind !== 'reimbursement')
     if (matches.length) { window.alert('Ya existe un ingreso de igual importe en ese mes. Revísalo antes de crear otro.'); return }
+    if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(budgetMonth)) { window.alert('Selecciona el mes de presupuesto.'); return }
     if (!window.confirm('¿Registrar ' + format(amount) + ' como ingreso de la nómina ' + month + '? Se sumará una sola vez a la cuenta seleccionada.')) return
     try {
       finance.addTransaction({ type: 'income', amount, description: 'Nómina ' + month,
-        date: paymentDate, accountId, categoryId: 'income', incomeKind: 'income' })
+        date: paymentDate, accountId, categoryId: 'income', incomeKind: 'income', budgetMonth })
       window.alert('Ingreso registrado. Completar el PDF no creará otro movimiento.')
     } catch (error) { window.alert(error instanceof Error ? error.message : 'No se pudo registrar el ingreso.') }
   }
 
+  const budgetMonthField = <label className="payroll-field">Presupuesto al que se asigna
+    <input type="month" value={budgetMonth} onChange={e => setBudgetMonth(e.target.value)} />
+  </label>
   const monthLabel = (value: string) => {
     const [year, monthNumber] = value.split('-').map(Number)
     if (!year || !monthNumber || monthNumber < 1 || monthNumber > 12) return value
@@ -180,8 +192,9 @@ export function PayrollPage({ onBack, payroll, finance }: { onBack: () => void; 
             </select>
           </label>
           <label className="payroll-field">Fecha del ingreso
-            <input type="date" value={paymentDate} onChange={e => setPaymentDate(e.target.value)}/>
+            <input type="date" value={paymentDate} onChange={e => setPaymentDateAndBudget(e.target.value)}/>
           </label>
+          {budgetMonthField}
         </div>}
         <div className="payroll-grid">
           {([{ label: 'Neto recibido (€)', value: net, set: setNet }, { label: 'Bruto (€)', value: gross, set: setGross }, { label: 'Seguridad Social (€)', value: socialSecurity, set: setSocialSecurity }, { label: 'IRPF (%)', value: irpf, set: setIrpf }] as const).map(field =>
@@ -203,8 +216,9 @@ export function PayrollPage({ onBack, payroll, finance }: { onBack: () => void; 
                 </select>
               </label>
               <label className="payroll-field">Fecha del cobro
-                <input type="date" value={paymentDate} onChange={e => setPaymentDate(e.target.value)}/>
+                <input type="date" value={paymentDate} onChange={e => setPaymentDateAndBudget(e.target.value)}/>
               </label>
+              {budgetMonthField}
             </div>
             <button type="button" className="payroll-save" disabled={!payroll.ready} onClick={createIncomeForSavedPayroll}>Añadir neto como ingreso</button>
           </>}
