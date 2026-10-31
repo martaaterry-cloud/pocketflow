@@ -135,7 +135,7 @@ export function toDbTransaction(tx: Transaction, userId: string) {
     amount: tx.amount,
     account_id: tx.accountId,
     to_account_id: tx.toAccountId || null,
-    category_id: tx.categoryId || null,
+    category_id: tx.type === 'income' && tx.categoryId === 'income' ? null : (tx.categoryId || null),
     description: tx.description,
     date: tx.date,
     note: tx.note || null,
