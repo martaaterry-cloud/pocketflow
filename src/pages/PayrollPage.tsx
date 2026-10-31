@@ -24,7 +24,7 @@ export function PayrollPage({ onBack, payroll, finance }: { onBack: () => void; 
   const nextBudgetMonth = (date: string) => {
     const [y, m, d] = date.split('-').map(Number)
     if (!y || !m || !d) return ''
-    const target = new Date(y, m - 1 + (d >= 25 ? 1 : 0), 1)
+    const target = new Date(y, m - 1 + (d >= 20 ? 1 : 0), 1)
     return target.getFullYear() + '-' + String(target.getMonth() + 1).padStart(2, '0')
   }
   const [budgetMonth, setBudgetMonth] = useState(() => nextBudgetMonth(new Date().toISOString().slice(0, 10)))
@@ -51,7 +51,7 @@ export function PayrollPage({ onBack, payroll, finance }: { onBack: () => void; 
     }
     const record = completeDetails
       ? { month, gross: parseAmount(gross), socialSecurity: parseAmount(socialSecurity), irpf: parseAmount(irpf), net: parseAmount(net) }
-      : { month, net: Number(net) }
+      : { month, net: parseAmount(net) }
     try {
       const amount = parseAmount(net)
       const matches = finance.transactions.filter(t => t.type === 'income' &&
@@ -82,7 +82,7 @@ export function PayrollPage({ onBack, payroll, finance }: { onBack: () => void; 
     if (!Number.isFinite(amount) || amount <= 0) { window.alert('El neto debe ser mayor que cero.'); return }
     if (!finance.accounts.some(a => a.id === accountId)) { window.alert('Selecciona una cuenta válida.'); return }
     if (!paymentDate || !/^\d{4}-\d{2}-\d{2}$/.test(paymentDate)) { window.alert('Indica la fecha del cobro.'); return }
-    const matches = finance.transactions.filter(t => t.type === 'income' && t.date.slice(0, 7) === month &&
+    const matches = finance.transactions.filter(t => t.type === 'income' && t.description === 'Nómina ' + month &&
       Math.abs(t.amount - amount) < 0.005 && t.incomeKind !== 'reimbursement')
     if (matches.length) { window.alert('Ya existe un ingreso de igual importe en ese mes. Revísalo antes de crear otro.'); return }
     if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(budgetMonth)) { window.alert('Selecciona el mes de presupuesto.'); return }
@@ -94,7 +94,7 @@ export function PayrollPage({ onBack, payroll, finance }: { onBack: () => void; 
     } catch (error) { window.alert(error instanceof Error ? error.message : 'No se pudo registrar el ingreso.') }
   }
 
-  const budgetMonthField = <label className="payroll-field">Presupuesto al que se asigna
+  const budgetMonthField = <label className="payroll-field">Mes de presupuesto (nómina del día 20 en adelante: siguiente mes)
     <input type="month" value={budgetMonth} onChange={e => setBudgetMonth(e.target.value)} />
   </label>
   const monthLabel = (value: string) => {
