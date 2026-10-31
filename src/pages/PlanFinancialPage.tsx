@@ -121,9 +121,9 @@ export function PlanFinancialPage({
           <span className="hero-tag">Control del mes</span>
           <span style={{ fontSize: 12, color: '#64748b' }}>
             {ctrl.incomeSource === 'real'
-              ? 'Ingresos reales (cobrados)'
+              ? 'Ingresos asignados al mes'
               : ctrl.incomeSource === 'mixed'
-              ? 'Cobrado + Previsto'
+              ? 'Asignados + previstos'
               : ctrl.incomeSource === 'recurring'
               ? 'Previsto recurrente'
               : ctrl.incomeSource === 'manual'
@@ -154,7 +154,7 @@ export function PlanFinancialPage({
         >
           {ctrl.incomeReal > 0 && (
             <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, color: '#475569', marginBottom: 6 }}>
-              <span>Ingresos reales cobrados</span>
+              <span>Ingresos para el presupuesto del mes</span>
               <span style={{ fontWeight: 600, color: '#16a34a' }}>+ {money(ctrl.incomeReal)}</span>
             </div>
           )}
