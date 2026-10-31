@@ -80,6 +80,23 @@ export function PayrollPage({ onBack, payroll, finance }: { onBack: () => void; 
     }
   }
 
+  const createIncomeForSavedPayroll = () => {
+    if (!existing || !payroll.ready) return
+    const amount = existing.net
+    if (!Number.isFinite(amount) || amount <= 0) { window.alert('El neto debe ser mayor que cero.'); return }
+    if (!finance.accounts.some(a => a.id === accountId)) { window.alert('Selecciona una cuenta válida.'); return }
+    if (!paymentDate || !/^\d{4}-\d{2}-\d{2}$/.test(paymentDate)) { window.alert('Indica la fecha del cobro.'); return }
+    const matches = finance.transactions.filter(t => t.type === 'income' && t.date.slice(0, 7) === month &&
+      Math.abs(t.amount - amount) < 0.005 && t.incomeKind !== 'reimbursement')
+    if (matches.length) { window.alert('Ya existe un ingreso de igual importe en ese mes. Revísalo antes de crear otro.'); return }
+    if (!window.confirm('¿Registrar ' + format(amount) + ' como ingreso de la nómina ' + month + '? Se sumará una sola vez a la cuenta seleccionada.')) return
+    try {
+      finance.addTransaction({ type: 'income', amount, description: 'Nómina ' + month,
+        date: paymentDate, accountId, categoryId: 'income', incomeKind: 'income' })
+      window.alert('Ingreso registrado. Completar el PDF no creará otro movimiento.')
+    } catch (error) { window.alert(error instanceof Error ? error.message : 'No se pudo registrar el ingreso.') }
+  }
+
   const monthLabel = (value: string) => {
     const [year, monthNumber] = value.split('-').map(Number)
     if (!year || !monthNumber || monthNumber < 1 || monthNumber > 12) return value
@@ -189,6 +206,20 @@ export function PayrollPage({ onBack, payroll, finance }: { onBack: () => void; 
         {existing && <div style={{ marginTop: 14, padding: 14, border: '1px solid var(--border, #ddd)', borderRadius: 12 }}>
           <strong>Ingreso de esta nómina</strong>
           <p className="payroll-muted">Si ya cobraste en imagin, selecciona el ingreso que registraste para identificarlo como nómina. No se sumará dinero.</p>
+          {matchingIncome.length === 0 && <>
+            <p className="payroll-muted">Si borraste el ingreso anterior, puedes crearlo ahora desde esta nómina guardada.</p>
+            <div className="payroll-grid">
+              <label className="payroll-field">Cuenta del ingreso
+                <select value={accountId} onChange={e => setAccountId(e.target.value)}>
+                  {finance.accounts.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
+                </select>
+              </label>
+              <label className="payroll-field">Fecha del cobro
+                <input type="date" value={paymentDate} onChange={e => setPaymentDate(e.target.value)}/>
+              </label>
+            </div>
+            <button type="button" className="payroll-save" disabled={!payroll.ready} onClick={createIncomeForSavedPayroll}>Añadir neto como ingreso</button>
+          </>}
           {matchingIncome.length > 0 ? <>
             <label className="payroll-field">Ingreso existente
               <select value={selectedIncomeId} onChange={e => setSelectedIncomeId(e.target.value)}>
