@@ -5,6 +5,11 @@ import type { PayrollState } from '../hooks/usePayroll'
 import type { ReturnTypeFinance } from '../types'
 const format = (n: number) => n.toLocaleString('es-ES', { style: 'currency', currency: 'EUR' })
 const safe = (n: number) => Number.isFinite(n) && n >= 0 ? n : 0
+// Acepta el formato habitual español: 1.234,56 y también 1234.56.
+const parseAmount = (value: string): number => {
+  const normalized = value.trim().replace(/\s/g, '').replace(/\.(?=\d{3}(?:[.,]|$))/g, '').replace(',', '.')
+  return /^\d+(?:\.\d{1,2})?$/.test(normalized) ? Number(normalized) : NaN
+}
 
 /** Historial informativo sincronizado: nunca genera movimientos ni modifica saldos. */
 export function PayrollPage({ onBack, payroll, finance }: { onBack: () => void; payroll: PayrollState; finance: ReturnTypeFinance }) {
@@ -26,21 +31,21 @@ export function PayrollPage({ onBack, payroll, finance }: { onBack: () => void; 
   const selectMonth = (value: string) => {
     setMonth(value)
     const saved = entries.find(e => e.month === value)
-    setNet(saved ? String(saved.net) : '')
+    setNet(saved ? saved.net.toLocaleString('es-ES', { useGrouping: false, maximumFractionDigits: 2 }) : '')
     setGross(saved?.gross === undefined ? '' : String(saved.gross))
     setSocialSecurity(saved?.socialSecurity === undefined ? '' : String(saved.socialSecurity))
     setIrpf(saved?.irpf === undefined ? '' : String(saved.irpf))
   }
   const addEntry = () => {
-    if (!net.trim() || !Number.isFinite(Number(net)) || Number(net) < 0 || (hasDetails && !completeDetails)) {
+    if (!net.trim() || !Number.isFinite(parseAmount(net)) || parseAmount(net) <= 0 || (hasDetails && (!completeDetails || [gross, socialSecurity, irpf].some(v => !Number.isFinite(parseAmount(v)))))) {
       window.alert('Indica el neto recibido. Los demás campos se rellenan juntos cuando tengas el PDF.')
       return
     }
     const record = completeDetails
-      ? { month, gross: Number(gross), socialSecurity: Number(socialSecurity), irpf: Number(irpf), net: Number(net) }
+      ? { month, gross: parseAmount(gross), socialSecurity: parseAmount(socialSecurity), irpf: parseAmount(irpf), net: parseAmount(net) }
       : { month, net: Number(net) }
     try {
-      const amount = Number(net)
+      const amount = parseAmount(net)
       const matches = finance.transactions.filter(t => t.type === 'income' &&
         t.date.slice(0, 7) === month && Math.abs(t.amount - amount) < 0.005 && t.incomeKind !== 'reimbursement')
       if (!existing && matches.length) {
@@ -198,7 +203,7 @@ export function PayrollPage({ onBack, payroll, finance }: { onBack: () => void; 
         <div className="payroll-grid">
           {([{ label: 'Neto recibido (€)', value: net, set: setNet }, { label: 'Bruto (€)', value: gross, set: setGross }, { label: 'Seguridad Social (€)', value: socialSecurity, set: setSocialSecurity }, { label: 'IRPF (%)', value: irpf, set: setIrpf }] as const).map(field =>
             <label className="payroll-field" key={field.label}>{field.label}
-              <input type="number" min="0" step="0.01" inputMode="decimal" value={field.value} onChange={e => field.set(e.target.value)}/>
+              <input type="text" inputMode="decimal" value={field.value} onChange={e => field.set(e.target.value)} placeholder={field.label.includes('IRPF') ? 'Ej. 12,5' : 'Ej. 1234,56'}/>
             </label>
           )}
         </div>
