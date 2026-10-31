@@ -97,8 +97,19 @@ export function selectExpectedMonthlyIncomeDetail(
   // Para el plan se usa el mes que financia cada nómina; las estadísticas
   // y el saldo bancario conservan siempre la fecha real del cobro.
   const selectedMonth = refDate.getFullYear() + '-' + String(refDate.getMonth() + 1).padStart(2, '0')
-  const planTransactions = (transactions || []).filter(t => !t.budgetMonth || t.budgetMonth === selectedMonth)
-    .map(t => t.budgetMonth && t.type === 'income' ? { ...t, date: selectedMonth + '-01' } : t)
+  const planTransactions = (transactions || []).flatMap(t => {
+    if (t.type !== 'income' || t.incomeKind === 'reimbursement') return [t]
+    // Solo las nóminas se imputan a otro mes. Los ingresos extra siguen siendo
+    // dinero del mes del cobro, aunque entren el día 20 o después.
+    const isSalary = /^Nómina\\s+\\d{4}-\\d{2}(?:$|\\s|·)/i.test(t.description.trim())
+    if (!isSalary) return [t]
+    const [year, month, day] = t.date.slice(0, 10).split('-').map(Number)
+    if (!year || month < 1 || month > 12 || day < 1 || day > 31) return [t]
+    const defaultBudgetDate = new Date(year, month - 1 + (day >= 20 ? 1 : 0), 1)
+    const defaultBudgetMonth = defaultBudgetDate.getFullYear() + '-' + String(defaultBudgetDate.getMonth() + 1).padStart(2, '0')
+    const allocatedMonth = t.budgetMonth || defaultBudgetMonth
+    return allocatedMonth === selectedMonth ? [{ ...t, date: selectedMonth + '-01' }] : []
+  })
   const realAmount =
     (Array.isArray(transactions) && transactions.length > 0) ||
     (Array.isArray(cashTransactions) && cashTransactions.length > 0)
