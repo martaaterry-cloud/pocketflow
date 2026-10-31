@@ -101,7 +101,7 @@ export function selectExpectedMonthlyIncomeDetail(
     if (t.type !== 'income' || t.incomeKind === 'reimbursement') return [t]
     // Solo las nóminas se imputan a otro mes. Los ingresos extra siguen siendo
     // dinero del mes del cobro, aunque entren el día 20 o después.
-    const isSalary = /^Nómina\\s+\\d{4}-\\d{2}(?:$|\\s|·)/i.test(t.description.trim())
+    const isSalary = /^Nómina\s+\d{4}-\d{2}(?:$|\s|·)/i.test(t.description.trim())
     if (!isSalary) return [t]
     const [year, month, day] = t.date.slice(0, 10).split('-').map(Number)
     if (!year || month < 1 || month > 12 || day < 1 || day > 31) return [t]
