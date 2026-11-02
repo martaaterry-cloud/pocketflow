@@ -58,6 +58,7 @@ export function HomePage({
 
   // Estados vista Banco
   const [isExpanded, setIsExpanded] = useState(false)
+  const [showFuturePaymentConfirmations, setShowFuturePaymentConfirmations] = useState(false)
   const [txToDelete, setTxToDelete] = useState<Transaction | null>(null)
   const [selectedCategoryForDetail, setSelectedCategoryForDetail] = useState<Category | null>(null)
   const [isGrossBreakdownOpen, setIsGrossBreakdownOpen] = useState(false)
@@ -216,6 +217,10 @@ export function HomePage({
 
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <QuickExpenseShortcuts finance={finance} />
+          {futureDue.length > 0 && <button type="button" className="round-button" style={{position:'relative'}} onClick={() => setShowFuturePaymentConfirmations(v=>!v)} aria-label={`Confirmar ${futureDue.length} gastos futuros pendientes`} title="Confirmar pagos de hoy o vencidos">
+            <AppIcon name="calendar-check" size={18} />
+            <span style={{position:'absolute',right:-3,top:-4,background:'#ef4444',color:'#fff',borderRadius:12,fontSize:10,minWidth:17,lineHeight:'17px'}}>{futureDue.length}</span>
+          </button>}
         {activeHomeMode === 0 && (
           <button className="round-button" onClick={onAdd} aria-label="Añadir movimiento bancario">
             <AppIcon name="plus" size={18} />
@@ -233,6 +238,22 @@ export function HomePage({
         )}
         </div>
       </header>
+
+      {showFuturePaymentConfirmations && futureDue.length > 0 && (
+        <section className="section" style={{marginBottom:14}}>
+          <div className="special-period-card" style={{padding:16}}>
+            <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',gap:12}}>
+              <strong>Confirmar gastos pendientes</strong>
+              <button type="button" className="text-button" onClick={()=>setShowFuturePaymentConfirmations(false)}>Cerrar</button>
+            </div>
+            {futureDue.map(p => <div key={p.id} style={{borderTop:'1px solid var(--border, #ddd)',marginTop:12,paddingTop:12}}>
+              <strong>{p.name}</strong>
+              <div className="muted">{p.startDate} · {p.expectedExtraBudget == null ? 'Sin importe estimado' : money(p.expectedExtraBudget)}</div>
+              <FutureExpenseConfirm finance={finance} expense={p}/>
+            </div>)}
+          </div>
+        </section>
+      )}
 
       {/* 2. Selector Segmentado (Actualiza directamente activeHomeMode) */}
       <nav className="home-segmented-nav" aria-label="Seleccionar vista financiera" role="tablist">
@@ -358,16 +379,7 @@ export function HomePage({
                     <span>Proyectado tras confirmados</span>
                     <strong>{money(futureProjected)}</strong>
                   </div>
-                  {futureDue.slice(0,4).map(p => (
-                    <div key={p.id} onClick={e => e.stopPropagation()} onKeyDown={e => e.stopPropagation()}
-                      style={{marginTop:12, paddingTop:10, borderTop:'1px solid rgba(255,255,255,.15)'}}>
-                      <div style={{display:'flex',justifyContent:'space-between',gap:10}}>
-                        <strong style={{fontSize:13}}>{p.name}</strong>
-                        <span style={{fontSize:12}}>{p.futureStatus === 'possible' ? 'Posible' : 'Confirmado'} · {p.expectedExtraBudget == null ? 'Sin importe' : money(p.expectedExtraBudget)}</span>
-                      </div>
-                      <FutureExpenseConfirm finance={finance} expense={p} />
-                    </div>
-                  ))}
+
                 </div>
               )}
 
