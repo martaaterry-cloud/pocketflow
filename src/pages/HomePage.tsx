@@ -365,7 +365,7 @@ export function HomePage({
                 </div>
               )}
 
-              {futurePending.length > 0 && (
+              {isExpanded && futurePending.length > 0 && (
                 <div style={{ marginTop: 14, paddingTop: 12, borderTop: '1px solid rgba(255,255,255,.18)' }}>
                   <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', flexWrap:'wrap', gap:8 }}>
                     <strong style={{fontSize:13}}>Gastos futuros</strong>
