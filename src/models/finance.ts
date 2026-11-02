@@ -218,6 +218,8 @@ export interface SpecialPeriod {
   endDate: string // YYYY-MM-DD
   expectedExtraBudget?: number | null
   type: SpecialPeriodType
+  futureStatus?: 'confirmed' | 'possible' | 'paid'
+  paidTransactionId?: string
   note?: string
 }
 
