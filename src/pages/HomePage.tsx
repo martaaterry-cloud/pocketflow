@@ -194,6 +194,17 @@ export function HomePage({
       ? 'Mi dinero · Efectivo'
       : 'Mi dinero · Total'
 
+  const currentDateKey = (() => {
+    const d = new Date()
+    return [d.getFullYear(), String(d.getMonth()+1).padStart(2,'0'), String(d.getDate()).padStart(2,'0')].join('-')
+  })()
+  const futurePending = (finance.specialPeriods || []).filter(p => p.futureStatus && p.futureStatus !== 'paid')
+  const futureDue = futurePending.filter(p => p.startDate <= currentDateKey)
+  const futureUpcoming = futurePending.filter(p => p.startDate > currentDateKey)
+  const futureConfirmed = futurePending.filter(p => p.futureStatus === 'confirmed').reduce((sum,p) => sum + (Number(p.expectedExtraBudget) || 0), 0)
+  const futurePossible = futurePending.filter(p => p.futureStatus === 'possible').reduce((sum,p) => sum + (Number(p.expectedExtraBudget) || 0), 0)
+  const futureProjected = finance.totals.projectedAvailable - futureConfirmed
+
   return (
     <main className="page">
       {/* 1. Cabecera Común */}
@@ -222,29 +233,6 @@ export function HomePage({
         )}
         </div>
       </header>
-
-      {(() => {
-        const today = new Date()
-        const key = [today.getFullYear(), String(today.getMonth()+1).padStart(2,'0'), String(today.getDate()).padStart(2,'0')].join('-')
-        const due = (finance.specialPeriods || []).filter(p=>p.futureStatus && p.futureStatus !== 'paid' && p.startDate <= key)
-        const coming = (finance.specialPeriods || []).filter(p=>p.futureStatus && p.futureStatus !== 'paid' && p.startDate > key)
-        const sum = (items: typeof due) => items.reduce((n,p)=>n + (Number(p.expectedExtraBudget) || 0),0)
-        if (!due.length && !coming.length) return null
-        return <section className="section" style={{marginBottom:16}}>
-          <div className="special-period-card" style={{padding:14}}>
-            <strong>Gastos futuros</strong>
-            <div style={{display:'flex',gap:16, flexWrap:'wrap',marginTop:6,fontSize:13}}>
-              <span>Confirmados: {money(sum([...due,...coming].filter(p=>p.futureStatus==='confirmed')))}</span>
-              <span>Posibles: {money(sum([...due,...coming].filter(p=>p.futureStatus==='possible')))}</span>
-            </div>
-            {due.slice(0,4).map(p=><div key={p.id} style={{marginTop:12,paddingTop:10,borderTop:'1px solid var(--border, #ddd)'}}>
-              <strong>{p.name}</strong> <small>{p.startDate} · {p.futureStatus === 'possible' ? 'Posible' : 'Confirmado'}</small>
-              <FutureExpenseConfirm finance={finance} expense={p}/>
-            </div>)}
-            {!due.length && <p className="muted" style={{marginBottom:0}}>Todavía no hay pagos que confirmar. Próximo: {coming[0]?.startDate}</p>}
-          </div>
-        </section>
-      })()}
 
       {/* 2. Selector Segmentado (Actualiza directamente activeHomeMode) */}
       <nav className="home-segmented-nav" aria-label="Seleccionar vista financiera" role="tablist">
@@ -353,6 +341,33 @@ export function HomePage({
                 <div className="hero-projected-sub">
                   <span>Disponible proyectado:</span>
                   <strong>{money(finance.totals.projectedAvailable)}</strong>
+                </div>
+              )}
+
+              {futurePending.length > 0 && (
+                <div style={{ marginTop: 14, paddingTop: 12, borderTop: '1px solid rgba(255,255,255,.18)' }}>
+                  <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', flexWrap:'wrap', gap:8 }}>
+                    <strong style={{fontSize:13}}>Gastos futuros</strong>
+                    <small style={{opacity:.74}}>{futureDue.length > 0 ? futureDue.length + ' pendiente(s) de confirmar' : 'Próximo: ' + futureUpcoming[0]?.startDate}</small>
+                  </div>
+                  <div style={{display:'flex', flexWrap:'wrap', gap:16, marginTop:8, fontSize:13}}>
+                    <span>Confirmados: <strong>{money(futureConfirmed)}</strong></span>
+                    <span>Posibles: <strong>{money(futurePossible)}</strong></span>
+                  </div>
+                  <div style={{display:'flex', justifyContent:'space-between', gap:10, marginTop:8, fontSize:12}}>
+                    <span>Proyectado tras confirmados</span>
+                    <strong>{money(futureProjected)}</strong>
+                  </div>
+                  {futureDue.slice(0,4).map(p => (
+                    <div key={p.id} onClick={e => e.stopPropagation()} onKeyDown={e => e.stopPropagation()}
+                      style={{marginTop:12, paddingTop:10, borderTop:'1px solid rgba(255,255,255,.15)'}}>
+                      <div style={{display:'flex',justifyContent:'space-between',gap:10}}>
+                        <strong style={{fontSize:13}}>{p.name}</strong>
+                        <span style={{fontSize:12}}>{p.futureStatus === 'possible' ? 'Posible' : 'Confirmado'} · {p.expectedExtraBudget == null ? 'Sin importe' : money(p.expectedExtraBudget)}</span>
+                      </div>
+                      <FutureExpenseConfirm finance={finance} expense={p} />
+                    </div>
+                  ))}
                 </div>
               )}
 
