@@ -1,5 +1,5 @@
-// PocketFlow Service Worker v0.25.28 (2026.11.02-02)
-const CACHE_NAME = 'pocketflow-v0.25.28-2026.11.02-02'
+// PocketFlow Service Worker v0.25.29 (2026.11.02-03)
+const CACHE_NAME = 'pocketflow-v0.25.29-2026.11.02-03'
 
 // Recursos estáticos iniciales a cachear
 const PRECACHE_URLS = [
