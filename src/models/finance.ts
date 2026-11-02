@@ -220,6 +220,8 @@ export interface SpecialPeriod {
   type: SpecialPeriodType
   futureStatus?: 'confirmed' | 'possible' | 'paid'
   paidTransactionId?: string
+  futureCategoryId?: string
+  futurePaymentMethod?: 'bank' | 'bizum' | 'cash'
   note?: string
 }
 

@@ -2,6 +2,7 @@ import { useState } from 'react'
 import type { ReturnTypeFinance } from '../types'
 import type { SpecialPeriod } from '../models/finance'
 import { AppIcon } from '../ui/icons'
+import { FutureExpenseConfirm } from '../components/FutureExpenseConfirm'
 
 const eur = (n: number) => n.toLocaleString('es-ES', { style: 'currency', currency: 'EUR' })
 const dateToday = () => { const d = new Date(); return [d.getFullYear(), String(d.getMonth()+1).padStart(2,'0'), String(d.getDate()).padStart(2,'0')].join('-') }
@@ -14,15 +15,16 @@ export function FutureExpensesPage({ finance, onBack }: { finance: ReturnTypeFin
   const [amount, setAmount] = useState('')
   const [status, setStatus] = useState<'confirmed' | 'possible'>('confirmed')
   const [note, setNote] = useState('')
-  const [linkId, setLinkId] = useState<Record<string,string>>({})
+  const [categoryId, setCategoryId] = useState('other')
+  const [method, setMethod] = useState<'bank'|'bizum'|'cash'>('bank')
   const items = (finance.specialPeriods || []).filter(isFuture).sort((a,b) => a.startDate.localeCompare(b.startDate))
   const pending = items.filter(p => p.futureStatus === 'confirmed' && Number(p.expectedExtraBudget) > 0)
   const possible = items.filter(p => p.futureStatus === 'possible' && Number(p.expectedExtraBudget) > 0)
-  const reset = () => { setEditing(null); setName(''); setDate(dateToday()); setAmount(''); setStatus('confirmed'); setNote('') }
+  const reset = () => { setEditing(null); setName(''); setDate(dateToday()); setAmount(''); setStatus('confirmed'); setNote(''); setCategoryId('other'); setMethod('bank') }
   const edit = (p: SpecialPeriod) => {
     setEditing(p.id); setName(p.name); setDate(p.startDate)
     setAmount(p.expectedExtraBudget == null ? '' : String(p.expectedExtraBudget).replace('.', ','))
-    setStatus(p.futureStatus === 'possible' ? 'possible' : 'confirmed'); setNote(p.note || '')
+    setStatus(p.futureStatus === 'possible' ? 'possible' : 'confirmed'); setNote(p.note || ''); setCategoryId(p.futureCategoryId || 'other'); setMethod(p.futurePaymentMethod || 'bank')
   }
   const save = (e: React.FormEvent) => {
     e.preventDefault()
@@ -33,18 +35,12 @@ export function FutureExpensesPage({ finance, onBack }: { finance: ReturnTypeFin
     const data = { name: name.trim(), startDate: date, endDate: date,
       expectedExtraBudget: value === '' ? undefined : Number(value),
       type: status === 'confirmed' ? 'expected_high_spend' as const : 'normal' as const,
-      futureStatus: status, note: note.trim() || undefined }
+      futureStatus: status, futureCategoryId: categoryId, futurePaymentMethod: method, note: note.trim() || undefined }
     try {
       if (editing) finance.updateSpecialPeriod(editing, data)
       else finance.addSpecialPeriod(data)
       reset()
     } catch (error) { window.alert(error instanceof Error ? error.message : 'No se pudo guardar.') }
-  }
-  const linkPayment = (p: SpecialPeriod) => {
-    const tx = finance.transactions.find(t => t.id === linkId[p.id] && t.type === 'expense')
-    if (!tx) return
-    if (!window.confirm('¿Vincular el gasto real «' + tx.description + '» y marcar «' + p.name + '» como pagado? No se creará otro movimiento.')) return
-    finance.updateSpecialPeriod(p.id, { futureStatus: 'paid', paidTransactionId: tx.id, type: 'normal' })
   }
   return <main className="page" style={{ paddingBottom: 110 }}>
     <header className="simple-header">
@@ -67,6 +63,12 @@ export function FutureExpensesPage({ finance, onBack }: { finance: ReturnTypeFin
             <option value="confirmed">Confirmado</option><option value="possible">Posible</option>
           </select>
         </label>
+        <label className="form-group">Categoría
+          <select value={categoryId} onChange={e=>setCategoryId(e.target.value)}>{finance.categories.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}</select>
+        </label>
+        <label className="form-group">Forma prevista de pago
+          <select value={method} onChange={e=>setMethod(e.target.value as 'bank'|'bizum'|'cash')}><option value="bank">Tarjeta / Banco</option><option value="bizum">Bizum</option><option value="cash">Efectivo</option></select>
+        </label>
         <label className="form-group">Nota (opcional) <input type="text" value={note} onChange={e=>setNote(e.target.value)} placeholder="Cita, tienda, detalles…"/></label>
         <button type="submit" className="primary-button">{editing ? 'Guardar cambios' : 'Añadir gasto futuro'}</button>
         {editing && <button type="button" className="text-button" onClick={reset}>Cancelar edición</button>}
@@ -88,13 +90,7 @@ export function FutureExpensesPage({ finance, onBack }: { finance: ReturnTypeFin
               <button type="button" className="text-button" onClick={()=>edit(p)}>Editar</button>
               <button type="button" className="text-button" onClick={()=>{if(window.confirm('¿Eliminar esta previsión? No se borrarán movimientos reales.')) finance.deleteSpecialPeriod(p.id)}}>Eliminar</button>
             </div>
-            <label className="form-group" style={{marginTop:10}}>Si ya has pagado, vincula el movimiento existente
-              <select value={linkId[p.id] || ''} onChange={e=>setLinkId(prev=>({...prev,[p.id]:e.target.value}))}>
-                <option value="">Seleccionar gasto registrado</option>
-                {matches.map(t=><option key={t.id} value={t.id}>{t.date} · {t.description} · {eur(t.amount)}</option>)}
-              </select>
-            </label>
-            <button type="button" className="text-button" disabled={!linkId[p.id]} onClick={()=>linkPayment(p)}>Marcar como pagado sin duplicar</button>
+            <FutureExpenseConfirm finance={finance} expense={p} />
           </>}
         </div>
       })}

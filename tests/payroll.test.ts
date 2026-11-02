@@ -418,3 +418,18 @@ test('gastos futuros: los posibles y pagados no se descuentan dos veces del plan
   assert.equal(row.future_status,'confirmed')
   assert.equal(fromDbSpecialPeriod(row).futureStatus,'confirmed')
 })
+
+test('gastos futuros: categoría y método se guardan en metadatos sin crear movimientos', async () => {
+  const { toDbSpecialPeriod, fromDbSpecialPeriod } = await import('../src/services/supabase/supabaseSync')
+  const period = { id:'test-future', name:'Dentista', startDate:'2026-11-05', endDate:'2026-11-05',
+    type:'expected_high_spend' as const, expectedExtraBudget:40, futureStatus:'confirmed' as const,
+    futureCategoryId:'health', futurePaymentMethod:'bank' as const }
+  const db = toDbSpecialPeriod(period, A)
+  assert.equal(db.future_category_id, 'health')
+  assert.equal(db.future_payment_method, 'bank')
+  assert.equal(db.expected_extra_budget, 40)
+  const restored = fromDbSpecialPeriod(db)
+  assert.equal(restored.futureCategoryId, 'health')
+  assert.equal(restored.futurePaymentMethod, 'bank')
+  assert.equal(restored.futureStatus, 'confirmed')
+})
