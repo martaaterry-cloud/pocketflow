@@ -201,10 +201,10 @@ export function HomePage({
   })()
   const futurePending = (finance.specialPeriods || []).filter(p => p.futureStatus && p.futureStatus !== 'paid')
   const futureDue = futurePending.filter(p => p.startDate <= currentDateKey)
-  const futureUpcoming = futurePending.filter(p => p.startDate > currentDateKey)
+  const futureUpcoming = futurePending.filter(p => p.startDate > currentDateKey).sort((a,b)=>a.startDate.localeCompare(b.startDate))
   const futureConfirmed = futurePending.filter(p => p.futureStatus === 'confirmed').reduce((sum,p) => sum + (Number(p.expectedExtraBudget) || 0), 0)
   const futurePossible = futurePending.filter(p => p.futureStatus === 'possible').reduce((sum,p) => sum + (Number(p.expectedExtraBudget) || 0), 0)
-  const futureProjected = finance.totals.projectedAvailable - futureConfirmed
+  const futureProjected = Math.round((finance.totals.projectedAvailable - futureConfirmed) * 100) / 100
 
   return (
     <main className="page">
@@ -361,7 +361,7 @@ export function HomePage({
               {hasActiveEstimates && !isExpanded && (
                 <div className="hero-projected-sub">
                   <span>Disponible proyectado:</span>
-                  <strong>{money(finance.totals.projectedAvailable)}</strong>
+                  <strong>{money(futureProjected)}</strong>
                 </div>
               )}
 
@@ -375,9 +375,9 @@ export function HomePage({
                     <span>Confirmados: <strong>{money(futureConfirmed)}</strong></span>
                     <span>Posibles: <strong>{money(futurePossible)}</strong></span>
                   </div>
-                  <div style={{display:'flex', justifyContent:'space-between', gap:10, marginTop:8, fontSize:12}}>
-                    <span>Proyectado tras confirmados</span>
-                    <strong>{money(futureProjected)}</strong>
+                  <div style={{display:'flex',justifyContent:'space-between',gap:10,marginTop:8,fontSize:12}}>
+                    <span>− Gastos futuros confirmados</span>
+                    <strong>−{money(futureConfirmed)}</strong>
                   </div>
 
                 </div>
@@ -460,13 +460,23 @@ export function HomePage({
                     </strong>
                   </div>
 
+                  {futureConfirmed > 0 && (
+                    <div className="hero-breakdown-row">
+                      <div className="breakdown-label">
+                        <span>Gastos futuros confirmados</span>
+                        <small>Reservados para pagos pendientes; no descontados del banco</small>
+                      </div>
+                      <strong className="breakdown-value negative">−{money(futureConfirmed)}</strong>
+                    </div>
+                  )}
+
                   <div className="hero-breakdown-row highlight projected">
                     <div className="breakdown-label">
                       <span>= Disponible proyectado</span>
-                      <small>Guía de lo que probablemente te quedará</small>
+                      <small>Tras variables y gastos futuros confirmados</small>
                     </div>
                     <strong className="breakdown-value">
-                      {money(finance.totals.projectedAvailable)}
+                      {money(futureProjected)}
                     </strong>
                   </div>
 
