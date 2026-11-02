@@ -536,6 +536,7 @@ export function selectExpectedExtraSpendingForMonth(
 
   let totalExtra = 0
   for (const period of specialPeriods) {
+    if (period.futureStatus === 'possible' || period.futureStatus === 'paid') continue
     if (
       period.expectedExtraBudget === undefined ||
       period.expectedExtraBudget === null ||
