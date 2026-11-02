@@ -27,7 +27,7 @@ export function FutureExpensesPage({ finance, onBack }: { finance: ReturnTypeFin
   const save = (e: React.FormEvent) => {
     e.preventDefault()
     const value = amount.trim().replace(',', '.')
-    if (!name.trim() || !date || (value !== '' && (!/^\\d+(?:\\.\\d{1,2})?$/.test(value) || Number(value) < 0))) {
+    if (!name.trim() || !date || (value !== '' && (!/^\d+(?:\.\d{1,2})?$/.test(value) || Number(value) < 0))) {
       window.alert('Revisa el nombre, la fecha y el importe.'); return
     }
     const data = { name: name.trim(), startDate: date, endDate: date,
