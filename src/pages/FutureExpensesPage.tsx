@@ -44,7 +44,7 @@ export function FutureExpensesPage({ finance, onBack }: { finance: ReturnTypeFin
     const tx = finance.transactions.find(t => t.id === linkId[p.id] && t.type === 'expense')
     if (!tx) return
     if (!window.confirm('¿Vincular el gasto real «' + tx.description + '» y marcar «' + p.name + '» como pagado? No se creará otro movimiento.')) return
-    finance.updateSpecialPeriod(p.id, { futureStatus: 'paid', paidTransactionId: tx.id, type: 'normal', expectedExtraBudget: 0 })
+    finance.updateSpecialPeriod(p.id, { futureStatus: 'paid', paidTransactionId: tx.id, type: 'normal' })
   }
   return <main className="page" style={{ paddingBottom: 110 }}>
     <header className="simple-header">
