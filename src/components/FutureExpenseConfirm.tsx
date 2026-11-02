@@ -20,10 +20,10 @@ export function FutureExpenseConfirm({finance,expense}: {finance: ReturnTypeFina
     e.preventDefault()
     if (busy || expense.futureStatus === 'paid') return
     const value = Number(amount.trim().replace(',','.'))
-    if (!Number.isFinite(value) || value <= 0 || !/^\\d+(?:[.,]\\d{1,2})?$/.test(amount.trim())) {
+    if (!Number.isFinite(value) || value <= 0 || !/^\d+(?:[.,]\d{1,2})?$/.test(amount.trim())) {
       window.alert('Introduce un importe pagado válido.'); return
     }
-    if (!/^\\d{4}-\\d{2}-\\d{2}$/.test(date) || date > today) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || date > today) {
       window.alert('La fecha del pago no puede estar en el futuro.'); return
     }
     if (method !== 'cash' && !finance.accounts.some(a=>a.id===accountId)) {
