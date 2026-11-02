@@ -404,3 +404,17 @@ test('plan mensual: solo nóminas del día 20 pasan al siguiente mes y los extra
   assert.equal(selectExpectedMonthlyIncomeDetail(null, [], boundary, [], new Date(2026, 10, 20)).realAmount, 0)
   assert.equal(selectExpectedMonthlyIncomeDetail(null, [], boundary, [], new Date(2026, 11, 1)).realAmount, 777)
 })
+
+test('gastos futuros: los posibles y pagados no se descuentan dos veces del plan', async () => {
+  const { selectExpectedExtraSpendingForMonth } = await import('../src/utils/planSelectors')
+  const periods = [
+    { id:'a', name:'Dentista', startDate:'2026-11-05', endDate:'2026-11-05', type:'expected_high_spend' as const, futureStatus:'confirmed' as const, expectedExtraBudget:160 },
+    { id:'b', name:'Fitness Park', startDate:'2026-11-12', endDate:'2026-11-12', type:'normal' as const, futureStatus:'possible' as const, expectedExtraBudget:135 },
+    { id:'c', name:'Graduación pagada', startDate:'2026-11-19', endDate:'2026-11-19', type:'normal' as const, futureStatus:'paid' as const, expectedExtraBudget:60 },
+  ]
+  assert.equal(selectExpectedExtraSpendingForMonth(periods, new Date(2026,10,5)),160)
+  const { toDbSpecialPeriod, fromDbSpecialPeriod } = await import('../src/services/supabase/supabaseSync')
+  const row = toDbSpecialPeriod(periods[0], A)
+  assert.equal(row.future_status,'confirmed')
+  assert.equal(fromDbSpecialPeriod(row).futureStatus,'confirmed')
+})
