@@ -21392,7 +21392,7 @@ describe('Fase 69 — Auditoría y Corrección Completa: Dinero Real, Ingresos V
     assert.equal(spendingControl.discretionaryAvailable, 699.81)
     assert.ok(spendingControl.discretionaryAvailable > 0)
 
-    const cardSummary = selectMonthlyPlanCardSummary(emptyPlanSettings, [], realTx, [], [], [], [], refDate)
+    const cardSummary = selectMonthlyPlanCardSummary(emptyPlanSettings, [], realTx, [], [], [], [], 0, refDate)
     assert.equal(cardSummary.monthlyIncome, 699.81)
     assert.equal(cardSummary.hasConfiguredPlan, true)
     assert.equal(cardSummary.incomeSource, 'real')
