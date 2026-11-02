@@ -369,6 +369,8 @@ export function toDbSpecialPeriod(sp: SpecialPeriod, userId: string) {
     type: sp.type,
     future_status: sp.futureStatus || null,
     paid_transaction_id: sp.paidTransactionId || null,
+    future_category_id: sp.futureCategoryId || null,
+    future_payment_method: sp.futurePaymentMethod || null,
     note: sp.note || null,
   }
 }
@@ -386,6 +388,8 @@ export function fromDbSpecialPeriod(row: Record<string, unknown>): SpecialPeriod
     type: row.type as 'normal' | 'expected_high_spend' | 'expected_low_spend',
     futureStatus: row.future_status ? String(row.future_status) as SpecialPeriod['futureStatus'] : undefined,
     paidTransactionId: row.paid_transaction_id ? String(row.paid_transaction_id) : undefined,
+    futureCategoryId: row.future_category_id ? String(row.future_category_id) : undefined,
+    futurePaymentMethod: row.future_payment_method ? String(row.future_payment_method) as SpecialPeriod['futurePaymentMethod'] : undefined,
     note: row.note ? String(row.note) : undefined,
   }
 }
