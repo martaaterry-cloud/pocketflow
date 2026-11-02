@@ -6,6 +6,7 @@ import { AppIcon } from '../ui/icons'
 import type { User } from '@supabase/supabase-js'
 import { BackupPage } from './BackupPage'
 import { PayrollPage } from './PayrollPage'
+import { FutureExpensesPage } from './FutureExpensesPage'
 import { AccountsPage } from './AccountsPage'
 import { BudgetsPage } from './BudgetsPage'
 import { PlanFinancialPage } from './PlanFinancialPage'
@@ -31,6 +32,7 @@ export type MoreSubView =
   | 'accounts'
   | 'recurring'
   | 'variable_estimates'
+  | 'future_expenses'
   | 'receivables'
   | 'budgets'
   | 'statistics'
@@ -160,6 +162,10 @@ export function MorePage({
 
   if (subView === 'recurring') {
     return <RecurringPaymentsPage finance={finance} onBack={handleBackToMenu} />
+  }
+
+  if (subView === 'future_expenses') {
+    return <FutureExpensesPage finance={finance} onBack={handleBackToMenu} />
   }
 
   if (subView === 'variable_estimates') {
@@ -317,6 +323,12 @@ export function MorePage({
             <b className="chevron">
               <AppIcon name="chevron-right" size={16} />
             </b>
+          </button>
+
+          <button type="button" onClick={() => setSubView('future_expenses')}>
+            <span className="menu-icon"><AppIcon name="calendar-clock" size={18} /></span>
+            <div><strong>Gastos futuros</strong><small>Pagos puntuales, fechas y previsiones</small></div>
+            <b className="chevron"><AppIcon name="chevron-right" size={16}/></b>
           </button>
 
           {/* Gastos variables previstos */}
