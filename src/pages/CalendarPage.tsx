@@ -99,6 +99,8 @@ export function CalendarPage({
     )
   }, [finance.transactions, year, month, selectedDay, finance.cashTransactions, finance.expenseShares])
 
+  const futureForDay = (day: number) => (finance.specialPeriods || []).filter(p => p.futureStatus && p.futureStatus !== 'paid' && p.startDate === [year, String(month + 1).padStart(2, '0'), String(day).padStart(2, '0')].join('-'))
+
   const monthLabel = new Intl.DateTimeFormat('es-ES', { month: 'long', year: 'numeric' }).format(currentDate)
 
   return (
@@ -140,6 +142,7 @@ export function CalendarPage({
             const data = monthDataByDay.get(day)
             const hasExpense = data && data.netExpenses > 0
             const hasIncome = data && (data.realIncome > 0 || data.reimbursements > 0)
+            const futureCount = futureForDay(day).length
             const isSelected = selectedDay === day
 
             return (
@@ -151,6 +154,7 @@ export function CalendarPage({
               >
                 <b>{day}</b>
                 {hasExpense && <small>{money(data!.netExpenses)}</small>}
+                {futureCount > 0 && <small title={`${futureCount} gasto(s) futuro(s)`} style={{color:'var(--primary, #1768d2)'}}>◦ {futureCount} previsto{futureCount > 1 ? 's' : ''}</small>}
                 {hasIncome && (
                   <span
                     className="calendar-income-indicator"
@@ -196,6 +200,14 @@ export function CalendarPage({
             )}
           </div>
         )}
+
+        {futureForDay(selectedDay).length > 0 && <div className="transaction-list" style={{ marginBottom:14 }}>
+          <strong>Gastos futuros (aún no pagados)</strong>
+          {futureForDay(selectedDay).map(p => <div className="mini-row" key={p.id}>
+            <span>{p.name} · {p.futureStatus === 'possible' ? 'Posible' : 'Confirmado'}</span>
+            <strong>{p.expectedExtraBudget == null ? 'Por definir' : money(p.expectedExtraBudget)}</strong>
+          </div>)}
+        </div>}
 
         {selectedDayMovements.length ? (
           <div className="transaction-list">
